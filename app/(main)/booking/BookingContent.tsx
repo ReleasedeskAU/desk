@@ -340,6 +340,64 @@ export default function BookingContent() {
         onSaved={() => refetch()}
       />
 
+      {/* View chrome always mounts — avoids SSR/client tree mismatch while prefs load */}
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        {(display === "calendar" || display === "timeline") && (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className={cn(SELECT_CLASS, "h-8 min-w-[110px] text-xs font-semibold")}
+              value={period}
+              onChange={(e) => {
+                setPeriod(e.target.value as Period);
+                setFocusDayIso(null);
+              }}
+              aria-label="Period grain"
+            >
+              {PERIOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                setAnchor(shiftPeriodAnchor(period, anchor, -1));
+                setFocusDayIso(null);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
+              aria-label="Previous period"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="min-w-[100px] text-center text-sm font-semibold text-slate-800 dark:text-white">
+              {navLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setAnchor(shiftPeriodAnchor(period, anchor, 1));
+                setFocusDayIso(null);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
+              aria-label="Next period"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        {viewSwitcher}
+        {focusDayIso && display === "timeline" && (
+          <button
+            type="button"
+            onClick={() => setFocusDayIso(null)}
+            className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            Clear day focus
+          </button>
+        )}
+      </div>
+
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("departmentId") && (
@@ -539,63 +597,6 @@ export default function BookingContent() {
         <TableSkeleton showTitle={false} columns={BOOKING_COLUMNS.length} />
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-            {(display === "calendar" || display === "timeline") && (
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className={cn(SELECT_CLASS, "h-8 min-w-[110px] text-xs font-semibold")}
-                  value={period}
-                  onChange={(e) => {
-                    setPeriod(e.target.value as Period);
-                    setFocusDayIso(null);
-                  }}
-                  aria-label="Period grain"
-                >
-                  {PERIOD_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnchor(shiftPeriodAnchor(period, anchor, -1));
-                    setFocusDayIso(null);
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
-                  aria-label="Previous period"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="min-w-[100px] text-center text-sm font-semibold text-slate-800 dark:text-white">
-                  {navLabel}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnchor(shiftPeriodAnchor(period, anchor, 1));
-                    setFocusDayIso(null);
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
-                  aria-label="Next period"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-            {viewSwitcher}
-            {focusDayIso && display === "timeline" && (
-              <button
-                type="button"
-                onClick={() => setFocusDayIso(null)}
-                className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                Clear day focus
-              </button>
-            )}
-          </div>
-
           {display === "calendar" && (
             <BookingMonthGrid
               bookings={bookings}

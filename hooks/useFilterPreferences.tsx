@@ -109,12 +109,9 @@ export function useFilterPreferences(
 
   const allowedKeys = useMemo(() => new Set(filters.map((f) => f.key)), [filters]);
 
-  const [hiddenFilters, setHiddenFilters] = useState<string[]>(() => {
-    const cached = getCachedTablePreferences(pageKey);
-    const saved = cached ? filterHiddenForPage(cached.hiddenFilters, allowedKeys) : [];
-    return resolveHiddenFilters(saved, allowedKeys, defaultHidden, pageKey).hidden;
-  });
-  const [loaded, setLoaded] = useState(() => isColumnPrefsCached(pageKey));
+  // SSR-safe defaults — cache / localStorage are applied in the effect below.
+  const [hiddenFilters, setHiddenFilters] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hiddenRef = useRef(hiddenFilters);
   hiddenRef.current = hiddenFilters;

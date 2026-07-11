@@ -7,7 +7,6 @@ import {
   Circle,
   Flame,
   Grid3x3,
-  HelpCircle,
   User,
 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
@@ -257,9 +256,9 @@ function HeatMapCell({
           : `Likelihood ${likelihood}, Impact ${impact}: ${count} risk${count === 1 ? "" : "s"}, ${band}`
       }
       className={cn(
-        "group relative flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-xl text-[15px] font-bold transition-all duration-150",
-        "hover:z-10 hover:scale-110 hover:shadow-lg disabled:cursor-default disabled:hover:scale-100 disabled:hover:shadow-none",
-        active && !empty && "ring-2 ring-brand-500 dark:ring-brand-400 scale-105"
+        "group relative flex h-[52px] w-[52px] items-center justify-center rounded-2xl text-[15px] font-bold transition-all duration-150",
+        "hover:z-10 hover:scale-105 hover:shadow-md disabled:cursor-default disabled:hover:scale-100 disabled:hover:shadow-none",
+        active && !empty && "ring-2 ring-brand-500 ring-offset-2 dark:ring-brand-400 dark:ring-offset-[var(--card)]"
       )}
       style={
         empty
@@ -299,13 +298,13 @@ function MatrixView({
   dark: boolean;
 }) {
   return (
-    <div className="mx-auto flex w-fit gap-3">
-      <div className="flex flex-col items-center justify-center pr-1">
+    <div className="inline-flex gap-3">
+      <div className="flex flex-col items-center justify-center">
         <span
-          className="whitespace-nowrap text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500"
+          className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500"
           style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
         >
-          ↑ Likelihood
+          Likelihood
         </span>
       </div>
       <div>
@@ -314,7 +313,7 @@ function MatrixView({
             const likelihood = 5 - rowIdx;
             return (
               <div key={likelihood} className="flex items-center gap-2">
-                <span className="w-4 text-center text-[12px] font-bold text-slate-400 dark:text-slate-500">
+                <span className="w-4 text-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500">
                   {likelihood}
                 </span>
                 {row.map((count, colIdx) => {
@@ -334,19 +333,19 @@ function MatrixView({
               </div>
             );
           })}
-          <div className="mt-1 flex items-center gap-2 pl-6">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <span
-                key={n}
-                className="flex h-auto w-14 sm:w-16 justify-center text-[12px] font-bold text-slate-400 dark:text-slate-500"
-              >
-                {n}
-              </span>
-            ))}
-          </div>
         </div>
-        <div className="mt-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-          Impact →
+        <div className="mt-2 flex items-center gap-2 pl-6">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <span
+              key={n}
+              className="flex h-4 w-[52px] items-center justify-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500"
+            >
+              {n}
+            </span>
+          ))}
+        </div>
+        <div className="mt-1 pl-6 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+          Impact
         </div>
       </div>
     </div>
@@ -381,8 +380,8 @@ function BubbleView({
   } | null>(null);
 
   return (
-    <div className="relative mx-auto w-full max-w-[480px]">
-      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" className="overflow-visible">
+    <div className="relative mx-auto aspect-square w-full max-w-[360px]">
+      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible">
         {[1, 2, 3, 4, 5].map((n) => (
           <g key={n}>
             <line
@@ -530,8 +529,8 @@ function DensityView({
   })();
 
   return (
-    <div className="flex justify-center">
-      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" style={{ maxWidth: 480 }}>
+    <div className="mx-auto aspect-square w-full max-w-[360px]">
+      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible">
         <defs>
           {cells.map((c) => (
             <radialGradient key={`g-${c.likelihood}-${c.impact}`} id={`risk-density-${c.likelihood}-${c.impact}`}>
@@ -674,138 +673,41 @@ function RiskHeatMapSection({
   ];
 
   return (
-    <div className="mb-6 flex flex-col items-stretch gap-5 lg:flex-row lg:items-start lg:justify-center">
-      {/* LEFT — explanatory info panel */}
-      <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[320px]">
-        <div className="rounded-[22px] border border-gray-200 bg-white p-5 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:border-[var(--border)] dark:bg-[var(--card)] dark:shadow-none">
-          <div className="mb-3 flex items-center gap-2">
-            <HelpCircle size={16} className="text-brand-500 dark:text-brand-400" />
-            <h3 className="text-[13.5px] font-bold text-slate-800 dark:text-white">Understanding This Matrix</h3>
-          </div>
-          <div className="space-y-3 text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300">
-            <p>
-              Each risk gets two scores from 1 (lowest) to 5 (highest):
-              <br />
-              <b className="text-slate-800 dark:text-white">Likelihood</b> — how probable it is
-              <br />
-              <b className="text-slate-800 dark:text-white">Impact</b> — how bad it would be
-            </p>
-            <div className="rounded-xl bg-brand-50 px-3 py-2.5 text-center text-[13px] font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-              Risk Score = Likelihood × Impact
-            </div>
-            <p>
-              A cell in the top-right (high likelihood, high impact) is the most dangerous combination — those risks
-              need attention first.
-            </p>
-          </div>
+    <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5 dark:border-[var(--border)]">
+        <div>
+          <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
+            Risk Heat Map
+          </h2>
+          <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
+            Click a cell to filter the table below
+          </p>
         </div>
-
-        <div className="rounded-[22px] border border-gray-200 bg-white p-5 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:border-[var(--border)] dark:bg-[var(--card)] dark:shadow-none">
-          <h3 className="mb-3 text-[13.5px] font-bold text-slate-800 dark:text-white">Risk Level Breakdown</h3>
-          <div className="space-y-2.5">
-            {BAND_ORDER.map((band) => (
-              <LegendRow key={band} band={band} count={counts[band]} total={total} />
-            ))}
-          </div>
-          <div className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400 dark:border-slate-700 dark:text-slate-500">
-            Score 1-5 Low · 6-11 Medium · 12-19 High · 20-25 Critical
-          </div>
+        <div className="flex rounded-lg bg-slate-100/90 p-0.5 dark:bg-slate-800">
+          {VIEWS.map((v) => {
+            const Icon = v.icon;
+            return (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => setView(v.key)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  view === v.key
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                )}
+              >
+                <Icon size={13} /> {v.label}
+              </button>
+            );
+          })}
         </div>
-
-        {cluster && cluster.count >= 2 && (
-          <div className="rounded-[22px] bg-gradient-to-br from-amber-50 to-orange-50 p-5 ring-1 ring-amber-100 dark:from-amber-500/10 dark:to-orange-500/10 dark:ring-amber-500/20">
-            <div className="mb-2 flex items-center gap-2">
-              <Flame size={15} className="text-amber-500" />
-              <h3 className="text-[13px] font-bold text-amber-800 dark:text-amber-300">Biggest Cluster</h3>
-            </div>
-            <p className="text-[12.5px] leading-relaxed text-amber-900 dark:text-amber-100/90">
-              <b>
-                {cluster.count} risk{cluster.count !== 1 ? "s" : ""}
-              </b>{" "}
-              sit at Likelihood {cluster.likelihood} / Impact {cluster.impact} ({cluster.band}) — your largest
-              concentration.
-              {cluster.band === "MEDIUM" || cluster.band === "LOW"
-                ? " Most of your real risk exposure in this view is moderate, not extreme."
-                : " This cell is where attention should go first."}
-            </p>
-            <button
-              type="button"
-              onClick={() => onCellSelect(cluster.likelihood, cluster.impact)}
-              className="mt-3 flex items-center gap-1 text-[12px] font-bold text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
-            >
-              View these risks <ChevronRight size={13} />
-            </button>
-          </div>
-        )}
-
-        {ownership.kind === "concentrated" && (
-          <div className="rounded-[22px] bg-gradient-to-br from-rose-50 to-red-50 p-5 ring-1 ring-rose-100 dark:from-rose-500/10 dark:to-red-500/10 dark:ring-rose-500/20">
-            <div className="mb-2 flex items-center gap-2">
-              <User size={15} className="text-rose-500" />
-              <h3 className="text-[13px] font-bold text-rose-800 dark:text-rose-300">Ownership Concentration</h3>
-            </div>
-            <p className="text-[12.5px] leading-relaxed text-rose-900 dark:text-rose-100/90">
-              <b>
-                {ownership.ownerName} owns {ownership.pct}%
-              </b>{" "}
-              of assigned risks ({ownership.ownedCount} of {ownership.totalOwned}). Only {ownership.distinctOwners}{" "}
-              {ownership.distinctOwners === 1 ? "person holds" : "people hold"} any risk ownership in this view.
-            </p>
-            <button
-              type="button"
-              onClick={() => onOwnerSelect(ownership.ownerId)}
-              className="mt-3 flex items-center gap-1 text-[12px] font-bold text-rose-700 hover:text-rose-900 dark:text-rose-400 dark:hover:text-rose-200"
-            >
-              View this owner&apos;s risks <ChevronRight size={13} />
-            </button>
-          </div>
-        )}
-
-        {ownership.kind === "even" && (
-          <div className="rounded-[22px] bg-gradient-to-br from-slate-50 to-slate-100 p-5 ring-1 ring-slate-200 dark:from-slate-500/10 dark:to-slate-600/10 dark:ring-slate-500/20">
-            <div className="mb-2 flex items-center gap-2">
-              <User size={15} className="text-slate-500 dark:text-slate-400" />
-              <h3 className="text-[13px] font-bold text-slate-700 dark:text-slate-200">Ownership Concentration</h3>
-            </div>
-            <p className="text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300">
-              Risk ownership is evenly distributed across {ownership.distinctOwners}{" "}
-              {ownership.distinctOwners === 1 ? "person" : "people"} — no single owner holds more than half of assigned
-              risks in this view.
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* Heat map card — sized to the matrix, no empty white stretch */}
-      <div className="mx-auto w-fit max-w-full rounded-[24px] border border-gray-200 bg-white p-5 sm:p-6 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.18)] dark:border-[var(--border)] dark:bg-[var(--card)] dark:shadow-none lg:mx-0">
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[16px] font-bold text-slate-800 dark:text-white">Risk Heat Map</h2>
-          <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-            {VIEWS.map((v) => {
-              const Icon = v.icon;
-              return (
-                <button
-                  key={v.key}
-                  type="button"
-                  onClick={() => setView(v.key)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-all",
-                    view === v.key
-                      ? "bg-white text-brand-600 shadow-sm dark:bg-[var(--card)] dark:text-brand-400"
-                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                  )}
-                >
-                  <Icon size={13} /> {v.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <p className="mb-5 text-center text-[12.5px] text-slate-400 dark:text-slate-500">
-          Click any point to filter the risk list to that exact combination
-        </p>
-
-        <div className="flex justify-center">
+      <div className="flex flex-col lg:flex-row">
+        {/* Visual — fixed footprint, no stretch empty space */}
+        <div className="flex shrink-0 items-center justify-center border-b border-slate-100 bg-[#f8fafc] px-6 py-5 dark:border-[var(--border)] dark:bg-slate-900/40 lg:border-b-0 lg:border-r">
           {view === "matrix" && (
             <MatrixView grid={grid} selLi={selLi} selIm={selIm} onSelect={onCellSelect} dark={dark} />
           )}
@@ -813,6 +715,82 @@ function RiskHeatMapSection({
           {view === "density" && (
             <DensityView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
           )}
+        </div>
+
+        {/* Guide — fills remaining width */}
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-4 px-5 py-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+              How to read
+            </p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+              Risks are scored on <span className="font-semibold text-slate-800 dark:text-white">Likelihood</span> and{" "}
+              <span className="font-semibold text-slate-800 dark:text-white">Impact</span> (1–5 each).
+            </p>
+            <div className="mt-2.5 inline-flex rounded-lg bg-brand-50 px-3 py-1.5 text-[12.5px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+              Score = Likelihood × Impact
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+              Levels in this view
+            </p>
+            <div className="space-y-2">
+              {BAND_ORDER.map((band) => (
+                <LegendRow key={band} band={band} count={counts[band]} total={total} />
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+            {cluster && cluster.count >= 2 && (
+              <button
+                type="button"
+                onClick={() => onCellSelect(cluster.likelihood, cluster.impact)}
+                className="rounded-xl border border-amber-200/80 bg-amber-50/80 p-3 text-left transition hover:border-amber-300 hover:bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10 dark:hover:bg-amber-500/15"
+              >
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-800 dark:text-amber-300">
+                  <Flame size={13} /> Biggest cluster
+                </div>
+                <p className="mt-1 text-[12px] leading-snug text-amber-900/90 dark:text-amber-100/85">
+                  {cluster.count} at L{cluster.likelihood}×I{cluster.impact} · {cluster.band}
+                </p>
+                <span className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                  View <ChevronRight size={12} />
+                </span>
+              </button>
+            )}
+
+            {ownership.kind === "concentrated" && (
+              <button
+                type="button"
+                onClick={() => onOwnerSelect(ownership.ownerId)}
+                className="rounded-xl border border-rose-200/80 bg-rose-50/80 p-3 text-left transition hover:border-rose-300 hover:bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/10 dark:hover:bg-rose-500/15"
+              >
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-rose-800 dark:text-rose-300">
+                  <User size={13} /> Ownership
+                </div>
+                <p className="mt-1 text-[12px] leading-snug text-rose-900/90 dark:text-rose-100/85">
+                  {ownership.ownerName} · {ownership.pct}%
+                </p>
+                <span className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
+                  View <ChevronRight size={12} />
+                </span>
+              </button>
+            )}
+
+            {ownership.kind === "even" && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-600 dark:bg-slate-800/40">
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700 dark:text-slate-200">
+                  <User size={13} /> Ownership
+                </div>
+                <p className="mt-1 text-[12px] leading-snug text-slate-600 dark:text-slate-300">
+                  Spread across {ownership.distinctOwners} people
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

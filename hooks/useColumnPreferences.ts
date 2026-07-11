@@ -41,13 +41,10 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
     [hideableKeysSig],
   );
 
-  const initialHidden = useMemo(() => {
-    const cached = getCachedTablePreferences(pageKey)?.hiddenColumns ?? getCachedHiddenColumns(pageKey);
-    return cached ? filterHiddenForPage(cached, hideableKeys) : [];
-  }, [pageKey, hideableKeys]);
-
-  const [hiddenColumns, setHiddenColumns] = useState<string[]>(initialHidden);
-  const [loaded, setLoaded] = useState(() => isColumnPrefsCached(pageKey));
+  // Always start unloaded on both server and client so the first paint matches
+  // (in-memory cache can be warm on client navigations and would skip the skeleton).
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hiddenRef = useRef(hiddenColumns);
   hiddenRef.current = hiddenColumns;
