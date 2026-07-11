@@ -18,6 +18,7 @@ import { ReleaseRelatedLinks } from "@/components/releases/ReleaseRelatedLinks";
 import { YesterdayDiffPanel } from "@/components/releases/YesterdayDiffPanel";
 import { AdvancedCard } from "@/components/ui/advanced-card";
 import { useReleaseStore } from "@/context/ReleaseStoreContext";
+import { useNavHistoryLabel } from "@/context/NavigationHistoryContext";
 import { releases } from "@/lib/dummy-data";
 import { computeLifecycleStages } from "@/lib/lifecycle";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -32,6 +33,7 @@ export function SyntheticReleaseDetail({ id }: { id: string }) {
   const deploy = release ? getDeploymentState(release) : null;
   const stages = release && deploy ? computeLifecycleStages(release, decision, deploy.phase) : [];
 
+  useNavHistoryLabel(release?.version);
   if (!release) {
     return <div className="text-slate-500">Release not found.</div>;
   }

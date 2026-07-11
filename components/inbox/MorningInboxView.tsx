@@ -134,8 +134,7 @@ export function MorningInboxView() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-[12px] font-semibold text-slate-400 dark:text-white/50">Release Desk / Daily</div>
-            <h1 className="mt-0.5 text-[30px] font-bold tracking-tight text-[#1B2559] dark:text-white">Morning Inbox</h1>
+            <h1 className="text-[30px] font-bold tracking-tight text-[#1B2559] dark:text-white">Morning Inbox</h1>
             <p className="mt-1 text-[13px] text-slate-500 dark:text-white/55">
               {hasRefinement
                 ? `Action queue for ${scopeLabel}`

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Sidebar } from "./Sidebar";
 import { AppHeader } from "./AppHeader";
 import { Backdrop } from "./Backdrop";
+import { NavigationHistoryTrail } from "./NavigationHistoryTrail";
 import { ChatProvider } from "@/components/chat/ChatProvider";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { PageDocumentationProvider } from "@/context/PageDocumentationContext";
@@ -12,6 +13,7 @@ import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
 import { ReleaseStoreProvider } from "@/context/ReleaseStoreContext";
 import { ReleaseFiltersProvider } from "@/context/ReleaseFiltersContext";
 import { ColumnPreferencesProvider } from "@/context/ColumnPreferencesProvider";
+import { NavigationHistoryProvider } from "@/context/NavigationHistoryContext";
 import { cn } from "@/lib/utils";
 
 function ShellInner({ children }: { children: React.ReactNode }) {
@@ -30,6 +32,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           )}
         >
           <AppHeader />
+          <NavigationHistoryTrail />
           <main className="materio-main min-w-0 flex-1 px-4 pb-6 pt-6 md:px-6 lg:px-8">
             {children}
           </main>
@@ -49,7 +52,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <ColumnPreferencesProvider>
             <PageDocumentationProvider>
               <ReleaseFiltersProvider>
-                <ShellInner>{children}</ShellInner>
+                <NavigationHistoryProvider>
+                  <ShellInner>{children}</ShellInner>
+                </NavigationHistoryProvider>
               </ReleaseFiltersProvider>
             </PageDocumentationProvider>
           </ColumnPreferencesProvider>

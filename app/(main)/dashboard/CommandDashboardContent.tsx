@@ -248,8 +248,7 @@ export default function CommandDashboardContent() {
       <div className="mx-auto max-w-[1380px]">
         <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-[12px] font-semibold text-slate-400 dark:text-white/50">Release Desk / Overview</div>
-            <h1 className="mt-0.5 text-[30px] font-bold tracking-tight text-[#1B2559] dark:text-white">Command Dashboard</h1>
+            <h1 className="text-[30px] font-bold tracking-tight text-[#1B2559] dark:text-white">Command Dashboard</h1>
           </div>
           <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
             <div className="flex min-w-[min(100%,22rem)] flex-1 items-center gap-1 rounded-2xl bg-white p-1.5 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.4)] sm:min-w-[28rem] sm:flex-none">

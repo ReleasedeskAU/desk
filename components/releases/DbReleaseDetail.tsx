@@ -14,6 +14,7 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { CalendarCheck, GitBranch, History, Network, Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useNavHistoryLabel } from "@/context/NavigationHistoryContext";
 
 type ReleaseDetail = {
   id: string;
@@ -63,6 +64,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
   const [note, setNote] = useState("");
   const [lookups, setLookups] = useState<{ departments: { id: string; name: string }[]; applications: { id: string; name: string }[]; releases: { id: string; releaseCode: string }[] }>({ departments: [], applications: [], releases: [] });
 
+  useNavHistoryLabel(release?.releaseCode);
   const load = useCallback(() => {
     void (async () => {
       const result = await safeFetchJson<ReleaseDetail>(`/api/releases/${id}`, { label: "release-detail" });
