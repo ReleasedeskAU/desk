@@ -87,6 +87,16 @@ export function ReleaseFiltersProvider({ children }: { children: ReactNode }) {
       if (signal?.aborted) return;
       try {
         const res = await fetch(url, { signal });
+        // Clerk client can report signed-in before the session cookie is usable on the API.
+        if (res.status === 401 && attempt < 4) {
+          const delay = 400 * 2 ** attempt;
+          await new Promise((r) => setTimeout(r, delay));
+          return load(attempt + 1);
+        }
+        if (res.status === 401) {
+          // Still unauthenticated after retries — stay quiet; page will redirect or re-auth.
+          return;
+        }
         // 503 = Neon cold-start / transient; retry a few times before giving up.
         if ((res.status === 503 || res.status === 500) && attempt < 5) {
           const delay = 1200 * 2 ** attempt;

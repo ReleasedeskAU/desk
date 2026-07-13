@@ -5,8 +5,8 @@ import { normalizeProgramProject } from "@/lib/release-id";
 
 const releaseInclude = {
   department: true,
-  releaseOwner: { select: { userId: true, name: true, email: true, role: true } },
-  stakeholders: { include: { user: { select: { userId: true, name: true, email: true, role: true } } } },
+  releaseOwner: { select: { id: true, userId: true, name: true, email: true, role: true } },
+  stakeholders: { include: { user: { select: { id: true, userId: true, name: true, email: true, role: true } } } },
   applications: { include: { application: { include: { department: true } } } },
   dependsOn: { include: { dependsOnRelease: true } },
   dependedBy: { include: { release: true } },
@@ -28,6 +28,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(row);
 }
 
+function optionalString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const s = String(value).trim();
+  return s === "" ? null : s;
+}
+
+function optionalDate(value: unknown): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function optionalFloat(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { user, error } = await requireRole("editor");
@@ -40,13 +61,43 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const realId = existing.id;
 
   const data: Record<string, unknown> = {};
-  for (const key of ["name", "owner", "status", "priority", "impact", "notes", "decision", "departmentId", "releaseCode"]) {
+  for (const key of ["name", "owner", "status", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
     if (body[key] !== undefined) data[key] = body[key];
   }
   if (body.programProject !== undefined) {
     data.programProject = normalizeProgramProject(body.programProject) ?? "N/A";
   }
-  if (body.releaseDate) data.releaseDate = new Date(body.releaseDate);
+
+  for (const key of [
+    "notes",
+    "dependencies",
+    "releaseSize",
+    "testEnvRequired",
+    "uatEnvRequired",
+    "conflictId",
+    "blockers",
+    "vendorMaintenance",
+    "changeFreeze",
+    "regulatory",
+    "approvalStatus",
+    "rollbackPlan",
+    "deploymentWindow",
+  ] as const) {
+    const v = optionalString(body[key]);
+    if (v !== undefined) data[key] = v;
+  }
+
+  if (body.conflictFlag !== undefined) data.conflictFlag = Boolean(body.conflictFlag);
+  if (body.releaseOwnerId !== undefined) data.releaseOwnerId = optionalString(body.releaseOwnerId);
+
+  for (const key of ["releaseDate", "cabDate", "startDate"] as const) {
+    const v = optionalDate(body[key]);
+    if (v !== undefined) data[key] = v;
+  }
+  for (const key of ["readinessPercent", "goLiveChecklistPercent"] as const) {
+    const v = optionalFloat(body[key]);
+    if (v !== undefined) data[key] = v;
+  }
 
   await prisma.release.update({ where: { id: realId }, data });
 
@@ -67,6 +118,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           releaseId: realId,
           dependsOnReleaseId,
         })),
+      });
+    }
+  }
+
+  if (body.stakeholderIds) {
+    await prisma.releaseStakeholder.deleteMany({ where: { releaseId: realId } });
+    if (body.stakeholderIds.length) {
+      await prisma.releaseStakeholder.createMany({
+        data: body.stakeholderIds.map((userId: string) => ({ releaseId: realId, userId })),
       });
     }
   }

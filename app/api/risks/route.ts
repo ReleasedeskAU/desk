@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       },
       riskOwner: { select: { id: true, userId: true, name: true, email: true } },
     },
-    orderBy: { riskScore: "desc" },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

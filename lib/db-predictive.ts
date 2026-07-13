@@ -1,6 +1,6 @@
 import {
   calcDbReadiness,
-  getDbBlockers,
+  type DbBlocker,
   type DbP1Issue,
   type DbReleaseCommandInput,
 } from "./db-release-command";
@@ -19,10 +19,10 @@ function daysUntil(releaseDate: Date | string): number {
 
 export function predictDbRelease(
   release: DbReleaseCommandInput,
-  p1Issues: DbP1Issue[]
+  p1Issues: DbP1Issue[],
+  blockers: DbBlocker[] = []
 ): DbReleasePrediction {
-  const readiness = calcDbReadiness(release, p1Issues);
-  const blockers = getDbBlockers(release, p1Issues);
+  const readiness = calcDbReadiness(release, p1Issues, blockers.length);
   const days = daysUntil(release.releaseDate);
 
   let shipProbability = readiness * 0.85 + 10;

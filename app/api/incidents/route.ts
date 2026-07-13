@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const data = await prisma.incident.findMany({
     where: incidentWhere(sp(req)),
     include: { application: { select: { id: true, name: true } } },
-    orderBy: { timestamp: "desc" },
+    orderBy: { sourceOrder: "asc" },
   });
 
   const releaseCodes = [...new Set(data.map((d) => d.relatedReleaseCode).filter(Boolean))] as string[];

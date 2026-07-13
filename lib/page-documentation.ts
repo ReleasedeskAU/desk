@@ -9,6 +9,7 @@ export type PageDocKey =
   | "env-booking"
   | "dependencies"
   | "conflicts"
+  | "blockers"
   | "system-mapping"
   | "environments"
   | "risks"
@@ -52,9 +53,9 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
       "Use Needs attention to focus on blocked or at-risk releases.",
     ],
     fullDocumentation: [
-      "The Releases page is the central register for everything in flight. Database-backed releases (REL- codes) support create, edit, and delete for editors; each row links to a live release detail view with readiness, blockers, dependencies, and approvals.",
+      "The Releases page is the central register for everything in flight. Database-backed releases (REL- codes) support create, edit, and delete for editors; each row links to a live release detail view with readiness, live blockers, drift, dependencies, and approvals.",
       "The shared filter bar scopes the list to a department, application, or environment. Column visibility is saved per user — hide non-essential columns via the Columns picker without affecting other team members.",
-      "Readiness and blocker counts are computed from live desk data (bookings, dependencies, risks, approvals) rather than static spreadsheet fields. Sort by Readiness or Blockers to surface trouble spots before CAB.",
+      "Readiness is computed from live desk data (bookings, dependencies, decision, P1 issues). Open blockers and drift on release detail come from the Blockers and Drift registers.",
     ],
   },
   calendar: {
@@ -127,6 +128,24 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
       "The Conflict Queue is the triage desk for overlapping release activity — shared test environments, competing CAB slots, or resource contention. Rows are seeded from the Conflicts sheet with priority, status, and assigned owner.",
       "Use department and application filters to narrow to your train. High-priority open items should be cleared before env bookings are confirmed. Release ID columns navigate to each side of the conflict for context.",
       "Conflict status is independent of release readiness; a release can show Ready while a conflict row remains Open until explicitly resolved.",
+    ],
+  },
+  blockers: {
+    pageKey: "blockers",
+    title: "Blockers",
+    summary:
+      "Track open release blockers from the Blockers sheet — severity, escalation, owners, and impact — so blocked work is visible across the portfolio before CAB and go-live.",
+    quickReference: [
+      "One row per Blocker ID from the V0.6 Blockers sheet (25 seed records).",
+      "Filter by status, severity, type, department, assignee, and release.",
+      "Release ID links to the related release detail page.",
+      "Days Open and Escalation Level highlight aging critical items.",
+      "Use Manage Columns / Manage Filters to tailor the triage view.",
+    ],
+    fullDocumentation: [
+      "Blockers are first-class operational records, separate from the free-text Blockers column on Releases. Each row carries type, description, severity, raised/assigned owners, resolution dates, escalation, root cause, and release impact.",
+      "Default filters surface status, severity, type, department, assignee, and release ID. Additional columns (description, dates, root cause, notes) are available via Manage Filters and Manage Columns, with search inside those pickers.",
+      "This list is the source of truth for live blocker counts on release detail. Release detail loads Blockers via /api/blockers?release=…, supports + Add Blocker for editors, and shows the live Drift list for the same release.",
     ],
   },
   "system-mapping": {
@@ -217,6 +236,7 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
       "Drift records capture differences between environments — database versions, config timeouts, stale test data, memory allocation, etc. — discovered while validating a release. Data is seeded from the Drift sheet with remediation actions and ETAs.",
       "Drift Type is a governed lookup (Reference Data → drift_type), not free text. Creating drift via API validates against active reference values. Severity and status columns match the source workbook vocabulary.",
       "Resolve high-severity drift before promoting to pre-prod or prod; the drift list complements Versions & Config by describing qualitative gaps that version numbers alone may not show.",
+      "Release detail includes a live Drift panel for the open release, linking each row through to its drift detail page.",
     ],
   },
   approvals: {
@@ -421,6 +441,7 @@ const PATH_TO_DOC_KEY: Record<string, PageDocKey> = {
   "/booking": "env-booking",
   "/dependencies": "dependencies",
   "/conflicts": "conflicts",
+  "/blockers": "blockers",
   "/system-mapping": "system-mapping",
   "/environments": "environments",
   "/risks": "risks",

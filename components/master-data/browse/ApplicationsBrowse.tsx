@@ -368,7 +368,7 @@ export function ApplicationsBrowse() {
           ) : filteredEnvs.length === 0 ? (
             <MasterDataEmptyState entityLabel="environments" addLabel="Add Environment" onAdd={openCreateEnv} />
           ) : (
-            <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
+            <table className="w-full min-w-max border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50/50">
                   <th className={thClass}>Env Name</th>
@@ -380,7 +380,7 @@ export function ApplicationsBrowse() {
               </thead>
               <tbody>
                 {envPageRows.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-200 dark:border-[var(--border)] hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
+                  <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
                     <td className={`${tdClass} font-semibold`}>{row.name}</td>
                     <td className={tdClass}>{row.type}</td>
                     <td className={tdClass}>{row.owner || "—"}</td>
@@ -521,7 +521,7 @@ export function ApplicationsBrowse() {
         ) : apps.length === 0 ? (
           <MasterDataEmptyState entityLabel="applications" addLabel="Add Application" onAdd={openCreateApp} />
         ) : (
-          <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
+          <table className="w-full min-w-max border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50/50">
                 {isColumnVisible("name") && (
@@ -546,7 +546,7 @@ export function ApplicationsBrowse() {
             </thead>
             <tbody>
               {appPageRows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-200 dark:border-[var(--border)] hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
+                <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
                   {isColumnVisible("name") && <td className={`${tdClass} font-semibold text-gray-900 max-w-[200px]`}>{row.name}</td>}
                   {isColumnVisible("department") && <td className={tdClass}>{row.department?.name ?? "—"}</td>}
                   {isColumnVisible("type") && <td className={tdClass}>{row.type}</td>}

@@ -14,7 +14,7 @@ import {
 import { cn, formatDate } from "@/lib/utils";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { INCIDENT_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
@@ -62,7 +62,9 @@ export default function IncidentsContent() {
     defaultSortDir: "desc",
     sortAccessors: {
       incidentCode: (r) => r.incidentCode,
+      timestamp: (r) => new Date(r.timestamp).getTime(),
       application: (r) => r.application.name,
+      department: (r) => r.departmentName ?? "",
       severity: (r) => r.severity,
       title: (r) => r.title,
       status: (r) => r.status,
@@ -70,7 +72,6 @@ export default function IncidentsContent() {
       relatedRelease: (r) => r.relatedRelease?.releaseCode ?? r.relatedReleaseCode ?? "",
       assignedTo: (r) => r.assignedTo ?? "",
       environment: (r) => r.environmentName,
-      timestamp: (r) => new Date(r.timestamp).getTime(),
     },
   });
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
@@ -196,7 +197,7 @@ export default function IncidentsContent() {
         </div>
       ) : (
         <DataTable title="All Incidents" icon={AlertOctagon} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={INCIDENT_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
-          <table className="w-full text-sm">
+          <table className={dataTableTableClass}>
             <thead>
               <DataTableHeadRow
                 columns={INCIDENT_COLUMNS}
@@ -211,10 +212,14 @@ export default function IncidentsContent() {
                 <tr key={i.id} className={tableRow}>
                   {isColumnVisible("incidentCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <span className="font-mono text-xs text-brand-600 dark:text-brand-400">{i.incidentCode}</span>
+                      <ProgressLink href={`/incidents/${i.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                        {i.incidentCode}
+                      </ProgressLink>
                     </td>
                   )}
+                  {isColumnVisible("timestamp") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(i.timestamp)}</td>}
                   {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{i.application.name}</td>}
+                  {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{i.departmentName ?? "—"}</td>}
                   {isColumnVisible("severity") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
                       <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold", SEVERITY_CLASSES[i.severity] ?? SEVERITY_CLASSES.P3)}>
@@ -240,7 +245,6 @@ export default function IncidentsContent() {
                   )}
                   {isColumnVisible("assignedTo") && <td className={`${tableCell} whitespace-nowrap`}>{i.assignedTo ?? "—"}</td>}
                   {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{i.environmentName}</td>}
-                  {isColumnVisible("timestamp") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(i.timestamp)}</td>}
                 </tr>
               ))}
             </tbody>

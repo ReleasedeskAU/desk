@@ -5,7 +5,7 @@ import { ClipboardCheck, Clock, CheckCircle2, XCircle, AlertCircle } from "lucid
 import { TopBar } from "@/components/layout/TopBar";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { APPROVAL_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
@@ -27,6 +27,8 @@ type ApprovalRow = {
   approvalCode: string;
   releaseId: string;
   release: { id: string; releaseCode: string; name: string; status: string; releaseDate: string };
+  applicationName: string | null;
+  departmentName: string | null;
   approvalType: string;
   approver: { id: string; userId: string; name: string; email: string; role: string };
   submittedDate: string;
@@ -62,6 +64,8 @@ export default function ApprovalQueueContent() {
       approvalCode: (r) => r.approvalCode,
       releaseId: (r) => r.release.releaseCode,
       releaseName: (r) => r.release.name,
+      application: (r) => r.applicationName ?? "",
+      department: (r) => r.departmentName ?? "",
       approvalType: (r) => r.approvalType,
       approverId: (r) => r.approver.userId,
       approverName: (r) => r.approver.name,
@@ -204,7 +208,7 @@ export default function ApprovalQueueContent() {
       ) : (
         <DataTable title="All Approvals" icon={ClipboardCheck} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={APPROVAL_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={APPROVAL_COLUMNS}
@@ -219,7 +223,9 @@ export default function ApprovalQueueContent() {
                   <tr key={a.id} className={tableRow}>
                     {isColumnVisible("approvalCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <span className="font-mono text-xs text-brand-600 dark:text-brand-400">{a.approvalCode}</span>
+                      <ProgressLink href={`/approvals/${a.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                        {a.approvalCode}
+                      </ProgressLink>
                     </td>
                     )}
                     {isColumnVisible("releaseId") && (
@@ -230,6 +236,8 @@ export default function ApprovalQueueContent() {
                     </td>
                     )}
                     {isColumnVisible("releaseName") && <td className={`${tableCell} whitespace-nowrap`}>{a.release.name}</td>}
+                    {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{a.applicationName ?? "—"}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{a.departmentName ?? "—"}</td>}
                     {isColumnVisible("approvalType") && <td className={`${tableCell} whitespace-nowrap`}>{a.approvalType}</td>}
                     {isColumnVisible("approverId") && <td className={`${tableCell} whitespace-nowrap`}><span className="font-mono text-xs text-gray-500">{a.approver.userId}</span></td>}
                     {isColumnVisible("approverName") && <td className={`${tableCell} whitespace-nowrap`}>{a.approver.name}</td>}

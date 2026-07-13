@@ -14,7 +14,7 @@ import {
 import { cn, formatDate } from "@/lib/utils";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { DRIFT_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
@@ -30,6 +30,7 @@ type DriftRow = {
   driftCode: string;
   release: { id: string; releaseCode: string; name: string; status: string };
   application: { id: string; name: string };
+  departmentName: string | null;
   environmentName: string;
   driftType: string;
   driftCategory: string | null;
@@ -67,12 +68,19 @@ export default function DriftDashboardContent() {
     sortAccessors: {
       driftCode: (r) => r.driftCode,
       release: (r) => r.release.releaseCode,
+      releaseName: (r) => r.release.name,
       application: (r) => r.application.name,
+      department: (r) => r.departmentName ?? "",
       environment: (r) => r.environmentName,
       type: (r) => r.driftType,
+      category: (r) => r.driftCategory ?? "",
+      description: (r) => r.description,
+      impactOnRelease: (r) => r.impactOnRelease ?? "",
+      remediationAction: (r) => r.remediationAction ?? "",
       severity: (r) => r.severity,
       status: (r) => r.status,
       detected: (r) => new Date(r.detectedDate).getTime(),
+      etaToFix: (r) => (r.etaToFix ? new Date(r.etaToFix).getTime() : 0),
     },
   });
   const [driftTypes, setDriftTypes] = useState<ReferenceDataRow[]>([]);
@@ -189,7 +197,7 @@ export default function DriftDashboardContent() {
       ) : (
         <DataTable title="All Drifts" icon={GitCompareArrows} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={DRIFT_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={DRIFT_COLUMNS}
@@ -204,8 +212,9 @@ export default function DriftDashboardContent() {
                   <tr key={d.id} className={tableRow}>
                     {isColumnVisible("driftCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <span className="font-mono text-xs text-brand-600 dark:text-brand-400">{d.driftCode}</span>
-                      <div className="text-xs text-gray-500 truncate max-w-[200px]" title={d.description}>{d.description}</div>
+                      <ProgressLink href={`/drifts/${d.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                        {d.driftCode}
+                      </ProgressLink>
                     </td>
                     )}
                     {isColumnVisible("release") && (
@@ -213,16 +222,23 @@ export default function DriftDashboardContent() {
                       <ProgressLink href={`/releases/${d.release.id}`} className="text-brand-600 dark:text-brand-400 hover:underline text-xs">{d.release.releaseCode}</ProgressLink>
                     </td>
                     )}
+                    {isColumnVisible("releaseName") && <td className={`${tableCell} whitespace-nowrap`}>{d.release.name}</td>}
                     {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{d.application.name}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{d.departmentName ?? "—"}</td>}
                     {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{d.environmentName}</td>}
                     {isColumnVisible("type") && <td className={`${tableCell} whitespace-nowrap`}>{d.driftType}</td>}
+                    {isColumnVisible("category") && <td className={`${tableCell} whitespace-nowrap`}>{d.driftCategory ?? "—"}</td>}
+                    {isColumnVisible("detected") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(d.detectedDate)}</td>}
                     {isColumnVisible("severity") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
                       <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold", SEVERITY_CLASSES[d.severity] ?? SEVERITY_CLASSES.Medium)}>{d.severity}</span>
                     </td>
                     )}
+                    {isColumnVisible("description") && <td className={`${tableCell} max-w-[220px] truncate`} title={d.description}>{d.description}</td>}
+                    {isColumnVisible("impactOnRelease") && <td className={`${tableCell} whitespace-nowrap`}>{d.impactOnRelease ?? "—"}</td>}
+                    {isColumnVisible("remediationAction") && <td className={`${tableCell} max-w-[220px] truncate`} title={d.remediationAction ?? ""}>{d.remediationAction ?? "—"}</td>}
                     {isColumnVisible("status") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={d.status} /></td>}
-                    {isColumnVisible("detected") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(d.detectedDate)}</td>}
+                    {isColumnVisible("etaToFix") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{d.etaToFix ? formatDate(d.etaToFix) : "—"}</td>}
                   </tr>
                 ))}
               </tbody>

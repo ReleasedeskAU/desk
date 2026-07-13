@@ -219,7 +219,7 @@ export function DepartmentsBrowse() {
         ) : rows.length === 0 ? (
           <MasterDataEmptyState entityLabel="departments" addLabel="Add Department" onAdd={openCreate} />
         ) : (
-          <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
+          <table className="w-full min-w-max border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50/50">
                 {isColumnVisible("name") && (
@@ -234,7 +234,7 @@ export function DepartmentsBrowse() {
             </thead>
             <tbody>
               {pageRows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-200 dark:border-[var(--border)] hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
+                <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
                   {isColumnVisible("name") && <td className={`${tdClass} font-semibold text-gray-900`}>{row.name}</td>}
                   {isColumnVisible("head") && <td className={tdClass}>{row.head || "—"}</td>}
                   {isColumnVisible("applicationCount") && <td className={tdClass}>{row._count?.applications ?? 0}</td>}

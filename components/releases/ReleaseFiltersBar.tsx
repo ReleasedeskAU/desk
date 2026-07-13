@@ -24,6 +24,16 @@ export type ReleaseFilterOptionLists = {
   regulatories?: string[];
   vendorMaintenances?: string[];
   releaseSizes?: string[];
+  releaseHealths?: string[];
+  devSignoffs?: string[];
+  testSignoffs?: string[];
+  uatSignoffs?: string[];
+  securityClearances?: string[];
+  dressRehearsals?: string[];
+  hypercarePlans?: string[];
+  commsPlans?: string[];
+  trainingStatuses?: string[];
+  conflictTypes?: string[];
 };
 
 export function ReleaseFiltersBar({
@@ -83,6 +93,45 @@ export function ReleaseFiltersBar({
   const regulatories = options?.regulatories ?? [];
   const vendorMaintenances = options?.vendorMaintenances ?? [];
   const releaseSizes = options?.releaseSizes ?? [];
+  const releaseHealths = options?.releaseHealths ?? [];
+  const devSignoffs = options?.devSignoffs ?? [];
+  const testSignoffs = options?.testSignoffs ?? [];
+  const uatSignoffs = options?.uatSignoffs ?? [];
+  const securityClearances = options?.securityClearances ?? [];
+  const dressRehearsals = options?.dressRehearsals ?? [];
+  const hypercarePlans = options?.hypercarePlans ?? [];
+  const commsPlans = options?.commsPlans ?? [];
+  const trainingStatuses = options?.trainingStatuses ?? [];
+  const conflictTypes = options?.conflictTypes ?? [];
+
+  const signoffSelect = (
+    key:
+      | "devSignoff"
+      | "testSignoff"
+      | "uatSignoff"
+      | "securityClearance"
+      | "dressRehearsal"
+      | "hypercarePlan"
+      | "commsPlan"
+      | "trainingStatus",
+    label: string,
+    values: string[]
+  ) =>
+    showListFilters &&
+    isFilterVisible(key) && (
+      <FilterSelect
+        disabled={loading}
+        value={filters[key]}
+        onChange={(v) => setFilter(key, v)}
+      >
+        <option value="">{label}</option>
+        {values.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </FilterSelect>
+    );
 
   return (
     <TableFilterBar className={className} hasActive={hasRefinement} onClear={clearFilters} manageFilters={manageFilters}>
@@ -215,6 +264,37 @@ export function ReleaseFiltersBar({
         </FilterSelect>
       )}
 
+      {showListFilters && isFilterVisible("releaseHealth") && (
+        <FilterSelect
+          disabled={loading}
+          value={filters.releaseHealth}
+          onChange={(v) => setFilter("releaseHealth", v)}
+        >
+          <option value="">All release health</option>
+          {releaseHealths.map((s) => <option key={s} value={s}>{s}</option>)}
+        </FilterSelect>
+      )}
+
+      {signoffSelect("devSignoff", "All dev signoff", devSignoffs)}
+      {signoffSelect("testSignoff", "All test sign-off", testSignoffs)}
+      {signoffSelect("uatSignoff", "All UAT sign-off", uatSignoffs)}
+      {signoffSelect("securityClearance", "All security clearance", securityClearances)}
+      {signoffSelect("dressRehearsal", "All dress rehearsal", dressRehearsals)}
+      {signoffSelect("hypercarePlan", "All hypercare plans", hypercarePlans)}
+      {signoffSelect("commsPlan", "All comms plans", commsPlans)}
+      {signoffSelect("trainingStatus", "All training status", trainingStatuses)}
+
+      {showListFilters && isFilterVisible("conflictType") && (
+        <FilterSelect
+          disabled={loading}
+          value={filters.conflictType}
+          onChange={(v) => setFilter("conflictType", v)}
+        >
+          <option value="">All conflict types</option>
+          {conflictTypes.map((s) => <option key={s} value={s}>{s}</option>)}
+        </FilterSelect>
+      )}
+
       {showListFilters && isFilterVisible("readinessPercent") && (
         <div className="inline-flex items-center gap-1">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ready%</span>
@@ -291,6 +371,14 @@ export function ReleaseFiltersBar({
           disabled={loading}
         />
       )}
+      {showListFilters && isFilterVisible("externalDependenciesQ") && (
+        <FilterTextInput
+          value={filters.externalDependenciesQ}
+          onChange={(v) => setFilter("externalDependenciesQ", v)}
+          placeholder="External dependencies…"
+          disabled={loading}
+        />
+      )}
       {showListFilters && isFilterVisible("notesQ") && (
         <FilterTextInput
           value={filters.notesQ}
@@ -354,6 +442,31 @@ export function ReleaseFiltersBar({
           value={filters.uatEnvRequiredQ}
           onChange={(v) => setFilter("uatEnvRequiredQ", v)}
           placeholder="UAT env required…"
+          disabled={loading}
+        />
+      )}
+
+      {showListFilters && isFilterVisible("conflictIdQ") && (
+        <FilterTextInput
+          value={filters.conflictIdQ}
+          onChange={(v) => setFilter("conflictIdQ", v)}
+          placeholder="Conflict ID…"
+          disabled={loading}
+        />
+      )}
+      {showListFilters && isFilterVisible("conflictingReleaseQ") && (
+        <FilterTextInput
+          value={filters.conflictingReleaseQ}
+          onChange={(v) => setFilter("conflictingReleaseQ", v)}
+          placeholder="Conflicting release…"
+          disabled={loading}
+        />
+      )}
+      {showListFilters && isFilterVisible("conflictNotesQ") && (
+        <FilterTextInput
+          value={filters.conflictNotesQ}
+          onChange={(v) => setFilter("conflictNotesQ", v)}
+          placeholder="Conflict notes…"
           disabled={loading}
         />
       )}

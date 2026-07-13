@@ -222,15 +222,15 @@ export default function ConnectorsPageContent() {
                 const badge = statusBadge(c.status, c.enabled);
                 const busy = actionId === c.id;
                 return (
-                  <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="px-5 py-4 font-semibold text-gray-900">{c.name}</td>
-                    <td className="px-5 py-4">
+                  <tr key={c.id} className="hover:bg-gray-50/50 transition-all duration-200">
+                    <td className="border-b border-gray-200 px-5 py-4 font-semibold text-gray-900">{c.name}</td>
+                    <td className="border-b border-gray-200 px-5 py-4">
                       <div className="flex items-center gap-2">
                         <TypeIcon type={c.type} />
                         <span>{typeLabel(c.type)}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="border-b border-gray-200 px-5 py-4">
                       <button
                         type="button"
                         disabled={!c.lastError}
@@ -242,8 +242,8 @@ export default function ConnectorsPageContent() {
                         <span>{badge.emoji}</span> {badge.label}
                       </button>
                     </td>
-                    <td className="px-5 py-4 text-gray-600">{relativeTime(c.lastSyncedAt as unknown as string)}</td>
-                    <td className="px-5 py-4">
+                    <td className="border-b border-gray-200 px-5 py-4 text-gray-600">{relativeTime(c.lastSyncedAt as unknown as string)}</td>
+                    <td className="border-b border-gray-200 px-5 py-4">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           disabled={busy || !c.enabled}
@@ -403,11 +403,11 @@ function LogsDrawer({
               </thead>
               <tbody>
                 {logs.map((log) => (
-                  <tr key={log.id} className="border-b border-gray-100">
-                    <td className="py-2 pr-2">{new Date(log.startedAt).toLocaleString()}</td>
-                    <td className="py-2 pr-2 capitalize">{log.status}</td>
-                    <td className="py-2 pr-2">{log.recordsSynced ?? "—"}</td>
-                    <td className="py-2 text-red-600 text-xs">{log.errorMessage ?? "—"}</td>
+                  <tr key={log.id} className="hover:bg-gray-50/50 transition-all duration-200">
+                    <td className="border-b border-gray-200 py-2 pr-2">{new Date(log.startedAt).toLocaleString()}</td>
+                    <td className="border-b border-gray-200 py-2 pr-2 capitalize">{log.status}</td>
+                    <td className="border-b border-gray-200 py-2 pr-2">{log.recordsSynced ?? "—"}</td>
+                    <td className="border-b border-gray-200 py-2 text-red-600 text-xs">{log.errorMessage ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

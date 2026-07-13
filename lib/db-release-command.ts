@@ -22,9 +22,32 @@ export type DbP1Issue = {
   source: string;
 };
 
-export type DbBlocker = { text: string; href?: string };
+export type DbBlocker = { text: string; href?: string; severity?: string };
 
 export type DbNextAction = { label: string; href: string; detail?: string };
+
+/** Open Blocker-register rows (excludes resolved/closed). */
+export function isOpenBlockerStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return !["resolved", "closed", "done", "mitigated", "cancelled", "canceled"].includes(s);
+}
+
+export type LiveBlockerInput = {
+  id: string;
+  blockerCode: string;
+  blockerDescription: string;
+  status: string;
+  severity?: string;
+};
+
+/** Map Blocker model rows into the command-center / AI narrative shape. */
+export function liveBlockersToCommandBlockers(rows: LiveBlockerInput[]): DbBlocker[] {
+  return rows.filter((r) => isOpenBlockerStatus(r.status)).map((r) => ({
+    text: `${r.blockerCode}: ${r.blockerDescription}`,
+    href: `/blockers/${r.id}`,
+    severity: r.severity,
+  }));
+}
 
 function releaseDateMs(release: DbReleaseCommandInput): number {
   const d = release.releaseDate;
@@ -86,7 +109,11 @@ export function getDbBlockers(release: DbReleaseCommandInput, p1Issues: DbP1Issu
   return blockers;
 }
 
-export function calcDbReadiness(release: DbReleaseCommandInput, p1Issues: DbP1Issue[]): number {
+export function calcDbReadiness(
+  release: DbReleaseCommandInput,
+  p1Issues: DbP1Issue[],
+  openLiveBlockerCount = 0
+): number {
   let score = 100;
 
   if (release.status === "Blocked") score -= 40;
@@ -107,15 +134,18 @@ export function calcDbReadiness(release: DbReleaseCommandInput, p1Issues: DbP1Is
   const openP1 = p1Issues.filter(isOpenP1).length;
   score -= Math.min(30, openP1 * 15);
 
+  // Live Blocker register (same source as the Release detail Blockers panel)
+  score -= Math.min(30, openLiveBlockerCount * 10);
+
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 export function computeDbLifecycleStages(
   release: DbReleaseCommandInput,
-  p1Issues: DbP1Issue[]
+  p1Issues: DbP1Issue[],
+  blockers: DbBlocker[] = []
 ): LifecycleStageView[] {
-  const readiness = calcDbReadiness(release, p1Issues);
-  const blockers = getDbBlockers(release, p1Issues);
+  const readiness = calcDbReadiness(release, p1Issues, blockers.length);
   const daysUntil = daysUntilRelease(release);
   const hasBooking = release.bookings.length > 0;
   const hasApps = release.applications.length > 0;

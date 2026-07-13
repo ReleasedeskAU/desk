@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const data = await prisma.plannedMaintenance.findMany({
     where: plannedMaintenanceWhere(sp(req)),
     include: { application: { select: { id: true, name: true } } },
-    orderBy: { scheduledDate: "asc" },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

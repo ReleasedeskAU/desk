@@ -197,7 +197,7 @@ body {
     @apply text-gray-500 hover:text-gray-900;
   }
   .menu-item-inactive:hover {
-    background-color: rgba(255, 255, 255, 0.4);
+    background-color: #e2e8f0; /* slate-200 — clearer than near-white wash */
     @apply shadow-sm;
   }
   .menu-item-icon-active {
@@ -327,6 +327,7 @@ body {
     left: 0;
     z-index: 15;
     background-color: #f9fafb;
+    /* Soft edge cue for sticky column only — not a full column grid. */
     box-shadow: 1px 0 0 0 rgb(229 231 235);
   }
   .theme-dark .data-table-body table > thead > tr > th:first-child,
@@ -357,6 +358,31 @@ body {
   .theme-dark .data-table-body table > tbody > tr:hover > td:first-child,
   :is(.dark) .data-table-body table > tbody > tr:hover > td:first-child {
     background-color: rgb(31 41 55 / 0.85);
+  }
+
+  /* Row-wise separators only — never vertical column borders between cells. */
+  .data-table-body table {
+    border-collapse: collapse;
+  }
+  .data-table-body table > thead > tr > th,
+  .data-table-body table > tbody > tr > td {
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
+  }
+  .data-table-body table > tbody > tr > td {
+    border-bottom: 1px solid rgb(229 231 235);
+  }
+  .theme-dark .data-table-body table > tbody > tr > td,
+  :is(.dark) .data-table-body table > tbody > tr > td {
+    border-bottom-color: var(--border);
+  }
+  .data-table-body table > thead > tr > th {
+    border-bottom: 1px solid rgb(229 231 235);
+  }
+  .theme-dark .data-table-body table > thead > tr > th,
+  :is(.dark) .data-table-body table > thead > tr > th {
+    border-bottom-color: var(--border);
   }
 
   /* Edge-fade cues — toggled by DataTableScrollArea via data attributes. */
@@ -501,6 +527,9 @@ body {
   .theme-semi-dark .materio-sidebar .menu-item-inactive {
     @apply text-gray-400 hover:text-gray-100;
   }
+  .theme-semi-dark .materio-sidebar .menu-item-inactive:hover {
+    background-color: rgba(235, 241, 250, 0.14);
+  }
   .theme-semi-dark .materio-sidebar .menu-item-active {
     color: #3b5bdb;
     background-color: rgba(59, 91, 219, 0.16);
@@ -510,7 +539,7 @@ body {
   }
   .theme-dark .menu-item-inactive:hover {
     color: #ffffff;
-    background-color: rgba(235, 241, 250, 0.08);
+    background-color: rgba(235, 241, 250, 0.16);
     box-shadow: none;
   }
   .theme-dark .menu-item-active {

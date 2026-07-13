@@ -13,7 +13,8 @@ import {
 import { cn, formatDate } from "@/lib/utils";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { ALERT_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
@@ -61,14 +62,17 @@ export default function MonitoringAlertsContent() {
     defaultSortDir: "desc",
     sortAccessors: {
       alertCode: (r) => r.alertCode,
+      timestamp: (r) => new Date(r.timestamp).getTime(),
       application: (r) => r.application.name,
+      department: (r) => r.departmentName ?? "",
+      alertType: (r) => r.alertType,
       severity: (r) => r.severity,
       metric: (r) => r.metric,
-      thresholdVsCurrent: (r) => r.currentValue ?? "",
+      threshold: (r) => r.threshold ?? "",
+      currentValue: (r) => r.currentValue ?? "",
       status: (r) => r.status,
       assignedTo: (r) => r.assignedTo ?? "",
       environment: (r) => r.environmentName,
-      timestamp: (r) => new Date(r.timestamp).getTime(),
     },
   });
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
@@ -190,7 +194,7 @@ export default function MonitoringAlertsContent() {
       ) : (
         <DataTable title="All Monitoring Alerts" icon={Bell} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={ALERT_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={MONITORING_ALERT_COLUMNS}
@@ -205,22 +209,26 @@ export default function MonitoringAlertsContent() {
                   <tr key={a.id} className={tableRow}>
                     {isColumnVisible("alertCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <span className="font-mono text-xs text-brand-600 dark:text-brand-400">{a.alertCode}</span>
-                      <div className="text-xs text-gray-500 dark:text-white/50">{a.alertType}</div>
+                      <ProgressLink href={`/monitoring-alerts/${a.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                        {a.alertCode}
+                      </ProgressLink>
                     </td>
                     )}
+                    {isColumnVisible("timestamp") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(a.timestamp)}</td>}
                     {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{a.application.name}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{a.departmentName ?? "—"}</td>}
+                    {isColumnVisible("alertType") && <td className={`${tableCell} whitespace-nowrap`}>{a.alertType}</td>}
                     {isColumnVisible("severity") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
                       <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold", SEVERITY_CLASSES[a.severity] ?? SEVERITY_CLASSES.Info)}>{a.severity}</span>
                     </td>
                     )}
                     {isColumnVisible("metric") && <td className={`${tableCell} whitespace-nowrap`}>{a.metric}</td>}
-                    {isColumnVisible("thresholdVsCurrent") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{a.threshold ?? "—"} → <span className="text-gray-900 dark:text-white font-medium">{a.currentValue ?? "—"}</span></td>}
+                    {isColumnVisible("threshold") && <td className={`${tableCell} whitespace-nowrap`}>{a.threshold ?? "—"}</td>}
+                    {isColumnVisible("currentValue") && <td className={`${tableCell} whitespace-nowrap`}>{a.currentValue ?? "—"}</td>}
                     {isColumnVisible("status") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={a.status} /></td>}
                     {isColumnVisible("assignedTo") && <td className={`${tableCell} whitespace-nowrap`}>{a.assignedTo ?? "—"}</td>}
                     {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{a.environmentName}</td>}
-                    {isColumnVisible("timestamp") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(a.timestamp)}</td>}
                   </tr>
                 ))}
               </tbody>

@@ -13,7 +13,7 @@ export async function GET(req: Request) {
       release: { select: { id: true, releaseCode: true, name: true, status: true, releaseDate: true } },
       approver: { select: { id: true, userId: true, name: true, email: true, role: true } },
     },
-    orderBy: { submittedDate: "desc" },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

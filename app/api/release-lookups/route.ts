@@ -12,7 +12,6 @@ import {
   releaseListWhere,
   sp,
 } from "@/lib/list-api-filters";
-import { conflictCodesByRelease } from "@/lib/conflict-view";
 import { ensureDbAwake, prisma, withDbRetry } from "@/lib/prisma";
 
 /** One request, sequential DB queries — avoids Neon pool exhaustion from 6 parallel API routes. */
@@ -91,11 +90,7 @@ export async function GET(req: Request) {
         }),
       { label: "release-lookups/releases" }
     );
-    const conflictsByRelease = conflictCodesByRelease();
-    const releases = releaseRows.map((release) => ({
-      ...release,
-      conflictIds: conflictsByRelease.get(release.releaseCode) ?? [],
-    }));
+    const releases = releaseRows;
 
     const calendarEvents = await withDbRetry(
       () =>

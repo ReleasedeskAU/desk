@@ -110,6 +110,18 @@ export function releaseListWhere(sp: URLSearchParams): Prisma.ReleaseWhereInput 
   if (filters.regulatory) parts.push({ regulatory: filters.regulatory });
   if (filters.vendorMaintenance) parts.push({ vendorMaintenance: filters.vendorMaintenance });
   if (filters.releaseSize) parts.push({ releaseSize: filters.releaseSize });
+  if (filters.releaseHealth) parts.push({ releaseHealth: filters.releaseHealth });
+  if (filters.devSignoff) parts.push({ devSignoff: filters.devSignoff });
+  if (filters.testSignoff) parts.push({ testSignoff: filters.testSignoff });
+  if (filters.uatSignoff) parts.push({ uatSignoff: filters.uatSignoff });
+  if (filters.securityClearance) parts.push({ securityClearance: filters.securityClearance });
+  if (filters.dressRehearsal) parts.push({ dressRehearsal: filters.dressRehearsal });
+  if (filters.hypercarePlan) parts.push({ hypercarePlan: filters.hypercarePlan });
+  if (filters.commsPlan) parts.push({ commsPlan: filters.commsPlan });
+  if (filters.trainingStatus) parts.push({ trainingStatus: filters.trainingStatus });
+  if (filters.conflictType) {
+    parts.push({ conflictType: { contains: filters.conflictType, mode: "insensitive" } });
+  }
 
   const readinessMin = numOrUndef(filters.readinessMin);
   const readinessMax = numOrUndef(filters.readinessMax);
@@ -159,6 +171,22 @@ export function releaseListWhere(sp: URLSearchParams): Prisma.ReleaseWhereInput 
   if (filters.notesQ) {
     parts.push({ notes: { contains: filters.notesQ, mode: "insensitive" } });
   }
+  if (filters.externalDependenciesQ) {
+    parts.push({
+      externalDependencies: { contains: filters.externalDependenciesQ, mode: "insensitive" },
+    });
+  }
+  if (filters.conflictIdQ) {
+    parts.push({ conflictId: { contains: filters.conflictIdQ, mode: "insensitive" } });
+  }
+  if (filters.conflictingReleaseQ) {
+    parts.push({
+      conflictingRelease: { contains: filters.conflictingReleaseQ, mode: "insensitive" },
+    });
+  }
+  if (filters.conflictNotesQ) {
+    parts.push({ conflictNotes: { contains: filters.conflictNotesQ, mode: "insensitive" } });
+  }
 
   const cabDate = dateTextRange(filters.cabDateQ);
   if (cabDate) parts.push({ cabDate });
@@ -202,7 +230,7 @@ export function releaseListWhere(sp: URLSearchParams): Prisma.ReleaseWhereInput 
 }
 
 export function releaseListOrderBy(sp: URLSearchParams): Prisma.ReleaseOrderByWithRelationInput {
-  const sort = str(sp, "sort") ?? "releaseDate";
+  const sort = str(sp, "sort") ?? "sourceOrder";
   const dir = (str(sp, "dir") ?? str(sp, "sortDir")) === "desc" ? "desc" : "asc";
   switch (sort) {
     case "releaseId":
@@ -224,8 +252,10 @@ export function releaseListOrderBy(sp: URLSearchParams): Prisma.ReleaseOrderByWi
       return { name: dir };
     case "impact":
       return { impact: dir };
+    case "sourceOrder":
+      return { sourceOrder: dir };
     default:
-      return { releaseDate: dir };
+      return { sourceOrder: dir };
   }
 }
 
@@ -233,7 +263,7 @@ export function releaseListOrderBy(sp: URLSearchParams): Prisma.ReleaseOrderByWi
 export function environmentVersionOrderBy(
   sp: URLSearchParams
 ): Prisma.EnvironmentVersionOrderByWithRelationInput[] {
-  const sort = str(sp, "sort") ?? "application";
+  const sort = str(sp, "sort") ?? "sourceOrder";
   const dir = (str(sp, "dir") ?? str(sp, "sortDir")) === "desc" ? "desc" : "asc";
   switch (sort) {
     case "appId":
@@ -257,8 +287,10 @@ export function environmentVersionOrderBy(
       return [{ status: dir }];
     case "notes":
       return [{ notes: dir }];
+    case "sourceOrder":
+      return [{ sourceOrder: dir }];
     default:
-      return [{ application: { name: "asc" } }, { environment: { name: "asc" } }];
+      return [{ sourceOrder: dir }];
   }
 }
 
@@ -362,6 +394,7 @@ export function mapDbEnvBookingRow(b: {
   preProdEnd: Date | null;
   preProdDays: number | null;
   conflictFlag: boolean;
+  environmentConflictId: string | null;
   purpose: string | null;
   application: { id: string; name: string; department?: { name: string } | null };
   release?: { id: string; releaseCode: string } | null;
@@ -394,6 +427,7 @@ export function mapDbEnvBookingRow(b: {
     preProdDays: b.preProdDays,
     conflictFlag: b.conflictFlag,
     purpose: b.purpose,
+    environmentConflictId: b.environmentConflictId,
   };
 }
 
@@ -824,6 +858,71 @@ export function driftWhere(sp: URLSearchParams): Prisma.DriftWhereInput {
   if (driftCode) parts.push({ driftCode: { contains: driftCode, mode: "insensitive" } });
   if (env) parts.push({ environmentName: { contains: env, mode: "insensitive" } });
   if (detected) parts.push({ detectedDate: detected });
+
+  if (!parts.length) return {};
+  if (parts.length === 1) return parts[0];
+  return { AND: parts };
+}
+
+// --- Blockers ---
+
+export function blockerWhere(sp: URLSearchParams): Prisma.BlockerWhereInput {
+  const parts: Prisma.BlockerWhereInput[] = [];
+  const status = str(sp, "status");
+  const severity = str(sp, "severity");
+  const blockerType = str(sp, "type");
+  const assignedTo = str(sp, "assignedTo");
+  const release = str(sp, "release");
+  const blockerId = str(sp, "blockerId");
+  const releaseName = str(sp, "releaseName");
+  const description = str(sp, "description");
+  const raised = dateTextRange(str(sp, "raised"));
+  const raisedBy = str(sp, "raisedBy");
+  const targetResolution = dateTextRange(str(sp, "targetResolution"));
+  const actualResolution = dateTextRange(str(sp, "actualResolution"));
+  const daysOpenMin = num(sp, "daysOpenMin");
+  const daysOpenMax = num(sp, "daysOpenMax");
+  const escalation = str(sp, "escalation");
+  const rootCause = str(sp, "rootCause");
+  const resolutionNotes = str(sp, "resolutionNotes");
+  const impact = str(sp, "impact");
+  const departmentName = str(sp, "departmentName");
+  const applicationName = str(sp, "applicationName");
+
+  if (status) parts.push({ status });
+  if (severity) parts.push({ severity });
+  if (blockerType) parts.push({ blockerType });
+  if (assignedTo) parts.push({ assignedTo: { contains: assignedTo, mode: "insensitive" } });
+  if (release) {
+    // Exact match for full release codes (release detail); contains for partial list search.
+    if (/^REL-\d+$/i.test(release.trim())) {
+      parts.push({ releaseCode: { equals: release.trim(), mode: "insensitive" } });
+    } else {
+      parts.push({ releaseCode: { contains: release, mode: "insensitive" } });
+    }
+  }
+  if (blockerId) parts.push({ blockerCode: { contains: blockerId, mode: "insensitive" } });
+  if (releaseName) parts.push({ releaseName: { contains: releaseName, mode: "insensitive" } });
+  if (description) parts.push({ blockerDescription: { contains: description, mode: "insensitive" } });
+  if (raised) parts.push({ raisedDate: raised });
+  if (raisedBy) parts.push({ raisedBy: { contains: raisedBy, mode: "insensitive" } });
+  if (targetResolution) parts.push({ targetResolutionDate: targetResolution });
+  if (actualResolution) parts.push({ actualResolutionDate: actualResolution });
+  if (escalation) parts.push({ escalationLevel: escalation });
+  if (rootCause) parts.push({ rootCause: { contains: rootCause, mode: "insensitive" } });
+  if (resolutionNotes) parts.push({ resolutionNotes: { contains: resolutionNotes, mode: "insensitive" } });
+  if (impact) parts.push({ impactOnRelease: { contains: impact, mode: "insensitive" } });
+  if (departmentName) parts.push({ departmentName: { equals: departmentName, mode: "insensitive" } });
+  if (applicationName) parts.push({ applicationName: { equals: applicationName, mode: "insensitive" } });
+
+  if (daysOpenMin != null || daysOpenMax != null) {
+    parts.push({
+      daysOpen: {
+        ...(daysOpenMin != null ? { gte: daysOpenMin } : {}),
+        ...(daysOpenMax != null ? { lte: daysOpenMax } : {}),
+      },
+    });
+  }
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];

@@ -1,5 +1,5 @@
 /**
- * Extract clean seed JSON from ReleaseDesk_SampleData_V0.5_07072026.xlsx
+ * Extract clean seed JSON from ReleaseDesk_SampleData_V0.6_12072026.xlsx
  * Overwrites prisma/seed-data/*.json with real data rows only (docs stripped).
  *
  * Run: npx tsx scripts/extract-excel-to-seed.ts
@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 import XLSX from "xlsx";
 
-const EXCEL = path.join(process.cwd(), "public", "ReleaseDesk_SampleData_V0.5_07072026.xlsx");
+const EXCEL = path.join(process.cwd(), "public", "ReleaseDesk_SampleData_V0.6_12072026.xlsx");
 const OUT = path.join(process.cwd(), "prisma", "seed-data");
 
 function rows(name: string): unknown[][] {
@@ -76,6 +76,27 @@ function extractUntilDoc(sheet: string, headerRow: number, stopIf?: (row: unknow
   return out;
 }
 
+/** Extract one contiguous table section and preserve its raw Excel header text/order. */
+function extractSection(sheet: string, firstHeader: string): Record<string, string>[] {
+  const data = rows(sheet);
+  const headerRow = data.findIndex((row) => S(row[0]) === firstHeader);
+  if (headerRow < 0) throw new Error(`No ${firstHeader} section in ${sheet}`);
+
+  const rawHeaders = data[headerRow].map((value) => String(value ?? ""));
+  while (rawHeaders.length && !S(rawHeaders[rawHeaders.length - 1])) rawHeaders.pop();
+
+  const out: Record<string, string>[] = [];
+  for (let i = headerRow + 1; i < data.length; i++) {
+    if (!S(data[i][0])) break;
+    const obj: Record<string, string> = {};
+    rawHeaders.forEach((header, column) => {
+      if (S(header)) obj[header] = S(data[i][column]);
+    });
+    out.push(obj);
+  }
+  return out;
+}
+
 function write(file: string, data: unknown) {
   const p = path.join(OUT, file);
   const tmp = `${p}.${process.pid}.tmp`;
@@ -89,8 +110,89 @@ function write(file: string, data: unknown) {
   console.log(`Wrote ${file}: ${Array.isArray(data) ? data.length : "object"}`);
 }
 
+/** Named Reference Data catalog sections → ReferenceData { category, value, sortOrder }. */
+type RefSectionSpec = {
+  /** Match section title in column A (prefer name over duplicated section numbers). */
+  titleRe: RegExp;
+  category: string;
+  /** Header cell for the value stored in ReferenceData.value */
+  valueHeaderRe: RegExp;
+};
+
+const REFERENCE_DATA_SECTIONS: RefSectionSpec[] = [
+  {
+    titleRe: /ENVIRONMENT\s+CONFLICT\s+TYPES/i,
+    category: "environment_conflict_type",
+    valueHeaderRe: /^Conflict Type$/i,
+  },
+  {
+    titleRe: /SIGN-OFF\s+STATUSES/i,
+    category: "sign_off_status",
+    valueHeaderRe: /^Display$/i,
+  },
+  {
+    titleRe: /PLAN\s+STATUSES/i,
+    category: "plan_status",
+    valueHeaderRe: /^Display$/i,
+  },
+  {
+    titleRe: /RELEASE\s+HEALTH\s+LEVELS/i,
+    category: "release_health_level",
+    valueHeaderRe: /^Display$/i,
+  },
+];
+
+function extractReferenceDataSections(
+  sheet: string,
+  specs: RefSectionSpec[]
+): { category: string; value: string; sortOrder: number }[] {
+  const data = rows(sheet);
+  const out: { category: string; value: string; sortOrder: number }[] = [];
+
+  for (const spec of specs) {
+    let titleRow = -1;
+    for (let i = 0; i < data.length; i++) {
+      if (spec.titleRe.test(S(data[i][0]))) {
+        titleRow = i;
+        break;
+      }
+    }
+    if (titleRow < 0) {
+      console.warn(`Reference Data section not found: ${spec.category}`);
+      continue;
+    }
+
+    const headerRow = titleRow + 1;
+    const headers = data[headerRow]?.map(S) ?? [];
+    const valueCol = headers.findIndex((h) => spec.valueHeaderRe.test(h));
+    if (valueCol < 0) {
+      console.warn(`Value column not found for ${spec.category} (headers: ${headers.join(", ")})`);
+      continue;
+    }
+
+    let sortOrder = 0;
+    for (let i = headerRow + 1; i < data.length; i++) {
+      const row = data[i];
+      const first = S(row[0]);
+      // Next numbered section heading ends this block
+      if (/^\d+\.\s+\S/.test(first)) break;
+      // Blank row after values → end of section
+      if (!first && row.every((c) => !S(c))) {
+        if (sortOrder > 0) break;
+        continue;
+      }
+      const value = S(row[valueCol]);
+      if (!value) continue;
+      sortOrder += 1;
+      out.push({ category: spec.category, value, sortOrder });
+    }
+  }
+
+  return out;
+}
+
 function main() {
-  // Releases
+  // Releases — key order matches V0.6 "Releases" sheet left-to-right exactly
   write(
     "releases.json",
     extractById("Releases", /^REL-\d+/i, /release\s*id/i).map((r) => ({
@@ -98,8 +200,7 @@ function main() {
       "Release Name": r["Release Name"],
       Department: r.Department,
       Application: r.Application,
-      Dependencies: r.Dependencies || "NA",
-      "External Dependencies": r["External Dependencies"] || "",
+      "External Dependencies ": r["External Dependencies"] || "",
       "Release Size": r["Release Size"],
       Impact: r.Impact,
       Priority: r.Priority,
@@ -109,23 +210,23 @@ function main() {
       "Test Env Required": r["Test Env Required"],
       "UAT Env Required": r["UAT Env Required"],
       Status: r.Status,
+      "Release Health": r["Release Health"] || "",
       "Conflict Flag": r["Conflict Flag"],
       "Conflict ID": r["Conflict ID"] || "",
       "Conflicting Release": r["Conflicting Release"] || "",
       "Conflict Type": r["Conflict Type"] || "",
       "Conflict Notes": r["Conflict Notes"] || "",
-      Notes: r["Conflict Notes"] || r.Notes || "",
-      "Readiness %": r["Readiness %"],
       Blockers: r.Blockers,
-      "Vendor Maintenance": r["Vendor Maintenance"],
       "Change Freeze": r["Change Freeze"],
-      Regulatory: r.Regulatory,
+      "Vendor Maintenance": r["Vendor Maintenance"],
+      "Rollback Plan": r["Rollback Plan"],
+      "Readiness %": r["Readiness %"],
+      "Go-Live Checklist %": r["Go-Live Checklist %"],
       "Release Owner ID": r["Release Owner ID"],
       "Approval Status": r["Approval Status"],
-      "Depends On": r["Depends On Other releases"] || r["Depends On"] || "",
-      "Rollback Plan": r["Rollback Plan"],
-      "Go-Live Checklist %": r["Go-Live Checklist %"],
       "Stakeholder IDs": r["Stakeholder IDs"],
+      "Depends On Other releases": r["Depends On Other releases"] || r["Depends On"] || "",
+      Regulatory: r.Regulatory,
       "Deployment Window": r["Deployment Window"],
       "Dev Signoff": r["Dev Signoff"] || "",
       "Test Sign-off": r["Test Sign-off"] || "",
@@ -135,8 +236,6 @@ function main() {
       "Hypercare Plan": r["Hypercare Plan"] || "",
       "Comms Plan": r["Comms Plan"] || "",
       "Training Status": r["Training Status"] || "",
-      "Support Briefed": r["Support Briefed"] || "",
-      "Release Health": r["Release Health"] || "",
     }))
   );
 
@@ -189,6 +288,10 @@ function main() {
   );
 
   write("conflicts.json", extractById("Environment Conflicts", /^CNF-\d+/i, /conflict\s*id/i));
+  write("blockers.json", extractSection("Blockers", "Blocker ID"));
+  write("system-core.json", extractSection("System Mapping", "System"));
+  write("system-matrix.json", extractSection("System Mapping", "From \\ To"));
+  write("integration-flows.json", extractSection("System Mapping", "Flow ID"));
 
   write(
     "risk.json",
@@ -223,7 +326,7 @@ function main() {
       Application: r.Application,
       Department: r.Department || "",
       Environment: r.Environment,
-      "Drift Type": r["Drift Type"] || r["Drift Type:"],
+      "Drift Type:": r["Drift Type"] || r["Drift Type:"],
       "Drift Category": r["Drift Category"],
       "Detected Date": r["Detected Date"],
       Severity: r.Severity,
@@ -344,6 +447,9 @@ function main() {
       depts.map((d) => ({ name: d.name, code: d.code, deptId: d.id }))
     );
   }
+
+  // ReferenceData catalog — V0.6 sections 17–20 (matched by title, not section number)
+  write("reference_data.json", extractReferenceDataSections("Reference Data", REFERENCE_DATA_SECTIONS));
 
   // Risk factors — rows under Category|Factor Name|Weight until WEIGHT SUMMARY
   {

@@ -5,7 +5,7 @@ import { CalendarOff } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { LEAVE_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
@@ -13,7 +13,7 @@ import {
   LEAVE_DEFAULT_HIDDEN_FILTER_KEYS,
   LEAVE_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
-import { cn, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
@@ -37,18 +37,6 @@ type LeaveRow = {
   }[];
 };
 
-const RISK_COLOR: Record<string, string> = {
-  low: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
-  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
-  high: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
-};
-
-function riskLevel(score: number): string {
-  if (score <= 3) return "low";
-  if (score <= 6) return "medium";
-  return "high";
-}
-
 export default function LeaveCalendarContent() {
   const {
     rows: leaves,
@@ -62,17 +50,21 @@ export default function LeaveCalendarContent() {
     sortDir,
     toggleSort,
   } = useFilteredFetch<LeaveRow>("/api/leaves", LEAVES_FILTER_SCHEMA, {
-    defaultSortKey: "dates",
+    defaultSortKey: "leaveStart",
     defaultSortDir: "asc",
     sortAccessors: {
       leaveCode: (r) => r.leaveCode,
+      userId: (r) => r.user.userId,
       staffMember: (r) => r.user.name,
       department: (r) => r.user.department,
+      role: (r) => r.user.role,
+      leaveStart: (r) => new Date(r.leaveStart).getTime(),
+      leaveEnd: (r) => new Date(r.leaveEnd).getTime(),
       type: (r) => r.leaveType,
-      dates: (r) => new Date(r.leaveStart).getTime(),
       days: (r) => r.days,
-      risk: (r) => r.riskScore,
       affectedReleases: (r) => r.affectedReleases.length,
+      riskImpact: (r) => r.riskImpact ?? "",
+      riskScore: (r) => r.riskScore,
     },
   });
   const [allLeaves, setAllLeaves] = useState<LeaveRow[]>([]);
@@ -178,7 +170,7 @@ export default function LeaveCalendarContent() {
       ) : (
         <DataTable title="Leave Records" icon={CalendarOff} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={LEAVE_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={LEAVE_COLUMNS}
@@ -191,17 +183,21 @@ export default function LeaveCalendarContent() {
               <tbody>
                 {leaves.map((l) => (
                   <tr key={l.id} className={tableRow}>
-                    {isColumnVisible("leaveCode") && <td className={`${tableCell} whitespace-nowrap`}><span className="font-mono text-xs text-brand-600">{l.leaveCode}</span></td>}
+                    {isColumnVisible("leaveCode") && (
+                      <td className={`${tableCell} whitespace-nowrap`}>
+                        <ProgressLink href={`/leaves/${l.id}`} className="font-mono text-xs text-brand-600 hover:underline">
+                          {l.leaveCode}
+                        </ProgressLink>
+                      </td>
+                    )}
+                    {isColumnVisible("userId") && <td className={`${tableCell} whitespace-nowrap font-mono text-xs`}>{l.user.userId}</td>}
                     {isColumnVisible("staffMember") && <td className={`${tableCell} whitespace-nowrap`}>{l.user.name}</td>}
                     {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{l.user.department}</td>}
+                    {isColumnVisible("role") && <td className={`${tableCell} whitespace-nowrap`}>{l.user.role}</td>}
+                    {isColumnVisible("leaveStart") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(l.leaveStart)}</td>}
+                    {isColumnVisible("leaveEnd") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(l.leaveEnd)}</td>}
                     {isColumnVisible("type") && <td className={`${tableCell} whitespace-nowrap`}>{l.leaveType}</td>}
-                    {isColumnVisible("dates") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(l.leaveStart)} – {formatDate(l.leaveEnd)}</td>}
                     {isColumnVisible("days") && <td className={`${tableCell} whitespace-nowrap`}>{l.days}</td>}
-                    {isColumnVisible("risk") && (
-                    <td className={`${tableCell} whitespace-nowrap`}>
-                      <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold capitalize", RISK_COLOR[riskLevel(l.riskScore)])}>{riskLevel(l.riskScore)}</span>
-                    </td>
-                    )}
                     {isColumnVisible("affectedReleases") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
                       {l.affectedReleases.length === 0 ? "—" : l.affectedReleases.map((ar) => (
@@ -209,6 +205,8 @@ export default function LeaveCalendarContent() {
                       ))}
                     </td>
                     )}
+                    {isColumnVisible("riskImpact") && <td className={`${tableCell} whitespace-nowrap`}>{l.riskImpact ?? "—"}</td>}
+                    {isColumnVisible("riskScore") && <td className={`${tableCell} whitespace-nowrap`}>{l.riskScore}</td>}
                   </tr>
                 ))}
               </tbody>

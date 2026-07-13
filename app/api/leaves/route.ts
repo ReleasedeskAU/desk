@@ -17,7 +17,7 @@ export async function GET(req: Request) {
         },
       },
     },
-    orderBy: { leaveStart: "asc" },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

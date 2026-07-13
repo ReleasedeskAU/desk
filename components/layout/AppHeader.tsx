@@ -122,14 +122,24 @@ export function AppHeader() {
                   {isLoaded ? displayEmail : ""}
                 </p>
               </div>
-              <SignOutButton>
+              {mounted && isLoaded ? (
+                <SignOutButton>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-200 dark:border-[var(--border)] bg-white dark:bg-[var(--card)] px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-white/80 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                </SignOutButton>
+              ) : (
                 <button
                   type="button"
-                  className="rounded-lg border border-gray-200 dark:border-[var(--border)] bg-white dark:bg-[var(--card)] px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-white/80 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  disabled
+                  className="rounded-lg border border-gray-200 dark:border-[var(--border)] bg-white dark:bg-[var(--card)] px-3 py-1.5 text-xs font-semibold text-gray-400 dark:text-white/40"
                 >
                   Sign out
                 </button>
-              </SignOutButton>
+              )}
             </div>
           </div>
         </div>

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import {
   filterSeedConflicts,
-  loadSeedConflicts,
-  mapSeedConflictRow,
 } from "@/lib/conflict-view";
 import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
@@ -24,9 +22,25 @@ export async function GET(req: Request) {
 
   const releaseIdByCode = new Map(releases.map((r) => [r.releaseCode, r.id]));
 
-  const rows = loadSeedConflicts()
-    .map((row) => mapSeedConflictRow(row, releaseIdByCode))
-    .sort((a, b) => a.conflictCode.localeCompare(b.conflictCode, undefined, { numeric: true }));
+  const dbRows = await prisma.environmentConflict.findMany({
+    orderBy: { sourceOrder: "asc" },
+  });
+  const rows = dbRows.map((row) => ({
+    id: row.id,
+    conflictCode: row.conflictCode,
+    status: row.status,
+    priority: row.priority,
+    assignedTo: row.assignedTo ?? "",
+    release1Code: row.release1Code,
+    release2Code: row.release2Code,
+    release1DbId: releaseIdByCode.get(row.release1Code) ?? null,
+    release2DbId: releaseIdByCode.get(row.release2Code) ?? null,
+    application: row.applicationName,
+    department: row.departmentName,
+    conflictingEnvironment: row.conflictingEnvironment,
+    environmentConflictType: row.environmentConflictType,
+    notes: row.notes,
+  }));
 
   const conflicts = filterSeedConflicts(rows, {
     departmentName: deptRec?.name,

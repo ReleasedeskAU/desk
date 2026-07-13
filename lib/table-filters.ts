@@ -111,6 +111,29 @@ export const CONFLICTS_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "notesQ", param: "notes" },
 ]);
 
+export const BLOCKERS_FILTER_SCHEMA: FilterSchema = withTableSort([
+  { key: "status", param: "status" },
+  { key: "severity", param: "severity" },
+  { key: "blockerType", param: "type" },
+  { key: "departmentId", param: "dept" },
+  { key: "applicationId", param: "app" },
+  { key: "assignedToQ", param: "assignedTo" },
+  { key: "releaseCodeQ", param: "release" },
+  { key: "blockerCodeQ", param: "blockerId" },
+  { key: "releaseNameQ", param: "releaseName" },
+  { key: "blockerDescriptionQ", param: "description" },
+  { key: "raisedDateQ", param: "raised" },
+  { key: "raisedByQ", param: "raisedBy" },
+  { key: "targetResolutionDateQ", param: "targetResolution" },
+  { key: "actualResolutionDateQ", param: "actualResolution" },
+  { key: "daysOpenMin", param: "daysOpenMin" },
+  { key: "daysOpenMax", param: "daysOpenMax" },
+  { key: "escalationLevel", param: "escalation" },
+  { key: "rootCauseQ", param: "rootCause" },
+  { key: "resolutionNotesQ", param: "resolutionNotes" },
+  { key: "impactOnReleaseQ", param: "impact" },
+]);
+
 export const BOOKING_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "departmentId", param: "dept" },
   { key: "applicationId", param: "app" },

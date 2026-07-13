@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import type { PrismaClient } from "@prisma/client";
 
-const MATRIX_MARKER = "From \\ To";
 const PRIMARY = "\u25cf"; // ●
 const SECONDARY = "\u25cb"; // ○
 
@@ -32,13 +31,18 @@ function primaryAppByDepartment(
 
 /**
  * Builds SystemMappingEdge rows from the workbook's Department Integration Matrix
- * (system_mapping_RAW_NO_SCHEMA_TARGET.json). Uses the first application per
+ * (system-matrix.json). Uses the first application per
  * department on Test env — documented in SEED_NOTES as the closest match to the
  * narrative integration map without inventing app-pair relationships.
  */
 export async function seedSystemMapping(prisma: PrismaClient) {
   await prisma.systemMappingEdge.deleteMany();
   await prisma.systemMappingGroup.deleteMany();
+  const organizationRows = await prisma.$queryRawUnsafe<{ organizationId: string }[]>(
+    `SELECT "organizationId" FROM "User" WHERE "organizationId" IS NOT NULL LIMIT 1`
+  );
+  const organizationId = organizationRows[0]?.organizationId;
+  if (!organizationId) throw new Error("System Mapping: no organizationId found");
 
   const apps = await prisma.application.findMany({
     include: { department: true, environments: true },
@@ -51,48 +55,39 @@ export async function seedSystemMapping(prisma: PrismaClient) {
   }
 
   const byDept = primaryAppByDepartment(apps);
-  const rawPath = path.join(process.cwd(), "prisma", "seed-data", "system_mapping_RAW_NO_SCHEMA_TARGET.json");
+  const rawPath = path.join(process.cwd(), "prisma", "seed-data", "system-matrix.json");
 
   if (!fs.existsSync(rawPath)) {
-    console.log("System Mapping: skipped (raw matrix JSON not found)");
+    console.log("System Mapping: skipped (matrix JSON not found)");
     return;
   }
 
-  const rawText = fs.readFileSync(rawPath, "utf-8").replace(/\bNaN\b/g, "null");
-  const raw = JSON.parse(rawText) as unknown[][];
-  const headerIdx = raw.findIndex((row) => row[0] === MATRIX_MARKER);
-  if (headerIdx < 0) {
-    console.log("System Mapping: skipped (department matrix not found in raw JSON)");
-    return;
-  }
-
-  const header = raw[headerIdx] as string[];
+  const raw = JSON.parse(fs.readFileSync(rawPath, "utf-8")) as Record<string, string>[];
+  const departments = ["Finance", "HR", "IT", "CRM", "Manufacturing", "Logistics", "Legal", "Security"];
   const edgeData: {
+    organizationId: string;
     sourceAppId: string;
     sourceEnvId: string;
     targetAppId: string;
     targetEnvId: string;
     direction: string;
     notes: string;
+    sourceOrder: number;
   }[] = [];
 
   const seen = new Set<string>();
 
-  for (let i = headerIdx + 1; i < raw.length; i++) {
-    const row = raw[i] as unknown[];
-    const fromDept = row[0];
-    if (typeof fromDept !== "string") break;
-    if (fromDept.includes("Primary Integration") || fromDept.includes("Secondary")) break;
-
+  let sourceOrder = 0;
+  for (const row of raw) {
+    const fromDept = row["From \\ To"];
     const sourceApp = byDept.get(fromDept);
     if (!sourceApp) continue;
     const sourceEnv = pickIntegrationEnv(sourceApp.environments);
     if (!sourceEnv) continue;
 
-    for (let j = 1; j < row.length && j < header.length; j++) {
-      const cell = row[j];
-      const toDept = header[j];
-      if (typeof toDept !== "string" || fromDept === toDept) continue;
+    for (const toDept of departments) {
+      const cell = row[toDept];
+      if (fromDept === toDept) continue;
       if (cell !== PRIMARY && cell !== SECONDARY) continue;
 
       const targetApp = byDept.get(toDept);
@@ -106,11 +101,13 @@ export async function seedSystemMapping(prisma: PrismaClient) {
 
       edgeData.push({
         sourceAppId: sourceApp.id,
+        organizationId,
         sourceEnvId: sourceEnv.id,
         targetAppId: targetApp.id,
         targetEnvId: targetEnv.id,
         direction: "downstream",
         notes: `${fromDept} → ${toDept} (${cell === PRIMARY ? "Primary" : "Secondary"} · ${sourceEnv.name})`,
+        sourceOrder: ++sourceOrder,
       });
     }
   }
@@ -122,6 +119,7 @@ export async function seedSystemMapping(prisma: PrismaClient) {
 
   await prisma.systemMappingGroup.create({
     data: {
+      organizationId,
       name: "Enterprise Default Setup",
       status: "accepted",
       sourceNotes:

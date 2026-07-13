@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, XCircle } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -10,11 +12,19 @@ export type BookingFormData = {
   releaseId: string;
   fromDate: string;
   toDate: string;
+  uatEnvCode: string;
+  uatStart: string;
+  uatEnd: string;
   purpose: string;
-  team: string;
 };
 
-type Option = { value: string; label: string; departmentId?: string; applicationId?: string };
+type Option = {
+  value: string;
+  label: string;
+  departmentId?: string;
+  applicationId?: string;
+  applicationIds?: string[];
+};
 
 type ConflictRow = {
   applicationName?: string;
@@ -26,15 +36,78 @@ type ConflictRow = {
   purpose?: string | null;
 };
 
+type CreatedBooking = {
+  bookingCode?: string | null;
+  purpose?: string | null;
+  departmentName?: string | null;
+  testEnvCode?: string | null;
+  testStart?: string | null;
+  testEnd?: string | null;
+  testDays?: number | null;
+  uatEnvCode?: string | null;
+  uatStart?: string | null;
+  uatEnd?: string | null;
+  uatDays?: number | null;
+  application?: { name?: string; department?: { name?: string } };
+  release?: { releaseCode?: string } | null;
+};
+
+type BookingDetails = {
+  bookingCode?: string;
+  application: string;
+  department: string;
+  release: string;
+  testEnv: string;
+  testStart: string;
+  testEnd: string;
+  testDays: string;
+  uatEnv: string;
+  uatStart: string;
+  uatEnd: string;
+  uatDays: string;
+  notes: string;
+};
+
+type ResultState =
+  | { ok: true; details: BookingDetails }
+  | { ok: false; message: string; details: BookingDetails; conflicts?: ConflictRow[] };
+
+const today = () => new Date().toISOString().slice(0, 10);
+
 const EMPTY: BookingFormData = {
   applicationId: "",
   environmentId: "",
   releaseId: "",
-  fromDate: new Date().toISOString().slice(0, 10),
-  toDate: new Date().toISOString().slice(0, 10),
+  fromDate: today(),
+  toDate: today(),
+  uatEnvCode: "",
+  uatStart: "",
+  uatEnd: "",
   purpose: "",
-  team: "",
 };
+
+function labelFor(options: Option[], value: string, fallback = "—") {
+  if (!value) return fallback;
+  return options.find((o) => o.value === value)?.label ?? fallback;
+}
+
+function spanDays(start: string, end: string): number | null {
+  if (!start || !end) return null;
+  const a = new Date(start);
+  const b = new Date(end);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || b < a) return null;
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.round((b.getTime() - a.getTime()) / dayMs) + 1);
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[8rem_1fr] gap-2 text-sm">
+      <dt className="text-gray-500 dark:text-white/50">{label}</dt>
+      <dd className="font-medium text-gray-800 dark:text-white/90 break-words">{value || "—"}</dd>
+    </div>
+  );
+}
 
 export function BookingFormModal({
   open,
@@ -54,26 +127,28 @@ export function BookingFormModal({
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<BookingFormData>(EMPTY);
-  const [departmentId, setDepartmentId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictRow[]>([]);
+  const [result, setResult] = useState<ResultState | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setForm(EMPTY);
-    setDepartmentId("");
     setError(null);
     setConflicts([]);
+    setResult(null);
   }, [open]);
 
-  const appOptions = useMemo(
-    () =>
-      departmentId
-        ? applications.filter((a) => a.departmentId === departmentId)
-        : applications,
-    [applications, departmentId],
+  const selectedApp = useMemo(
+    () => applications.find((a) => a.value === form.applicationId),
+    [applications, form.applicationId],
   );
+
+  const departmentLabel = useMemo(() => {
+    if (!selectedApp?.departmentId) return "—";
+    return labelFor(departments, selectedApp.departmentId, "—");
+  }, [departments, selectedApp]);
 
   const envOptions = useMemo(
     () =>
@@ -83,20 +158,64 @@ export function BookingFormModal({
     [environments, form.applicationId],
   );
 
+  const uatEnvOptions = useMemo(
+    () => envOptions.map((e) => ({ value: e.label, label: e.label })),
+    [envOptions],
+  );
+
+  const releaseOptions = useMemo(() => {
+    if (!form.applicationId) return releases;
+    const linked = releases.filter((r) => r.applicationIds?.includes(form.applicationId));
+    return linked.length ? linked : releases;
+  }, [releases, form.applicationId]);
+
+  const testDays = spanDays(form.fromDate, form.toDate);
+  const uatDays = spanDays(form.uatStart, form.uatEnd);
+
+  const buildAttemptedDetails = (): BookingDetails => ({
+    application: labelFor(applications, form.applicationId),
+    department: departmentLabel,
+    release: labelFor(releases, form.releaseId),
+    testEnv: labelFor(environments, form.environmentId),
+    testStart: form.fromDate,
+    testEnd: form.toDate,
+    testDays: testDays != null ? String(testDays) : "—",
+    uatEnv: form.uatEnvCode || "—",
+    uatStart: form.uatStart || "—",
+    uatEnd: form.uatEnd || "—",
+    uatDays: uatDays != null ? String(uatDays) : "—",
+    notes: form.purpose.trim() || "End-to-end test window",
+  });
+
   if (!open) return null;
+
+  const dismissResult = () => {
+    const wasSuccess = result?.ok === true;
+    setResult(null);
+    if (wasSuccess) {
+      onSaved();
+      onClose();
+    }
+  };
 
   const saveWithConflicts = async () => {
     setError(null);
     setConflicts([]);
-    if (!form.applicationId || !form.fromDate || !form.toDate) {
-      setError("Application, from date, and to date are required.");
+
+    if (!form.applicationId || !form.environmentId || !form.releaseId || !form.fromDate || !form.toDate) {
+      setError("Application, Test Env, Release ID, Test Start, and Test End are required.");
       return;
     }
     if (form.toDate < form.fromDate) {
-      setError("To date must be on or after from date.");
+      setError("Test End must be on or after Test Start.");
+      return;
+    }
+    if (form.uatStart && form.uatEnd && form.uatEnd < form.uatStart) {
+      setError("UAT End must be on or after UAT Start.");
       return;
     }
 
+    const attempted = buildAttemptedDetails();
     setSaving(true);
     try {
       const res = await fetch("/api/bookings", {
@@ -105,120 +224,231 @@ export function BookingFormModal({
         credentials: "same-origin",
         body: JSON.stringify({
           applicationIds: [form.applicationId],
-          environmentId: form.environmentId || undefined,
-          releaseId: form.releaseId || undefined,
+          environmentId: form.environmentId,
+          releaseId: form.releaseId,
           fromDate: form.fromDate,
           toDate: form.toDate,
           purpose: form.purpose || undefined,
-          team: form.team || undefined,
+          uatEnvCode: form.uatEnvCode || undefined,
+          uatStart: form.uatStart || undefined,
+          uatEnd: form.uatEnd || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         conflicts?: ConflictRow[];
-        bookings?: unknown[];
+        bookings?: CreatedBooking[];
       };
+
       if (res.status === 409) {
-        setConflicts(data.conflicts ?? []);
+        const conflictRows = data.conflicts ?? [];
+        setConflicts(conflictRows);
         setError(data.error || "Not available — overlapping booking on this application.");
+        setResult({
+          ok: false,
+          message: data.error || "Booking failed — overlapping booking on this application.",
+          details: attempted,
+          conflicts: conflictRows,
+        });
         setSaving(false);
         return;
       }
+
       if (!res.ok) {
-        setError(data.error || `Create failed (${res.status})`);
+        const message = data.error || `Create failed (${res.status})`;
+        setError(message);
+        setResult({ ok: false, message, details: attempted });
         setSaving(false);
         return;
       }
-      onSaved();
-      onClose();
+
+      const created = data.bookings?.[0];
+      setResult({
+        ok: true,
+        details: {
+          bookingCode: created?.bookingCode ?? undefined,
+          application: created?.application?.name || attempted.application,
+          department:
+            created?.departmentName ||
+            created?.application?.department?.name ||
+            attempted.department,
+          release: created?.release?.releaseCode || attempted.release,
+          testEnv: created?.testEnvCode || attempted.testEnv,
+          testStart: created?.testStart?.slice(0, 10) || attempted.testStart,
+          testEnd: created?.testEnd?.slice(0, 10) || attempted.testEnd,
+          testDays:
+            created?.testDays != null ? String(created.testDays) : attempted.testDays,
+          uatEnv: created?.uatEnvCode || attempted.uatEnv,
+          uatStart: created?.uatStart?.slice(0, 10) || attempted.uatStart,
+          uatEnd: created?.uatEnd?.slice(0, 10) || attempted.uatEnd,
+          uatDays: created?.uatDays != null ? String(created.uatDays) : attempted.uatDays,
+          notes: created?.purpose || attempted.notes,
+        },
+      });
     } catch {
-      setError("Network error creating booking.");
+      const message = "Network error creating booking.";
+      setError(message);
+      setResult({ ok: false, message, details: attempted });
     } finally {
       setSaving(false);
     }
   };
 
+  if (result) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={dismissResult}>
+        <div
+          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg max-h-[90vh] overflow-y-auto dark:bg-[var(--card)]"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="booking-result-title"
+        >
+          <div className="mb-4 flex items-start gap-3">
+            {result.ok ? (
+              <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <XCircle className="mt-0.5 h-6 w-6 shrink-0 text-rose-600 dark:text-rose-400" />
+            )}
+            <div>
+              <h2
+                id="booking-result-title"
+                className={cn(
+                  "text-lg font-semibold",
+                  result.ok
+                    ? "text-emerald-800 dark:text-emerald-300"
+                    : "text-rose-800 dark:text-rose-300",
+                )}
+              >
+                {result.ok ? "Booking created successfully" : "Booking failed"}
+              </h2>
+              <p className="mt-1 text-sm text-gray-600 dark:text-white/60">
+                {result.ok
+                  ? "Your environment booking was saved. Details below."
+                  : result.message}
+              </p>
+            </div>
+          </div>
+
+          <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-[var(--border)] dark:bg-white/5">
+            {result.details.bookingCode && (
+              <DetailRow label="Booking ID" value={result.details.bookingCode} />
+            )}
+            <DetailRow label="Application" value={result.details.application} />
+            <DetailRow label="Department" value={result.details.department} />
+            <DetailRow label="Release ID" value={result.details.release} />
+            <DetailRow label="Test Env" value={result.details.testEnv} />
+            <DetailRow label="Test Start" value={result.details.testStart} />
+            <DetailRow label="Test End" value={result.details.testEnd} />
+            <DetailRow label="Test Days" value={result.details.testDays} />
+            {(result.details.uatEnv !== "—" || result.details.uatStart !== "—") && (
+              <>
+                <DetailRow label="UAT Env" value={result.details.uatEnv} />
+                <DetailRow label="UAT Start" value={result.details.uatStart} />
+                <DetailRow label="UAT End" value={result.details.uatEnd} />
+                <DetailRow label="UAT Days" value={result.details.uatDays} />
+              </>
+            )}
+            <DetailRow label="Notes" value={result.details.notes} />
+          </dl>
+
+          {!result.ok && result.conflicts && result.conflicts.length > 0 && (
+            <ul className="mt-3 space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              {result.conflicts.map((c, i) => (
+                <li key={i}>
+                  <strong>{c.applicationName}</strong>
+                  {c.environmentName ? ` · ${c.environmentName}` : ""} — booked by {c.bookedBy}
+                  {c.team ? ` (${c.team})` : ""}
+                  {c.fromDate && c.toDate
+                    ? ` · ${String(c.fromDate).slice(0, 10)} → ${String(c.toDate).slice(0, 10)}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-5 flex justify-end gap-2">
+            {!result.ok && (
+              <button type="button" className={taBtnSecondary} onClick={() => setResult(null)}>
+                Edit booking
+              </button>
+            )}
+            <button type="button" className={taBtnPrimary} onClick={dismissResult}>
+              {result.ok ? "Done" : "Close"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg max-h-[90vh] overflow-y-auto dark:bg-[var(--card)]"
+        className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-theme-lg max-h-[90vh] overflow-y-auto dark:bg-[var(--card)]"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-1 text-lg font-semibold text-gray-800 dark:text-white">New booking</h2>
         <p className="mb-4 text-xs text-gray-500 dark:text-white/55">
-          Creates an environment booking for the selected application and date range. Overlaps with existing
-          bookings are blocked and shown as conflicts.
+          Application, Test Env, Release, and Test dates are required. Department and Test Days are calculated.
+          Booking ID and Conflict Flag are set by the system.
         </p>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="text-xs font-medium text-gray-500">Department</label>
-            <select
-              className={taInput}
-              value={departmentId}
-              onChange={(e) => {
-                setDepartmentId(e.target.value);
-                setForm((f) => ({ ...f, applicationId: "", environmentId: "" }));
-              }}
-            >
-              <option value="">All departments</option>
-              {departments.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
             <label className="text-xs font-medium text-gray-500">Application *</label>
-            <select
-              className={taInput}
-              value={form.applicationId}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, applicationId: e.target.value, environmentId: "" }))
-              }
-            >
-              <option value="">Select application…</option>
-              {appOptions.map((a) => (
-                <option key={a.value} value={a.value}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.applicationId}
+                onChange={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    applicationId: v,
+                    environmentId: "",
+                    releaseId: "",
+                    uatEnvCode: "",
+                  }))
+                }
+                options={applications}
+                placeholder="Select application…"
+                searchPlaceholder="Search applications…"
+              />
+            </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500">Environment</label>
-            <select
-              className={taInput}
-              value={form.environmentId}
-              onChange={(e) => setForm((f) => ({ ...f, environmentId: e.target.value }))}
-              disabled={!form.applicationId}
-            >
-              <option value="">Default (first env)</option>
-              {envOptions.map((e) => (
-                <option key={e.value} value={e.value}>
-                  {e.label}
-                </option>
-              ))}
-            </select>
+            <label className="text-xs font-medium text-gray-500">Department</label>
+            <input className={cn(taInput, "bg-gray-50 dark:bg-white/5")} value={departmentLabel} readOnly />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Test Env *</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.environmentId}
+                onChange={(v) => setForm((f) => ({ ...f, environmentId: v }))}
+                options={envOptions}
+                placeholder={form.applicationId ? "Select test environment…" : "Select application first…"}
+                searchPlaceholder="Search environments…"
+                disabled={!form.applicationId}
+              />
+            </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500">Release (optional)</label>
-            <select
-              className={taInput}
-              value={form.releaseId}
-              onChange={(e) => setForm((f) => ({ ...f, releaseId: e.target.value }))}
-            >
-              <option value="">No linked release</option>
-              {releases.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            <label className="text-xs font-medium text-gray-500">Release ID *</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.releaseId}
+                onChange={(v) => setForm((f) => ({ ...f, releaseId: v }))}
+                options={releaseOptions}
+                placeholder={form.applicationId ? "Select release…" : "Select application first…"}
+                searchPlaceholder="Search releases…"
+                disabled={!form.applicationId}
+              />
+            </div>
           </div>
+
           <div>
-            <label className="text-xs font-medium text-gray-500">From date *</label>
+            <label className="text-xs font-medium text-gray-500">Test Start *</label>
             <input
               type="date"
               className={taInput}
@@ -227,7 +457,9 @@ export function BookingFormModal({
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500">To date *</label>
+            <label className="text-xs font-medium text-gray-500">
+              Test End *{testDays != null ? ` · ${testDays} day${testDays === 1 ? "" : "s"}` : ""}
+            </label>
             <input
               type="date"
               className={taInput}
@@ -235,17 +467,43 @@ export function BookingFormModal({
               onChange={(e) => setForm((f) => ({ ...f, toDate: e.target.value }))}
             />
           </div>
+
           <div className="sm:col-span-2">
-            <label className="text-xs font-medium text-gray-500">Team / booked for</label>
+            <label className="text-xs font-medium text-gray-500">UAT Env (optional)</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.uatEnvCode}
+                onChange={(v) => setForm((f) => ({ ...f, uatEnvCode: v }))}
+                options={uatEnvOptions}
+                placeholder={form.applicationId ? "No UAT env" : "Select application first…"}
+                searchPlaceholder="Search environments…"
+                disabled={!form.applicationId}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">UAT Start</label>
             <input
+              type="date"
               className={taInput}
-              value={form.team}
-              onChange={(e) => setForm((f) => ({ ...f, team: e.target.value }))}
-              placeholder="Defaults to application department"
+              value={form.uatStart}
+              onChange={(e) => setForm((f) => ({ ...f, uatStart: e.target.value }))}
             />
           </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">
+              UAT End{uatDays != null ? ` · ${uatDays} day${uatDays === 1 ? "" : "s"}` : ""}
+            </label>
+            <input
+              type="date"
+              className={taInput}
+              value={form.uatEnd}
+              onChange={(e) => setForm((f) => ({ ...f, uatEnd: e.target.value }))}
+            />
+          </div>
+
           <div className="sm:col-span-2">
-            <label className="text-xs font-medium text-gray-500">Purpose / notes</label>
+            <label className="text-xs font-medium text-gray-500">Notes</label>
             <input
               className={taInput}
               value={form.purpose}

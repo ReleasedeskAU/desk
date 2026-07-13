@@ -12,7 +12,7 @@ import {
 import { cn, formatDate } from "@/lib/utils";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { APPLICATION_STATUS_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
@@ -23,7 +23,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 
 type StatusRow = {
   id: string;
-  application: { id: string; name: string };
+  application: { id: string; name: string; department: { name: string } };
   environmentName: string;
   status: string;
   lastCheck: string;
@@ -55,6 +55,7 @@ export default function ApplicationStatusContent() {
     defaultSortDir: "asc",
     sortAccessors: {
       application: (r) => r.application.name,
+      department: (r) => r.application.department.name,
       environment: (r) => r.environmentName,
       status: (r) => r.status,
       uptimePercent: (r) => r.uptimePercent ?? -1,
@@ -159,7 +160,7 @@ export default function ApplicationStatusContent() {
       ) : (
         <DataTable title="Application Health" icon={HeartPulse} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={APPLICATION_STATUS_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={APPLICATION_STATUS_COLUMNS}
@@ -173,14 +174,15 @@ export default function ApplicationStatusContent() {
                 {rows.map((r) => (
                   <tr key={r.id} className={tableRow}>
                     {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{r.application.name}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{r.application.department.name}</td>}
                     {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{r.environmentName}</td>}
                     {isColumnVisible("status") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
                       <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold", STATUS_CLASSES[r.status] ?? STATUS_CLASSES.Degraded)}>{r.status}</span>
                     </td>
                     )}
-                    {isColumnVisible("uptimePercent") && <td className={`${tableCell} whitespace-nowrap`}>{r.uptimePercent != null ? `${(r.uptimePercent * 100).toFixed(1)}%` : "—"}</td>}
                     {isColumnVisible("lastCheck") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(r.lastCheck)}</td>}
+                    {isColumnVisible("uptimePercent") && <td className={`${tableCell} whitespace-nowrap`}>{r.uptimePercent != null ? `${r.uptimePercent}%` : "—"}</td>}
                     {isColumnVisible("notes") && <td className={`${tableCell} truncate max-w-[280px]`} title={r.notes ?? ""}>{r.notes ?? "—"}</td>}
                   </tr>
                 ))}

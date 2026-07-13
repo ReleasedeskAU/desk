@@ -95,7 +95,7 @@ async function main() {
     for (const e of envs) envIdByAppEnv.set(`${e.applicationId}::${e.name}`, e.id);
   }
   let envVersionCount = 0;
-  for (const v of versions) {
+  for (const [sourceIndex, v] of versions.entries()) {
     const applicationId = appIdByName.get(v["Application"]);
     if (!applicationId) continue;
     const environmentId = envIdByAppEnv.get(`${applicationId}::${v["Environment"]}`);
@@ -104,12 +104,14 @@ async function main() {
       data: {
         applicationId,
         environmentId,
+        appCode: v["App ID"] || null,
         version: v["Version"],
         updatedBy: v["Deployed By"],
         buildNumber: v["Build Number"],
         deployDate: toDate(v["Deploy Date"]),
         status: v["Status"],
         notes: v["Notes"],
+        sourceOrder: sourceIndex + 1,
       },
     });
     envVersionCount++;
@@ -143,7 +145,7 @@ async function main() {
   const releases = DATA("releases.json");
   const releaseIdByCode = new Map<string, string>();
   const releaseOwnerDbIdByCode = new Map<string, string | undefined>();
-  for (const r of releases) {
+  for (const [sourceIndex, r] of releases.entries()) {
     const departmentId = deptIdByName.get(r["Department"])!;
     const ownerUserId = r["Release Owner ID"];
     const ownerDbId = ownerUserId ? userDbIdByUserId.get(ownerUserId) : undefined;
@@ -171,7 +173,7 @@ async function main() {
         conflictType: r["Conflict Type"] || null,
         conflictNotes: r["Conflict Notes"] || null,
         dependencies: r["Dependencies"] ? String(r["Dependencies"]) : null,
-        externalDependencies: r["External Dependencies"] || null,
+        externalDependencies: r["External Dependencies "] || null,
         readinessPercent: r["Readiness %"],
         blockers: r["Blockers"],
         vendorMaintenance: r["Vendor Maintenance"],
@@ -192,6 +194,7 @@ async function main() {
         trainingStatus: r["Training Status"] || null,
         supportBriefed: r["Support Briefed"] || null,
         releaseHealth: r["Release Health"] || null,
+        sourceOrder: sourceIndex + 1,
       },
     });
     releaseIdByCode.set(r["Release ID"], release.id);
@@ -217,18 +220,20 @@ async function main() {
   // ── 6. Release Dependencies ─────────────────────────────────────
   const deps = DATA("dependencies.json");
   let depCount = 0;
-  for (const d of deps) {
+  for (const [sourceIndex, d] of deps.entries()) {
     const releaseId = releaseIdByCode.get(d["Release ID"]);
     const dependsOnReleaseId = releaseIdByCode.get(d["Depends On Release"]);
     if (!releaseId || !dependsOnReleaseId) continue;
     await prisma.releaseDependency.create({
       data: {
+        dependencyCode: d["Dep ID"],
         releaseId,
         dependsOnReleaseId,
         dependencyType: d["Dependency Type"],
         status: d["Status"],
         impactIfBlocked: d["Impact if Blocked"],
         notes: d["Notes"],
+        sourceOrder: sourceIndex + 1,
       },
     });
     depCount++;
@@ -240,7 +245,7 @@ async function main() {
     String(b["Booking ID"] ?? "").startsWith("ENV-")
   );
   let bookingCount = 0;
-  for (const b of bookings) {
+  for (const [sourceIndex, b] of bookings.entries()) {
     const applicationId = resolveAppId(String(b["Application"] ?? ""), appIdByName);
     if (!applicationId) continue;
     const releaseId = releaseIdByCode.get(b["Release ID"]);
@@ -286,6 +291,7 @@ async function main() {
       preProdDays: toInt(b["Pre-Prod Days"]),
       conflictFlag: isConflict(b["Conflict Flag"]),
       environmentConflictId: b["Environment Conflict ID"] ? String(b["Environment Conflict ID"]) : null,
+      sourceOrder: sourceIndex + 1,
     };
 
     await prisma.envBooking.upsert({
@@ -299,7 +305,7 @@ async function main() {
 
   // ── 8. Risk ──────────────────────────────────────────────────────
   const risks = DATA("risk.json");
-  for (const r of risks) {
+  for (const [sourceIndex, r] of risks.entries()) {
     const releaseId = releaseIdByCode.get(r["Release ID"]);
     if (!releaseId) continue;
     const riskOwnerId = r["Risk Owner ID"] ? userDbIdByUserId.get(r["Risk Owner ID"]) : undefined;
@@ -319,6 +325,7 @@ async function main() {
         riskOwnerId,
         status: r["Status"],
         notes: r["Notes"],
+        sourceOrder: sourceIndex + 1,
       },
     });
   }
@@ -326,7 +333,7 @@ async function main() {
 
   // ── 9. Drift ─────────────────────────────────────────────────────
   const drifts = DATA("drift.json");
-  for (const d of drifts) {
+  for (const [sourceIndex, d] of drifts.entries()) {
     const releaseId = releaseIdByCode.get(d["Release ID"]);
     const applicationId = appIdByName.get(d["Application"]);
     if (!releaseId || !applicationId) continue;
@@ -336,7 +343,7 @@ async function main() {
         releaseId,
         applicationId,
         environmentName: d["Environment"],
-        driftType: d["Drift Type"],
+        driftType: d["Drift Type:"],
         driftCategory: d["Drift Category"],
         detectedDate: toDate(d["Detected Date"])!,
         severity: d["Severity"],
@@ -345,6 +352,7 @@ async function main() {
         remediationAction: d["Remediation Action"],
         status: d["Status"],
         etaToFix: toDate(d["ETA to Fix"]),
+        sourceOrder: sourceIndex + 1,
       },
     });
   }
@@ -353,7 +361,7 @@ async function main() {
   // ── 10. Approvals ────────────────────────────────────────────────
   const approvals = DATA("approvals.json");
   let approvalCount = 0;
-  for (const a of approvals) {
+  for (const [sourceIndex, a] of approvals.entries()) {
     const releaseId = releaseIdByCode.get(a["Release ID"]);
     const approverId = userDbIdByUserId.get(a["Approver ID"]);
     if (!releaseId || !approverId) continue;
@@ -368,6 +376,7 @@ async function main() {
         decision: a["Decision"] ?? "Pending",
         comments: a["Comments"],
         cabMeetingId: a["CAB Meeting ID"],
+        sourceOrder: sourceIndex + 1,
       },
     });
     approvalCount++;
@@ -376,7 +385,7 @@ async function main() {
 
   // ── 11. Leave Records (+ affected releases) ─────────────────────
   const leaves = DATA("leave_calendar.json");
-  for (const l of leaves) {
+  for (const [sourceIndex, l] of leaves.entries()) {
     const userId = userDbIdByUserId.get(l["User ID"]);
     if (!userId) continue;
     const leave = await prisma.leaveRecord.create({
@@ -389,6 +398,7 @@ async function main() {
         days: l["Days"],
         riskImpact: l["Risk Impact"],
         riskScore: l["Risk Score"],
+        sourceOrder: sourceIndex + 1,
       },
     });
     for (const relCode of splitIds(l["Affected Release"])) {
@@ -403,7 +413,7 @@ async function main() {
 
   // ── 12. Calendar Events ──────────────────────────────────────────
   const calendar = DATA("calendar.json");
-  for (const c of calendar) {
+  for (const [sourceIndex, c] of calendar.entries()) {
     const releaseId = c["Release ID"] ? releaseIdByCode.get(c["Release ID"]) : undefined;
     await prisma.calendarEvent.create({
       data: {
@@ -415,12 +425,181 @@ async function main() {
         departmentName: c["Department"],
         sizeImpact: c["Size/Impact"],
         notes: c["Notes"],
+        sourceOrder: sourceIndex + 1,
       },
     });
   }
   console.log(`Calendar Events: ${calendar.length}`);
 
+  const conflicts = DATA("conflicts.json");
+  await prisma.environmentConflict.createMany({
+    data: conflicts.map((c: Record<string, unknown>, sourceIndex: number) => ({
+      conflictCode: String(c["Conflict ID"]),
+      status: String(c["Status"]),
+      priority: String(c["Priority"]),
+      assignedTo: c["Assigned To"] ? String(c["Assigned To"]) : null,
+      release1Code: String(c["Release 1"]),
+      release2Code: String(c["Release 2"]),
+      applicationName: String(c["Application"]),
+      departmentName: String(c["Department"]),
+      conflictingEnvironment: String(c["Conflicting Environment"]),
+      environmentConflictType: String(c["Environment Conflict Type"]),
+      notes: c["Notes"] ? String(c["Notes"]) : null,
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  const blockers = DATA("blockers.json");
+  await prisma.blocker.createMany({
+    data: blockers.map((b: Record<string, unknown>, sourceIndex: number) => ({
+      blockerCode: String(b["Blocker ID"]),
+      releaseCode: String(b["Release ID"]),
+      releaseName: String(b["Release Name"]),
+      departmentName: String(b["Department"]),
+      applicationName: String(b["Application"]),
+      blockerType: String(b["Blocker Type"]),
+      blockerDescription: String(b["Blocker Description"]),
+      severity: String(b["Severity"]),
+      raisedDate: toDate(b["Raised Date"])!,
+      raisedBy: String(b["Raised By"]),
+      assignedTo: b["Assigned To"] ? String(b["Assigned To"]) : null,
+      status: String(b["Status"]),
+      targetResolutionDate: toDate(b["Target Resolution Date"]),
+      actualResolutionDate: toDate(b["Actual Resolution Date"]),
+      daysOpen: toInt(b["Days Open"]) ?? 0,
+      escalationLevel: String(b["Escalation Level"]),
+      rootCause: b["Root Cause"] ? String(b["Root Cause"]) : null,
+      resolutionNotes: b["Resolution Notes"] ? String(b["Resolution Notes"]) : null,
+      impactOnRelease: String(b["Impact on Release"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  const coreRows = DATA("system-core.json");
+  await prisma.systemCoreRecord.createMany({
+    data: coreRows.map((r: Record<string, unknown>, sourceIndex: number) => ({
+      system: String(r["System"]),
+      department: String(r["Department"]),
+      type: String(r["Type"]),
+      integratesWith: String(r["Integrates With"]),
+      dataFlow: String(r["Data Flow"]),
+      keyDataExchanged: String(r["Key Data Exchanged"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  const matrixRows = DATA("system-matrix.json");
+  await prisma.systemMatrixRow.createMany({
+    data: matrixRows.map((r: Record<string, unknown>, sourceIndex: number) => ({
+      fromDepartment: String(r["From \\ To"]),
+      finance: String(r["Finance"]),
+      hr: String(r["HR"]),
+      it: String(r["IT"]),
+      crm: String(r["CRM"]),
+      manufacturing: String(r["Manufacturing"]),
+      logistics: String(r["Logistics"]),
+      legal: String(r["Legal"]),
+      security: String(r["Security"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
   await seedSystemMapping(prisma);
+
+  const flows = DATA("integration-flows.json");
+  await prisma.integrationFlow.createMany({
+    data: flows.map((r: Record<string, unknown>, sourceIndex: number) => ({
+      flowCode: String(r["Flow ID"]),
+      sourceSystem: String(r["Source System"]),
+      targetSystem: String(r["Target System"]),
+      integrationType: String(r["Integration Type"]),
+      frequency: String(r["Frequency"]),
+      dataElements: String(r["Data Elements"]),
+      businessPurpose: String(r["Business Purpose"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  for (const [sourceIndex, row] of DATA("monitoring-alerts.json").entries()) {
+    const applicationId = resolveAppId(String(row["Application"]), appIdByName);
+    if (!applicationId) continue;
+    await prisma.monitoringAlert.create({
+      data: {
+        alertCode: row["Alert ID"],
+        timestamp: toDate(row["Timestamp"])!,
+        applicationId,
+        departmentName: row["Department"] || null,
+        alertType: row["Alert Type"],
+        severity: row["Severity"],
+        metric: row["Metric"],
+        threshold: row["Threshold"] || null,
+        currentValue: row["Current Value"] || null,
+        status: row["Status"],
+        assignedTo: row["Assigned To"] || null,
+        environmentName: row["Environment"],
+        sourceOrder: sourceIndex + 1,
+      },
+    });
+  }
+
+  for (const [sourceIndex, row] of DATA("incidents.json").entries()) {
+    const applicationId = resolveAppId(String(row["Application"]), appIdByName);
+    if (!applicationId) continue;
+    await prisma.incident.create({
+      data: {
+        incidentCode: row["Incident ID"],
+        timestamp: toDate(row["Timestamp"])!,
+        applicationId,
+        departmentName: row["Department"] || null,
+        severity: row["Severity"],
+        title: row["Title"],
+        status: row["Status"],
+        impact: row["Impact"],
+        assignedTo: row["Assigned To"] || null,
+        relatedReleaseCode: row["Related Release"] || null,
+        environmentName: row["Environment"],
+        sourceOrder: sourceIndex + 1,
+      },
+    });
+  }
+
+  for (const [sourceIndex, row] of DATA("application-status.json").entries()) {
+    const applicationId = resolveAppId(String(row["Application"]), appIdByName);
+    if (!applicationId) continue;
+    const uptime = Number(String(row["Uptime %"]).replace("%", ""));
+    await prisma.applicationStatus.create({
+      data: {
+        applicationId,
+        environmentName: row["Environment"],
+        status: row["Status"],
+        lastCheck: toDate(row["Last Check"])!,
+        uptimePercent: Number.isFinite(uptime) ? (uptime <= 1 ? uptime * 100 : uptime) : null,
+        notes: row["Notes"] || null,
+        sourceOrder: sourceIndex + 1,
+      },
+    });
+  }
+
+  for (const [sourceIndex, row] of DATA("planned-maintenance.json").entries()) {
+    const appName = String(row["Application(s)"] ?? "").split(",")[0].trim();
+    await prisma.plannedMaintenance.create({
+      data: {
+        maintenanceCode: row["Maintenance ID"],
+        scheduledDate: toDate(row["Scheduled Date"])!,
+        startTime: row["Start Time"],
+        endTime: row["End Time"],
+        type: row["Type"],
+        applicationId: appName ? resolveAppId(appName, appIdByName) ?? null : null,
+        environmentName: String(row["Environment(s)"] ?? "").split(",")[0].trim(),
+        departmentName: row["Department"] || null,
+        impact: row["Impact"],
+        requestor: row["Requestor"] || null,
+        approvalStatus: row["Approval Status"],
+        notes: row["Notes"] || null,
+        sourceOrder: sourceIndex + 1,
+      },
+    });
+  }
 
   console.log("Seed complete.");
 }

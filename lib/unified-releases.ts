@@ -21,16 +21,18 @@ export type UnifiedRelease = {
   environmentName?: string;
   programProject?: string;
   dependsOnLabel?: string;
-  /** Sheet "Dependencies" (e.g. NA) — not the same as dependsOnLabel / External Dependencies. */
-  dependencies?: string | null;
+  externalDependencies?: string | null;
   releaseSize?: string | null;
   cabDate?: string | Date | null;
   startDate?: string | Date | null;
   testEnvRequired?: string | null;
   uatEnvRequired?: string | null;
+  releaseHealth?: string | null;
   conflictFlag?: boolean;
-  conflictIds?: string[];
-  notes?: string | null;
+  conflictId?: string | null;
+  conflictingRelease?: string | null;
+  conflictType?: string | null;
+  conflictNotes?: string | null;
   readinessPercent?: number | null;
   blockers?: string | null;
   vendorMaintenance?: string | null;
@@ -42,6 +44,14 @@ export type UnifiedRelease = {
   goLiveChecklistPercent?: number | null;
   deploymentWindow?: string | null;
   stakeholderIds?: string;
+  devSignoff?: string | null;
+  testSignoff?: string | null;
+  uatSignoff?: string | null;
+  securityClearance?: string | null;
+  dressRehearsal?: string | null;
+  hypercarePlan?: string | null;
+  commsPlan?: string | null;
+  trainingStatus?: string | null;
 };
 
 type DbRelease = {
@@ -59,15 +69,19 @@ type DbRelease = {
   bookings?: { environment?: { name: string } | null; application?: { name: string } }[];
   dependsOn?: { dependsOnRelease: { releaseCode: string; name: string } }[];
   stakeholders?: { user: { userId: string } }[];
-  dependencies?: string | null;
+  releaseOwner?: { userId: string } | null;
+  externalDependencies?: string | null;
   releaseSize?: string | null;
   cabDate?: string | Date | null;
   startDate?: string | Date | null;
   testEnvRequired?: string | null;
   uatEnvRequired?: string | null;
+  releaseHealth?: string | null;
   conflictFlag?: boolean;
-  conflictIds?: string[];
-  notes?: string | null;
+  conflictId?: string | null;
+  conflictingRelease?: string | null;
+  conflictType?: string | null;
+  conflictNotes?: string | null;
   readinessPercent?: number | null;
   blockers?: string | null;
   vendorMaintenance?: string | null;
@@ -78,6 +92,14 @@ type DbRelease = {
   rollbackPlan?: string | null;
   goLiveChecklistPercent?: number | null;
   deploymentWindow?: string | null;
+  devSignoff?: string | null;
+  testSignoff?: string | null;
+  uatSignoff?: string | null;
+  securityClearance?: string | null;
+  dressRehearsal?: string | null;
+  hypercarePlan?: string | null;
+  commsPlan?: string | null;
+  trainingStatus?: string | null;
 };
 
 /** Maps synthetic demo teams to Release Desk department names. */
@@ -152,26 +174,37 @@ export function dbToUnified(r: DbRelease): UnifiedRelease {
     applicationName: appNames.length ? appNames.join(", ") : "—",
     environmentName: bookingEnv ?? "—",
     dependsOnLabel: deps.length ? deps.join(", ") : "—",
-    dependencies: r.dependencies ?? null,
+    externalDependencies: r.externalDependencies ?? null,
     releaseSize: r.releaseSize,
     cabDate: r.cabDate,
     startDate: r.startDate,
     testEnvRequired: r.testEnvRequired,
     uatEnvRequired: r.uatEnvRequired,
+    releaseHealth: r.releaseHealth ?? null,
     conflictFlag: r.conflictFlag,
-    conflictIds: r.conflictIds ?? [],
-    notes: r.notes,
+    conflictId: r.conflictId ?? null,
+    conflictingRelease: r.conflictingRelease ?? null,
+    conflictType: r.conflictType ?? null,
+    conflictNotes: r.conflictNotes ?? null,
     readinessPercent: r.readinessPercent,
     blockers: r.blockers,
     vendorMaintenance: r.vendorMaintenance,
     changeFreeze: r.changeFreeze,
     regulatory: r.regulatory,
-    releaseOwnerId: r.releaseOwnerId,
+    releaseOwnerId: r.releaseOwner?.userId ?? null,
     approvalStatus: r.approvalStatus,
     rollbackPlan: r.rollbackPlan,
     goLiveChecklistPercent: r.goLiveChecklistPercent,
     deploymentWindow: r.deploymentWindow,
-    stakeholderIds: r.stakeholders?.map(s => s.user.userId).join(",") ?? "—",
+    stakeholderIds: r.stakeholders?.map((s) => s.user.userId).join(",") ?? "—",
+    devSignoff: r.devSignoff ?? null,
+    testSignoff: r.testSignoff ?? null,
+    uatSignoff: r.uatSignoff ?? null,
+    securityClearance: r.securityClearance ?? null,
+    dressRehearsal: r.dressRehearsal ?? null,
+    hypercarePlan: r.hypercarePlan ?? null,
+    commsPlan: r.commsPlan ?? null,
+    trainingStatus: r.trainingStatus ?? null,
   };
 }
 

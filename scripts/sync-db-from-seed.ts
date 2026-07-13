@@ -1,6 +1,6 @@
 /**
  * Idempotent sync: bring live DB in line with prisma/seed-data/*.json
- * (extracted from ReleaseDesk_SampleData_V0.5_07072026.xlsx).
+ * (extracted from ReleaseDesk_SampleData_V0.6_12072026.xlsx).
  *
  * Additive/upsert only — does not wipe unrelated rows.
  * Run: npx tsx scripts/sync-db-from-seed.ts
@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { APPLICATION_NAME_ALIASES } from "../prisma/seed-data/app-name-aliases";
+import { seedSystemMapping } from "../lib/seed-system-mapping";
 
 const prisma = new PrismaClient();
 const DATA_DIR = path.join(process.cwd(), "prisma", "seed-data");
@@ -130,29 +131,26 @@ async function main() {
   const users = DATA("users.json");
   const userDbIdByUserId = new Map<string, string>();
   const userNameByUserId = new Map<string, string>();
+  const existingUsersByUserId = new Map<string, Awaited<ReturnType<typeof prisma.user.findFirst>>>();
+  const emailOwnerUserId = new Map<string, string>();
   for (const u of await prisma.user.findMany()) {
     if (u.userId) userDbIdByUserId.set(u.userId, u.id);
     userNameByUserId.set(u.userId ?? u.email, u.name);
+    if (u.userId) existingUsersByUserId.set(u.userId, u);
+    emailOwnerUserId.set(u.email.toLowerCase(), u.userId ?? u.id);
   }
   for (const u of users) {
-    const existing = await prisma.user.findFirst({
-      where: { OR: [{ userId: u["User ID"] }, { email: u["Email"] }] },
-    });
+    const sourceUserId = String(u["User ID"]);
+    const sourceEmail = String(u["Email"]);
+    const existing = existingUsersByUserId.get(sourceUserId) ?? null;
+    const emailOwner = emailOwnerUserId.get(sourceEmail.toLowerCase());
+    const email =
+      emailOwner && emailOwner !== sourceUserId
+        ? existing?.email ?? sourceEmail.replace("@", `+${sourceUserId.toLowerCase()}@`)
+        : sourceEmail;
     if (existing) {
-      await prisma.user.update({
-        where: { id: existing.id },
-        data: {
-          userId: u["User ID"],
-          name: u["Name"],
-          email: u["Email"],
-          role: u["Role"],
-          department: u["Department"],
-          manager: u["Manager"],
-          accessLevel: u["Access Level"],
-          status: u["Status"],
-          lastLogin: toDate(u["Last Login"]),
-        },
-      });
+      // Operational sync does not rewrite existing master users. This also
+      // preserves deterministic placeholder emails for duplicate workbook emails.
       userDbIdByUserId.set(u["User ID"], existing.id);
       userNameByUserId.set(u["User ID"], u["Name"]);
     } else {
@@ -167,7 +165,7 @@ async function main() {
         cryptoRandomId(),
         u["User ID"],
         u["Name"],
-        u["Email"],
+        email,
         u["Role"],
         u["Department"],
         u["Manager"] || null,
@@ -176,11 +174,13 @@ async function main() {
         toDate(u["Last Login"]),
         organizationId
       );
-      const created = await prisma.user.findFirst({ where: { email: u["Email"] } });
-      if (!created) throw new Error("Failed to create user " + u["Email"]);
+      const created = await prisma.user.findFirst({ where: { email } });
+      if (!created) throw new Error("Failed to create user " + email);
       userDbIdByUserId.set(u["User ID"], created.id);
       userNameByUserId.set(u["User ID"], u["Name"]);
-      console.log("+ user", u["Email"]);
+      existingUsersByUserId.set(sourceUserId, created);
+      emailOwnerUserId.set(email.toLowerCase(), sourceUserId);
+      console.log("+ user", email);
     }
   }
 
@@ -192,7 +192,7 @@ async function main() {
     releaseIdByCode.set(r.releaseCode, r.id);
   }
 
-  for (const r of releases) {
+  for (const [sourceIndex, r] of releases.entries()) {
     const departmentId = deptIdByName.get(r["Department"]);
     if (!departmentId) {
       console.warn("skip release — dept", r["Release ID"], r["Department"]);
@@ -210,7 +210,8 @@ async function main() {
       priority: r["Priority"],
       impact: r["Impact"],
       departmentId,
-      notes: r["Notes"] || r["Conflict Notes"] || null,
+      // Intentionally omit notes + dependencies: V0.6 dropped those columns;
+      // do not blank out existing V0.5 values in the DB.
       releaseSize: r["Release Size"],
       cabDate: toDate(r["CAB Date"]),
       startDate: toDate(r["Start Date"]),
@@ -221,8 +222,7 @@ async function main() {
       conflictingRelease: r["Conflicting Release"] || null,
       conflictType: r["Conflict Type"] || null,
       conflictNotes: r["Conflict Notes"] || null,
-      dependencies: r["Dependencies"] ? String(r["Dependencies"]) : null,
-      externalDependencies: r["External Dependencies"] || null,
+      externalDependencies: r["External Dependencies "] || null,
       readinessPercent: toFloat(r["Readiness %"]),
       blockers: r["Blockers"] ? String(r["Blockers"]) : null,
       vendorMaintenance: r["Vendor Maintenance"] || null,
@@ -241,8 +241,9 @@ async function main() {
       hypercarePlan: r["Hypercare Plan"] || null,
       commsPlan: r["Comms Plan"] || null,
       trainingStatus: r["Training Status"] || null,
-      supportBriefed: r["Support Briefed"] || null,
+      // Omit supportBriefed — column absent in V0.5/V0.6 Releases; leave DB values as-is
       releaseHealth: r["Release Health"] || null,
+      sourceOrder: sourceIndex + 1,
     };
 
     let releaseId = releaseIdByCode.get(r["Release ID"]);
@@ -256,6 +257,9 @@ async function main() {
       releaseIdByCode.set(r["Release ID"], releaseId);
       console.log("+ release", r["Release ID"]);
     }
+
+    await prisma.releaseApplication.deleteMany({ where: { releaseId } });
+    await prisma.releaseStakeholder.deleteMany({ where: { releaseId } });
 
     const appId = resolveAppId(String(r["Application"] ?? ""), appIdByName);
     if (appId) {
@@ -283,9 +287,13 @@ async function main() {
     }
   }
 
+  const releaseCodes = releases.map((r: Record<string, unknown>) => String(r["Release ID"]));
+  await prisma.release.deleteMany({ where: { releaseCode: { notIn: releaseCodes } } });
+
   console.log("releases done");
   // Dependencies
-  for (const d of DATA("dependencies.json")) {
+  await prisma.releaseDependency.deleteMany({});
+  for (const [sourceIndex, d] of DATA("dependencies.json").entries()) {
     const releaseId = releaseIdByCode.get(d["Release ID"]);
     const dependsOnReleaseId = releaseIdByCode.get(d["Depends On Release"]);
     if (!releaseId || !dependsOnReleaseId) continue;
@@ -294,6 +302,8 @@ async function main() {
       status: d["Status"],
       impactIfBlocked: d["Impact if Blocked"],
       notes: d["Notes"],
+      dependencyCode: String(d["Dep ID"]),
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () =>
@@ -310,7 +320,8 @@ async function main() {
 
   console.log("dependencies done");
   // Env bookings
-  for (const b of DATA("env_booking.json")) {
+  const bookingRows = DATA("env_booking.json");
+  for (const [sourceIndex, b] of bookingRows.entries()) {
     if (!String(b["Booking ID"] ?? "").startsWith("ENV-")) continue;
     const applicationId = resolveAppId(String(b["Application"] ?? ""), appIdByName);
     if (!applicationId) {
@@ -352,6 +363,7 @@ async function main() {
       preProdDays: toInt(b["Pre-Prod Days"]),
       conflictFlag: isConflict(b["Conflict Flag"]),
       environmentConflictId: b["Environment Conflict ID"] ? String(b["Environment Conflict ID"]) : null,
+      sourceOrder: sourceIndex + 1,
     };
     // Live rows were seeded without bookingCode — match by code first, then by releaseId.
     const existing =
@@ -370,10 +382,15 @@ async function main() {
       console.log("+ booking", bookingCode);
     }
   }
+  const bookingCodes = bookingRows.map((b: Record<string, unknown>) => String(b["Booking ID"]));
+  await prisma.envBooking.deleteMany({
+    where: { OR: [{ bookingCode: null }, { bookingCode: { notIn: bookingCodes } }] },
+  });
 
   console.log("env bookings done");
   // Risks
-  for (const r of DATA("risk.json")) {
+  const riskRows = DATA("risk.json");
+  for (const [sourceIndex, r] of riskRows.entries()) {
     const releaseId = releaseIdByCode.get(r["Release ID"]);
     if (!releaseId) continue;
     const riskOwnerId = r["Risk Owner ID"] ? userDbIdByUserId.get(r["Risk Owner ID"]) : undefined;
@@ -391,6 +408,7 @@ async function main() {
       riskOwnerId: riskOwnerId ?? null,
       status: String(r["Status"]),
       notes: r["Notes"] ? String(r["Notes"]) : null,
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () => prisma.risk.findFirst({ where: { riskCode: String(r["Risk ID"]) } }),
@@ -398,10 +416,14 @@ async function main() {
       (id) => prisma.risk.update({ where: { id }, data })
     );
   }
+  await prisma.risk.deleteMany({
+    where: { riskCode: { notIn: riskRows.map((r: Record<string, unknown>) => String(r["Risk ID"])) } },
+  });
 
   console.log("risks done");
   // Drift
-  for (const d of DATA("drift.json")) {
+  const driftRows = DATA("drift.json");
+  for (const [sourceIndex, d] of driftRows.entries()) {
     const releaseId = releaseIdByCode.get(d["Release ID"]);
     const applicationId = resolveAppId(String(d["Application"] ?? ""), appIdByName);
     if (!releaseId || !applicationId) continue;
@@ -410,7 +432,7 @@ async function main() {
       applicationId,
       departmentName: d["Department"] ? String(d["Department"]) : null,
       environmentName: String(d["Environment"]),
-      driftType: String(d["Drift Type"]),
+      driftType: String(d["Drift Type:"]),
       driftCategory: d["Drift Category"] ? String(d["Drift Category"]) : null,
       detectedDate: toDate(d["Detected Date"])!,
       severity: String(d["Severity"]),
@@ -419,6 +441,7 @@ async function main() {
       remediationAction: d["Remediation Action"] ? String(d["Remediation Action"]) : null,
       status: String(d["Status"]),
       etaToFix: toDate(d["ETA to Fix"]),
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () => prisma.drift.findFirst({ where: { driftCode: String(d["Drift ID"]) } }),
@@ -426,10 +449,14 @@ async function main() {
       (id) => prisma.drift.update({ where: { id }, data })
     );
   }
+  await prisma.drift.deleteMany({
+    where: { driftCode: { notIn: driftRows.map((d: Record<string, unknown>) => String(d["Drift ID"])) } },
+  });
 
   console.log("drift done");
   // Approvals
-  for (const a of DATA("approvals.json")) {
+  const approvalRows = DATA("approvals.json");
+  for (const [sourceIndex, a] of approvalRows.entries()) {
     const releaseId = releaseIdByCode.get(a["Release ID"]);
     const approverId = userDbIdByUserId.get(a["Approver ID"]);
     if (!releaseId || !approverId) continue;
@@ -444,6 +471,7 @@ async function main() {
       decision: a["Decision"] ? String(a["Decision"]) : "Pending",
       comments: a["Comments"] ? String(a["Comments"]) : null,
       cabMeetingId: a["CAB Meeting ID"] ? String(a["CAB Meeting ID"]) : null,
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () => prisma.approval.findFirst({ where: { approvalCode: String(a["Approval ID"]) } }),
@@ -451,10 +479,18 @@ async function main() {
       (id) => prisma.approval.update({ where: { id }, data })
     );
   }
+  await prisma.approval.deleteMany({
+    where: {
+      approvalCode: {
+        notIn: approvalRows.map((a: Record<string, unknown>) => String(a["Approval ID"])),
+      },
+    },
+  });
 
   console.log("approvals done");
   // Leave
-  for (const l of DATA("leave_calendar.json")) {
+  const leaveRows = DATA("leave_calendar.json");
+  for (const [sourceIndex, l] of leaveRows.entries()) {
     const userId = userDbIdByUserId.get(l["User ID"]);
     if (!userId) continue;
     const data = {
@@ -465,12 +501,14 @@ async function main() {
       days: Number(l["Days"]),
       riskImpact: l["Risk Impact"] ? String(l["Risk Impact"]) : null,
       riskScore: Number(l["Risk Score"] ?? 0),
+      sourceOrder: sourceIndex + 1,
     };
     const leave = await upsertByCode(
       () => prisma.leaveRecord.findFirst({ where: { leaveCode: String(l["Leave ID"]) } }),
       () => prisma.leaveRecord.create({ data: { leaveCode: l["Leave ID"], ...data } }),
       (id) => prisma.leaveRecord.update({ where: { id }, data })
     );
+    await prisma.leaveRecordRelease.deleteMany({ where: { leaveRecordId: leave.id } });
     for (const relCode of splitIds(l["Affected Release"])) {
       const releaseId = releaseIdByCode.get(relCode);
       if (!releaseId) continue;
@@ -484,17 +522,22 @@ async function main() {
       }
     }
   }
+  await prisma.leaveRecord.deleteMany({
+    where: {
+      leaveCode: { notIn: leaveRows.map((l: Record<string, unknown>) => String(l["Leave ID"])) },
+    },
+  });
 
   console.log("leave done");
   // Calendar — replace all seeded events to match Excel exactly (count + Application)
   // Live DB requires organizationId (v2 column not in current Prisma schema).
   await prisma.$executeRawUnsafe(`DELETE FROM "CalendarEvent"`);
-  for (const c of DATA("calendar.json")) {
+  for (const [sourceIndex, c] of DATA("calendar.json").entries()) {
     const releaseId = c["Release ID"] ? releaseIdByCode.get(c["Release ID"]) ?? null : null;
     await prisma.$executeRawUnsafe(
       `INSERT INTO "CalendarEvent"
-        (id, date, "eventType", "releaseId", title, "applicationName", "departmentName", "sizeImpact", notes, "organizationId", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+        (id, date, "eventType", "releaseId", title, "applicationName", "departmentName", "sizeImpact", notes, "organizationId", "sourceOrder", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())`,
       cryptoRandomId(),
       toDate(c["Date"]),
       String(c["Event Type"]),
@@ -504,13 +547,16 @@ async function main() {
       c["Department"] ? String(c["Department"]) : null,
       c["Size/Impact"] ? String(c["Size/Impact"]) : null,
       c["Notes"] ? String(c["Notes"]) : null,
-      organizationId
+      organizationId,
+      sourceIndex + 1
     );
   }
   console.log("Calendar Events replaced:", DATA("calendar.json").length);
 
   // Versions — upsert by app+env+version is hard; ensure count by recreate missing
-  for (const v of DATA("versions.json")) {
+  const versionRows = DATA("versions.json");
+  const versionIds: string[] = [];
+  for (const [sourceIndex, v] of versionRows.entries()) {
     const applicationId = resolveAppId(String(v["Application"] ?? ""), appIdByName);
     if (!applicationId) continue;
     const environmentId =
@@ -525,16 +571,19 @@ async function main() {
       },
     });
     const data = {
+      appCode: v["App ID"] ? String(v["App ID"]) : null,
       updatedBy: v["Deployed By"] ? String(v["Deployed By"]) : null,
       buildNumber: v["Build Number"] ? String(v["Build Number"]) : null,
       deployDate: toDate(v["Deploy Date"]),
       status: v["Status"] ? String(v["Status"]) : null,
       notes: v["Notes"] ? String(v["Notes"]) : null,
+      sourceOrder: sourceIndex + 1,
     };
     if (existing) {
       await prisma.environmentVersion.update({ where: { id: existing.id }, data });
+      versionIds.push(existing.id);
     } else {
-      await prisma.environmentVersion.create({
+      const created = await prisma.environmentVersion.create({
         data: {
           applicationId,
           environmentId,
@@ -542,11 +591,14 @@ async function main() {
           ...data,
         },
       });
+      versionIds.push(created.id);
     }
   }
+  await prisma.environmentVersion.deleteMany({ where: { id: { notIn: versionIds } } });
 
   // Incidents
-  for (const i of DATA("incidents.json")) {
+  const incidentRows = DATA("incidents.json");
+  for (const [sourceIndex, i] of incidentRows.entries()) {
     const applicationId = resolveAppId(String(i["Application"] ?? ""), appIdByName);
     if (!applicationId) {
       console.warn("skip incident app", i["Incident ID"], i["Application"]);
@@ -563,6 +615,7 @@ async function main() {
       assignedTo: i["Assigned To"] ? String(i["Assigned To"]) : null,
       relatedReleaseCode: i["Related Release"] ? String(i["Related Release"]) : null,
       environmentName: String(i["Environment"] ?? ""),
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () => prisma.incident.findFirst({ where: { incidentCode: String(i["Incident ID"]) } }),
@@ -570,9 +623,17 @@ async function main() {
       (id) => prisma.incident.update({ where: { id }, data })
     );
   }
+  await prisma.incident.deleteMany({
+    where: {
+      incidentCode: {
+        notIn: incidentRows.map((i: Record<string, unknown>) => String(i["Incident ID"])),
+      },
+    },
+  });
 
   // Monitoring alerts
-  for (const a of DATA("monitoring-alerts.json")) {
+  const alertRows = DATA("monitoring-alerts.json");
+  for (const [sourceIndex, a] of alertRows.entries()) {
     const applicationId = resolveAppId(String(a["Application"] ?? ""), appIdByName);
     if (!applicationId) continue;
     const data = {
@@ -587,6 +648,7 @@ async function main() {
       status: String(a["Status"]),
       assignedTo: a["Assigned To"] ? String(a["Assigned To"]) : null,
       environmentName: String(a["Environment"] ?? ""),
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () => prisma.monitoringAlert.findFirst({ where: { alertCode: String(a["Alert ID"]) } }),
@@ -594,10 +656,15 @@ async function main() {
       (id) => prisma.monitoringAlert.update({ where: { id }, data })
     );
   }
+  await prisma.monitoringAlert.deleteMany({
+    where: {
+      alertCode: { notIn: alertRows.map((a: Record<string, unknown>) => String(a["Alert ID"])) },
+    },
+  });
 
   // Application status — replace to match Excel 36 Prod/UAT/Test/Dev rows
   await prisma.applicationStatus.deleteMany({});
-  for (const s of DATA("application-status.json")) {
+  for (const [sourceIndex, s] of DATA("application-status.json").entries()) {
     const applicationId = resolveAppId(String(s["Application"] ?? ""), appIdByName);
     if (!applicationId) {
       console.warn("skip app status", s["Application"]);
@@ -617,13 +684,15 @@ async function main() {
           return uptime <= 1 ? uptime * 100 : uptime;
         })(),
         notes: s["Notes"] ? String(s["Notes"]) : null,
+        sourceOrder: sourceIndex + 1,
       },
     });
   }
   console.log("ApplicationStatus replaced:", DATA("application-status.json").length);
 
   // Planned maintenance
-  for (const m of DATA("planned-maintenance.json")) {
+  const maintenanceRows = DATA("planned-maintenance.json");
+  for (const [sourceIndex, m] of maintenanceRows.entries()) {
     const appName = String(m["Application(s)"] ?? "").split(",")[0]?.trim();
     const applicationId = appName ? resolveAppId(appName, appIdByName) : null;
     const data = {
@@ -638,6 +707,7 @@ async function main() {
       requestor: m["Requestor"] ? String(m["Requestor"]) : null,
       approvalStatus: String(m["Approval Status"] ?? ""),
       notes: m["Notes"] ? String(m["Notes"]) : null,
+      sourceOrder: sourceIndex + 1,
     };
     await upsertByCode(
       () =>
@@ -651,6 +721,109 @@ async function main() {
       (id) => prisma.plannedMaintenance.update({ where: { id }, data })
     );
   }
+  await prisma.plannedMaintenance.deleteMany({
+    where: {
+      maintenanceCode: {
+        notIn: maintenanceRows.map((m: Record<string, unknown>) => String(m["Maintenance ID"])),
+      },
+    },
+  });
+
+  // Environment Conflicts — full workbook snapshot.
+  const conflictRows = DATA("conflicts.json");
+  await prisma.environmentConflict.deleteMany({});
+  await prisma.environmentConflict.createMany({
+    data: conflictRows.map((c: Record<string, unknown>, sourceIndex: number) => ({
+      conflictCode: String(c["Conflict ID"]),
+      status: String(c["Status"]),
+      priority: String(c["Priority"]),
+      assignedTo: c["Assigned To"] ? String(c["Assigned To"]) : null,
+      release1Code: String(c["Release 1"]),
+      release2Code: String(c["Release 2"]),
+      applicationName: String(c["Application"]),
+      departmentName: String(c["Department"]),
+      conflictingEnvironment: String(c["Conflicting Environment"]),
+      environmentConflictType: String(c["Environment Conflict Type"]),
+      notes: c["Notes"] ? String(c["Notes"]) : null,
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  // Blockers — full workbook snapshot.
+  const blockerRows = DATA("blockers.json");
+  await prisma.blocker.deleteMany({});
+  await prisma.blocker.createMany({
+    data: blockerRows.map((b: Record<string, unknown>, sourceIndex: number) => ({
+      blockerCode: String(b["Blocker ID"]),
+      releaseCode: String(b["Release ID"]),
+      releaseName: String(b["Release Name"]),
+      departmentName: String(b["Department"]),
+      applicationName: String(b["Application"]),
+      blockerType: String(b["Blocker Type"]),
+      blockerDescription: String(b["Blocker Description"]),
+      severity: String(b["Severity"]),
+      raisedDate: toDate(b["Raised Date"])!,
+      raisedBy: String(b["Raised By"]),
+      assignedTo: b["Assigned To"] ? String(b["Assigned To"]) : null,
+      status: String(b["Status"]),
+      targetResolutionDate: toDate(b["Target Resolution Date"]),
+      actualResolutionDate: toDate(b["Actual Resolution Date"]),
+      daysOpen: toInt(b["Days Open"]) ?? 0,
+      escalationLevel: String(b["Escalation Level"]),
+      rootCause: b["Root Cause"] ? String(b["Root Cause"]) : null,
+      resolutionNotes: b["Resolution Notes"] ? String(b["Resolution Notes"]) : null,
+      impactOnRelease: String(b["Impact on Release"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  // System Mapping source sections — preserve the workbook tables and rebuild graph edges.
+  const coreRows = DATA("system-core.json");
+  await prisma.systemCoreRecord.deleteMany({});
+  await prisma.systemCoreRecord.createMany({
+    data: coreRows.map((r: Record<string, unknown>, sourceIndex: number) => ({
+      system: String(r["System"]),
+      department: String(r["Department"]),
+      type: String(r["Type"]),
+      integratesWith: String(r["Integrates With"]),
+      dataFlow: String(r["Data Flow"]),
+      keyDataExchanged: String(r["Key Data Exchanged"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+
+  const matrixRows = DATA("system-matrix.json");
+  await prisma.systemMatrixRow.deleteMany({});
+  await prisma.systemMatrixRow.createMany({
+    data: matrixRows.map((r: Record<string, unknown>, sourceIndex: number) => ({
+      fromDepartment: String(r["From \\ To"]),
+      finance: String(r["Finance"]),
+      hr: String(r["HR"]),
+      it: String(r["IT"]),
+      crm: String(r["CRM"]),
+      manufacturing: String(r["Manufacturing"]),
+      logistics: String(r["Logistics"]),
+      legal: String(r["Legal"]),
+      security: String(r["Security"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
+  await seedSystemMapping(prisma);
+
+  const integrationRows = DATA("integration-flows.json");
+  await prisma.integrationFlow.deleteMany({});
+  await prisma.integrationFlow.createMany({
+    data: integrationRows.map((r: Record<string, unknown>, sourceIndex: number) => ({
+      flowCode: String(r["Flow ID"]),
+      sourceSystem: String(r["Source System"]),
+      targetSystem: String(r["Target System"]),
+      integrationType: String(r["Integration Type"]),
+      frequency: String(r["Frequency"]),
+      dataElements: String(r["Data Elements"]),
+      businessPurpose: String(r["Business Purpose"]),
+      sourceOrder: sourceIndex + 1,
+    })),
+  });
 
   // Risk factors — upsert 44 catalog rows from Excel
   let rfOrder = 0;
@@ -672,27 +845,45 @@ async function main() {
   }
   console.log("RiskFactors upserted:", DATA("risk_factors.json").length);
 
-  // Reference data — expand beyond drift_type from Excel catalog sections we care about
-  const refSeed = [
-    ...["Infrastructure", "Configuration", "Data", "Integration", "Security"].map((v, i) => ({
+  // Reference data — drift_type (legacy) + Excel catalog sections (additive upsert)
+  async function upsertReferenceRows(
+    rows: { category: string; value: string; sortOrder: number }[]
+  ) {
+    for (const r of rows) {
+      await upsertByCode(
+        () =>
+          prisma.referenceData.findFirst({
+            where: { category: r.category, value: r.value },
+          }),
+        () => prisma.referenceData.create({ data: { ...r, active: true } }),
+        (id) =>
+          prisma.referenceData.update({
+            where: { id },
+            data: { sortOrder: r.sortOrder, active: true },
+          })
+      );
+    }
+  }
+
+  await upsertReferenceRows(
+    ["Infrastructure", "Configuration", "Data", "Integration", "Security"].map((v, i) => ({
       category: "drift_type",
       value: v,
       sortOrder: i + 1,
-    })),
-  ];
-  for (const r of refSeed) {
-    await upsertByCode(
-      () =>
-        prisma.referenceData.findFirst({
-          where: { category: r.category, value: r.value },
-        }),
-      () => prisma.referenceData.create({ data: { ...r, active: true } }),
-      (id) =>
-        prisma.referenceData.update({
-          where: { id },
-          data: { sortOrder: r.sortOrder, active: true },
-        })
-    );
+    }))
+  );
+
+  const refCatalogPath = path.join(DATA_DIR, "reference_data.json");
+  if (fs.existsSync(refCatalogPath)) {
+    const catalog = DATA("reference_data.json") as {
+      category: string;
+      value: string;
+      sortOrder: number;
+    }[];
+    await upsertReferenceRows(catalog);
+    console.log("ReferenceData catalog upserted:", catalog.length);
+  } else {
+    console.warn("reference_data.json missing — skipped Excel catalog sections");
   }
 
   // Final counts
@@ -716,6 +907,11 @@ async function main() {
     PlannedMaintenance: await prisma.plannedMaintenance.count(),
     ReferenceData: await prisma.referenceData.count(),
     ReleaseDependency: await prisma.releaseDependency.count(),
+    EnvironmentConflict: await prisma.environmentConflict.count(),
+    Blocker: await prisma.blocker.count(),
+    SystemCoreRecord: await prisma.systemCoreRecord.count(),
+    SystemMatrixRow: await prisma.systemMatrixRow.count(),
+    IntegrationFlow: await prisma.integrationFlow.count(),
   };
   console.log("FINAL COUNTS", JSON.stringify(counts, null, 2));
 }

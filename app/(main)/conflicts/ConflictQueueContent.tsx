@@ -13,7 +13,7 @@ import {
 } from "@/lib/table-page-columns";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { CONFLICT_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, dataTableTableClass, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
 import { AlertOctagon } from "lucide-react";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
@@ -66,49 +66,51 @@ function renderConflictCell(c: ConflictRow, key: ConflictColumnKey) {
   switch (key) {
     case "conflictCode":
       return (
-        <td key={key} className="px-4 py-3 font-mono text-xs font-semibold text-gray-800 dark:text-white whitespace-nowrap">
-          {c.conflictCode}
+        <td key={key} className={`${tableCell} font-mono text-xs font-semibold whitespace-nowrap`}>
+          <ProgressLink href={`/conflicts/${c.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+            {c.conflictCode}
+          </ProgressLink>
         </td>
       );
     case "status":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <StatusBadge status={c.status} />
         </td>
       );
     case "priority":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", PRIORITY_CLASSES[c.priority] ?? "")}>
             {c.priority}
           </span>
         </td>
       );
     case "assignedTo":
-      return <td key={key} className="px-4 py-3 text-gray-700 dark:text-white/80 whitespace-nowrap">{c.assignedTo}</td>;
+      return <td key={key} className={`${tableCell} text-gray-700 dark:text-white/80 whitespace-nowrap`}>{c.assignedTo}</td>;
     case "release1Code":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <ReleaseCode code={c.release1Code} dbId={c.release1DbId} />
         </td>
       );
     case "release2Code":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <ReleaseCode code={c.release2Code} dbId={c.release2DbId} />
         </td>
       );
     case "application":
-      return <td key={key} className="px-4 py-3 text-gray-700 dark:text-white/80 whitespace-nowrap">{c.application}</td>;
+      return <td key={key} className={`${tableCell} text-gray-700 dark:text-white/80 whitespace-nowrap`}>{c.application}</td>;
     case "department":
-      return <td key={key} className="px-4 py-3 text-gray-700 dark:text-white/80 whitespace-nowrap">{c.department}</td>;
+      return <td key={key} className={`${tableCell} text-gray-700 dark:text-white/80 whitespace-nowrap`}>{c.department}</td>;
     case "conflictingEnvironment":
-      return <td key={key} className="px-4 py-3 text-gray-600 dark:text-white/70 whitespace-nowrap">{c.conflictingEnvironment}</td>;
+      return <td key={key} className={`${tableCell} text-gray-600 dark:text-white/70 whitespace-nowrap`}>{c.conflictingEnvironment}</td>;
     case "environmentConflictType":
-      return <td key={key} className="px-4 py-3 text-gray-600 dark:text-white/70 whitespace-nowrap">{c.environmentConflictType}</td>;
+      return <td key={key} className={`${tableCell} text-gray-600 dark:text-white/70 whitespace-nowrap`}>{c.environmentConflictType}</td>;
     case "notes":
       return (
-        <td key={key} className="px-4 py-3 text-gray-600 dark:text-white/70 max-w-[280px] truncate" title={c.notes ?? ""}>
+        <td key={key} className={`${tableCell} text-gray-600 dark:text-white/70 max-w-[280px] truncate`} title={c.notes ?? ""}>
           {c.notes ?? "—"}
         </td>
       );

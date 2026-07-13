@@ -7,7 +7,7 @@ export const RELEASE_COLUMNS: ColumnDef[] = [
   { key: "name", label: "Release Name" },
   { key: "department", label: "Department" },
   { key: "application", label: "Application" },
-  { key: "dependencies", label: "Dependencies" },
+  { key: "externalDependencies", label: "External Dependencies " },
   { key: "releaseSize", label: "Release Size" },
   { key: "impact", label: "Impact" },
   { key: "priority", label: "Priority" },
@@ -17,53 +17,94 @@ export const RELEASE_COLUMNS: ColumnDef[] = [
   { key: "testEnvRequired", label: "Test Env Required" },
   { key: "uatEnvRequired", label: "UAT Env Required" },
   { key: "status", label: "Status" },
+  { key: "releaseHealth", label: "Release Health" },
   { key: "conflictFlag", label: "Conflict Flag" },
-  { key: "conflictIds", label: "Conflict ID(s)" },
-  { key: "notes", label: "Notes" },
-  { key: "readinessPercent", label: "Readiness %" },
+  { key: "conflictId", label: "Conflict ID" },
+  { key: "conflictingRelease", label: "Conflicting Release" },
+  { key: "conflictType", label: "Conflict Type" },
+  { key: "conflictNotes", label: "Conflict Notes" },
   { key: "blockers", label: "Blockers" },
-  { key: "vendorMaintenance", label: "Vendor Maintenance" },
   { key: "changeFreeze", label: "Change Freeze" },
-  { key: "regulatory", label: "Regulatory" },
+  { key: "vendorMaintenance", label: "Vendor Maintenance" },
+  { key: "rollbackPlan", label: "Rollback Plan" },
+  { key: "readinessPercent", label: "Readiness %" },
+  { key: "goLiveChecklistPercent", label: "Go-Live Checklist %" },
   { key: "releaseOwnerId", label: "Release Owner ID" },
   { key: "approvalStatus", label: "Approval Status" },
-  { key: "dependsOn", label: "Depends On" },
-  { key: "rollbackPlan", label: "Rollback Plan" },
-  { key: "goLiveChecklistPercent", label: "Go-Live Checklist %" },
   { key: "stakeholderIds", label: "Stakeholder IDs" },
+  { key: "dependsOn", label: "Depends On Other releases" },
+  { key: "regulatory", label: "Regulatory" },
   { key: "deploymentWindow", label: "Deployment Window" },
+  { key: "devSignoff", label: "Dev Signoff" },
+  { key: "testSignoff", label: "Test Sign-off" },
+  { key: "uatSignoff", label: "UAT Sign-off" },
+  { key: "securityClearance", label: "Security Clearance" },
+  { key: "dressRehearsal", label: "Dress Rehearsal" },
+  { key: "hypercarePlan", label: "Hypercare Plan" },
+  { key: "commsPlan", label: "Comms Plan" },
+  { key: "trainingStatus", label: "Training Status" },
 ];
 
+/** Core release-desk columns — visible by default; extended governance/sign-off columns stay hidden until enabled. */
+export const RELEASE_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "releaseCode",
+  "name",
+  "department",
+  "application",
+  "releaseSize",
+  "impact",
+  "priority",
+  "cabDate",
+  "startDate",
+  "endDate",
+  "status",
+  "regulatory",
+  "deploymentWindow",
+] as const;
+
+export const RELEASE_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = RELEASE_COLUMNS.map((c) => c.key).filter(
+  (k) => !(RELEASE_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const DRIFT_COLUMNS: ColumnDef[] = [
-  { key: "driftCode", label: "Drift" },
-  { key: "release", label: "Release" },
+  { key: "driftCode", label: "Drift ID" },
+  { key: "release", label: "Release ID" },
+  { key: "releaseName", label: "Release Name" },
   { key: "application", label: "Application" },
-  { key: "environment", label: "Env" },
-  { key: "type", label: "Type" },
+  { key: "department", label: "Department" },
+  { key: "environment", label: "Environment" },
+  { key: "type", label: "Drift Type:" },
+  { key: "category", label: "Drift Category" },
+  { key: "detected", label: "Detected Date" },
   { key: "severity", label: "Severity" },
+  { key: "description", label: "Description" },
+  { key: "impactOnRelease", label: "Impact on Release" },
+  { key: "remediationAction", label: "Remediation Action" },
   { key: "status", label: "Status" },
-  { key: "detected", label: "Detected" },
+  { key: "etaToFix", label: "ETA to Fix" },
 ];
 
 export const INCIDENT_COLUMNS: ColumnDef[] = [
-  { key: "incidentCode", label: "Incident" },
+  { key: "incidentCode", label: "Incident ID" },
+  { key: "timestamp", label: "Timestamp" },
   { key: "application", label: "Application" },
+  { key: "department", label: "Department" },
   { key: "severity", label: "Severity" },
   { key: "title", label: "Title" },
   { key: "status", label: "Status" },
   { key: "impact", label: "Impact" },
   { key: "relatedRelease", label: "Related Release" },
   { key: "assignedTo", label: "Assigned To" },
-  { key: "environment", label: "Env" },
-  { key: "timestamp", label: "Timestamp" },
+  { key: "environment", label: "Environment" },
 ];
 
 export const APPLICATION_STATUS_COLUMNS: ColumnDef[] = [
   { key: "application", label: "Application" },
+  { key: "department", label: "Department" },
   { key: "environment", label: "Environment" },
   { key: "status", label: "Status" },
-  { key: "uptimePercent", label: "Uptime %" },
   { key: "lastCheck", label: "Last Check" },
+  { key: "uptimePercent", label: "Uptime %" },
   { key: "notes", label: "Notes" },
 ];
 
@@ -72,7 +113,6 @@ export const ENVIRONMENT_COLUMNS: ColumnDef[] = [
   { key: "application", label: "Application" },
   { key: "department", label: "Department" },
   { key: "environment", label: "Environment" },
-  { key: "envOwner", label: "Env Owner" },
   { key: "version", label: "Version" },
   { key: "buildNumber", label: "Build Number" },
   { key: "deployDate", label: "Deploy Date" },
@@ -120,6 +160,8 @@ export const APPROVAL_COLUMNS: ColumnDef[] = [
   { key: "approvalCode", label: "Approval ID" },
   { key: "releaseId", label: "Release ID" },
   { key: "releaseName", label: "Release Name" },
+  { key: "application", label: "Application" },
+  { key: "department", label: "Department" },
   { key: "approvalType", label: "Approval Type" },
   { key: "approverId", label: "Approver ID" },
   { key: "approverName", label: "Approver Name" },
@@ -133,35 +175,46 @@ export const APPROVAL_COLUMNS: ColumnDef[] = [
 
 export const LEAVE_COLUMNS: ColumnDef[] = [
   { key: "leaveCode", label: "Leave ID" },
-  { key: "staffMember", label: "Staff Member" },
+  { key: "userId", label: "User ID" },
+  { key: "staffMember", label: "User Name" },
   { key: "department", label: "Department" },
-  { key: "type", label: "Type" },
-  { key: "dates", label: "Dates" },
+  { key: "role", label: "Role" },
+  { key: "leaveStart", label: "Leave Start" },
+  { key: "leaveEnd", label: "Leave End" },
+  { key: "type", label: "Leave Type" },
   { key: "days", label: "Days" },
-  { key: "risk", label: "Risk" },
-  { key: "affectedReleases", label: "Affected Releases" },
+  { key: "affectedReleases", label: "Affected Release" },
+  { key: "riskImpact", label: "Risk Impact" },
+  { key: "riskScore", label: "Risk Score" },
 ];
 
 export const MONITORING_ALERT_COLUMNS: ColumnDef[] = [
-  { key: "alertCode", label: "Alert" },
+  { key: "alertCode", label: "Alert ID" },
+  { key: "timestamp", label: "Timestamp" },
   { key: "application", label: "Application" },
+  { key: "department", label: "Department" },
+  { key: "alertType", label: "Alert Type" },
   { key: "severity", label: "Severity" },
   { key: "metric", label: "Metric" },
-  { key: "thresholdVsCurrent", label: "Threshold vs Current" },
+  { key: "threshold", label: "Threshold" },
+  { key: "currentValue", label: "Current Value" },
   { key: "status", label: "Status" },
   { key: "assignedTo", label: "Assigned To" },
-  { key: "environment", label: "Env" },
-  { key: "timestamp", label: "Timestamp" },
+  { key: "environment", label: "Environment" },
 ];
 
 export const PLANNED_MAINTENANCE_COLUMNS: ColumnDef[] = [
-  { key: "scheduled", label: "Scheduled" },
+  { key: "maintenanceCode", label: "Maintenance ID" },
+  { key: "scheduledDate", label: "Scheduled Date" },
+  { key: "startTime", label: "Start Time" },
+  { key: "endTime", label: "End Time" },
   { key: "type", label: "Type" },
-  { key: "application", label: "Application" },
-  { key: "environment", label: "Env" },
+  { key: "application", label: "Application(s)" },
+  { key: "environment", label: "Environment(s)" },
+  { key: "department", label: "Department" },
   { key: "impact", label: "Impact" },
-  { key: "approval", label: "Approval" },
   { key: "requestor", label: "Requestor" },
+  { key: "approval", label: "Approval Status" },
   { key: "notes", label: "Notes" },
 ];
 
@@ -203,9 +256,9 @@ export const USER_COLUMNS: ColumnDef[] = [
 
 /** Date is first so DataTable sticky-first-col sticks the row identifier (rule #8). */
 export const CALENDAR_TABLE_COLUMNS: ColumnDef[] = [
-  { key: "date", label: "Date" },
   { key: "month", label: "Month" },
   { key: "week", label: "Week" },
+  { key: "date", label: "Date" },
   { key: "day", label: "Day" },
   { key: "eventType", label: "Event Type" },
   { key: "releaseCode", label: "Release ID" },
@@ -228,6 +281,29 @@ export const CONFLICT_COLUMNS: ColumnDef[] = [
   { key: "conflictingEnvironment", label: "Conflicting Environment" },
   { key: "environmentConflictType", label: "Environment Conflict Type" },
   { key: "notes", label: "Notes" },
+];
+
+/** Blockers sheet — exact V0.6 Excel headers / left-to-right order. */
+export const BLOCKER_COLUMNS: ColumnDef[] = [
+  { key: "blockerCode", label: "Blocker ID" },
+  { key: "releaseCode", label: "Release ID" },
+  { key: "releaseName", label: "Release Name" },
+  { key: "department", label: "Department" },
+  { key: "application", label: "Application" },
+  { key: "blockerType", label: "Blocker Type" },
+  { key: "blockerDescription", label: "Blocker Description" },
+  { key: "severity", label: "Severity" },
+  { key: "raisedDate", label: "Raised Date" },
+  { key: "raisedBy", label: "Raised By" },
+  { key: "assignedTo", label: "Assigned To" },
+  { key: "status", label: "Status" },
+  { key: "targetResolutionDate", label: "Target Resolution Date" },
+  { key: "actualResolutionDate", label: "Actual Resolution Date" },
+  { key: "daysOpen", label: "Days Open" },
+  { key: "escalationLevel", label: "Escalation Level" },
+  { key: "rootCause", label: "Root Cause" },
+  { key: "resolutionNotes", label: "Resolution Notes" },
+  { key: "impactOnRelease", label: "Impact on Release" },
 ];
 
 export const DEPENDENCY_COLUMNS: ColumnDef[] = [
@@ -265,6 +341,7 @@ export const BOOKING_COLUMNS: ColumnDef[] = [
   { key: "preProdDays", label: "Pre-Prod Days" },
   { key: "conflictFlag", label: "Conflict Flag" },
   { key: "notes", label: "Notes" },
+  { key: "environmentConflictId", label: "Environment Conflict ID" },
 ];
 
 /** All page keys that support per-user column visibility (used for prefetch). */
@@ -273,6 +350,7 @@ export const TABLE_PAGE_KEYS = [
   "env-booking",
   "dependencies",
   "conflicts",
+  "blockers",
   "environments",
   "risks",
   "drifts",
@@ -449,13 +527,28 @@ export const RELEASE_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "regulatory", label: "Regulatory" },
   { key: "vendorMaintenance", label: "Vendor Maintenance" },
   { key: "releaseSize", label: "Release Size" },
+  { key: "releaseHealth", label: "Release Health" },
+  // Sign-off & readiness gates
+  { key: "devSignoff", label: "Dev Signoff" },
+  { key: "testSignoff", label: "Test Sign-off" },
+  { key: "uatSignoff", label: "UAT Sign-off" },
+  { key: "securityClearance", label: "Security Clearance" },
+  { key: "dressRehearsal", label: "Dress Rehearsal" },
+  { key: "hypercarePlan", label: "Hypercare Plan" },
+  { key: "commsPlan", label: "Comms Plan" },
+  { key: "trainingStatus", label: "Training Status" },
   // Numeric ranges
   { key: "readinessPercent", label: "Readiness %" },
   { key: "goLiveChecklistPercent", label: "Go-Live Checklist %" },
   // Boolean / presence
   { key: "conflictFlag", label: "Conflict Flag" },
   { key: "hasBlockers", label: "Blockers" },
-  { key: "hasDependsOn", label: "Depends On" },
+  { key: "hasDependsOn", label: "Depends On Other releases" },
+  // Conflict detail
+  { key: "conflictIdQ", label: "Conflict ID" },
+  { key: "conflictingReleaseQ", label: "Conflicting Release" },
+  { key: "conflictType", label: "Conflict Type" },
+  { key: "conflictNotesQ", label: "Conflict Notes" },
   // Dates (YYYY / YYYY-MM / YYYY-MM-DD) + env-flag text
   { key: "cabDateQ", label: "CAB Date" },
   { key: "startDateQ", label: "Start Date" },
@@ -465,6 +558,7 @@ export const RELEASE_FILTER_FIELDS: FilterFieldDef[] = [
   // Free-text
   { key: "releaseCodeQ", label: "Release ID" },
   { key: "nameQ", label: "Release Name" },
+  { key: "externalDependenciesQ", label: "External Dependencies" },
   { key: "notesQ", label: "Notes" },
   // Free-text name search against live User records (not a fixed dropdown)
   { key: "releaseOwnerId", label: "Release Owner" },
@@ -598,6 +692,39 @@ export const CONFLICT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = CONFLICT_FILTER_FIE
   .filter(
     (k) =>
       !["status", "priority", "departmentId", "applicationId", "assignedToQ"].includes(k)
+  );
+
+/**
+ * Blockers — own schema only (19 Excel columns).
+ * Default-visible: status / severity / type / department / assigned to / release ID.
+ */
+export const BLOCKER_FILTER_FIELDS: FilterFieldDef[] = [
+  { key: "status", label: "Status" },
+  { key: "severity", label: "Severity" },
+  { key: "blockerType", label: "Blocker Type" },
+  { key: "departmentId", label: "Department" },
+  { key: "assignedToQ", label: "Assigned To" },
+  { key: "releaseCodeQ", label: "Release ID" },
+  { key: "applicationId", label: "Application" },
+  { key: "blockerCodeQ", label: "Blocker ID" },
+  { key: "releaseNameQ", label: "Release Name" },
+  { key: "blockerDescriptionQ", label: "Blocker Description" },
+  { key: "raisedDateQ", label: "Raised Date" },
+  { key: "raisedByQ", label: "Raised By" },
+  { key: "targetResolutionDateQ", label: "Target Resolution Date" },
+  { key: "actualResolutionDateQ", label: "Actual Resolution Date" },
+  { key: "daysOpen", label: "Days Open" },
+  { key: "escalationLevel", label: "Escalation Level" },
+  { key: "rootCauseQ", label: "Root Cause" },
+  { key: "resolutionNotesQ", label: "Resolution Notes" },
+  { key: "impactOnReleaseQ", label: "Impact on Release" },
+];
+
+export const BLOCKER_DEFAULT_HIDDEN_FILTER_KEYS: string[] = BLOCKER_FILTER_FIELDS
+  .map((f) => f.key)
+  .filter(
+    (k) =>
+      !["status", "severity", "blockerType", "departmentId", "assignedToQ", "releaseCodeQ"].includes(k)
   );
 
 /**

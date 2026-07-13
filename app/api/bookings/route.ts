@@ -37,12 +37,42 @@ export async function PUT(req: Request) {
     const releaseId: string | undefined = body.releaseId || undefined;
     const purpose: string | undefined = body.purpose || undefined;
     const teamOverride: string | undefined = body.team || undefined;
+    const uatEnvCode: string | undefined = body.uatEnvCode || undefined;
+    const uatStart = body.uatStart ? new Date(body.uatStart) : null;
+    const uatEnd = body.uatEnd ? new Date(body.uatEnd) : null;
+    const preProdEnvCode: string | undefined = body.preProdEnvCode || undefined;
+    const preProdStart = body.preProdStart ? new Date(body.preProdStart) : null;
+    const preProdEnd = body.preProdEnd ? new Date(body.preProdEnd) : null;
 
     if (!applicationIds.length || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
       return NextResponse.json({ error: "applicationIds, fromDate, and toDate are required" }, { status: 400 });
     }
+    if (!environmentId) {
+      return NextResponse.json({ error: "environmentId is required" }, { status: 400 });
+    }
+    if (!releaseId) {
+      return NextResponse.json({ error: "releaseId is required" }, { status: 400 });
+    }
     if (toDate < fromDate) {
       return NextResponse.json({ error: "toDate must be on or after fromDate" }, { status: 400 });
+    }
+    if (uatStart && Number.isNaN(uatStart.getTime())) {
+      return NextResponse.json({ error: "Invalid uatStart" }, { status: 400 });
+    }
+    if (uatEnd && Number.isNaN(uatEnd.getTime())) {
+      return NextResponse.json({ error: "Invalid uatEnd" }, { status: 400 });
+    }
+    if (uatStart && uatEnd && uatEnd < uatStart) {
+      return NextResponse.json({ error: "uatEnd must be on or after uatStart" }, { status: 400 });
+    }
+    if (preProdStart && Number.isNaN(preProdStart.getTime())) {
+      return NextResponse.json({ error: "Invalid preProdStart" }, { status: 400 });
+    }
+    if (preProdEnd && Number.isNaN(preProdEnd.getTime())) {
+      return NextResponse.json({ error: "Invalid preProdEnd" }, { status: 400 });
+    }
+    if (preProdStart && preProdEnd && preProdEnd < preProdStart) {
+      return NextResponse.json({ error: "preProdEnd must be on or after preProdStart" }, { status: 400 });
     }
 
     const check = await checkBookingAvailability(applicationIds, fromDate, toDate);
@@ -70,14 +100,18 @@ export async function PUT(req: Request) {
         .reduce((max, n) => Math.max(max, n), 0) + 1;
 
     const dayMs = 24 * 60 * 60 * 1000;
-    const spanDays = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / dayMs) + 1);
+    const spanDays = (start: Date, end: Date) =>
+      Math.max(1, Math.round((end.getTime() - start.getTime()) / dayMs) + 1);
+    const testDays = spanDays(fromDate, toDate);
+    const uatDays = uatStart && uatEnd ? spanDays(uatStart, uatEnd) : null;
+    const preProdDays = preProdStart && preProdEnd ? spanDays(preProdStart, preProdEnd) : null;
 
     const created = [];
     for (const app of apps) {
-      const env =
-        (environmentId
-          ? app.environments.find((e) => e.id === environmentId)
-          : undefined) ?? app.environments[0];
+      const env = app.environments.find((e) => e.id === environmentId);
+      if (!env) {
+        return NextResponse.json({ error: "Environment not found for application" }, { status: 400 });
+      }
       const bookingCode = `ENV-${String(nextNum++).padStart(4, "0")}`;
       const team = teamOverride?.trim() || app.department.name;
 
@@ -85,20 +119,28 @@ export async function PUT(req: Request) {
         await createEnvBookingRow({
           bookingCode,
           applicationId: app.id,
-          environmentId: env?.id ?? null,
+          environmentId: env.id,
           bookedBy: user!.name,
           team,
           departmentName: app.department.name,
           fromDate,
           toDate,
           purpose: purpose ?? "End-to-end test window",
-          releaseId: releaseId || null,
+          releaseId,
           status: "BOOKED",
           conflictFlag: false,
-          testEnvCode: env?.name ?? null,
+          testEnvCode: env.name,
           testStart: fromDate,
           testEnd: toDate,
-          testDays: spanDays,
+          testDays,
+          uatEnvCode: uatEnvCode ?? null,
+          uatStart,
+          uatEnd,
+          uatDays,
+          preProdEnvCode: preProdEnvCode ?? null,
+          preProdStart,
+          preProdEnd,
+          preProdDays,
         }),
       );
     }
@@ -122,7 +164,7 @@ export async function GET(req: Request) {
       application: { include: { department: true } },
       release: { select: { id: true, releaseCode: true } },
     },
-    orderBy: { bookingCode: "asc" },
+    orderBy: { sourceOrder: "asc" },
   });
 
   return NextResponse.json(rows.map(mapDbEnvBookingRow));

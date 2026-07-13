@@ -1,4 +1,7 @@
-import { calcDbReadiness, getDbBlockers } from "./db-release-command";
+import {
+  calcDbReadiness,
+  isOpenBlockerStatus,
+} from "./db-release-command";
 import { releases as demoReleases } from "./dummy-data";
 import { calcReadiness, getBlockers } from "./utils";
 
@@ -17,7 +20,7 @@ export function readinessKey(source: "database" | "demo", id: string): string {
 export async function buildDbReadinessSummaries(
   prisma: typeof import("./prisma").prisma
 ): Promise<ReleaseReadinessSummary[]> {
-  const [releases, p1Issues] = await Promise.all([
+  const [releases, p1Issues, blockers] = await Promise.all([
     prisma.release.findMany({
       include: {
         applications: { include: { application: true } },
@@ -26,6 +29,9 @@ export async function buildDbReadinessSummaries(
       },
     }),
     prisma.p1Issue.findMany(),
+    prisma.blocker.findMany({
+      select: { releaseCode: true, status: true },
+    }),
   ]);
 
   const p1ByCode = new Map<string, typeof p1Issues>();
@@ -36,15 +42,21 @@ export async function buildDbReadinessSummaries(
     p1ByCode.set(p.releaseCode, list);
   });
 
+  const openBlockerCountByCode = new Map<string, number>();
+  blockers.forEach((b) => {
+    if (!isOpenBlockerStatus(b.status)) return;
+    openBlockerCountByCode.set(b.releaseCode, (openBlockerCountByCode.get(b.releaseCode) ?? 0) + 1);
+  });
+
   return releases.map((release) => {
     const issues = p1ByCode.get(release.releaseCode) ?? [];
-    const blockers = getDbBlockers(release, issues);
+    const openLive = openBlockerCountByCode.get(release.releaseCode) ?? 0;
     return {
       key: readinessKey("database", release.id),
       id: release.id,
       source: "database" as const,
-      readiness: calcDbReadiness(release, issues),
-      blockerCount: blockers.length,
+      readiness: calcDbReadiness(release, issues, openLive),
+      blockerCount: openLive,
     };
   });
 }

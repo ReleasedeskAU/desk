@@ -1,7 +1,7 @@
 import {
   calcDbReadiness,
   computeDbLifecycleStages,
-  getDbBlockers,
+  liveBlockersToCommandBlockers,
   type DbBlocker,
 } from "./db-release-command";
 import { predictDbRelease, type DbReleasePrediction } from "./db-predictive";
@@ -83,15 +83,26 @@ export async function buildDbRiskAgentContext(
 
   if (!release) return null;
 
-  const [p1Issues, workItems] = await Promise.all([
+  const [p1Issues, workItems, liveBlockerRows] = await Promise.all([
     prisma.p1Issue.findMany({ where: { releaseCode: release.releaseCode } }),
     prisma.workItem.findMany({ where: { releaseCode: release.releaseCode } }),
+    prisma.blocker.findMany({
+      where: { releaseCode: release.releaseCode },
+      orderBy: { sourceOrder: "asc" },
+      select: {
+        id: true,
+        blockerCode: true,
+        blockerDescription: true,
+        status: true,
+        severity: true,
+      },
+    }),
   ]);
 
-  const blockers = getDbBlockers(release, p1Issues);
-  const readiness = calcDbReadiness(release, p1Issues);
-  const stages = computeDbLifecycleStages(release, p1Issues);
-  const prediction = predictDbRelease(release, p1Issues);
+  const blockers = liveBlockersToCommandBlockers(liveBlockerRows);
+  const readiness = calcDbReadiness(release, p1Issues, blockers.length);
+  const stages = computeDbLifecycleStages(release, p1Issues, blockers);
+  const prediction = predictDbRelease(release, p1Issues, blockers);
   const impact = buildDependencyImpact(release, allReleases);
   const workSummary = summarizeWorkItems(workItems);
 
@@ -184,11 +195,19 @@ export function blockersToRiskFlags(
     ];
   }
 
+  const severityFromBlocker = (s?: string, fallbackIndex = 0): RiskFlag["severity"] => {
+    const key = (s ?? "").toLowerCase();
+    if (key === "critical" || key === "high") return "high";
+    if (key === "medium") return "medium";
+    if (key === "low") return "low";
+    return fallbackIndex === 0 ? "high" : fallbackIndex === 1 ? "medium" : "low";
+  };
+
   return blockers.slice(0, 4).map((b, i) => ({
     title: b.text.length > 72 ? `${b.text.slice(0, 69)}…` : b.text,
     explanation: b.text,
-    severity: i === 0 ? "high" : i === 1 ? "medium" : "low",
-    citations: [releaseCode, b.href ? "Linked blocker" : "Release desk rules"].filter(Boolean) as string[],
+    severity: severityFromBlocker(b.severity, i),
+    citations: [releaseCode, b.href ? "Blockers register" : "Release desk"].filter(Boolean) as string[],
   }));
 }
 

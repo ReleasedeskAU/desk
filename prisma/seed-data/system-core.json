@@ -1,0 +1,34 @@
+[
+  {
+    "System": "SAP S/4HANA (ERP)",
+    "Department": "Finance / Manufacturing",
+    "Type": "Core ERP",
+    "Integrates With": "All Departments",
+    "Data Flow": "Bidirectional",
+    "Key Data Exchanged": "GL, AP, AR, Inventory, Orders, Cost Centers"
+  },
+  {
+    "System": "Workday HCM",
+    "Department": "HR",
+    "Type": "Core HCM",
+    "Integrates With": "Finance, IT, Security",
+    "Data Flow": "Bidirectional",
+    "Key Data Exchanged": "Employee Data, Payroll, Org Structure"
+  },
+  {
+    "System": "ServiceNow ITSM",
+    "Department": "IT",
+    "Type": "Service Platform",
+    "Integrates With": "All Departments",
+    "Data Flow": "Bidirectional",
+    "Key Data Exchanged": "Incidents, Changes, Assets, CMDB"
+  },
+  {
+    "System": "Salesforce CRM",
+    "Department": "CRM",
+    "Type": "Core CRM",
+    "Integrates With": "Finance, Manufacturing, Logistics",
+    "Data Flow": "Bidirectional",
+    "Key Data Exchanged": "Customers, Opportunities, Orders, Contracts"
+  }
+]

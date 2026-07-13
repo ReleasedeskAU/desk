@@ -135,14 +135,14 @@ export function CalendarTableView({
             <tbody>
               {pageRows.map((row) => (
                 <tr key={row.id} className={tableRow}>
-                  {isColumnVisible("date") && (
-                    <td className={`${tableCell} whitespace-nowrap font-medium`}>{formatDate(row.date)}</td>
-                  )}
                   {isColumnVisible("month") && (
                     <td className={`${tableCell} whitespace-nowrap text-gray-600 dark:text-white/70`}>{row.month}</td>
                   )}
                   {isColumnVisible("week") && (
                     <td className={`${tableCell} whitespace-nowrap text-gray-600 dark:text-white/70`}>{row.week}</td>
+                  )}
+                  {isColumnVisible("date") && (
+                    <td className={`${tableCell} whitespace-nowrap font-medium`}>{formatDate(row.date)}</td>
                   )}
                   {isColumnVisible("day") && (
                     <td className={`${tableCell} whitespace-nowrap text-gray-600 dark:text-white/70`}>{row.day}</td>

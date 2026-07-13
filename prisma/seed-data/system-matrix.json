@@ -1,0 +1,90 @@
+[
+  {
+    "From \\ To": "Finance",
+    "Finance": "—",
+    "HR": "●",
+    "IT": "●",
+    "CRM": "●",
+    "Manufacturing": "●",
+    "Logistics": "●",
+    "Legal": "●",
+    "Security": "○"
+  },
+  {
+    "From \\ To": "HR",
+    "Finance": "●",
+    "HR": "—",
+    "IT": "●",
+    "CRM": "○",
+    "Manufacturing": "○",
+    "Logistics": "○",
+    "Legal": "●",
+    "Security": "●"
+  },
+  {
+    "From \\ To": "IT",
+    "Finance": "●",
+    "HR": "●",
+    "IT": "—",
+    "CRM": "●",
+    "Manufacturing": "●",
+    "Logistics": "●",
+    "Legal": "●",
+    "Security": "●"
+  },
+  {
+    "From \\ To": "CRM",
+    "Finance": "●",
+    "HR": "○",
+    "IT": "●",
+    "CRM": "—",
+    "Manufacturing": "●",
+    "Logistics": "●",
+    "Legal": "●",
+    "Security": "○"
+  },
+  {
+    "From \\ To": "Manufacturing",
+    "Finance": "●",
+    "HR": "○",
+    "IT": "●",
+    "CRM": "●",
+    "Manufacturing": "—",
+    "Logistics": "●",
+    "Legal": "○",
+    "Security": "○"
+  },
+  {
+    "From \\ To": "Logistics",
+    "Finance": "●",
+    "HR": "○",
+    "IT": "●",
+    "CRM": "●",
+    "Manufacturing": "●",
+    "Logistics": "—",
+    "Legal": "○",
+    "Security": "○"
+  },
+  {
+    "From \\ To": "Legal",
+    "Finance": "●",
+    "HR": "●",
+    "IT": "●",
+    "CRM": "●",
+    "Manufacturing": "○",
+    "Logistics": "○",
+    "Legal": "—",
+    "Security": "●"
+  },
+  {
+    "From \\ To": "Security",
+    "Finance": "○",
+    "HR": "●",
+    "IT": "●",
+    "CRM": "○",
+    "Manufacturing": "○",
+    "Logistics": "○",
+    "Legal": "●",
+    "Security": "—"
+  }
+]

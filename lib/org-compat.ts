@@ -121,6 +121,14 @@ export type CreateEnvBookingInput = {
   testStart?: Date | null;
   testEnd?: Date | null;
   testDays?: number | null;
+  uatEnvCode?: string | null;
+  uatStart?: Date | null;
+  uatEnd?: Date | null;
+  uatDays?: number | null;
+  preProdEnvCode?: string | null;
+  preProdStart?: Date | null;
+  preProdEnd?: Date | null;
+  preProdDays?: number | null;
 };
 
 /**
@@ -153,6 +161,14 @@ export async function createEnvBookingRow(data: CreateEnvBookingInput) {
         testStart: data.testStart ?? null,
         testEnd: data.testEnd ?? null,
         testDays: data.testDays ?? null,
+        uatEnvCode: data.uatEnvCode ?? null,
+        uatStart: data.uatStart ?? null,
+        uatEnd: data.uatEnd ?? null,
+        uatDays: data.uatDays ?? null,
+        preProdEnvCode: data.preProdEnvCode ?? null,
+        preProdStart: data.preProdStart ?? null,
+        preProdEnd: data.preProdEnd ?? null,
+        preProdDays: data.preProdDays ?? null,
       },
       include,
     });
@@ -165,13 +181,18 @@ export async function createEnvBookingRow(data: CreateEnvBookingInput) {
       id, "organizationId", "bookingCode", "applicationId", "environmentId",
       "bookedBy", team, "departmentName", "fromDate", "toDate", purpose,
       "releaseId", status, "conflictFlag", "testEnvCode", "testStart", "testEnd",
-      "testDays", "createdAt", "updatedAt"
+      "testDays", "uatEnvCode", "uatStart", "uatEnd", "uatDays",
+      "preProdEnvCode", "preProdStart", "preProdEnd", "preProdDays",
+      "createdAt", "updatedAt"
     ) VALUES (
       ${id}, ${orgId}, ${data.bookingCode}, ${data.applicationId}, ${data.environmentId ?? null},
       ${data.bookedBy}, ${data.team}, ${data.departmentName ?? null}, ${data.fromDate}, ${data.toDate},
       ${data.purpose ?? null}, ${data.releaseId ?? null}, ${data.status ?? "BOOKED"},
       ${data.conflictFlag ?? false}, ${data.testEnvCode ?? null}, ${data.testStart ?? null},
-      ${data.testEnd ?? null}, ${data.testDays ?? null}, ${now}, ${now}
+      ${data.testEnd ?? null}, ${data.testDays ?? null},
+      ${data.uatEnvCode ?? null}, ${data.uatStart ?? null}, ${data.uatEnd ?? null}, ${data.uatDays ?? null},
+      ${data.preProdEnvCode ?? null}, ${data.preProdStart ?? null}, ${data.preProdEnd ?? null}, ${data.preProdDays ?? null},
+      ${now}, ${now}
     )
   `;
 

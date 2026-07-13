@@ -1,17 +1,137 @@
 [
-  {"Flow ID":"INT-001","Source System":"Salesforce CRM","Target System":"SAP S/4HANA","Integration Type":"API / Real-time","Frequency":"Real-time","Data Elements":"Sales Orders, Customer Master","Business Purpose":"Order-to-Cash Process"},
-  {"Flow ID":"INT-002","Source System":"SAP S/4HANA","Target System":"Workday HCM","Integration Type":"Batch / API","Frequency":"Daily","Data Elements":"Cost Centers, GL Accounts","Business Purpose":"Payroll & Financial Reporting"},
-  {"Flow ID":"INT-003","Source System":"Workday HCM","Target System":"Okta Identity","Integration Type":"SCIM","Frequency":"Real-time","Data Elements":"User Provisioning, Roles","Business Purpose":"Identity & Access Management"},
-  {"Flow ID":"INT-004","Source System":"SAP Manufacturing","Target System":"Blue Yonder WMS","Integration Type":"API / Batch","Frequency":"Hourly","Data Elements":"Production Orders, BOM","Business Purpose":"Supply Chain Execution"},
-  {"Flow ID":"INT-005","Source System":"Blue Yonder WMS","Target System":"SAP Transportation","Integration Type":"API","Frequency":"Real-time","Data Elements":"Shipments, Inventory","Business Purpose":"Logistics Coordination"},
-  {"Flow ID":"INT-006","Source System":"ServiceNow ITSM","Target System":"Splunk SIEM","Integration Type":"API","Frequency":"Real-time","Data Elements":"Incidents, Alerts","Business Purpose":"Security Operations"},
-  {"Flow ID":"INT-007","Source System":"CrowdStrike","Target System":"Microsoft Sentinel","Integration Type":"API","Frequency":"Real-time","Data Elements":"Threat Intelligence","Business Purpose":"Security Monitoring"},
-  {"Flow ID":"INT-008","Source System":"DocuSign CLM","Target System":"SAP S/4HANA","Integration Type":"API","Frequency":"On-demand","Data Elements":"Contracts, Vendor Terms","Business Purpose":"Procurement & Legal"},
-  {"Flow ID":"INT-009","Source System":"Anaplan","Target System":"SAP S/4HANA","Integration Type":"Batch","Frequency":"Daily","Data Elements":"Budgets, Forecasts","Business Purpose":"Financial Planning"},
-  {"Flow ID":"INT-010","Source System":"Oracle HCM","Target System":"ADP Workforce","Integration Type":"Batch","Frequency":"Bi-weekly","Data Elements":"Payroll Data, Time","Business Purpose":"Payroll Processing"},
-  {"Flow ID":"INT-011","Source System":"Salesforce CRM","Target System":"Zendesk","Integration Type":"API","Frequency":"Real-time","Data Elements":"Cases, Customer Data","Business Purpose":"Customer Service"},
-  {"Flow ID":"INT-012","Source System":"SAP S/4HANA","Target System":"IBM Cognos","Integration Type":"Batch","Frequency":"Daily","Data Elements":"Financial Data","Business Purpose":"Business Intelligence"},
-  {"Flow ID":"INT-013","Source System":"ServiceNow","Target System":"CyberArk PAM","Integration Type":"API","Frequency":"Real-time","Data Elements":"Access Requests","Business Purpose":"Privileged Access"},
-  {"Flow ID":"INT-014","Source System":"Workday","Target System":"Cornerstone LMS","Integration Type":"API","Frequency":"Daily","Data Elements":"Employee, Training","Business Purpose":"Learning Management"},
-  {"Flow ID":"INT-015","Source System":"SAP Concur","Target System":"SAP S/4HANA","Integration Type":"API","Frequency":"Daily","Data Elements":"Expenses, T&E","Business Purpose":"Expense Management"}
+  {
+    "Flow ID": "INT-001",
+    "Source System": "Salesforce CRM",
+    "Target System": "SAP S/4HANA",
+    "Integration Type": "API / Real-time",
+    "Frequency": "Real-time",
+    "Data Elements": "Sales Orders, Customer Master",
+    "Business Purpose": "Order-to-Cash Process"
+  },
+  {
+    "Flow ID": "INT-002",
+    "Source System": "SAP S/4HANA",
+    "Target System": "Workday HCM",
+    "Integration Type": "Batch / API",
+    "Frequency": "Daily",
+    "Data Elements": "Cost Centers, GL Accounts",
+    "Business Purpose": "Payroll & Financial Reporting"
+  },
+  {
+    "Flow ID": "INT-003",
+    "Source System": "Workday HCM",
+    "Target System": "Okta Identity",
+    "Integration Type": "SCIM",
+    "Frequency": "Real-time",
+    "Data Elements": "User Provisioning, Roles",
+    "Business Purpose": "Identity & Access Management"
+  },
+  {
+    "Flow ID": "INT-004",
+    "Source System": "SAP Manufacturing",
+    "Target System": "Blue Yonder WMS",
+    "Integration Type": "API / Batch",
+    "Frequency": "Hourly",
+    "Data Elements": "Production Orders, BOM",
+    "Business Purpose": "Supply Chain Execution"
+  },
+  {
+    "Flow ID": "INT-005",
+    "Source System": "Blue Yonder WMS",
+    "Target System": "SAP Transportation",
+    "Integration Type": "API",
+    "Frequency": "Real-time",
+    "Data Elements": "Shipments, Inventory",
+    "Business Purpose": "Logistics Coordination"
+  },
+  {
+    "Flow ID": "INT-006",
+    "Source System": "ServiceNow ITSM",
+    "Target System": "Splunk SIEM",
+    "Integration Type": "API",
+    "Frequency": "Real-time",
+    "Data Elements": "Incidents, Alerts",
+    "Business Purpose": "Security Operations"
+  },
+  {
+    "Flow ID": "INT-007",
+    "Source System": "CrowdStrike",
+    "Target System": "Microsoft Sentinel",
+    "Integration Type": "API",
+    "Frequency": "Real-time",
+    "Data Elements": "Threat Intelligence",
+    "Business Purpose": "Security Monitoring"
+  },
+  {
+    "Flow ID": "INT-008",
+    "Source System": "DocuSign CLM",
+    "Target System": "SAP S/4HANA",
+    "Integration Type": "API",
+    "Frequency": "On-demand",
+    "Data Elements": "Contracts, Vendor Terms",
+    "Business Purpose": "Procurement & Legal"
+  },
+  {
+    "Flow ID": "INT-009",
+    "Source System": "Anaplan",
+    "Target System": "SAP S/4HANA",
+    "Integration Type": "Batch",
+    "Frequency": "Daily",
+    "Data Elements": "Budgets, Forecasts",
+    "Business Purpose": "Financial Planning"
+  },
+  {
+    "Flow ID": "INT-010",
+    "Source System": "Oracle HCM",
+    "Target System": "ADP Workforce",
+    "Integration Type": "Batch",
+    "Frequency": "Bi-weekly",
+    "Data Elements": "Payroll Data, Time",
+    "Business Purpose": "Payroll Processing"
+  },
+  {
+    "Flow ID": "INT-011",
+    "Source System": "Salesforce CRM",
+    "Target System": "Zendesk",
+    "Integration Type": "API",
+    "Frequency": "Real-time",
+    "Data Elements": "Cases, Customer Data",
+    "Business Purpose": "Customer Service"
+  },
+  {
+    "Flow ID": "INT-012",
+    "Source System": "SAP S/4HANA",
+    "Target System": "IBM Cognos",
+    "Integration Type": "Batch",
+    "Frequency": "Daily",
+    "Data Elements": "Financial Data",
+    "Business Purpose": "Business Intelligence"
+  },
+  {
+    "Flow ID": "INT-013",
+    "Source System": "ServiceNow",
+    "Target System": "CyberArk PAM",
+    "Integration Type": "API",
+    "Frequency": "Real-time",
+    "Data Elements": "Access Requests",
+    "Business Purpose": "Privileged Access"
+  },
+  {
+    "Flow ID": "INT-014",
+    "Source System": "Workday",
+    "Target System": "Cornerstone LMS",
+    "Integration Type": "API",
+    "Frequency": "Daily",
+    "Data Elements": "Employee, Training",
+    "Business Purpose": "Learning Management"
+  },
+  {
+    "Flow ID": "INT-015",
+    "Source System": "SAP Concur",
+    "Target System": "SAP S/4HANA",
+    "Integration Type": "API",
+    "Frequency": "Daily",
+    "Data Elements": "Expenses, T&E",
+    "Business Purpose": "Expense Management"
+  }
 ]

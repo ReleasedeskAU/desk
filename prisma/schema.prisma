@@ -19,53 +19,54 @@ model Department {
 }
 
 model Application {
-  id            String               @id @default(cuid())
-  name          String
-  departmentId  String
-  department    Department           @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  type          String
-  productOwner  String
-  techLead      String
-  support       String
-  criticality   String
-  environments  Environment[]
-  releaseLinks  ReleaseApplication[]
-  bookings      EnvBooking[]
-  mappingFrom   SystemMappingEdge[]  @relation("MappingSourceApp")
-  mappingTo     SystemMappingEdge[]  @relation("MappingTargetApp")
-  envVersions   EnvironmentVersion[]
-  drifts        Drift[]
-  monitoringAlerts     MonitoringAlert[]
-  incidents            Incident[]
-  applicationStatuses  ApplicationStatus[]
-  plannedMaintenances  PlannedMaintenance[]
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  id                  String               @id @default(cuid())
+  name                String
+  departmentId        String
+  department          Department           @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  type                String
+  productOwner        String
+  techLead            String
+  support             String
+  criticality         String
+  environments        Environment[]
+  releaseLinks        ReleaseApplication[]
+  bookings            EnvBooking[]
+  mappingFrom         SystemMappingEdge[]  @relation("MappingSourceApp")
+  mappingTo           SystemMappingEdge[]  @relation("MappingTargetApp")
+  envVersions         EnvironmentVersion[]
+  drifts              Drift[]
+  monitoringAlerts    MonitoringAlert[]
+  incidents           Incident[]
+  applicationStatuses ApplicationStatus[]
+  plannedMaintenances PlannedMaintenance[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([name, departmentId])
 }
 
 model Environment {
-  id            String              @id @default(cuid())
+  id            String               @id @default(cuid())
   applicationId String
-  application   Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   name          String
   type          String
   owner         String
   lastDbRefresh DateTime?
   status        String
   bookings      EnvBooking[]
-  mappingFrom   SystemMappingEdge[] @relation("MappingSourceEnv")
-  mappingTo     SystemMappingEdge[] @relation("MappingTargetEnv")
+  mappingFrom   SystemMappingEdge[]  @relation("MappingSourceEnv")
+  mappingTo     SystemMappingEdge[]  @relation("MappingTargetEnv")
   versions      EnvironmentVersion[]
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
 
   @@unique([applicationId, name])
 }
 
 model EnvironmentVersion {
   id            String      @id @default(cuid())
+  appCode       String?
   applicationId String
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   environmentId String
@@ -76,6 +77,7 @@ model EnvironmentVersion {
   deployDate    DateTime?
   status        String?
   notes         String?
+  sourceOrder   Int?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -93,76 +95,79 @@ model ReleaseAuditEvent {
 }
 
 model Release {
-  id                    String               @id @default(cuid())
-  releaseCode           String               @unique
-  name                  String
-  programProject        String?
-  owner                 String
-  status                String
-  releaseDate           DateTime
-  priority              String
-  impact                String
-  departmentId          String
-  department            Department           @relation(fields: [departmentId], references: [id])
-  notes                 String?
-  decision              String?
+  id             String     @id @default(cuid())
+  releaseCode    String     @unique
+  name           String
+  programProject String?
+  owner          String
+  status         String
+  releaseDate    DateTime
+  priority       String
+  impact         String
+  departmentId   String
+  department     Department @relation(fields: [departmentId], references: [id])
+  notes          String?
+  decision       String?
 
   // --- Phase 1 new fields ---
-  releaseSize           String?
-  cabDate               DateTime?
-  startDate             DateTime?
-  testEnvRequired       String?
-  uatEnvRequired        String?
-  conflictFlag          Boolean              @default(false)
-  conflictId            String?
-  conflictingRelease    String?
-  conflictType          String?
-  conflictNotes         String?
-  /** Sheet "Dependencies" column (often "NA") — distinct from Depends On / External Dependencies. */
-  dependencies          String?
-  externalDependencies  String?
-  readinessPercent      Float?
-  blockers              String?
-  vendorMaintenance     String?
-  changeFreeze          String?
-  regulatory            String?
-  approvalStatus        String?
-  rollbackPlan          String?
+  releaseSize            String?
+  cabDate                DateTime?
+  startDate              DateTime?
+  testEnvRequired        String?
+  uatEnvRequired         String?
+  conflictFlag           Boolean   @default(false)
+  conflictId             String?
+  conflictingRelease     String?
+  conflictType           String?
+  conflictNotes          String?
+  /**
+   * Sheet "Dependencies" column (often "NA") — distinct from Depends On / External Dependencies.
+   */
+  dependencies           String?
+  externalDependencies   String?
+  readinessPercent       Float?
+  blockers               String?
+  vendorMaintenance      String?
+  changeFreeze           String?
+  regulatory             String?
+  approvalStatus         String?
+  rollbackPlan           String?
   goLiveChecklistPercent Float?
-  deploymentWindow      String?
-  releaseOwnerId        String?
-  releaseOwner          User?                @relation("ReleaseOwner", fields: [releaseOwnerId], references: [id])
+  deploymentWindow       String?
+  releaseOwnerId         String?
+  releaseOwner           User?     @relation("ReleaseOwner", fields: [releaseOwnerId], references: [id])
   // Go-live checklist / health (from Releases sheet)
-  devSignoff            String?
-  testSignoff           String?
-  uatSignoff            String?
-  securityClearance     String?
-  dressRehearsal        String?
-  hypercarePlan         String?
-  commsPlan             String?
-  trainingStatus        String?
-  supportBriefed        String?
-  releaseHealth         String?
+  devSignoff             String?
+  testSignoff            String?
+  uatSignoff             String?
+  securityClearance      String?
+  dressRehearsal         String?
+  hypercarePlan          String?
+  commsPlan              String?
+  trainingStatus         String?
+  supportBriefed         String?
+  releaseHealth          String?
+  sourceOrder            Int?
 
   // --- Weighted Risk Score (System 2) ---
-  weightedRiskScore     Float?
-  weightedRiskLevel     String?
+  weightedRiskScore Float?
+  weightedRiskLevel String?
 
   // --- Relations ---
-  applications          ReleaseApplication[]
-  dependsOn             ReleaseDependency[]  @relation("ReleaseDependsOn")
-  dependedBy            ReleaseDependency[]  @relation("ReleaseDependedBy")
-  bookings              EnvBooking[]
-  auditEvents           ReleaseAuditEvent[]
-  risks                 Risk[]
-  riskFactorInputs      ReleaseRiskFactorInput[]
-  drifts                Drift[]
-  approvals             Approval[]
-  dependentLeaves       LeaveRecordRelease[]
-  stakeholders          ReleaseStakeholder[]
-  calendarEvents        CalendarEvent[]
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  applications     ReleaseApplication[]
+  dependsOn        ReleaseDependency[]      @relation("ReleaseDependsOn")
+  dependedBy       ReleaseDependency[]      @relation("ReleaseDependedBy")
+  bookings         EnvBooking[]
+  auditEvents      ReleaseAuditEvent[]
+  risks            Risk[]
+  riskFactorInputs ReleaseRiskFactorInput[]
+  drifts           Drift[]
+  approvals        Approval[]
+  dependentLeaves  LeaveRecordRelease[]
+  stakeholders     ReleaseStakeholder[]
+  calendarEvents   CalendarEvent[]
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
 }
 
 model ReleaseApplication {
@@ -176,6 +181,7 @@ model ReleaseApplication {
 
 model ReleaseDependency {
   id                 String  @id @default(cuid())
+  dependencyCode     String? @unique
   releaseId          String
   dependsOnReleaseId String
   release            Release @relation("ReleaseDependsOn", fields: [releaseId], references: [id], onDelete: Cascade)
@@ -184,53 +190,101 @@ model ReleaseDependency {
   status             String?
   impactIfBlocked    String?
   notes              String?
+  sourceOrder        Int?
 
   @@unique([releaseId, dependsOnReleaseId])
 }
 
 model EnvBooking {
-  id              String       @id @default(cuid())
-  bookingCode     String?      @unique
-  applicationId   String
-  application     Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  environmentId   String?
-  environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
-  bookedBy        String
-  team            String
-  departmentName  String?
-  fromDate        DateTime
-  toDate          DateTime
-  purpose         String?
-  dependencies    String?
-  releaseId       String?
-  release         Release?     @relation(fields: [releaseId], references: [id], onDelete: SetNull)
-  status          String       @default("BOOKED")
+  id             String       @id @default(cuid())
+  organizationId String?
+  bookingCode    String?      @unique
+  applicationId  String
+  application    Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  environmentId  String?
+  environment    Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  bookedBy       String
+  team           String
+  departmentName String?
+  fromDate       DateTime
+  toDate         DateTime
+  purpose        String?
+  dependencies   String?
+  releaseId      String?
+  release        Release?     @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  status         String       @default("BOOKED")
 
   // --- Phase 1 new fields (release-driven booking shape) ---
-  releaseSize     String?
-  prodReleaseDate DateTime?
-  cabDate         DateTime?
-  testEnvCode     String?
-  testStart       DateTime?
-  testEnd         DateTime?
-  testDays        Int?
-  uatEnvCode      String?
-  uatStart        DateTime?
-  uatEnd          DateTime?
-  uatDays         Int?
-  preProdEnvCode  String?
-  preProdStart    DateTime?
-  preProdEnd      DateTime?
-  preProdDays     Int?
-  conflictFlag    Boolean      @default(false)
+  releaseSize           String?
+  prodReleaseDate       DateTime?
+  cabDate               DateTime?
+  testEnvCode           String?
+  testStart             DateTime?
+  testEnd               DateTime?
+  testDays              Int?
+  uatEnvCode            String?
+  uatStart              DateTime?
+  uatEnd                DateTime?
+  uatDays               Int?
+  preProdEnvCode        String?
+  preProdStart          DateTime?
+  preProdEnd            DateTime?
+  preProdDays           Int?
+  conflictFlag          Boolean   @default(false)
   environmentConflictId String?
+  sourceOrder           Int?
 
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EnvironmentConflict {
+  id                      String   @id @default(cuid())
+  conflictCode            String   @unique
+  status                  String
+  priority                String
+  assignedTo              String?
+  release1Code            String
+  release2Code            String
+  applicationName         String
+  departmentName          String
+  conflictingEnvironment  String
+  environmentConflictType String
+  notes                   String?
+  sourceOrder             Int
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model Blocker {
+  id                   String    @id @default(cuid())
+  blockerCode          String    @unique
+  releaseCode          String
+  releaseName          String
+  departmentName       String
+  applicationName      String
+  blockerType          String
+  blockerDescription   String
+  severity             String
+  raisedDate           DateTime
+  raisedBy             String
+  assignedTo           String?
+  status               String
+  targetResolutionDate DateTime?
+  actualResolutionDate DateTime?
+  daysOpen             Int
+  escalationLevel      String
+  rootCause            String?
+  resolutionNotes      String?
+  impactOnRelease      String
+  sourceOrder          Int
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 model SystemMappingGroup {
   id          String              @id @default(cuid())
+  organizationId String?
   name        String
   status      String              @default("accepted")
   sourceNotes String?
@@ -240,43 +294,76 @@ model SystemMappingGroup {
 }
 
 model SystemMappingEdge {
-  id           String               @id @default(cuid())
-  groupId      String?
-  group        SystemMappingGroup?  @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  sourceAppId  String
-  sourceApp    Application          @relation("MappingSourceApp", fields: [sourceAppId], references: [id], onDelete: Cascade)
-  sourceEnvId  String
-  sourceEnv    Environment          @relation("MappingSourceEnv", fields: [sourceEnvId], references: [id], onDelete: Cascade)
-  targetAppId  String
-  targetApp    Application          @relation("MappingTargetApp", fields: [targetAppId], references: [id], onDelete: Cascade)
-  targetEnvId  String
-  targetEnv    Environment          @relation("MappingTargetEnv", fields: [targetEnvId], references: [id], onDelete: Cascade)
-  direction    String
-  notes        String?
-  isDefault    Boolean              @default(true)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  id          String              @id @default(cuid())
+  organizationId String?
+  groupId     String?
+  group       SystemMappingGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sourceAppId String
+  sourceApp   Application         @relation("MappingSourceApp", fields: [sourceAppId], references: [id], onDelete: Cascade)
+  sourceEnvId String
+  sourceEnv   Environment         @relation("MappingSourceEnv", fields: [sourceEnvId], references: [id], onDelete: Cascade)
+  targetAppId String
+  targetApp   Application         @relation("MappingTargetApp", fields: [targetAppId], references: [id], onDelete: Cascade)
+  targetEnvId String
+  targetEnv   Environment         @relation("MappingTargetEnv", fields: [targetEnvId], references: [id], onDelete: Cascade)
+  direction   String
+  notes       String?
+  isDefault   Boolean             @default(true)
+  sourceOrder Int?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model SystemCoreRecord {
+  id               String   @id @default(cuid())
+  system           String
+  department       String
+  type             String
+  integratesWith   String
+  dataFlow         String
+  keyDataExchanged String
+  sourceOrder      Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([system, sourceOrder])
+}
+
+model SystemMatrixRow {
+  id             String   @id @default(cuid())
+  fromDepartment String
+  finance        String
+  hr             String
+  it             String
+  crm            String
+  manufacturing  String
+  logistics      String
+  legal          String
+  security       String
+  sourceOrder    Int      @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Connector {
-  id            String             @id @default(cuid())
-  name          String
-  type          String
-  authType      String
-  baseUrl       String?
-  credentials   String
-  config        Json?
-  pollInterval  Int                @default(15)
-  status        String             @default("PENDING")
-  lastSyncedAt  DateTime?
-  lastError     String?
-  enabled       Boolean            @default(true)
-  createdBy     String?
-  syncLogs      ConnectorSyncLog[]
-  workItems     WorkItem[]
-  p1Issues      P1Issue[]
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  id           String             @id @default(cuid())
+  name         String
+  type         String
+  authType     String
+  baseUrl      String?
+  credentials  String
+  config       Json?
+  pollInterval Int                @default(15)
+  status       String             @default("PENDING")
+  lastSyncedAt DateTime?
+  lastError    String?
+  enabled      Boolean            @default(true)
+  createdBy    String?
+  syncLogs     ConnectorSyncLog[]
+  workItems    WorkItem[]
+  p1Issues     P1Issue[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 }
 
 model ConnectorSyncLog {
@@ -377,25 +464,25 @@ model AgentPauseState {
 }
 
 model User {
-  id              String               @id @default(cuid())
-  userId          String               @unique
-  name            String
-  email           String               @unique
-  role            String
-  department      String
-  manager         String?
-  accessLevel     String
-  status          String
-  lastLogin       DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  name        String
+  email       String    @unique
+  role        String
+  department  String
+  manager     String?
+  accessLevel String
+  status      String
+  lastLogin   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   // Back-relations
-  ownedReleases   Release[]            @relation("ReleaseOwner")
-  risksOwned      Risk[]
-  approvalsGiven  Approval[]
-  leaveRecords    LeaveRecord[]
-  stakeholderOf   ReleaseStakeholder[]
+  ownedReleases  Release[]            @relation("ReleaseOwner")
+  risksOwned     Risk[]
+  approvalsGiven Approval[]
+  leaveRecords   LeaveRecord[]
+  stakeholderOf  ReleaseStakeholder[]
 }
 
 // ─── Phase 1: New Models ────────────────────────────────────
@@ -428,6 +515,7 @@ model Risk {
   riskOwner          User?    @relation(fields: [riskOwnerId], references: [id])
   status             String
   notes              String?
+  sourceOrder        Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -481,6 +569,7 @@ model Drift {
   remediationAction String?
   status            String
   etaToFix          DateTime?
+  sourceOrder       Int?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -525,6 +614,7 @@ model MonitoringAlert {
   status          String
   assignedTo      String?
   environmentName String
+  sourceOrder     Int?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -550,6 +640,7 @@ model Incident {
   assignedTo         String?
   relatedReleaseCode String?
   environmentName    String
+  sourceOrder        Int?
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
@@ -568,6 +659,7 @@ model ApplicationStatus {
   lastCheck       DateTime
   uptimePercent   Float?
   notes           String?
+  sourceOrder     Int?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -594,6 +686,7 @@ model PlannedMaintenance {
   requestor       String?
   approvalStatus  String
   notes           String?
+  sourceOrder     Int?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }
@@ -609,28 +702,30 @@ model IntegrationFlow {
   frequency       String
   dataElements    String
   businessPurpose String
+  sourceOrder     Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
 
 model Approval {
-  id            String    @id @default(cuid())
-  approvalCode  String    @unique
-  releaseId     String
-  release       Release   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  id              String    @id @default(cuid())
+  approvalCode    String    @unique
+  releaseId       String
+  release         Release   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
   // Denormalized from Excel Approvals sheet (also available via release)
   applicationName String?
   departmentName  String?
-  approvalType  String
-  approverId    String
-  approver      User      @relation(fields: [approverId], references: [id])
-  submittedDate DateTime
-  decisionDate  DateTime?
-  decision      String    @default("Pending")
-  comments      String?
-  cabMeetingId  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  approvalType    String
+  approverId      String
+  approver        User      @relation(fields: [approverId], references: [id])
+  submittedDate   DateTime
+  decisionDate    DateTime?
+  decision        String    @default("Pending")
+  comments        String?
+  cabMeetingId    String?
+  sourceOrder     Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([releaseId])
 }
@@ -646,6 +741,7 @@ model LeaveRecord {
   days             Int
   riskImpact       String?
   riskScore        Int
+  sourceOrder      Int?
   affectedReleases LeaveRecordRelease[]
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
@@ -663,18 +759,19 @@ model LeaveRecordRelease {
 }
 
 model CalendarEvent {
-  id             String    @id @default(cuid())
-  date           DateTime
-  eventType      String
-  releaseId      String?
-  release        Release?  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
-  title          String
+  id              String   @id @default(cuid())
+  date            DateTime
+  eventType       String
+  releaseId       String?
+  release         Release? @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  title           String
   applicationName String?
-  departmentName String?
-  sizeImpact     String?
-  notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  departmentName  String?
+  sizeImpact      String?
+  notes           String?
+  sourceOrder     Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([releaseId])
 }

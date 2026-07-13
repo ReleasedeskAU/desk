@@ -13,7 +13,8 @@ import {
 import { formatDate } from "@/lib/utils";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { MAINTENANCE_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
@@ -51,13 +52,17 @@ export default function PlannedMaintenanceContent() {
     sortDir,
     toggleSort,
   } = useFilteredFetch<MaintenanceRow>("/api/planned-maintenance", PLANNED_MAINTENANCE_FILTER_SCHEMA, {
-    defaultSortKey: "scheduled",
+    defaultSortKey: "scheduledDate",
     defaultSortDir: "asc",
     sortAccessors: {
-      scheduled: (r) => new Date(r.scheduledDate).getTime(),
+      maintenanceCode: (r) => r.maintenanceCode,
+      scheduledDate: (r) => new Date(r.scheduledDate).getTime(),
+      startTime: (r) => r.startTime,
+      endTime: (r) => r.endTime,
       type: (r) => r.type,
       application: (r) => r.application?.name ?? "",
       environment: (r) => r.environmentName,
+      department: (r) => r.departmentName ?? "",
       impact: (r) => r.impact,
       approval: (r) => r.approvalStatus,
       requestor: (r) => r.requestor ?? "",
@@ -169,7 +174,7 @@ export default function PlannedMaintenanceContent() {
       ) : (
         <DataTable title="Maintenance Calendar" icon={CalendarClock} toolbar={<TablePageToolbar columnPicker={columnPicker} presets={MAINTENANCE_SORT_PRESETS} sortKey={sortKey} sortDir={sortDir} onSelectSort={setSort} />}>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={PLANNED_MAINTENANCE_COLUMNS}
@@ -182,18 +187,23 @@ export default function PlannedMaintenanceContent() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className={tableRow}>
-                    {isColumnVisible("scheduled") && (
-                    <td className={`${tableCell} whitespace-nowrap`}>
-                      <span className="font-mono text-xs text-brand-600 dark:text-brand-400">{r.maintenanceCode}</span>
-                      <div className="text-xs text-gray-500 dark:text-white/50">{formatDate(r.scheduledDate)} · {r.startTime}–{r.endTime}</div>
-                    </td>
+                    {isColumnVisible("maintenanceCode") && (
+                      <td className={`${tableCell} whitespace-nowrap`}>
+                        <ProgressLink href={`/planned-maintenance/${r.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                          {r.maintenanceCode}
+                        </ProgressLink>
+                      </td>
                     )}
+                    {isColumnVisible("scheduledDate") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(r.scheduledDate)}</td>}
+                    {isColumnVisible("startTime") && <td className={`${tableCell} whitespace-nowrap`}>{r.startTime}</td>}
+                    {isColumnVisible("endTime") && <td className={`${tableCell} whitespace-nowrap`}>{r.endTime}</td>}
                     {isColumnVisible("type") && <td className={`${tableCell} whitespace-nowrap`}>{r.type}</td>}
                     {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{r.application?.name ?? "—"}</td>}
                     {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{r.environmentName}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{r.departmentName ?? "—"}</td>}
                     {isColumnVisible("impact") && <td className={`${tableCell} whitespace-nowrap`}>{r.impact}</td>}
-                    {isColumnVisible("approval") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={r.approvalStatus} /></td>}
                     {isColumnVisible("requestor") && <td className={`${tableCell} whitespace-nowrap`}>{r.requestor ?? "—"}</td>}
+                    {isColumnVisible("approval") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={r.approvalStatus} /></td>}
                     {isColumnVisible("notes") && <td className={`${tableCell} truncate max-w-[240px]`} title={r.notes ?? ""}>{r.notes ?? "—"}</td>}
                   </tr>
                 ))}

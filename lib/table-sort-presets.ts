@@ -48,8 +48,8 @@ export const APPROVAL_SORT_PRESETS: TableSortPreset[] = [
 ];
 
 export const MAINTENANCE_SORT_PRESETS: TableSortPreset[] = [
-  { id: "soonest", label: "Soonest scheduled", sort: "scheduled", sortDir: "asc" },
-  { id: "latest", label: "Latest scheduled", sort: "scheduled", sortDir: "desc" },
+  { id: "soonest", label: "Soonest scheduled", sort: "scheduledDate", sortDir: "asc" },
+  { id: "latest", label: "Latest scheduled", sort: "scheduledDate", sortDir: "desc" },
   { id: "impact-high", label: "Highest impact", sort: "impact", sortDir: "desc" },
 ];
 
@@ -80,6 +80,13 @@ export const DEPENDENCY_SORT_PRESETS: TableSortPreset[] = [
 export const CONFLICT_SORT_PRESETS: TableSortPreset[] = [
   { id: "conflict-az", label: "Conflict ID (A → Z)", sort: "conflictCode", sortDir: "asc" },
   { id: "priority-high", label: "Highest priority", sort: "priority", sortDir: "desc" },
+  { id: "status", label: "Status", sort: "status", sortDir: "asc" },
+];
+
+export const BLOCKER_SORT_PRESETS: TableSortPreset[] = [
+  { id: "blocker-az", label: "Blocker ID (A → Z)", sort: "blockerCode", sortDir: "asc" },
+  { id: "severity-high", label: "Highest severity", sort: "severity", sortDir: "desc" },
+  { id: "days-open", label: "Longest open", sort: "daysOpen", sortDir: "desc" },
   { id: "status", label: "Status", sort: "status", sortDir: "asc" },
 ];
 

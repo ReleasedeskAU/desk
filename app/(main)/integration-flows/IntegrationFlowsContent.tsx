@@ -11,7 +11,8 @@ import {
 } from "@/lib/table-page-columns";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { INTEGRATION_FLOW_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
@@ -184,7 +185,7 @@ export default function IntegrationFlowsContent() {
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={INTEGRATION_FLOW_COLUMNS}
@@ -198,8 +199,10 @@ export default function IntegrationFlowsContent() {
                 {rows.map((r) => (
                   <tr key={r.id} className={tableRow}>
                     {isColumnVisible("flowCode") && (
-                      <td className={`${tableCell} whitespace-nowrap font-mono text-xs text-brand-600 dark:text-brand-400`}>
-                        {r.flowCode}
+                      <td className={`${tableCell} whitespace-nowrap font-mono text-xs`}>
+                        <ProgressLink href={`/integration-flows/${r.id}`} className="text-brand-600 dark:text-brand-400 hover:underline">
+                          {r.flowCode}
+                        </ProgressLink>
                       </td>
                     )}
                     {isColumnVisible("sourceSystem") && (

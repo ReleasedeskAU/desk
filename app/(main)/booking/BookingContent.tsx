@@ -71,6 +71,7 @@ type BookingRow = {
   preProdDays?: number | null;
   conflictFlag: boolean;
   purpose?: string | null;
+  environmentConflictId?: string | null;
 };
 
 type BookingColumnKey = (typeof BOOKING_COLUMNS)[number]["key"];
@@ -126,9 +127,38 @@ function cellValue(row: BookingRow, key: BookingColumnKey) {
       return row.conflictFlag ? "⚠️ CONFLICT" : "";
     case "notes":
       return row.purpose ?? "";
+    case "environmentConflictId":
+      return row.environmentConflictId ?? "";
     default:
       return "";
   }
+}
+
+function parseConflictCodes(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0 && c !== "—");
+}
+
+function ConflictIdLinks({ raw }: { raw: string }) {
+  const codes = parseConflictCodes(raw);
+  if (!codes.length) return <>{raw || "—"}</>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
+      {codes.map((code, i) => (
+        <span key={code} className="inline-flex items-center">
+          {i > 0 && <span className="text-gray-400 mr-1">,</span>}
+          <ProgressLink
+            href={`/conflicts/${encodeURIComponent(code)}`}
+            className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+          >
+            {code}
+          </ProgressLink>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export default function BookingContent() {
@@ -170,12 +200,15 @@ export default function BookingContent() {
       preProdDays: (r) => r.preProdDays ?? 0,
       conflictFlag: (r) => (r.conflictFlag ? 1 : 0),
       notes: (r) => r.purpose ?? "",
+      environmentConflictId: (r) => r.environmentConflictId ?? "",
     },
   });
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [apps, setApps] = useState<{ id: string; name: string; departmentId: string }[]>([]);
   const [envs, setEnvs] = useState<{ id: string; name: string; applicationId: string; application: { name: string } }[]>([]);
-  const [releases, setReleases] = useState<{ id: string; releaseCode: string; name: string }[]>([]);
+  const [releases, setReleases] = useState<
+    { id: string; releaseCode: string; name: string; applications?: { application: { id: string } }[] }[]
+  >([]);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [display, setDisplay] = useState<BookingDisplay>("table");
@@ -203,7 +236,9 @@ export default function BookingContent() {
           "/api/environments",
           { signal: ac.signal, label: "environments" },
         ),
-        safeFetchJson<{ id: string; releaseCode: string; name: string }[]>("/api/releases", {
+        safeFetchJson<
+          { id: string; releaseCode: string; name: string; applications?: { application: { id: string } }[] }[]
+        >("/api/releases", {
           signal: ac.signal,
           label: "releases",
         }),
@@ -329,12 +364,13 @@ export default function BookingContent() {
         }))}
         environments={envs.map((e) => ({
           value: e.id,
-          label: `${e.application.name} — ${e.name}`,
+          label: e.name,
           applicationId: e.applicationId,
         }))}
         releases={releases.map((r) => ({
           value: r.id,
           label: `${r.releaseCode} — ${r.name}`,
+          applicationIds: r.applications?.map((a) => a.application.id) ?? [],
         }))}
         onClose={() => setModalOpen(false)}
         onSaved={() => refetch()}
@@ -687,13 +723,22 @@ export default function BookingContent() {
                                 )}
                                 title={isNotes ? String(value) : undefined}
                               >
-                                {col.key === "releaseId" && row.release?.id && row.release.releaseCode ? (
+                                {col.key === "bookingCode" && row.id ? (
+                                  <ProgressLink
+                                    href={`/booking/${row.id}`}
+                                    className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+                                  >
+                                    {displayVal}
+                                  </ProgressLink>
+                                ) : col.key === "releaseId" && row.release?.id && row.release.releaseCode ? (
                                   <ProgressLink
                                     href={`/releases/${row.release.id}`}
                                     className="font-semibold text-brand-600 hover:underline dark:text-brand-400"
                                   >
                                     {row.release.releaseCode}
                                   </ProgressLink>
+                                ) : col.key === "environmentConflictId" && String(value).trim() ? (
+                                  <ConflictIdLinks raw={String(value)} />
                                 ) : (
                                   displayVal
                                 )}

@@ -1,0 +1,122 @@
+[
+  {
+    "category": "environment_conflict_type",
+    "value": "Same Test/UAT env required",
+    "sortOrder": 1
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "Same UAT env required",
+    "sortOrder": 2
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "Same Test env required",
+    "sortOrder": 3
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "Overlapping Test/UAT window",
+    "sortOrder": 4
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "UAT environment overlap",
+    "sortOrder": 5
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "Pre-Prod env conflict",
+    "sortOrder": 6
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "Database refresh conflict",
+    "sortOrder": 7
+  },
+  {
+    "category": "environment_conflict_type",
+    "value": "Shared infrastructure conflict",
+    "sortOrder": 8
+  },
+  {
+    "category": "sign_off_status",
+    "value": "Yes",
+    "sortOrder": 1
+  },
+  {
+    "category": "sign_off_status",
+    "value": "Pending",
+    "sortOrder": 2
+  },
+  {
+    "category": "sign_off_status",
+    "value": "No",
+    "sortOrder": 3
+  },
+  {
+    "category": "sign_off_status",
+    "value": "Not Started",
+    "sortOrder": 4
+  },
+  {
+    "category": "sign_off_status",
+    "value": "NA",
+    "sortOrder": 5
+  },
+  {
+    "category": "plan_status",
+    "value": "Ready",
+    "sortOrder": 1
+  },
+  {
+    "category": "plan_status",
+    "value": "Draft",
+    "sortOrder": 2
+  },
+  {
+    "category": "plan_status",
+    "value": "Not Started",
+    "sortOrder": 3
+  },
+  {
+    "category": "plan_status",
+    "value": "In Review",
+    "sortOrder": 4
+  },
+  {
+    "category": "plan_status",
+    "value": "NA",
+    "sortOrder": 5
+  },
+  {
+    "category": "release_health_level",
+    "value": "🟢 Go",
+    "sortOrder": 1
+  },
+  {
+    "category": "release_health_level",
+    "value": "🟡 Caution",
+    "sortOrder": 2
+  },
+  {
+    "category": "release_health_level",
+    "value": "🔴 No-Go",
+    "sortOrder": 3
+  },
+  {
+    "category": "release_health_level",
+    "value": "🟠 On Hold",
+    "sortOrder": 4
+  },
+  {
+    "category": "release_health_level",
+    "value": "⚫ Blocked",
+    "sortOrder": 5
+  },
+  {
+    "category": "release_health_level",
+    "value": "⚫ N/A",
+    "sortOrder": 6
+  }
+]

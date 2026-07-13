@@ -13,8 +13,12 @@ export async function GET(req: Request) {
 
   const data = await prisma.applicationStatus.findMany({
     where: applicationStatusWhere(sp(req)),
-    include: { application: { select: { id: true, name: true } } },
-    orderBy: [{ application: { name: "asc" } }, { environmentName: "asc" }],
+    include: {
+      application: {
+        select: { id: true, name: true, department: { select: { name: true } } },
+      },
+    },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

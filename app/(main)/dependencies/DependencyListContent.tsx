@@ -13,7 +13,7 @@ import {
 } from "@/lib/table-page-columns";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { DEPENDENCY_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, dataTableTableClass, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
 import { Network } from "lucide-react";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
@@ -79,29 +79,31 @@ function renderDepCell(d: DepRow, key: DepColumnKey) {
   switch (key) {
     case "depCode":
       return (
-        <td key={key} className="px-4 py-3 font-mono text-xs text-gray-700 dark:text-white/80 whitespace-nowrap">
-          {d.depCode}
+        <td key={key} className={`${tableCell} font-mono text-xs whitespace-nowrap`}>
+          <ProgressLink href={`/dependencies/${d.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+            {d.depCode}
+          </ProgressLink>
         </td>
       );
     case "releaseCode":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <ReleaseLink code={d.releaseCode} dbId={d.releaseDbId} />
         </td>
       );
     case "releaseName":
-      return <td key={key} className="px-4 py-3 text-gray-700 dark:text-white/80 whitespace-nowrap">{d.releaseName}</td>;
+      return <td key={key} className={`${tableCell} text-gray-700 dark:text-white/80 whitespace-nowrap`}>{d.releaseName}</td>;
     case "dependsOnCode":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <ReleaseLink code={d.dependsOnCode} dbId={d.dependsOnDbId} />
         </td>
       );
     case "dependsOnName":
-      return <td key={key} className="px-4 py-3 text-gray-700 dark:text-white/80 whitespace-nowrap">{d.dependsOnName}</td>;
+      return <td key={key} className={`${tableCell} text-gray-700 dark:text-white/80 whitespace-nowrap`}>{d.dependsOnName}</td>;
     case "dependencyType":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", TYPE_CLASSES[d.dependencyType] ?? "")}>
             {d.dependencyType}
           </span>
@@ -109,15 +111,15 @@ function renderDepCell(d: DepRow, key: DepColumnKey) {
       );
     case "status":
       return (
-        <td key={key} className="px-4 py-3 whitespace-nowrap">
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
           <StatusBadge status={d.status} />
         </td>
       );
     case "impactIfBlocked":
-      return <td key={key} className="px-4 py-3 text-gray-700 dark:text-white/80 whitespace-nowrap">{d.impactIfBlocked}</td>;
+      return <td key={key} className={`${tableCell} text-gray-700 dark:text-white/80 whitespace-nowrap`}>{d.impactIfBlocked}</td>;
     case "notes":
       return (
-        <td key={key} className="px-4 py-3 text-gray-600 dark:text-white/70 max-w-[280px] truncate" title={d.notes ?? ""}>
+        <td key={key} className={`${tableCell} text-gray-600 dark:text-white/70 max-w-[280px] truncate`} title={d.notes ?? ""}>
           {d.notes ?? "—"}
         </td>
       );

@@ -11,11 +11,14 @@ export function useTablePagePreferences(
   pageKey: string,
   allColumns: ColumnDef[] | undefined,
   filterFields: FilterFieldDef[] | undefined,
-  options: { lockedKeys?: string[]; defaultHiddenFilters?: string[] } = {}
+  options: { lockedKeys?: string[]; defaultHiddenFilters?: string[]; defaultHiddenColumns?: string[] } = {}
 ) {
   const columns = Array.isArray(allColumns) ? allColumns : [];
   const filters = Array.isArray(filterFields) ? filterFields : [];
-  const columnPrefs = useColumnPreferences(pageKey, columns, options);
+  const columnPrefs = useColumnPreferences(pageKey, columns, {
+    lockedKeys: options.lockedKeys,
+    defaultHiddenColumns: options.defaultHiddenColumns,
+  });
   const filterPrefs = useFilterPreferences(pageKey, filters, {
     defaultHiddenFilters: options.defaultHiddenFilters,
   });

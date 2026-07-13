@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus, Pencil, Trash2, Package } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
@@ -13,10 +13,11 @@ import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { ReleaseFiltersBar } from "@/components/releases/ReleaseFiltersBar";
 import {
   RELEASE_COLUMNS,
+  RELEASE_DEFAULT_HIDDEN_COLUMN_KEYS,
   RELEASE_DEFAULT_HIDDEN_FILTER_KEYS,
   RELEASE_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
-import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableHeadCell, tableHeadRow, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useReleaseFilters } from "@/context/ReleaseFiltersContext";
@@ -28,12 +29,11 @@ import {
   type UnifiedRelease,
 } from "@/lib/unified-releases";
 import { formatDate, cn } from "@/lib/utils";
-import { readinessKey } from "@/lib/release-readiness-batch";
 import { RELEASE_TABLE_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { readSortFromValues, sortRows } from "@/lib/table-sort";
 import { taBtnPrimary } from "@/lib/styles";
 import type { SessionUser } from "@/lib/auth/roles";
-import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
+import { loadJsonEffect } from "@/lib/safe-fetch";
 
 
 
@@ -41,7 +41,6 @@ type ReleaseRow = {
   id: string;
   releaseCode: string;
   name: string;
-  programProject: string | null;
   owner: string;
   status: string;
   releaseDate: string;
@@ -51,7 +50,37 @@ type ReleaseRow = {
   department: { name: string };
   applications: { application: { id: string; name: string } }[];
   dependsOn: { dependsOnRelease: { id: string; releaseCode: string; name: string } }[];
-  conflictIds?: string[];
+  releaseOwner?: { userId: string } | null;
+  externalDependencies?: string | null;
+  releaseSize?: string | null;
+  cabDate?: string | null;
+  startDate?: string | null;
+  testEnvRequired?: string | null;
+  uatEnvRequired?: string | null;
+  releaseHealth?: string | null;
+  conflictFlag?: boolean;
+  conflictId?: string | null;
+  conflictingRelease?: string | null;
+  conflictType?: string | null;
+  conflictNotes?: string | null;
+  readinessPercent?: number | null;
+  blockers?: string | null;
+  vendorMaintenance?: string | null;
+  changeFreeze?: string | null;
+  regulatory?: string | null;
+  approvalStatus?: string | null;
+  rollbackPlan?: string | null;
+  goLiveChecklistPercent?: number | null;
+  deploymentWindow?: string | null;
+  devSignoff?: string | null;
+  testSignoff?: string | null;
+  uatSignoff?: string | null;
+  securityClearance?: string | null;
+  dressRehearsal?: string | null;
+  hypercarePlan?: string | null;
+  commsPlan?: string | null;
+  trainingStatus?: string | null;
+  stakeholders?: { user: { userId: string } }[];
 };
 
 export default function ReleasesPageContent() {
@@ -77,12 +106,8 @@ export default function ReleasesPageContent() {
 
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editRow, setEditRow] = useState<ReleaseRow | null>(null);
   const [formPrefill, setFormPrefill] = useState<Partial<ReleaseFormData> | null>(null);
   const [attentionItems, setAttentionItems] = useState<NeedsAttentionItem[]>([]);
-  const [readinessByKey, setReadinessByKey] = useState<
-    Record<string, { readiness: number; blockerCount: number }>
-  >({});
   type FilterOptionsState = {
     statuses: string[];
     priorities: string[];
@@ -94,6 +119,16 @@ export default function ReleasesPageContent() {
     regulatories: string[];
     vendorMaintenances: string[];
     releaseSizes: string[];
+    releaseHealths: string[];
+    devSignoffs: string[];
+    testSignoffs: string[];
+    uatSignoffs: string[];
+    securityClearances: string[];
+    dressRehearsals: string[];
+    hypercarePlans: string[];
+    commsPlans: string[];
+    trainingStatuses: string[];
+    conflictTypes: string[];
   };
 
   const [filterOptions, setFilterOptions] = useState<FilterOptionsState>({
@@ -107,6 +142,16 @@ export default function ReleasesPageContent() {
     regulatories: [],
     vendorMaintenances: [],
     releaseSizes: [],
+    releaseHealths: [],
+    devSignoffs: [],
+    testSignoffs: [],
+    uatSignoffs: [],
+    securityClearances: [],
+    dressRehearsals: [],
+    hypercarePlans: [],
+    commsPlans: [],
+    trainingStatuses: [],
+    conflictTypes: [],
   });
 
   useEffect(() => {
@@ -118,6 +163,16 @@ export default function ReleasesPageContent() {
       regulatory?: string | null;
       vendorMaintenance?: string | null;
       releaseSize?: string | null;
+      releaseHealth?: string | null;
+      devSignoff?: string | null;
+      testSignoff?: string | null;
+      uatSignoff?: string | null;
+      securityClearance?: string | null;
+      dressRehearsal?: string | null;
+      hypercarePlan?: string | null;
+      commsPlan?: string | null;
+      trainingStatus?: string | null;
+      conflictType?: string | null;
     };
 
     const uniq = (vals: (string | null | undefined)[]) =>
@@ -137,16 +192,25 @@ export default function ReleasesPageContent() {
         regulatories: uniq(rows.map((r) => r.regulatory)),
         vendorMaintenances: uniq(rows.map((r) => r.vendorMaintenance)),
         releaseSizes: uniq(rows.map((r) => r.releaseSize)),
+        releaseHealths: uniq(rows.map((r) => r.releaseHealth)),
+        devSignoffs: uniq(rows.map((r) => r.devSignoff)),
+        testSignoffs: uniq(rows.map((r) => r.testSignoff)),
+        uatSignoffs: uniq(rows.map((r) => r.uatSignoff)),
+        securityClearances: uniq(rows.map((r) => r.securityClearance)),
+        dressRehearsals: uniq(rows.map((r) => r.dressRehearsal)),
+        hypercarePlans: uniq(rows.map((r) => r.hypercarePlan)),
+        commsPlans: uniq(rows.map((r) => r.commsPlan)),
+        trainingStatuses: uniq(rows.map((r) => r.trainingStatus)),
+        conflictTypes: uniq(
+          rows.flatMap((r) =>
+            (r.conflictType ?? "")
+              .split(/,\s*/)
+              .map((v) => v.trim())
+              .filter((v) => v && v !== "-")
+          )
+        ),
       });
     }, { label: "releases-filter-options" });
-  }, []);
-
-  useEffect(() => {
-    return loadJsonEffect<{ byKey?: Record<string, { readiness: number; blockerCount: number }> }>(
-      "/api/releases/readiness",
-      (d) => setReadinessByKey(d.byKey ?? {}),
-      { label: "releases-readiness" },
-    );
   }, []);
 
   useEffect(() => {
@@ -202,13 +266,16 @@ export default function ReleasesPageContent() {
         impact: (r) => r.impact ?? "",
         endDate: (r) => new Date(r.date).getTime(),
         status: (r) => r.status,
-        conflictIds: (r) => r.conflictIds?.join(", ") ?? "",
-        readinessPercent: (r) => readinessByKey[readinessKey(r.source, r.id)]?.readiness ?? 999,
-        blockers: (r) => readinessByKey[readinessKey(r.source, r.id)]?.blockerCount ?? 0,
+        conflictId: (r) => r.conflictId ?? "",
+        readinessPercent: (r) => r.readinessPercent ?? 0,
+        blockers: (r) => r.blockers ?? "",
         cabDate: (r) => (r.cabDate ? new Date(r.cabDate as string).getTime() : 0),
         goLiveChecklistPercent: (r) => r.goLiveChecklistPercent ?? 0,
+        releaseHealth: (r) => r.releaseHealth ?? "",
+        externalDependencies: (r) => r.externalDependencies ?? "",
+        dependsOn: (r) => r.dependsOnLabel ?? "",
       }),
-    [unified, sortKey, sortDir, readinessByKey]
+    [unified, sortKey, sortDir]
   );
 
   const canEdit = user?.role === "editor" || user?.role === "admin";
@@ -218,18 +285,13 @@ export default function ReleasesPageContent() {
     RELEASE_COLUMNS,
     RELEASE_FILTER_FIELDS,
     {
-      lockedKeys: ["releaseCode", "actions"],
+      lockedKeys: ["releaseCode"],
       defaultHiddenFilters: RELEASE_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: RELEASE_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
   const tablePending = useTablePageLoading(filtersLoading, prefsLoaded);
-
-  const remove = async (id: string) => {
-    if (!confirm("Delete this release?")) return;
-    await safeFetchJson(`/api/releases/${id}`, { method: "DELETE", label: "release-delete" });
-    refreshLookups();
-  };
 
   const dbRowById = (id: string) => (dbRows as ReleaseRow[]).find((r) => r.id === id);
 
@@ -249,7 +311,6 @@ export default function ReleasesPageContent() {
                 type="button"
                 className={cn(taBtnPrimary, "text-sm")}
                 onClick={() => {
-                  setEditRow(null);
                   setFormPrefill(null);
                   setModalOpen(true);
                 }}
@@ -359,13 +420,12 @@ export default function ReleasesPageContent() {
               sortKey={sortKey}
               sortDir={sortDir}
               onSort={toggleSort}
-              extraHeaders={canEdit ? <th className={tableHeadCell} aria-label="Actions" /> : undefined}
             />
           </thead>
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={RELEASE_COLUMNS.filter((c) => isColumnVisible(c.key)).length + (canEdit ? 1 : 0)} className={`${tableCell} text-center text-gray-400 py-8`}>
+                <td colSpan={RELEASE_COLUMNS.filter((c) => isColumnVisible(c.key)).length} className={`${tableCell} text-center text-gray-400 py-8`}>
                   No releases match the current filters.
                 </td>
               </tr>
@@ -375,13 +435,7 @@ export default function ReleasesPageContent() {
                   key={`${r.source}-${r.id}`}
                   row={r}
                   dbRow={dbRowById(r.id)}
-                  canEdit={canEdit}
                   isColumnVisible={isColumnVisible}
-                  onEdit={() => {
-                    const db = dbRowById(r.id);
-                    if (db) { setFormPrefill(null); setEditRow(db); setModalOpen(true); }
-                  }}
-                  onDelete={() => remove(r.id)}
                 />
               ))
             )}
@@ -392,25 +446,14 @@ export default function ReleasesPageContent() {
 
       <ReleaseFormModal
         open={modalOpen}
-        initial={editRow ? {
-          id: editRow.id,
-          releaseCode: editRow.releaseCode,
-          name: editRow.name,
-          programProject: editRow.programProject ?? "",
-          owner: editRow.owner,
-          status: editRow.status,
-          releaseDate: editRow.releaseDate,
-          priority: editRow.priority,
-          impact: editRow.impact,
-          departmentId: editRow.departmentId,
-          applicationIds: editRow.applications.map((a) => a.application.id),
-          dependsOnReleaseIds: editRow.dependsOn.map((d) => d.dependsOnRelease.id),
-          notes: "",
-        } : formPrefill ?? undefined}
+        initial={formPrefill ?? undefined}
         existingReleaseCodes={releaseCodes}
         departments={departments.map((d) => ({ value: d.id, label: d.name }))}
         applications={applications.map((a) => ({ value: a.id, label: a.name }))}
-        releases={(dbRows as ReleaseRow[]).map((r) => ({ value: r.id, label: r.releaseCode }))}
+        releases={(dbRows as ReleaseRow[]).map((r) => ({
+          value: r.id,
+          label: r.name ? `${r.releaseCode} — ${r.name}` : r.releaseCode,
+        }))}
         onClose={() => { setModalOpen(false); setFormPrefill(null); }}
         onSaved={refreshLookups}
       />
@@ -421,20 +464,12 @@ export default function ReleasesPageContent() {
 function UnifiedRow({
   row,
   dbRow,
-  canEdit,
   isColumnVisible,
-  onEdit,
-  onDelete,
 }: {
   row: UnifiedRelease;
   dbRow?: ReleaseRow;
-  canEdit: boolean;
   isColumnVisible: (key: string) => boolean;
-  onEdit: () => void;
-  onDelete: () => void;
 }) {
-  const programProject =
-    dbRow?.programProject ?? row.programProject ?? "—";
   const priority = dbRow?.priority ?? row.priority ?? "—";
   const impact = dbRow?.impact ?? row.impact ?? "—";
   const department = row.departmentName ?? row.group ?? "—";
@@ -446,6 +481,23 @@ function UnifiedRow({
     dbRow?.dependsOn.map((d) => d.dependsOnRelease.releaseCode).join(", ") ||
     row.dependsOnLabel ||
     "—";
+  const conflictIdRaw = row.conflictId?.trim() ?? "";
+  const conflictIds = conflictIdRaw
+    ? conflictIdRaw.split(/,\s*/).map((id) => id.trim()).filter(Boolean)
+    : [];
+
+  const textCell = (value: string | null | undefined, truncate = false) => (
+    <td
+      className={cn(
+        tableCell,
+        "whitespace-nowrap text-xs text-gray-600",
+        truncate && "max-w-[200px] truncate"
+      )}
+      title={truncate ? (value ?? "") : undefined}
+    >
+      {value?.trim() ? value : "—"}
+    </td>
+  );
 
   return (
     <tr className={cn(tableRow, "group")}>
@@ -461,11 +513,7 @@ function UnifiedRow({
       )}
       {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{department}</td>}
       {isColumnVisible("application") && <td className={`${tableCell} text-xs text-gray-600 max-w-[140px] truncate`}>{applications}</td>}
-      {isColumnVisible("dependencies") && (
-        <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600`}>
-          {row.dependencies ?? "NA"}
-        </td>
-      )}
+      {isColumnVisible("externalDependencies") && textCell(row.externalDependencies, true)}
       {isColumnVisible("releaseSize") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.releaseSize ?? "—"}</td>}
       {isColumnVisible("impact") && <td className={`${tableCell} whitespace-nowrap`}>{impact}</td>}
       {isColumnVisible("priority") && <td className={`${tableCell} whitespace-nowrap`}>{priority}</td>}
@@ -475,12 +523,13 @@ function UnifiedRow({
       {isColumnVisible("testEnvRequired") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.testEnvRequired ?? "—"}</td>}
       {isColumnVisible("uatEnvRequired") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.uatEnvRequired ?? "—"}</td>}
       {isColumnVisible("status") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={row.status as "Ready"} /></td>}
+      {isColumnVisible("releaseHealth") && <td className={`${tableCell} whitespace-nowrap`}>{row.releaseHealth ?? "—"}</td>}
       {isColumnVisible("conflictFlag") && <td className={`${tableCell} whitespace-nowrap font-medium text-error-600`}>{row.conflictFlag ? "⚠️ CONFLICT" : "—"}</td>}
-      {isColumnVisible("conflictIds") && (
+      {isColumnVisible("conflictId") && (
         <td className={`${tableCell} whitespace-nowrap`}>
-          {row.conflictIds?.length ? (
+          {conflictIds.length ? (
             <span className="font-mono text-xs">
-              {row.conflictIds.map((conflictId, index) => (
+              {conflictIds.map((conflictId, index) => (
                 <span key={conflictId}>
                   {index > 0 && <span className="text-gray-400 dark:text-white/40">, </span>}
                   <ProgressLink
@@ -497,29 +546,29 @@ function UnifiedRow({
           )}
         </td>
       )}
-      {isColumnVisible("notes") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 max-w-[200px] truncate`} title={row.notes ?? ""}>{row.notes ?? "—"}</td>}
-      {isColumnVisible("readinessPercent") && <td className={`${tableCell} whitespace-nowrap font-medium`}>{row.readinessPercent !== null && row.readinessPercent !== undefined ? `${row.readinessPercent}%` : "—"}</td>}
-      {isColumnVisible("blockers") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 max-w-[200px] truncate`} title={row.blockers ?? ""}>{row.blockers ?? "—"}</td>}
-      {isColumnVisible("vendorMaintenance") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.vendorMaintenance ?? "—"}</td>}
+      {isColumnVisible("conflictingRelease") && textCell(row.conflictingRelease)}
+      {isColumnVisible("conflictType") && textCell(row.conflictType, true)}
+      {isColumnVisible("conflictNotes") && textCell(row.conflictNotes, true)}
+      {isColumnVisible("blockers") && textCell(row.blockers, true)}
       {isColumnVisible("changeFreeze") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.changeFreeze ?? "—"}</td>}
-      {isColumnVisible("regulatory") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.regulatory ?? "—"}</td>}
-      {isColumnVisible("releaseOwnerId") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.releaseOwnerId ?? "—"}</td>}
-      {isColumnVisible("approvalStatus") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.approvalStatus ?? "—"}</td>}
-      {isColumnVisible("dependsOn") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 font-mono`}>{dependsOn}</td>}
-      {isColumnVisible("rollbackPlan") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 max-w-[140px] truncate`}>{row.rollbackPlan ?? "—"}</td>}
+      {isColumnVisible("vendorMaintenance") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.vendorMaintenance ?? "—"}</td>}
+      {isColumnVisible("rollbackPlan") && textCell(row.rollbackPlan)}
+      {isColumnVisible("readinessPercent") && <td className={`${tableCell} whitespace-nowrap font-medium`}>{row.readinessPercent !== null && row.readinessPercent !== undefined ? `${row.readinessPercent}%` : "—"}</td>}
       {isColumnVisible("goLiveChecklistPercent") && <td className={`${tableCell} whitespace-nowrap font-medium`}>{row.goLiveChecklistPercent !== null && row.goLiveChecklistPercent !== undefined ? `${row.goLiveChecklistPercent}%` : "—"}</td>}
-      {isColumnVisible("stakeholderIds") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 max-w-[140px] truncate`} title={row.stakeholderIds ?? ""}>{row.stakeholderIds ?? "—"}</td>}
+      {isColumnVisible("releaseOwnerId") && <td className={`${tableCell} whitespace-nowrap text-gray-600 font-mono text-xs`}>{row.releaseOwnerId ?? "—"}</td>}
+      {isColumnVisible("approvalStatus") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.approvalStatus ?? "—"}</td>}
+      {isColumnVisible("stakeholderIds") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 max-w-[140px] truncate font-mono`} title={row.stakeholderIds ?? ""}>{row.stakeholderIds ?? "—"}</td>}
+      {isColumnVisible("dependsOn") && <td className={`${tableCell} whitespace-nowrap text-xs text-gray-600 font-mono`}>{dependsOn}</td>}
+      {isColumnVisible("regulatory") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.regulatory ?? "—"}</td>}
       {isColumnVisible("deploymentWindow") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.deploymentWindow ?? "—"}</td>}
-      {canEdit && (
-        <td className={`${tableCell} whitespace-nowrap`}>
-          {row.source === "database" && (
-            <div className="flex gap-2 transition-opacity">
-              <button type="button" onClick={onEdit} className="text-gray-500"><Pencil className="h-4 w-4" /></button>
-              <button type="button" onClick={onDelete} className="text-error-500"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          )}
-        </td>
-      )}
+      {isColumnVisible("devSignoff") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.devSignoff ?? "—"}</td>}
+      {isColumnVisible("testSignoff") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.testSignoff ?? "—"}</td>}
+      {isColumnVisible("uatSignoff") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.uatSignoff ?? "—"}</td>}
+      {isColumnVisible("securityClearance") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.securityClearance ?? "—"}</td>}
+      {isColumnVisible("dressRehearsal") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.dressRehearsal ?? "—"}</td>}
+      {isColumnVisible("hypercarePlan") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.hypercarePlan ?? "—"}</td>}
+      {isColumnVisible("commsPlan") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.commsPlan ?? "—"}</td>}
+      {isColumnVisible("trainingStatus") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.trainingStatus ?? "—"}</td>}
     </tr>
   );
 }

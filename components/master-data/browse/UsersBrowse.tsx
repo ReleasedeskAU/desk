@@ -299,7 +299,7 @@ export function UsersBrowse() {
         ) : rows.length === 0 ? (
           <MasterDataEmptyState entityLabel="users" addLabel="Add User" onAdd={openCreate} />
         ) : (
-          <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
+          <table className="w-full min-w-max border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50/50">
                 {isColumnVisible("name") && (
@@ -326,7 +326,7 @@ export function UsersBrowse() {
             </thead>
             <tbody>
               {pageRows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-200 dark:border-[var(--border)] hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
+                <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200">
                   {isColumnVisible("name") && (
                   <td className={tdClass}>
                     <div className="flex items-center gap-3">

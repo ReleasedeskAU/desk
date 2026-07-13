@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
   const data = await prisma.integrationFlow.findMany({
     where: integrationFlowWhere(sp(req)),
-    orderBy: { flowCode: "asc" },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

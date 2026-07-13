@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const data = await prisma.monitoringAlert.findMany({
     where: monitoringAlertWhere(sp(req)),
     include: { application: { select: { id: true, name: true } } },
-    orderBy: { timestamp: "desc" },
+    orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
 }

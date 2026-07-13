@@ -31,6 +31,16 @@ export type ReleaseListFilters = {
   regulatory: string;
   vendorMaintenance: string;
   releaseSize: string;
+  releaseHealth: string;
+  devSignoff: string;
+  testSignoff: string;
+  uatSignoff: string;
+  securityClearance: string;
+  dressRehearsal: string;
+  hypercarePlan: string;
+  commsPlan: string;
+  trainingStatus: string;
+  conflictType: string;
   // Numeric ranges (empty = unset)
   readinessMin: string;
   readinessMax: string;
@@ -43,7 +53,11 @@ export type ReleaseListFilters = {
   // Free-text contains
   releaseCodeQ: string;
   nameQ: string;
+  externalDependenciesQ: string;
   notesQ: string;
+  conflictIdQ: string;
+  conflictingReleaseQ: string;
+  conflictNotesQ: string;
   // Dates (YYYY / YYYY-MM / YYYY-MM-DD) + env-flag text
   cabDateQ: string;
   startDateQ: string;
@@ -81,6 +95,16 @@ export const EMPTY_RELEASE_FILTERS: ReleaseListFilters = {
   regulatory: "",
   vendorMaintenance: "",
   releaseSize: "",
+  releaseHealth: "",
+  devSignoff: "",
+  testSignoff: "",
+  uatSignoff: "",
+  securityClearance: "",
+  dressRehearsal: "",
+  hypercarePlan: "",
+  commsPlan: "",
+  trainingStatus: "",
+  conflictType: "",
   readinessMin: "",
   readinessMax: "",
   goLiveMin: "",
@@ -90,7 +114,11 @@ export const EMPTY_RELEASE_FILTERS: ReleaseListFilters = {
   hasDependsOn: "",
   releaseCodeQ: "",
   nameQ: "",
+  externalDependenciesQ: "",
   notesQ: "",
+  conflictIdQ: "",
+  conflictingReleaseQ: "",
+  conflictNotesQ: "",
   cabDateQ: "",
   startDateQ: "",
   endDateQ: "",
@@ -125,6 +153,16 @@ export const RELEASE_FILTER_URL_MAP: { key: keyof ReleaseListFilters; param: str
   { key: "regulatory", param: "regulatory" },
   { key: "vendorMaintenance", param: "vendorMaintenance" },
   { key: "releaseSize", param: "releaseSize" },
+  { key: "releaseHealth", param: "releaseHealth" },
+  { key: "devSignoff", param: "devSignoff" },
+  { key: "testSignoff", param: "testSignoff" },
+  { key: "uatSignoff", param: "uatSignoff" },
+  { key: "securityClearance", param: "securityClearance" },
+  { key: "dressRehearsal", param: "dressRehearsal" },
+  { key: "hypercarePlan", param: "hypercarePlan" },
+  { key: "commsPlan", param: "commsPlan" },
+  { key: "trainingStatus", param: "trainingStatus" },
+  { key: "conflictType", param: "conflictType" },
   { key: "readinessMin", param: "readinessMin" },
   { key: "readinessMax", param: "readinessMax" },
   { key: "goLiveMin", param: "goLiveMin" },
@@ -134,7 +172,11 @@ export const RELEASE_FILTER_URL_MAP: { key: keyof ReleaseListFilters; param: str
   { key: "hasDependsOn", param: "hasDependsOn" },
   { key: "releaseCodeQ", param: "releaseCode" },
   { key: "nameQ", param: "name" },
+  { key: "externalDependenciesQ", param: "externalDependencies" },
   { key: "notesQ", param: "notes" },
+  { key: "conflictIdQ", param: "conflictId" },
+  { key: "conflictingReleaseQ", param: "conflictingRelease" },
+  { key: "conflictNotesQ", param: "conflictNotes" },
   { key: "cabDateQ", param: "cabDate" },
   { key: "startDateQ", param: "startDate" },
   { key: "endDateQ", param: "endDate" },
@@ -213,6 +255,16 @@ const REFINEMENT_KEYS: (keyof ReleaseListFilters)[] = [
   "regulatory",
   "vendorMaintenance",
   "releaseSize",
+  "releaseHealth",
+  "devSignoff",
+  "testSignoff",
+  "uatSignoff",
+  "securityClearance",
+  "dressRehearsal",
+  "hypercarePlan",
+  "commsPlan",
+  "trainingStatus",
+  "conflictType",
   "readinessMin",
   "readinessMax",
   "goLiveMin",
@@ -222,7 +274,11 @@ const REFINEMENT_KEYS: (keyof ReleaseListFilters)[] = [
   "hasDependsOn",
   "releaseCodeQ",
   "nameQ",
+  "externalDependenciesQ",
   "notesQ",
+  "conflictIdQ",
+  "conflictingReleaseQ",
+  "conflictNotesQ",
   "cabDateQ",
   "startDateQ",
   "endDateQ",

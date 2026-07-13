@@ -9,6 +9,7 @@ import {
   tableCell,
   tableRow,
 } from "@/components/ui/data-table";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { ENVIRONMENT_COLUMNS } from "@/lib/table-page-columns";
 import type { SortDirection } from "@/lib/table-sort";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,8 @@ function formatDate(iso?: string | Date | null) {
 }
 
 type VersionRow = {
+  id?: string;
+  appCode?: string | null;
   status?: string | null;
   version?: string | null;
   buildNumber?: string | null;
@@ -44,23 +47,16 @@ export function EnvironmentDetailsTable({
   sortDir: SortDirection;
   onSort: (key: string, dir?: SortDirection) => void;
 }) {
-  // Server already filtered + ordered — only map display fields (App ID is sequential label).
+  // Server already filtered + ordered — map the workbook-backed fields verbatim.
   const rows = useMemo(() => {
-    const appIds = new Map<string, string>();
-    let appCounter = 1;
-
     return versions.map((v) => {
       const appName = v.application?.name ?? "Unknown";
-      if (!appIds.has(appName)) {
-        appIds.set(appName, `APP-${String(appCounter++).padStart(3, "0")}`);
-      }
-
       return {
-        appId: appIds.get(appName)!,
+        id: v.id,
+        appId: v.appCode ?? "—",
         application: appName,
         department: v.application?.department?.name ?? "Unknown",
         environment: v.environment?.type ?? v.environment?.name ?? "Unknown",
-        envOwner: v.environment?.owner ?? "—",
         version: v.version ?? "—",
         buildNumber: v.buildNumber ?? "—",
         deployDate: v.deployDate,
@@ -92,9 +88,20 @@ export function EnvironmentDetailsTable({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={`${row.appId}-${row.environment}-${i}`} className={tableRow}>
+            <tr key={row.id ?? `${row.appId}-${row.environment}-${i}`} className={tableRow}>
               {isColumnVisible("appId") && (
-                <td className={cn(tableCell, "whitespace-nowrap font-medium text-gray-500")}>{row.appId}</td>
+                <td className={cn(tableCell, "whitespace-nowrap font-medium text-gray-500")}>
+                  {row.id ? (
+                    <ProgressLink
+                      href={`/environments/versions/${row.id}`}
+                      className="text-brand-600 hover:underline dark:text-brand-400"
+                    >
+                      {row.appId}
+                    </ProgressLink>
+                  ) : (
+                    row.appId
+                  )}
+                </td>
               )}
               {isColumnVisible("application") && (
                 <td className={cn(tableCell, "whitespace-nowrap font-medium text-gray-800 dark:text-white")}>
@@ -109,11 +116,6 @@ export function EnvironmentDetailsTable({
                   <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:bg-white/10 dark:text-white/80">
                     {row.environment}
                   </span>
-                </td>
-              )}
-              {isColumnVisible("envOwner") && (
-                <td className={cn(tableCell, "max-w-[160px] truncate text-gray-600 dark:text-white/70")} title={row.envOwner}>
-                  {row.envOwner}
                 </td>
               )}
               {isColumnVisible("version") && (

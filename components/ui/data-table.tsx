@@ -115,7 +115,7 @@ export function DataTable({ title, subtitle, icon: Icon, action, toolbar, childr
   );
 }
 
-export const dataTableTableClass = "w-full min-w-max border-separate border-spacing-0 text-sm";
+export const dataTableTableClass = "w-full min-w-max border-collapse text-sm";
 
 export const tableHeadRow = "border-b border-gray-200 dark:border-[var(--border)]";
 
@@ -125,7 +125,7 @@ export const stickyHeadCell =
 
 export const tableHeadCell = cn(
   stickyHeadCell,
-  "px-3 py-3 min-w-[5.5rem] text-left align-middle text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 whitespace-nowrap"
+  "border-x-0 border-t-0 px-3 py-3 min-w-[5.5rem] text-left align-middle text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400 whitespace-nowrap"
 );
 
 /**
@@ -134,8 +134,10 @@ export const tableHeadCell = cn(
  * Prefer this over ad-hoc divide-y / border-r row classes.
  */
 export const tableRow =
-  "border-b border-gray-200 dark:border-[var(--border)] hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200 group";
-export const tableCell = "px-4 py-3 align-middle transition-colors text-gray-800 dark:text-gray-200";
+  "hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-200 group";
+/** Body cell: bottom border only (row separators). Never left/right borders. */
+export const tableCell =
+  "border-x-0 border-t-0 border-b border-gray-200 px-4 py-3 align-middle transition-colors text-gray-800 dark:border-[var(--border)] dark:text-gray-200";
 
 export function TableToolbar({ children, className }: { children: React.ReactNode; className?: string }) {
   return (

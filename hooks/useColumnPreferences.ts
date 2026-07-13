@@ -15,6 +15,8 @@ import type { ColumnDef } from "@/lib/table-column-types";
 type Options = {
   /** Column keys that cannot be hidden (anchor + actions). Excluded from picker. */
   lockedKeys?: string[];
+  /** Column keys hidden by default until the user enables them in Manage Columns. */
+  defaultHiddenColumns?: string[];
 };
 
 export type { ColumnDef };
@@ -23,9 +25,63 @@ function filterHiddenForPage(saved: string[], hideableKeys: Set<string>) {
   return saved.filter((k) => hideableKeys.has(k));
 }
 
+function columnDefaultsAppliedStorageKey(pageKey: string) {
+  return `sentinel:column-defaults-applied:${pageKey}`;
+}
+
+function hasColumnDefaultsApplied(pageKey: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(columnDefaultsAppliedStorageKey(pageKey)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markColumnDefaultsApplied(pageKey: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(columnDefaultsAppliedStorageKey(pageKey), "1");
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function defaultsSomeApplied(hidden: string[], defaultHidden: string[]) {
+  return defaultHidden.some((k) => hidden.includes(k));
+}
+
+function sameStringArray(a: string[], b: string[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+export function resolveHiddenColumns(
+  saved: string[],
+  hideableKeys: Set<string>,
+  defaultHidden: string[],
+  pageKey: string
+): { hidden: string[]; didMigrate: boolean } {
+  const cleaned = filterHiddenForPage(saved, hideableKeys);
+  if (!defaultHidden.length) return { hidden: cleaned, didMigrate: false };
+
+  const defaults = defaultHidden.filter((k) => hideableKeys.has(k));
+  if (!defaults.length) return { hidden: cleaned, didMigrate: false };
+
+  if (hasColumnDefaultsApplied(pageKey) || defaultsSomeApplied(cleaned, defaults)) {
+    return { hidden: cleaned, didMigrate: false };
+  }
+
+  const merged = Array.from(new Set([...cleaned, ...defaults]));
+  return { hidden: merged, didMigrate: true };
+}
+
 export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = [], options: Options = {}) {
   const columns = Array.isArray(allColumns) ? allColumns : [];
   const lockedKeysKey = (options.lockedKeys ?? []).join("\0");
+  const defaultHiddenSig = (options.defaultHiddenColumns ?? []).join("\0");
   const lockedSet = useMemo(() => new Set(options.lockedKeys ?? []), [lockedKeysKey]);
   const hideableKeysSig = useMemo(
     () => columns.filter((c) => !lockedSet.has(c.key)).map((c) => c.key).join("\0"),
@@ -41,6 +97,14 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
     [hideableKeysSig],
   );
 
+  const defaultHidden = useMemo(() => {
+    return options.defaultHiddenColumns?.length ? options.defaultHiddenColumns : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultHiddenSig]);
+
+  const defaultHiddenRef = useRef(defaultHidden);
+  defaultHiddenRef.current = defaultHidden;
+
   // Always start unloaded on both server and client so the first paint matches
   // (in-memory cache can be warm on client navigations and would skip the skeleton).
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
@@ -48,28 +112,6 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hiddenRef = useRef(hiddenColumns);
   hiddenRef.current = hiddenColumns;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (isColumnPrefsCached(pageKey)) {
-      const cached = getCachedTablePreferences(pageKey)?.hiddenColumns ?? getCachedHiddenColumns(pageKey) ?? [];
-      setHiddenColumns(filterHiddenForPage(cached, hideableKeys));
-      setLoaded(true);
-      return;
-    }
-
-    setLoaded(false);
-    fetchTablePreferences(pageKey).then((prefs) => {
-      if (cancelled) return;
-      setHiddenColumns(filterHiddenForPage(prefs.hiddenColumns, hideableKeys));
-      setLoaded(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pageKey, hideableKeys]);
 
   const persist = useCallback(
     (nextHidden: string[]) => {
@@ -84,6 +126,46 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
     },
     [pageKey],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const apply = (saved: string[]) => {
+      const { hidden, didMigrate } = resolveHiddenColumns(
+        saved,
+        hideableKeys,
+        defaultHiddenRef.current,
+        pageKey
+      );
+      if (cancelled) return;
+      setHiddenColumns((prev) => (sameStringArray(prev, hidden) ? prev : hidden));
+      setLoaded(true);
+      if (didMigrate) {
+        markColumnDefaultsApplied(pageKey);
+        persist(hidden);
+      } else if (defaultHiddenRef.current.length && defaultsSomeApplied(hidden, defaultHiddenRef.current)) {
+        markColumnDefaultsApplied(pageKey);
+      }
+    };
+
+    if (isColumnPrefsCached(pageKey)) {
+      const cached = getCachedTablePreferences(pageKey)?.hiddenColumns ?? getCachedHiddenColumns(pageKey) ?? [];
+      apply(cached);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLoaded(false);
+    fetchTablePreferences(pageKey).then((prefs) => {
+      if (cancelled) return;
+      apply(prefs.hiddenColumns);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pageKey, hideableKeys, persist]);
 
   const scheduleSave = useCallback(
     (nextHidden: string[]) => {
@@ -104,6 +186,7 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
   const toggleColumn = useCallback(
     (key: string) => {
       if (lockedSet.has(key)) return;
+      markColumnDefaultsApplied(pageKey);
       setHiddenColumns((prev) => {
         const isHidden = prev.includes(key);
         if (isHidden) {
@@ -120,7 +203,7 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
         return next;
       });
     },
-    [hideableColumns, lockedSet, scheduleSave],
+    [hideableColumns, lockedSet, pageKey, scheduleSave],
   );
 
   const visibleColumns = useMemo(

@@ -23,6 +23,8 @@ import { loadJsonEffect } from "@/lib/safe-fetch";
 type DeskPayload = {
   versionMatrix: unknown[];
   versions: Array<{
+    id?: string;
+    appCode?: string | null;
     status?: string | null;
     version?: string | null;
     buildNumber?: string | null;

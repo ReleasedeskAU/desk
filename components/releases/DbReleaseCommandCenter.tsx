@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { ReadinessGauge } from "@/components/gauges/ReadinessGauge";
 import { ReleaseLifecycleStrip } from "@/components/releases/ReleaseLifecycleStrip";
-import { DbBlockerList } from "@/components/releases/DbBlockerList";
 import { DbAIRiskPanel } from "@/components/releases/DbAIRiskPanel";
 import { DbLinkedWorkItems } from "@/components/releases/DbLinkedWorkItems";
 import { DbPredictiveNudge } from "@/components/releases/DbPredictiveNudge";
 import { AdvancedCard } from "@/components/ui/advanced-card";
-import type { DbBlocker, DbNextAction } from "@/lib/db-release-command";
+import type { DbNextAction } from "@/lib/db-release-command";
 import type { DbReleasePrediction } from "@/lib/db-predictive";
 import type { LifecycleStageView } from "@/lib/types";
 import { ArrowRight, ListChecks } from "lucide-react";
@@ -17,13 +16,13 @@ import { loadJsonEffect } from "@/lib/safe-fetch";
 
 type CommandCenterData = {
   readiness: number;
-  blockers: DbBlocker[];
   stages: LifecycleStageView[];
   nextActions: DbNextAction[];
   prediction?: DbReleasePrediction;
   p1Issues: { externalId: string; title: string; status: string; source: string; priority: string }[];
 };
 
+/** Supplemental tools. Mockup Blockers/Drift sections live in DbReleaseDetail. */
 export function DbReleaseCommandCenter({ releaseId }: { releaseId: string }) {
   const [data, setData] = useState<CommandCenterData | null>(null);
 
@@ -45,17 +44,15 @@ export function DbReleaseCommandCenter({ releaseId }: { releaseId: string }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <DbAIRiskPanel releaseId={releaseId} />
-          <div id="blockers">
-            <DbBlockerList blockers={data.blockers} />
-          </div>
           <DbLinkedWorkItems releaseId={releaseId} />
         </div>
 
         <div className="space-y-6">
-          <AdvancedCard title="Readiness" variant="glass" innerClassName="flex flex-col items-center py-6">
+          <AdvancedCard title="Computed readiness" variant="glass" innerClassName="flex flex-col items-center py-6">
             <ReadinessGauge value={data.readiness} size={140} />
             <p className="mt-3 text-xs text-gray-500 dark:text-white/55 text-center px-4">
-              Based on status, bookings, dependencies, decision, and linked P1 issues
+              Live score from status, bookings, dependencies, decision, open Blockers register rows, and P1 issues
+              (may differ from stored Readiness % above)
             </p>
           </AdvancedCard>
 

@@ -7,8 +7,9 @@ import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { cn } from "@/lib/utils";
 
 export const thClass =
-  "sticky top-0 z-20 bg-gray-50 px-6 py-4 text-[12px] font-bold uppercase tracking-wider text-gray-500 dark:bg-[var(--card)]";
-export const tdClass = "px-6 py-4 text-[14px] text-gray-800";
+  "sticky top-0 z-20 border-x-0 border-t-0 border-b border-gray-200 bg-gray-50 px-6 py-4 text-[12px] font-bold uppercase tracking-wider text-gray-500 dark:border-[var(--border)] dark:bg-[var(--card)]";
+export const tdClass =
+  "border-x-0 border-t-0 border-b border-gray-200 px-6 py-4 text-[14px] text-gray-800 dark:border-[var(--border)]";
 
 export function MasterDataSectionHeader({
   title,

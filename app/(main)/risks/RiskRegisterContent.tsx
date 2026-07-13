@@ -12,7 +12,7 @@ import {
 import { TopBar } from "@/components/layout/TopBar";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { RISK_SORT_PRESETS } from "@/lib/table-sort-presets";
-import { DataTable, DataTableHeadRow, tableCell, tableRow } from "@/components/ui/data-table";
+import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { cn, formatDate } from "@/lib/utils";
@@ -86,6 +86,21 @@ const BAND_COLOR: Record<
 };
 
 const BAND_ORDER: RiskLevel[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+/** Score ranges for Simple Risk Score (likelihood × impact, 1–25). */
+const BAND_SCORE_RANGE: Record<RiskLevel, string> = {
+  LOW: "1–5",
+  MEDIUM: "6–11",
+  HIGH: "12–19",
+  CRITICAL: "20–25",
+};
+
+const BAND_GUIDE: Record<RiskLevel, string> = {
+  LOW: "Monitor in normal process",
+  MEDIUM: "Plan mitigation before CAB",
+  HIGH: "Active owner + mitigation needed",
+  CRITICAL: "Escalate — may block deploy",
+};
 
 function useIsDarkMode() {
   const [dark, setDark] = useState(false);
@@ -256,8 +271,8 @@ function HeatMapCell({
           : `Likelihood ${likelihood}, Impact ${impact}: ${count} risk${count === 1 ? "" : "s"}, ${band}`
       }
       className={cn(
-        "group relative flex h-[52px] w-[52px] items-center justify-center rounded-2xl text-[15px] font-bold transition-all duration-150",
-        "hover:z-10 hover:scale-105 hover:shadow-md disabled:cursor-default disabled:hover:scale-100 disabled:hover:shadow-none",
+        "group relative flex h-full w-full min-h-0 min-w-0 items-center justify-center rounded-2xl text-[clamp(13px,2.4vw,17px)] font-bold transition-all duration-150",
+        "hover:z-10 hover:scale-[1.03] hover:shadow-md disabled:cursor-default disabled:hover:scale-100 disabled:hover:shadow-none",
         active && !empty && "ring-2 ring-brand-500 ring-offset-2 dark:ring-brand-400 dark:ring-offset-[var(--card)]"
       )}
       style={
@@ -298,8 +313,8 @@ function MatrixView({
   dark: boolean;
 }) {
   return (
-    <div className="inline-flex gap-3">
-      <div className="flex flex-col items-center justify-center">
+    <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-2 gap-y-1.5">
+      <div className="flex items-center justify-center">
         <span
           className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500"
           style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
@@ -307,45 +322,52 @@ function MatrixView({
           Likelihood
         </span>
       </div>
-      <div>
-        <div className="flex flex-col gap-2">
-          {grid.map((row, rowIdx) => {
-            const likelihood = 5 - rowIdx;
-            return (
-              <div key={likelihood} className="flex items-center gap-2">
-                <span className="w-4 text-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500">
-                  {likelihood}
-                </span>
-                {row.map((count, colIdx) => {
-                  const impact = colIdx + 1;
-                  return (
-                    <HeatMapCell
-                      key={`${likelihood}-${impact}`}
-                      likelihood={likelihood}
-                      impact={impact}
-                      count={count}
-                      active={selLi === likelihood && selIm === impact}
-                      onSelect={onSelect}
-                      dark={dark}
-                    />
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-2 flex items-center gap-2 pl-6">
-          {[1, 2, 3, 4, 5].map((n) => (
+
+      <div className="grid min-h-0 min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-1.5 gap-y-1">
+        <div className="grid grid-rows-5 gap-1.5">
+          {[5, 4, 3, 2, 1].map((n) => (
             <span
               key={n}
-              className="flex h-4 w-[52px] items-center justify-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500"
+              className="flex items-center justify-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500"
             >
               {n}
             </span>
           ))}
         </div>
-        <div className="mt-1 pl-6 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
-          Impact
+        <div className="grid min-h-0 min-w-0 grid-cols-5 grid-rows-5 gap-1.5">
+          {grid.flatMap((row, rowIdx) => {
+            const likelihood = 5 - rowIdx;
+            return row.map((count, colIdx) => {
+              const impact = colIdx + 1;
+              return (
+                <HeatMapCell
+                  key={`${likelihood}-${impact}`}
+                  likelihood={likelihood}
+                  impact={impact}
+                  count={count}
+                  active={selLi === likelihood && selIm === impact}
+                  onSelect={onSelect}
+                  dark={dark}
+                />
+              );
+            });
+          })}
+        </div>
+        <div />
+        <div className="min-w-0">
+          <div className="grid grid-cols-5 gap-1.5">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <span
+                key={n}
+                className="text-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500"
+              >
+                {n}
+              </span>
+            ))}
+          </div>
+          <div className="mt-0.5 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+            Impact
+          </div>
         </div>
       </div>
     </div>
@@ -380,8 +402,8 @@ function BubbleView({
   } | null>(null);
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[360px]">
-      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible">
+    <div className="relative h-full w-full">
+      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible" preserveAspectRatio="xMidYMid meet">
         {[1, 2, 3, 4, 5].map((n) => (
           <g key={n}>
             <line
@@ -529,8 +551,8 @@ function DensityView({
   })();
 
   return (
-    <div className="mx-auto aspect-square w-full max-w-[360px]">
-      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible">
+    <div className="h-full w-full">
+      <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible" preserveAspectRatio="xMidYMid meet">
         <defs>
           {cells.map((c) => (
             <radialGradient key={`g-${c.likelihood}-${c.impact}`} id={`risk-density-${c.likelihood}-${c.impact}`}>
@@ -557,7 +579,6 @@ function DensityView({
             />
           ))}
         </g>
-        {/* 5×5 cell separators — after glow, before count labels */}
         <g stroke={dark ? "rgba(255,255,255,0.35)" : "#ffffff"} strokeWidth={2} opacity={0.9}>
           {[0, 1, 2, 3, 4, 5].map((n) => (
             <line key={`gx${n}`} x1={pad + n * step} y1={0} x2={pad + n * step} y2={size - pad} />
@@ -630,13 +651,18 @@ function LegendRow({
   const c = BAND_COLOR[band];
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
-    <div className="flex items-center gap-3">
-      <span className="h-3.5 w-3.5 shrink-0 rounded-md" style={{ background: c.solid }} />
-      <span className="w-20 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">{band}</span>
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+    <div className="flex items-center gap-2.5">
+      <span className="h-3 w-3 shrink-0 rounded-md" style={{ background: c.solid }} />
+      <span className="w-[4.5rem] text-[12px] font-semibold text-slate-700 dark:text-slate-200">{band}</span>
+      <span className="w-10 shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+        {BAND_SCORE_RANGE[band]}
+      </span>
+      <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c.solid }} />
       </div>
-      <span className="w-8 text-right text-[12.5px] font-bold text-slate-800 dark:text-slate-100">{count}</span>
+      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
+        {BAND_GUIDE[band]}
+      </span>
     </div>
   );
 }
@@ -673,14 +699,14 @@ function RiskHeatMapSection({
   ];
 
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
+    <div className="mb-4 w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5 dark:border-[var(--border)]">
         <div>
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
             Risk Heat Map
           </h2>
           <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-            Click a cell to filter the table below
+            Qualitative risks for the filtered set · click a cell to filter the table below
           </p>
         </div>
         <div className="flex rounded-lg bg-slate-100/90 p-0.5 dark:bg-slate-800">
@@ -705,31 +731,55 @@ function RiskHeatMapSection({
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row">
-        {/* Visual — fixed footprint, no stretch empty space */}
-        <div className="flex shrink-0 items-center justify-center border-b border-slate-100 bg-[#f8fafc] px-6 py-5 dark:border-[var(--border)] dark:bg-slate-900/40 lg:border-b-0 lg:border-r">
-          {view === "matrix" && (
-            <MatrixView grid={grid} selLi={selLi} selIm={selIm} onSelect={onCellSelect} dark={dark} />
-          )}
-          {view === "bubble" && <BubbleView grid={grid} maxCount={maxCount} onSelect={onCellSelect} />}
-          {view === "density" && (
-            <DensityView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
-          )}
+      <div className="grid lg:grid-cols-2 lg:items-stretch">
+        {/* Visual — fills the existing left panel */}
+        <div className="flex min-h-[380px] items-stretch justify-stretch border-b border-slate-100 bg-[#f8fafc] p-4 dark:border-[var(--border)] dark:bg-slate-900/40 lg:border-b-0 lg:border-r">
+          <div className="h-full min-h-[348px] w-full">
+            {view === "matrix" && (
+              <MatrixView grid={grid} selLi={selLi} selIm={selIm} onSelect={onCellSelect} dark={dark} />
+            )}
+            {view === "bubble" && <BubbleView grid={grid} maxCount={maxCount} onSelect={onCellSelect} />}
+            {view === "density" && (
+              <DensityView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
+            )}
+          </div>
         </div>
 
-        {/* Guide — fills remaining width */}
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-4 px-5 py-5">
+        {/* Guide — equal half */}
+        <div className="flex min-w-0 flex-col justify-center gap-4 px-6 py-6 lg:min-h-[380px]">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
               How to read
             </p>
             <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
-              Risks are scored on <span className="font-semibold text-slate-800 dark:text-white">Likelihood</span> and{" "}
-              <span className="font-semibold text-slate-800 dark:text-white">Impact</span> (1–5 each).
+              Each risk is scored on{" "}
+              <span className="font-semibold text-slate-800 dark:text-white">Likelihood</span> (Y-axis,
+              how likely it is) and{" "}
+              <span className="font-semibold text-slate-800 dark:text-white">Impact</span> (X-axis, how
+              bad if it happens), each from 1–5. The number in a cell is how many risks sit at that
+              pair. Darker / hotter cells mean higher priority for CAB discussion.
             </p>
             <div className="mt-2.5 inline-flex rounded-lg bg-brand-50 px-3 py-1.5 text-[12.5px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-              Score = Likelihood × Impact
+              Score = Likelihood × Impact (1–25)
             </div>
+            <ul className="mt-3 space-y-1 text-[12px] leading-snug text-slate-500 dark:text-slate-400">
+              <li>
+                <span className="font-medium text-slate-700 dark:text-slate-200">Matrix</span> — count
+                per Likelihood × Impact cell
+              </li>
+              <li>
+                <span className="font-medium text-slate-700 dark:text-slate-200">Bubble</span> — same
+                grid; bubble size scales with count
+              </li>
+              <li>
+                <span className="font-medium text-slate-700 dark:text-slate-200">Density</span> —
+                intensity shading where risks concentrate
+              </li>
+              <li>
+                Separate from Weighted Risk Score on Risk Factors — this map is for qualitative CAB
+                risks only.
+              </li>
+            </ul>
           </div>
 
           <div>
@@ -741,9 +791,14 @@ function RiskHeatMapSection({
                 <LegendRow key={band} band={band} count={counts[band]} total={total} />
               ))}
             </div>
+            {total > 0 && (
+              <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+                {total} risk{total === 1 ? "" : "s"} in the current filter set
+              </p>
+            )}
           </div>
 
-          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+          <div className="grid gap-2.5 sm:grid-cols-2">
             {cluster && cluster.count >= 2 && (
               <button
                 type="button"
@@ -1042,7 +1097,7 @@ export default function RiskRegisterContent() {
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={dataTableTableClass}>
               <thead>
                 <DataTableHeadRow
                   columns={RISK_COLUMNS}
@@ -1066,7 +1121,12 @@ export default function RiskRegisterContent() {
                     <tr key={r.id} className={tableRow}>
                       {isColumnVisible("riskCode") && (
                         <td className={`${tableCell} whitespace-nowrap`}>
-                          <span className="font-mono text-xs text-brand-600 dark:text-brand-400">{r.riskCode}</span>
+                          <ProgressLink
+                            href={`/risks/${r.id}`}
+                            className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                          >
+                            {r.riskCode}
+                          </ProgressLink>
                         </td>
                       )}
                       {isColumnVisible("releaseCode") && (

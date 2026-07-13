@@ -3,8 +3,8 @@ import { requireRole } from "@/lib/auth/api";
 import {
   calcDbReadiness,
   computeDbLifecycleStages,
-  getDbBlockers,
   getDbNextActions,
+  liveBlockersToCommandBlockers,
 } from "@/lib/db-release-command";
 import { predictDbRelease } from "@/lib/db-predictive";
 import { prisma } from "@/lib/prisma";
@@ -27,16 +27,29 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
   if (!release) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const p1Issues = await prisma.p1Issue.findMany({
-    where: { releaseCode: release.releaseCode },
-    orderBy: { updatedAt: "desc" },
-  });
+  const [p1Issues, liveBlockerRows] = await Promise.all([
+    prisma.p1Issue.findMany({
+      where: { releaseCode: release.releaseCode },
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.blocker.findMany({
+      where: { releaseCode: release.releaseCode },
+      orderBy: { sourceOrder: "asc" },
+      select: {
+        id: true,
+        blockerCode: true,
+        blockerDescription: true,
+        status: true,
+        severity: true,
+      },
+    }),
+  ]);
 
-  const blockers = getDbBlockers(release, p1Issues);
-  const readiness = calcDbReadiness(release, p1Issues);
-  const stages = computeDbLifecycleStages(release, p1Issues);
+  const blockers = liveBlockersToCommandBlockers(liveBlockerRows);
+  const readiness = calcDbReadiness(release, p1Issues, blockers.length);
+  const stages = computeDbLifecycleStages(release, p1Issues, blockers);
   const nextActions = getDbNextActions(release, blockers);
-  const prediction = predictDbRelease(release, p1Issues);
+  const prediction = predictDbRelease(release, p1Issues, blockers);
 
   return NextResponse.json({
     readiness,

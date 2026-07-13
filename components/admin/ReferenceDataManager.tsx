@@ -347,7 +347,7 @@ export function ReferenceDataManager() {
               {categoryRows.length === 0 ? (
                 <MasterDataEmptyState entityLabel="values" addLabel="Add Value" onAdd={openAddValue} />
               ) : (
-                <table className="w-full min-w-max border-separate border-spacing-0 text-left text-sm">
+                <table className="w-full min-w-max border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50/50">
                       {isColumnVisible("value") && (
