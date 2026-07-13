@@ -1,0 +1,22 @@
+=== Incident Page ===
+
+R1: [B] 🚨 INCIDENT DETAIL PAGE
+R3: [B] Select Incident:  |  [C] INC-001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 INCIDENT STATUS AT A GLANCE
+R6: [B] Severity  |  [C] 🔴 SEV-1  |  [E] Status  |  [F] In Progress  |  [H] Impact  |  [I] High
+R8: [B] 📋 INCIDENT INFORMATION
+R9: [B] Incident ID:  |  [C] INC-001  |  [E] Title:  |  [F] Database connection failure
+R10: [B] Application:  |  [C] Anaplan  |  [E] Environment:  |  [F] Production
+R12: [B] 📅 TIMELINE
+R13: [B] Created:  |  [C] 46215.385416666664  |  [E] Detected:  |  [F] 46215.381944444445
+R14: [B] Resolved:  |  [C] Pending  |  [E] Duration:  |  [F] 2h 45m
+R16: [B] 🔗 LINKED RELEASE
+R17: [B] Release ID:  |  [C] REL-0001  |  [E] Release Name:  |  [F] Kyriba UI Tweak v4.5
+R18: [B] Root Cause:  |  [C] Configuration change caused connection pool exhaustion
+R20: [B] 👤 OWNERSHIP
+R21: [B] Assigned To:  |  [C] USR-045  |  [E] Incident Commander:  |  [F] USR-067
+R23: [B] 📝 NOTES & UPDATES
+R24: [B] Latest Update:  |  [C] Rollback initiated, monitoring recovery metrics
+R26: [B] ⚡ QUICK ACTIONS
+R27: [B] 📋 View Release  |  [C] 📊 Timeline  |  [E] 🔄 Update Status  |  [F] 📧 Escalate  |  [H] 🔙 All Incidents
+R29: [B] Incident Page v1.0  |  Data sourced from Incidents sheet  |  P1/P2 incident tracking

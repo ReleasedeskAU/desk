@@ -1,0 +1,23 @@
+=== Risk Page ===
+
+R1: [B] 🚨 RISK DETAIL PAGE
+R3: [B] Select Risk:  |  [C] RSK-001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 RISK STATUS AT A GLANCE
+R6: [B] Risk Score  |  [C] 12  |  [E] Status  |  [F] Monitoring  |  [H] Severity  |  [I] Medium
+R7: [B] Likelihood  |  [C] 4 (Likely)  |  [E] Impact  |  [F] 3 (Moderate)  |  [H] Risk Level  |  [I] 🟡 MEDIUM
+R9: [B] 📦 ASSOCIATED RELEASE
+R10: [B] Release ID:  |  [C] REL-0001  |  [E] Release Name:  |  [F] Kyriba UI Tweak v4.5
+R11: [B] Application:  |  [C] Kyriba  |  [E] Department:  |  [F] Finance
+R12: [B] Prod Date:  |  [C] 46222  |  [E] Days Out:  |  [F] 4
+R14: [B] 📋 RISK DETAILS
+R15: [B] Risk Category:  |  [C] Resource
+R16: [B] Risk Description:  |  [C] QA Lead (Sam Anderson) on leave during release window
+R18: [B] Affected Area:  |  [C] Testing
+R20: [B] 🛡️ MITIGATION
+R21: [B] Mitigation Strategy:  |  [C] Assign backup QA resource; expedite testing before leave starts
+R23: [B] Risk Owner:  |  [C] Release Manager  |  [E] Risk Owner ID:  |  [F] USR-061
+R25: [B] 📝 NOTES
+R26: [B] Notes:  |  [C] Leave Calendar: LV-001
+R28: [B] ⚡ QUICK ACTIONS
+R29: [B] 📋 View Release  |  [C] 📅 View Leave  |  [E] 📊 Risk Matrix  |  [F] 🛡️ Mitigate  |  [H] 🔙 All Risks
+R31: [B] Risk Page v1.0  |  Data sourced from Risk sheet  |  Risk Score = Likelihood × Impact

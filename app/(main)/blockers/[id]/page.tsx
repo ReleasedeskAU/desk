@@ -1,14 +1,20 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
-import { AdvancedCard } from "@/components/ui/advanced-card";
+import { use, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  MockupDetailChrome,
+  MockupSection,
+  GlanceStrip,
+  DetailField,
+  DetailFieldGrid,
+  dash,
+} from "@/components/detail/MockupDetailChrome";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import { cn, formatDate } from "@/lib/utils";
-import { taBtnSecondary } from "@/lib/styles";
-import { Package } from "lucide-react";
+import { formatDate } from "@/lib/utils";
+import { ArrowUp, List, Mail, Package, Pencil } from "lucide-react";
 
 type BlockerDetail = {
   id: string;
@@ -34,114 +40,176 @@ type BlockerDetail = {
   release: { id: string; releaseCode: string; name: string; status: string } | null;
 };
 
-const SEVERITY_CLASSES: Record<string, string> = {
-  Critical: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300",
-  High: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
-  Medium: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300",
-  Low: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white/70",
-};
+type BlockerOption = { id: string; blockerCode: string };
+
+function severityTone(severity: string): "bad" | "warn" | "neutral" | "good" {
+  const s = severity.toLowerCase();
+  if (s.includes("critical")) return "bad";
+  if (s.includes("high")) return "bad";
+  if (s.includes("medium")) return "warn";
+  if (s.includes("low")) return "good";
+  return "neutral";
+}
+
+function statusTone(status: string): "bad" | "warn" | "good" | "neutral" {
+  const s = status.toLowerCase();
+  if (s.includes("open") || s.includes("block")) return "bad";
+  if (s.includes("progress")) return "warn";
+  if (s.includes("resolv") || s.includes("closed")) return "good";
+  return "neutral";
+}
 
 export default function BlockerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [row, setRow] = useState<BlockerDetail | null>(null);
+  const [options, setOptions] = useState<BlockerOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const result = await safeFetchJson<BlockerDetail>(`/api/blockers/${id}`, {
-        signal: ac.signal,
-        label: "blocker-detail",
-        rejectHttpErrors: false,
-      });
+      const [detail, list] = await Promise.all([
+        safeFetchJson<BlockerDetail>(`/api/blockers/${id}`, {
+          signal: ac.signal,
+          label: "blocker-detail",
+          rejectHttpErrors: false,
+        }),
+        safeFetchJson<BlockerOption[]>("/api/blockers", {
+          signal: ac.signal,
+          label: "blockers-list",
+        }),
+      ]);
       if (ac.signal.aborted) return;
-      setRow(result.ok && result.status < 300 ? result.data : null);
+      setRow(detail.ok && detail.status < 300 ? detail.data : null);
+      setOptions(list.ok ? list.data.map((b) => ({ id: b.id, blockerCode: b.blockerCode })) : []);
+      setLastRefresh(new Date());
       setLoading(false);
     })();
     return () => ac.abort();
   }, [id]);
 
+  const selectOptions = useMemo(
+    () =>
+      [...options]
+        .sort((a, b) => a.blockerCode.localeCompare(b.blockerCode, undefined, { numeric: true }))
+        .map((o) => ({ value: o.id, label: o.blockerCode })),
+    [options]
+  );
+
   if (loading) return <p className="text-gray-500 dark:text-white/60">Loading blocker…</p>;
   if (!row) return <p className="text-gray-500 dark:text-white/60">Blocker not found.</p>;
 
   return (
-    <DetailPageShell
+    <MockupDetailChrome
+      pageTitle="🚧 BLOCKER DETAIL PAGE"
       entityCode={row.blockerCode}
-      title={`${row.blockerCode} — Blocker`}
-      subtitle={`${row.application} · ${row.blockerType} · ${row.releaseCode}`}
-      backHref="/blockers"
-      backLabel="Back to Blockers"
-      badges={
-        <>
-          <StatusBadge status={row.status} />
-          <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", SEVERITY_CLASSES[row.severity] ?? "")}>
-            {row.severity}
-          </span>
-        </>
-      }
-      actions={
-        row.release ? (
-          <ProgressLink href={`/releases/${row.release.id}`} className={taBtnSecondary + " text-sm !py-2"}>
-            <Package className="h-4 w-4 inline mr-1" /> {row.release.releaseCode}
-          </ProgressLink>
-        ) : undefined
-      }
+      selectLabel="Select Blocker"
+      selectValue={row.id}
+      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: row.blockerCode }]}
+      onSelectChange={(v) => v !== row.id && router.push(`/blockers/${v}`)}
+      lastRefresh={lastRefresh}
+      footer="Blocker Page v1.0 | Data sourced from Blockers sheet | Release blocker tracking & escalation"
+      quickActions={[
+        ...(row.release
+          ? [
+              {
+                href: `/releases/${row.release.id}`,
+                label: "📋 View Release",
+                icon: <Package className="mr-1 inline h-4 w-4" />,
+              },
+            ]
+          : []),
+        { href: `/blockers/${row.id}`, label: "⬆️ Escalate", icon: <ArrowUp className="mr-1 inline h-4 w-4" /> },
+        {
+          href: `/blockers/${row.id}`,
+          label: "✏️ Update Status",
+          icon: <Pencil className="mr-1 inline h-4 w-4" />,
+        },
+        { href: `/blockers/${row.id}`, label: "📧 Notify", icon: <Mail className="mr-1 inline h-4 w-4" /> },
+        { href: "/blockers", label: "🔙 All Blockers", icon: <List className="mr-1 inline h-4 w-4" /> },
+      ]}
     >
-      <AdvancedCard title="Overview">
-        <DetailFieldGrid>
-          <DetailField label="Blocker ID" value={row.blockerCode} />
-          <DetailField label="Blocker Type" value={row.blockerType} />
-          <DetailField label="Severity" value={row.severity} />
-          <DetailField label="Status" value={row.status} />
-          <DetailField label="Escalation Level" value={row.escalationLevel} />
-          <DetailField label="Days Open" value={row.daysOpen} />
-        </DetailFieldGrid>
-      </AdvancedCard>
+      <MockupSection title="🚦 BLOCKER STATUS AT A GLANCE">
+        <GlanceStrip
+          items={[
+            {
+              label: "Status",
+              value: <StatusBadge status={row.status} />,
+              tone: statusTone(row.status),
+            },
+            { label: "Severity", value: row.severity, tone: severityTone(row.severity) },
+            { label: "Days Open", value: row.daysOpen },
+          ]}
+        />
+      </MockupSection>
 
-      <AdvancedCard title="Release context">
-        <DetailFieldGrid>
+      <MockupSection title="📋 BLOCKER INFORMATION">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Blocker ID" value={row.blockerCode} />
+          <DetailField label="Category" value={dash(row.blockerType)} />
+        </DetailFieldGrid>
+        <div className="mt-3">
+          <DetailField label="Description" value={dash(row.blockerDescription)} />
+        </div>
+      </MockupSection>
+
+      <MockupSection title="🔗 AFFECTED RELEASE">
+        <DetailFieldGrid cols={2}>
           <DetailField
             label="Release ID"
             value={
               row.release ? (
-                <ProgressLink href={`/releases/${row.release.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+                <ProgressLink
+                  href={`/releases/${row.release.id}`}
+                  className="font-mono text-brand-600 hover:underline dark:text-brand-400"
+                >
                   {row.release.releaseCode}
                 </ProgressLink>
               ) : (
-                row.releaseCode
+                <span className="font-mono">{row.releaseCode}</span>
               )
             }
           />
-          <DetailField label="Release Name" value={row.releaseName} />
-          <DetailField label="Application" value={row.application} />
-          <DetailField label="Department" value={row.department} />
-          <DetailField label="Impact on Release" value={row.impactOnRelease} />
+          <DetailField label="Release Name" value={dash(row.releaseName)} />
+          <DetailField label="Impact on Release" value={dash(row.impactOnRelease)} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Ownership & timeline">
-        <DetailFieldGrid>
+      <MockupSection title="👤 OWNERSHIP & ESCALATION">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Raised By" value={dash(row.raisedBy)} />
+          <DetailField label="Assigned To" value={dash(row.assignedTo)} />
+          <DetailField label="Escalation Level" value={dash(row.escalationLevel)} />
+          <DetailField label="Escalated To" value="—" />
+        </DetailFieldGrid>
+      </MockupSection>
+
+      <MockupSection title="📅 TIMELINE">
+        <DetailFieldGrid cols={2}>
           <DetailField label="Raised Date" value={formatDate(row.raisedDate)} />
-          <DetailField label="Raised By" value={row.raisedBy} />
-          <DetailField label="Assigned To" value={row.assignedTo || "—"} />
           <DetailField
-            label="Target Resolution Date"
+            label="Target Resolution"
             value={row.targetResolutionDate ? formatDate(row.targetResolutionDate) : "—"}
           />
           <DetailField
-            label="Actual Resolution Date"
-            value={row.actualResolutionDate ? formatDate(row.actualResolutionDate) : "—"}
+            label="Last Updated"
+            value={
+              row.actualResolutionDate
+                ? formatDate(row.actualResolutionDate)
+                : formatDate(row.raisedDate)
+            }
           />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Description & resolution">
-        <DetailFieldGrid>
-          <DetailField label="Blocker Description" value={row.blockerDescription} />
-          <DetailField label="Root Cause" value={row.rootCause || "—"} />
-          <DetailField label="Resolution Notes" value={row.resolutionNotes || "—"} />
-        </DetailFieldGrid>
-      </AdvancedCard>
-    </DetailPageShell>
+      <MockupSection title="🔧 RESOLUTION PROGRESS">
+        <DetailField label="Current Status" value={dash(row.rootCause)} />
+        <div className="mt-3">
+          <DetailField label="Resolution Plan" value={dash(row.resolutionNotes)} />
+        </div>
+      </MockupSection>
+    </MockupDetailChrome>
   );
 }

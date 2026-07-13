@@ -1,11 +1,19 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
-import { AdvancedCard } from "@/components/ui/advanced-card";
+import { use, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  MockupDetailChrome,
+  MockupSection,
+  GlanceStrip,
+  DetailField,
+  DetailFieldGrid,
+  dash,
+} from "@/components/detail/MockupDetailChrome";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import { cn, formatDateTime } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
+import { CheckCircle, LayoutDashboard, List, Mail, Package } from "lucide-react";
 
 type AlertDetail = {
   id: string;
@@ -23,80 +31,144 @@ type AlertDetail = {
   application: { id: string; name: string };
 };
 
-const SEVERITY_CLASSES: Record<string, string> = {
-  Critical: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300",
-  High: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
-  Warning: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
-  Medium: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300",
-  Info: "bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-300",
-  Low: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white/70",
-};
+type AlertOption = { id: string; alertCode: string };
+
+function severityTone(severity: string): "bad" | "warn" | "neutral" | "good" {
+  const s = severity.toLowerCase();
+  if (s.includes("critical")) return "bad";
+  if (s.includes("high") || s.includes("warning")) return "warn";
+  if (s.includes("low") || s.includes("info")) return "good";
+  return "neutral";
+}
+
+function severityLabel(severity: string) {
+  const s = severity.toLowerCase();
+  if (s.includes("critical")) return `🔴 ${severity}`;
+  if (s.includes("high")) return `🔴 ${severity}`;
+  if (s.includes("medium") || s.includes("warning")) return `🟡 ${severity}`;
+  if (s.includes("low") || s.includes("info")) return `🟢 ${severity}`;
+  return severity;
+}
 
 export default function MonitoringAlertDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [row, setRow] = useState<AlertDetail | null>(null);
+  const [options, setOptions] = useState<AlertOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const result = await safeFetchJson<AlertDetail>(`/api/monitoring-alerts/${id}`, {
-        signal: ac.signal,
-        label: "alert-detail",
-        rejectHttpErrors: false,
-      });
+      const [detail, list] = await Promise.all([
+        safeFetchJson<AlertDetail>(`/api/monitoring-alerts/${id}`, {
+          signal: ac.signal,
+          label: "alert-detail",
+          rejectHttpErrors: false,
+        }),
+        safeFetchJson<AlertOption[]>("/api/monitoring-alerts", {
+          signal: ac.signal,
+          label: "alerts-list",
+        }),
+      ]);
       if (ac.signal.aborted) return;
-      setRow(result.ok && result.status < 300 ? result.data : null);
+      setRow(detail.ok && detail.status < 300 ? detail.data : null);
+      setOptions(list.ok ? list.data.map((a) => ({ id: a.id, alertCode: a.alertCode })) : []);
+      setLastRefresh(new Date());
       setLoading(false);
     })();
     return () => ac.abort();
   }, [id]);
 
+  const selectOptions = useMemo(
+    () =>
+      [...options]
+        .sort((a, b) => a.alertCode.localeCompare(b.alertCode, undefined, { numeric: true }))
+        .map((o) => ({ value: o.id, label: o.alertCode })),
+    [options]
+  );
+
   if (loading) return <p className="text-gray-500 dark:text-white/60">Loading alert…</p>;
   if (!row) return <p className="text-gray-500 dark:text-white/60">Alert not found.</p>;
 
   return (
-    <DetailPageShell
+    <MockupDetailChrome
+      pageTitle="🔔 ALERT DETAIL PAGE"
       entityCode={row.alertCode}
-      title={`${row.alertCode} — Alert`}
-      subtitle={`${row.application.name} · ${row.environmentName} · ${row.alertType}`}
-      backHref="/monitoring-alerts"
-      backLabel="Back to Monitoring Alerts"
-      badges={
-        <>
-          <StatusBadge status={row.status} />
-          <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", SEVERITY_CLASSES[row.severity] ?? "")}>
-            {row.severity}
-          </span>
-        </>
-      }
+      selectLabel="Select Alert"
+      selectValue={row.id}
+      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: row.alertCode }]}
+      onSelectChange={(v) => v !== row.id && router.push(`/monitoring-alerts/${v}`)}
+      lastRefresh={lastRefresh}
+      footer="Alert Page v1.0 | Data sourced from Monitoring Alerts sheet | System alert & incident correlation"
+      quickActions={[
+        { href: "/releases", label: "📋 View Release", icon: <Package className="mr-1 inline h-4 w-4" /> },
+        {
+          href: "/monitoring-alerts",
+          label: "📊 View Metrics",
+          icon: <LayoutDashboard className="mr-1 inline h-4 w-4" />,
+        },
+        {
+          href: `/monitoring-alerts/${row.id}`,
+          label: "🔄 Acknowledge",
+          icon: <CheckCircle className="mr-1 inline h-4 w-4" />,
+        },
+        {
+          href: `/monitoring-alerts/${row.id}`,
+          label: "📧 Escalate",
+          icon: <Mail className="mr-1 inline h-4 w-4" />,
+        },
+        { href: "/monitoring-alerts", label: "🔙 All Alerts", icon: <List className="mr-1 inline h-4 w-4" /> },
+      ]}
     >
-      <AdvancedCard title="Overview">
-        <DetailFieldGrid>
+      <MockupSection title="🚦 ALERT STATUS AT A GLANCE">
+        <GlanceStrip
+          items={[
+            {
+              label: "Severity",
+              value: severityLabel(row.severity),
+              tone: severityTone(row.severity),
+            },
+            { label: "Status", value: <StatusBadge status={row.status} /> },
+            { label: "Alert Type", value: dash(row.alertType) },
+          ]}
+        />
+      </MockupSection>
+
+      <MockupSection title="📋 ALERT INFORMATION">
+        <DetailFieldGrid cols={2}>
           <DetailField label="Alert ID" value={row.alertCode} />
-          <DetailField label="Timestamp" value={formatDateTime(row.timestamp)} />
-          <DetailField label="Alert Type" value={row.alertType} />
-          <DetailField label="Severity" value={row.severity} />
-          <DetailField label="Status" value={row.status} />
-          <DetailField label="Assigned To" value={row.assignedTo || "—"} />
+          <DetailField label="Alert Name" value={dash(row.metric)} />
+          <DetailField label="Application" value={dash(row.application.name)} />
+          <DetailField label="Environment" value={dash(row.environmentName)} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Scope">
-        <DetailFieldGrid>
-          <DetailField label="Application" value={row.application.name} />
-          <DetailField label="Department" value={row.departmentName ?? "—"} />
-          <DetailField label="Environment" value={row.environmentName} />
+      <MockupSection title="📊 METRIC DETAILS">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Metric" value={dash(row.metric)} />
+          <DetailField label="Current Value" value={dash(row.currentValue)} />
+          <DetailField label="Threshold" value={dash(row.threshold)} />
+          <DetailField label="Triggered At" value={formatDateTime(row.timestamp)} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Metric">
-        <DetailFieldGrid>
-          <DetailField label="Metric" value={row.metric} />
-          <DetailField label="Threshold" value={row.threshold ?? "—"} />
-          <DetailField label="Current Value" value={row.currentValue ?? "—"} />
+      <MockupSection title="🔗 LINKED RELEASE">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Release ID" value="—" />
+          <DetailField label="Release Name" value="—" />
+          <DetailField label="Correlation" value="—" />
         </DetailFieldGrid>
-      </AdvancedCard>
-    </DetailPageShell>
+      </MockupSection>
+
+      <MockupSection title="🔧 RESOLUTION">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Assigned To" value={dash(row.assignedTo)} />
+          <DetailField label="Priority" value="—" />
+          <DetailField label="Actions Taken" value="—" />
+        </DetailFieldGrid>
+      </MockupSection>
+    </MockupDetailChrome>
   );
 }

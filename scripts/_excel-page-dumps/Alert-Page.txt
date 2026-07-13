@@ -1,0 +1,21 @@
+=== Alert Page ===
+
+R1: [B] 🔔 ALERT DETAIL PAGE
+R3: [B] Select Alert:  |  [C] ALT-001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 ALERT STATUS AT A GLANCE
+R6: [B] Severity  |  [C] 🔴 Critical  |  [E] Status  |  [F] Active  |  [H] Alert Type  |  [I] Performance
+R8: [B] 📋 ALERT INFORMATION
+R9: [B] Alert ID:  |  [C] ALT-001  |  [E] Alert Name:  |  [F] High CPU Usage - Finance Server
+R10: [B] Application:  |  [C] Anaplan  |  [E] Environment:  |  [F] Production
+R12: [B] 📊 METRIC DETAILS
+R13: [B] Metric:  |  [C] CPU Utilization  |  [E] Current Value:  |  [F] 0.98
+R14: [B] Threshold:  |  [C] > 85%  |  [E] Triggered At:  |  [F] 46215.599305555559
+R16: [B] 🔗 LINKED RELEASE
+R17: [B] Release ID:  |  [C] REL-0001  |  [E] Release Name:  |  [F] Kyriba UI Tweak v4.5
+R18: [B] Correlation:  |  [C] Alert triggered after release deployment
+R20: [B] 🔧 RESOLUTION
+R21: [B] Assigned To:  |  [C] USR-045  |  [E] Priority:  |  [F] P1
+R22: [B] Actions Taken:  |  [C] Server restart initiated, scaling up resources
+R24: [B] ⚡ QUICK ACTIONS
+R25: [B] 📋 View Release  |  [C] 📊 View Metrics  |  [E] 🔄 Acknowledge  |  [F] 📧 Escalate  |  [H] 🔙 All Alerts
+R27: [B] Alert Page v1.0  |  Data sourced from Monitoring Alerts sheet  |  System alert & incident correlation

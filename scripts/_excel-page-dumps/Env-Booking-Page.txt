@@ -1,0 +1,27 @@
+=== Env Booking Page ===
+
+R1: [B] 🖥️ ENVIRONMENT BOOKING DETAIL PAGE
+R3: [B] Select Booking:  |  [C] ENV-0001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 BOOKING STATUS AT A GLANCE
+R6: [B] Conflict Flag  |  [C] ⚠️ CONFLICT  |  [E] Release ID  |  [F] REL-0001  |  [H] Application  |  [I] Kyriba
+R8: [B] 📦 RELEASE INFORMATION
+R9: [B] Release ID:  |  [C] REL-0001  |  [E] Application:  |  [F] Kyriba
+R10: [B] Department:  |  [C] Finance  |  [E] Release Size:  |  [F] Small
+R11: [B] Dependencies:  |  [C] NA
+R13: [B] 📅 KEY DATES
+R14: [B] Prod Release Date:  |  [C] 46222  |  [E] CAB Date:  |  [F] 46220
+R16: [B] 🧪 TEST ENVIRONMENT
+R17: [B] Test Env:  |  [C] FIN-TEST-01  |  [E] Test Start:  |  [F] 46216  |  [H] Test End:  |  [I] 46218
+R18: [B] Test Days:  |  [C] 3
+R20: [B] ✅ UAT ENVIRONMENT
+R21: [B] UAT Env:  |  [C] FIN-UAT-01  |  [E] UAT Start:  |  [F] 46219  |  [H] UAT End:  |  [I] 46220
+R22: [B] UAT Days:  |  [C] 2
+R24: [B] 🚀 PRE-PROD ENVIRONMENT
+R25: [B] Pre-Prod Env:  |  [C] FIN-PREPROD-01  |  [E] Pre-Prod Start:  |  [F] 46221  |  [H] Pre-Prod End:  |  [I] 46221
+R26: [B] Pre-Prod Days:  |  [C] 1
+R28: [B] ⚠️ CONFLICT DETAILS
+R29: [B] Conflict ID:  |  [C] CNF-0001
+R30: [B] Notes:  |  [C] Resource conflict with REL-0003 - Same Test/UAT env required
+R32: [B] ⚡ QUICK ACTIONS
+R33: [B] 📅 View Calendar  |  [C] 📋 View Release  |  [E] ⚠️ View Conflict  |  [F] 📊 Dashboard  |  [H] 🔙 All Bookings
+R35: [B] Env Booking Page v1.0  |  Data sourced from Env booking sheet

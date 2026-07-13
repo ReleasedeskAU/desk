@@ -1,0 +1,19 @@
+=== Approvals Page ===
+
+R1: [B] ✅ APPROVAL DETAIL PAGE
+R3: [B] Select Approval:  |  [C] APR-001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 APPROVAL STATUS AT A GLANCE
+R6: [B] Decision  |  [C] ✅ Approved  |  [E] Approval Type  |  [F] CAB Approval  |  [H] CAB Meeting  |  [I] CAB-2026-07-01
+R8: [B] 📦 RELEASE INFORMATION
+R9: [B] Release ID:  |  [C] REL-0001  |  [E] Release Name:  |  [F] Kyriba UI Tweak v4.5
+R10: [B] Application:  |  [C] Kyriba  |  [E] Department:  |  [F] Finance
+R12: [B] 👤 APPROVER DETAILS
+R13: [B] Approver ID:  |  [C] USR-045  |  [E] Approver Name:  |  [F] Jennifer Walsh
+R14: [B] Approver Role:  |  [C] CAB Chair
+R16: [B] 📅 TIMELINE
+R17: [B] Submitted Date:  |  [C] 46213  |  [E] Decision Date:  |  [F] 46215
+R19: [B] 💬 COMMENTS
+R20: [B] Comments:  |  [C] Approved for low-impact UI change. Proceed with deployment.
+R22: [B] ⚡ QUICK ACTIONS
+R23: [B] 📋 View Release  |  [C] 📅 View CAB  |  [E] ✏️ Add Comment  |  [F] 📧 Notify  |  [H] 🔙 All Approvals
+R25: [B] Approvals Page v1.0  |  Data sourced from Approvals sheet  |  CAB & sign-off workflow tracking

@@ -1,14 +1,20 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
-import { AdvancedCard } from "@/components/ui/advanced-card";
+import { use, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  MockupDetailChrome,
+  MockupSection,
+  GlanceStrip,
+  DetailField,
+  DetailFieldGrid,
+  dash,
+} from "@/components/detail/MockupDetailChrome";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import { cn, formatDateTime } from "@/lib/utils";
-import { taBtnSecondary } from "@/lib/styles";
-import { Package } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
+import { LayoutDashboard, List, Mail, Package, RefreshCw } from "lucide-react";
 
 type IncidentDetail = {
   id: string;
@@ -26,101 +32,173 @@ type IncidentDetail = {
   relatedRelease: { id: string; releaseCode: string; name: string; status: string } | null;
 };
 
-const SEVERITY_CLASSES: Record<string, string> = {
-  Critical: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300",
-  P1: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300",
-  High: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
-  P2: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
-  Medium: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300",
-  P3: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300",
-  Low: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white/70",
-};
+type IncidentOption = { id: string; incidentCode: string };
+
+function severityTone(severity: string): "bad" | "warn" | "neutral" | "good" {
+  const s = severity.toLowerCase();
+  if (s.includes("sev-1") || s.includes("p1") || s.includes("critical")) return "bad";
+  if (s.includes("sev-2") || s.includes("p2") || s.includes("high")) return "bad";
+  if (s.includes("medium") || s.includes("p3")) return "warn";
+  if (s.includes("low")) return "good";
+  return "neutral";
+}
+
+function severityLabel(severity: string) {
+  const s = severity.toUpperCase();
+  if (s.includes("SEV-1") || s === "P1" || s.includes("CRITICAL")) return `🔴 ${severity}`;
+  if (s.includes("SEV-2") || s === "P2" || s.includes("HIGH")) return `🔴 ${severity}`;
+  if (s.includes("MEDIUM") || s === "P3") return `🟡 ${severity}`;
+  return severity;
+}
+
+function impactTone(impact: string): "bad" | "warn" | "neutral" | "good" {
+  const s = impact.toLowerCase();
+  if (s.includes("critical") || s.includes("high")) return "bad";
+  if (s.includes("medium")) return "warn";
+  if (s.includes("low")) return "good";
+  return "neutral";
+}
 
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [row, setRow] = useState<IncidentDetail | null>(null);
+  const [options, setOptions] = useState<IncidentOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const result = await safeFetchJson<IncidentDetail>(`/api/incidents/${id}`, {
-        signal: ac.signal,
-        label: "incident-detail",
-        rejectHttpErrors: false,
-      });
+      const [detail, list] = await Promise.all([
+        safeFetchJson<IncidentDetail>(`/api/incidents/${id}`, {
+          signal: ac.signal,
+          label: "incident-detail",
+          rejectHttpErrors: false,
+        }),
+        safeFetchJson<IncidentOption[]>("/api/incidents", {
+          signal: ac.signal,
+          label: "incidents-list",
+        }),
+      ]);
       if (ac.signal.aborted) return;
-      setRow(result.ok && result.status < 300 ? result.data : null);
+      setRow(detail.ok && detail.status < 300 ? detail.data : null);
+      setOptions(list.ok ? list.data.map((i) => ({ id: i.id, incidentCode: i.incidentCode })) : []);
+      setLastRefresh(new Date());
       setLoading(false);
     })();
     return () => ac.abort();
   }, [id]);
 
+  const selectOptions = useMemo(
+    () =>
+      [...options]
+        .sort((a, b) => a.incidentCode.localeCompare(b.incidentCode, undefined, { numeric: true }))
+        .map((o) => ({ value: o.id, label: o.incidentCode })),
+    [options]
+  );
+
   if (loading) return <p className="text-gray-500 dark:text-white/60">Loading incident…</p>;
   if (!row) return <p className="text-gray-500 dark:text-white/60">Incident not found.</p>;
 
   return (
-    <DetailPageShell
+    <MockupDetailChrome
+      pageTitle="🚨 INCIDENT DETAIL PAGE"
       entityCode={row.incidentCode}
-      title={`${row.incidentCode} — ${row.title}`}
-      subtitle={`${row.application.name} · ${row.environmentName} · ${row.severity}`}
-      backHref="/incidents"
-      backLabel="Back to Incidents"
-      badges={
-        <>
-          <StatusBadge status={row.status} />
-          <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", SEVERITY_CLASSES[row.severity] ?? "")}>
-            {row.severity}
-          </span>
-        </>
-      }
-      actions={
-        row.relatedRelease ? (
-          <ProgressLink href={`/releases/${row.relatedRelease.id}`} className={taBtnSecondary + " text-sm !py-2"}>
-            <Package className="h-4 w-4 inline mr-1" /> {row.relatedRelease.releaseCode}
-          </ProgressLink>
-        ) : undefined
-      }
+      selectLabel="Select Incident"
+      selectValue={row.id}
+      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: row.incidentCode }]}
+      onSelectChange={(v) => v !== row.id && router.push(`/incidents/${v}`)}
+      lastRefresh={lastRefresh}
+      footer="Incident Page v1.0 | Data sourced from Incidents sheet | P1/P2 incident tracking"
+      quickActions={[
+        ...(row.relatedRelease
+          ? [
+              {
+                href: `/releases/${row.relatedRelease.id}`,
+                label: "📋 View Release",
+                icon: <Package className="mr-1 inline h-4 w-4" />,
+              },
+            ]
+          : []),
+        {
+          href: `/incidents/${row.id}`,
+          label: "📊 Timeline",
+          icon: <LayoutDashboard className="mr-1 inline h-4 w-4" />,
+        },
+        {
+          href: `/incidents/${row.id}`,
+          label: "🔄 Update Status",
+          icon: <RefreshCw className="mr-1 inline h-4 w-4" />,
+        },
+        { href: `/incidents/${row.id}`, label: "📧 Escalate", icon: <Mail className="mr-1 inline h-4 w-4" /> },
+        { href: "/incidents", label: "🔙 All Incidents", icon: <List className="mr-1 inline h-4 w-4" /> },
+      ]}
     >
-      <AdvancedCard title="Overview">
-        <DetailFieldGrid>
+      <MockupSection title="🚦 INCIDENT STATUS AT A GLANCE">
+        <GlanceStrip
+          items={[
+            {
+              label: "Severity",
+              value: severityLabel(row.severity),
+              tone: severityTone(row.severity),
+            },
+            { label: "Status", value: <StatusBadge status={row.status} /> },
+            { label: "Impact", value: dash(row.impact), tone: impactTone(row.impact) },
+          ]}
+        />
+      </MockupSection>
+
+      <MockupSection title="📋 INCIDENT INFORMATION">
+        <DetailFieldGrid cols={2}>
           <DetailField label="Incident ID" value={row.incidentCode} />
-          <DetailField label="Timestamp" value={formatDateTime(row.timestamp)} />
-          <DetailField label="Title" value={row.title} />
-          <DetailField label="Severity" value={row.severity} />
-          <DetailField label="Status" value={row.status} />
-          <DetailField label="Impact" value={row.impact} />
-          <DetailField label="Assigned To" value={row.assignedTo || "—"} />
+          <DetailField label="Title" value={dash(row.title)} />
+          <DetailField label="Application" value={dash(row.application.name)} />
+          <DetailField label="Environment" value={dash(row.environmentName)} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Scope">
-        <DetailFieldGrid>
-          <DetailField label="Application" value={row.application.name} />
-          <DetailField label="Department" value={row.departmentName ?? "—"} />
-          <DetailField label="Environment" value={row.environmentName} />
+      <MockupSection title="📅 TIMELINE">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Created" value={formatDateTime(row.timestamp)} />
+          <DetailField label="Detected" value="—" />
+          <DetailField label="Resolved" value="—" />
+          <DetailField label="Duration" value="—" />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Linked Release">
-        <DetailFieldGrid>
+      <MockupSection title="🔗 LINKED RELEASE">
+        <DetailFieldGrid cols={2}>
           <DetailField
-            label="Related Release"
+            label="Release ID"
             value={
               row.relatedRelease ? (
                 <ProgressLink
                   href={`/releases/${row.relatedRelease.id}`}
-                  className="text-brand-600 hover:underline dark:text-brand-400"
+                  className="font-mono text-brand-600 hover:underline dark:text-brand-400"
                 >
-                  {row.relatedRelease.releaseCode} — {row.relatedRelease.name}
+                  {row.relatedRelease.releaseCode}
                 </ProgressLink>
               ) : (
-                row.relatedReleaseCode || "—"
+                dash(row.relatedReleaseCode)
               )
             }
           />
+          <DetailField label="Release Name" value={dash(row.relatedRelease?.name)} />
+          <DetailField label="Root Cause" value="—" />
         </DetailFieldGrid>
-      </AdvancedCard>
-    </DetailPageShell>
+      </MockupSection>
+
+      <MockupSection title="👤 OWNERSHIP">
+        <DetailFieldGrid cols={2}>
+          <DetailField label="Assigned To" value={dash(row.assignedTo)} />
+          <DetailField label="Incident Commander" value="—" />
+        </DetailFieldGrid>
+      </MockupSection>
+
+      <MockupSection title="📝 NOTES & UPDATES">
+        <DetailField label="Latest Update" value="—" />
+      </MockupSection>
+    </MockupDetailChrome>
   );
 }

@@ -1,0 +1,18 @@
+=== Conflict Page ===
+
+R1: [B] ⚠️ CONFLICT DETAIL PAGE
+R3: [B] Select Conflict:  |  [C] CNF-0001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 CONFLICT STATUS AT A GLANCE
+R6: [B] Status  |  [C] Open  |  [E] Priority  |  [F] P2 - High  |  [H] Assigned To  |  [I] Rebecca Stone
+R8: [B] 🔄 CONFLICTING RELEASES
+R9: [B] Release 1:  |  [C] REL-0001  |  [E] Name:  |  [F] Kyriba UI Tweak v4.5
+R10: [B] Release 2:  |  [C] REL-0003  |  [E] Name:  |  [F] Zendesk Minor Update v4.3
+R11: [B] Applications:  |  [C] Kyriba / Zendesk  |  [E] Departments:  |  [F] Finance / CRM
+R13: [B] 🖥️ ENVIRONMENT CONFLICT DETAILS
+R14: [B] Conflicting Env:  |  [C] FIN-TEST-01, FIN-UAT-01
+R15: [B] Conflict Type:  |  [C] Same Test/UAT env required
+R17: [B] 📝 NOTES & RESOLUTION
+R18: [B] Notes:  |  [C] Both releases need Finance environments simultaneously
+R20: [B] ⚡ QUICK ACTIONS
+R21: [B] 📅 View Calendar  |  [C] 🖥️ Env Booking  |  [E] 📋 View Release 1  |  [F] 📋 View Release 2  |  [H] 🔙 All Conflicts
+R23: [B] Conflict Page v1.0  |  Data sourced from Environment Conflicts sheet

@@ -1,13 +1,19 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
-import { AdvancedCard } from "@/components/ui/advanced-card";
+import { use, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  MockupDetailChrome,
+  MockupSection,
+  GlanceStrip,
+  DetailField,
+  DetailFieldGrid,
+  dash,
+} from "@/components/detail/MockupDetailChrome";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
-import { taBtnSecondary } from "@/lib/styles";
-import { AlertOctagon, Package } from "lucide-react";
+import { AlertOctagon, Calendar, LayoutDashboard, List, Package } from "lucide-react";
 
 type BookingDetail = {
   id: string;
@@ -37,29 +43,74 @@ type BookingDetail = {
   conflicts: { id: string; conflictCode: string; status: string; priority: string }[];
 };
 
+type BookingOption = { id: string; bookingCode: string | null };
+
 function d(value: string | null | undefined) {
   return value ? formatDate(value) : "—";
 }
 
+function ConflictLinks({ raw, conflicts }: { raw: string | null; conflicts: BookingDetail["conflicts"] }) {
+  const codes = (raw ?? "")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (!codes.length) return <>{dash(raw)}</>;
+  return (
+    <span className="inline-flex flex-wrap gap-x-1">
+      {codes.map((code, i) => {
+        const hit = conflicts.find((c) => c.conflictCode === code);
+        return (
+          <span key={code}>
+            {i > 0 && <span className="text-gray-400 mr-1">,</span>}
+            <ProgressLink
+              href={`/conflicts/${hit?.id ?? encodeURIComponent(code)}`}
+              className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+            >
+              {code}
+            </ProgressLink>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 export default function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [row, setRow] = useState<BookingDetail | null>(null);
+  const [options, setOptions] = useState<BookingOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const result = await safeFetchJson<BookingDetail>(`/api/bookings/${id}`, {
-        signal: ac.signal,
-        label: "booking-detail",
-        rejectHttpErrors: false,
-      });
+      const [detail, list] = await Promise.all([
+        safeFetchJson<BookingDetail>(`/api/bookings/${id}`, {
+          signal: ac.signal,
+          label: "booking-detail",
+          rejectHttpErrors: false,
+        }),
+        safeFetchJson<BookingOption[]>("/api/bookings", { signal: ac.signal, label: "bookings-list" }),
+      ]);
       if (ac.signal.aborted) return;
-      setRow(result.ok && result.status < 300 ? result.data : null);
+      setRow(detail.ok && detail.status < 300 ? detail.data : null);
+      setOptions(list.ok ? list.data.map((b) => ({ id: b.id, bookingCode: b.bookingCode })) : []);
+      setLastRefresh(new Date());
       setLoading(false);
     })();
     return () => ac.abort();
   }, [id]);
+
+  const selectOptions = useMemo(
+    () =>
+      [...options]
+        .filter((o) => o.bookingCode)
+        .sort((a, b) => String(a.bookingCode).localeCompare(String(b.bookingCode), undefined, { numeric: true }))
+        .map((o) => ({ value: o.id, label: o.bookingCode! })),
+    [options]
+  );
 
   if (loading) return <p className="text-gray-500 dark:text-white/60">Loading booking…</p>;
   if (!row) return <p className="text-gray-500 dark:text-white/60">Booking not found.</p>;
@@ -67,46 +118,71 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const code = row.bookingCode ?? row.id;
 
   return (
-    <DetailPageShell
+    <MockupDetailChrome
+      pageTitle="🖥️ ENVIRONMENT BOOKING DETAIL PAGE"
       entityCode={code}
-      title={`${code} — Env Booking`}
-      subtitle={`${row.application.name}${row.departmentName ? ` · ${row.departmentName}` : ""}${row.release ? ` · ${row.release.releaseCode}` : ""}`}
-      backHref="/booking"
-      backLabel="Back to Env Booking"
-      badges={
-        row.conflictFlag ? (
-          <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800 dark:bg-rose-500/20 dark:text-rose-300">
-            Conflict
-          </span>
-        ) : (
-          <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-            Clear
-          </span>
-        )
-      }
-      actions={
-        <>
-          {row.release && (
-            <ProgressLink href={`/releases/${row.release.id}`} className={taBtnSecondary + " text-sm !py-2"}>
-              <Package className="h-4 w-4 inline mr-1" /> {row.release.releaseCode}
-            </ProgressLink>
-          )}
-          {row.conflicts[0] && (
-            <ProgressLink href={`/conflicts/${row.conflicts[0].id}`} className={taBtnSecondary + " text-sm !py-2"}>
-              <AlertOctagon className="h-4 w-4 inline mr-1" /> {row.conflicts[0].conflictCode}
-            </ProgressLink>
-          )}
-        </>
-      }
+      selectLabel="Select Booking"
+      selectValue={row.id}
+      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: code }]}
+      onSelectChange={(v) => v !== row.id && router.push(`/booking/${v}`)}
+      lastRefresh={lastRefresh}
+      footer="Env Booking Page v1.0 | Data sourced from Env booking sheet"
+      quickActions={[
+        { href: "/calendar", label: "📅 View Calendar", icon: <Calendar className="mr-1 inline h-4 w-4" /> },
+        ...(row.release
+          ? [{ href: `/releases/${row.release.id}`, label: "📋 View Release", icon: <Package className="mr-1 inline h-4 w-4" /> }]
+          : []),
+        ...(row.conflicts[0]
+          ? [
+              {
+                href: `/conflicts/${row.conflicts[0].id}`,
+                label: "⚠️ View Conflict",
+                icon: <AlertOctagon className="mr-1 inline h-4 w-4" />,
+              },
+            ]
+          : row.environmentConflictId
+            ? [
+                {
+                  href: `/conflicts/${encodeURIComponent(row.environmentConflictId.split(",")[0].trim())}`,
+                  label: "⚠️ View Conflict",
+                  icon: <AlertOctagon className="mr-1 inline h-4 w-4" />,
+                },
+              ]
+            : []),
+        { href: "/dashboard", label: "📊 Dashboard", icon: <LayoutDashboard className="mr-1 inline h-4 w-4" /> },
+        { href: "/booking", label: "🔙 All Bookings", icon: <List className="mr-1 inline h-4 w-4" /> },
+      ]}
     >
-      <AdvancedCard title="Release context">
-        <DetailFieldGrid>
-          <DetailField label="Booking ID" value={code} />
+      <MockupSection title="🚦 Booking Status at a Glance">
+        <GlanceStrip
+          items={[
+            {
+              label: "Conflict Flag",
+              value: row.conflictFlag ? "⚠️ CONFLICT" : "Clear",
+              tone: row.conflictFlag ? "warn" : "good",
+            },
+            {
+              label: "Release ID",
+              value: row.release ? (
+                <ProgressLink href={`/releases/${row.release.id}`} className="font-mono text-brand-600 hover:underline dark:text-brand-400">
+                  {row.release.releaseCode}
+                </ProgressLink>
+              ) : (
+                "—"
+              ),
+            },
+            { label: "Application", value: row.application.name },
+          ]}
+        />
+      </MockupSection>
+
+      <MockupSection title="📦 Release Information">
+        <DetailFieldGrid cols={2}>
           <DetailField
             label="Release ID"
             value={
               row.release ? (
-                <ProgressLink href={`/releases/${row.release.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+                <ProgressLink href={`/releases/${row.release.id}`} className="font-mono text-brand-600 hover:underline dark:text-brand-400">
                   {row.release.releaseCode}
                 </ProgressLink>
               ) : (
@@ -115,95 +191,55 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             }
           />
           <DetailField label="Application" value={row.application.name} />
-          <DetailField label="Department" value={row.departmentName ?? "—"} />
-          <DetailField label="Dependencies" value={row.dependencies || "NA"} />
-          <DetailField label="Release Size" value={row.releaseSize ?? "—"} />
+          <DetailField label="Department" value={dash(row.departmentName)} />
+          <DetailField label="Release Size" value={dash(row.releaseSize)} />
+          <DetailField label="Dependencies" value={dash(row.dependencies ?? "NA")} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <AdvancedCard title="Milestones">
-        <DetailFieldGrid>
+      <MockupSection title="📅 Key Dates">
+        <DetailFieldGrid cols={2}>
           <DetailField label="Prod Release Date" value={d(row.prodReleaseDate)} />
           <DetailField label="CAB Date" value={d(row.cabDate)} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <AdvancedCard title="Test phase">
-          <DetailFieldGrid>
-            <DetailField label="Test Env" value={row.testEnvCode ?? "—"} />
-            <DetailField label="Test Start" value={d(row.testStart)} />
-            <DetailField label="Test End" value={d(row.testEnd)} />
-            <DetailField label="Test Days" value={row.testDays ?? "—"} />
-          </DetailFieldGrid>
-        </AdvancedCard>
-        <AdvancedCard title="UAT phase">
-          <DetailFieldGrid>
-            <DetailField label="UAT Env" value={row.uatEnvCode ?? "—"} />
-            <DetailField label="UAT Start" value={d(row.uatStart)} />
-            <DetailField label="UAT End" value={d(row.uatEnd)} />
-            <DetailField label="UAT Days" value={row.uatDays ?? "—"} />
-          </DetailFieldGrid>
-        </AdvancedCard>
-        <AdvancedCard title="Pre-Prod phase">
-          <DetailFieldGrid>
-            <DetailField label="Pre-Prod Env" value={row.preProdEnvCode ?? "—"} />
-            <DetailField label="Pre-Prod Start" value={d(row.preProdStart)} />
-            <DetailField label="Pre-Prod End" value={d(row.preProdEnd)} />
-            <DetailField label="Pre-Prod Days" value={row.preProdDays ?? "—"} />
-          </DetailFieldGrid>
-        </AdvancedCard>
-      </div>
-
-      <AdvancedCard title="Conflict linkage" icon={AlertOctagon}>
-        <DetailFieldGrid>
-          <DetailField label="Conflict Flag" value={row.conflictFlag ? "Yes" : "No"} />
-          <DetailField
-            label="Environment Conflict ID"
-            value={
-              row.conflicts.length > 0 ? (
-                <span className="inline-flex flex-wrap gap-2">
-                  {row.conflicts.map((c) => (
-                    <ProgressLink
-                      key={c.id}
-                      href={`/conflicts/${c.id}`}
-                      className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
-                    >
-                      {c.conflictCode}
-                    </ProgressLink>
-                  ))}
-                </span>
-              ) : row.environmentConflictId ? (
-                <span className="inline-flex flex-wrap items-center gap-x-1">
-                  {row.environmentConflictId
-                    .split(",")
-                    .map((c) => c.trim())
-                    .filter(Boolean)
-                    .map((code, i) => (
-                      <span key={code} className="inline-flex items-center">
-                        {i > 0 && <span className="text-gray-400 mr-1">,</span>}
-                        <ProgressLink
-                          href={`/conflicts/${encodeURIComponent(code)}`}
-                          className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
-                        >
-                          {code}
-                        </ProgressLink>
-                      </span>
-                    ))}
-                </span>
-              ) : (
-                "—"
-              )
-            }
-          />
+      <MockupSection title="🧪 Test Environment">
+        <DetailFieldGrid cols={3}>
+          <DetailField label="Test Env" value={dash(row.testEnvCode)} />
+          <DetailField label="Test Start" value={d(row.testStart)} />
+          <DetailField label="Test End" value={d(row.testEnd)} />
+          <DetailField label="Test Days" value={row.testDays ?? "—"} />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </MockupSection>
 
-      {row.purpose ? (
-        <AdvancedCard title="Notes">
-          <p className="text-sm text-gray-700 dark:text-white/80">{row.purpose}</p>
-        </AdvancedCard>
-      ) : null}
-    </DetailPageShell>
+      <MockupSection title="✅ UAT Environment">
+        <DetailFieldGrid cols={3}>
+          <DetailField label="UAT Env" value={dash(row.uatEnvCode)} />
+          <DetailField label="UAT Start" value={d(row.uatStart)} />
+          <DetailField label="UAT End" value={d(row.uatEnd)} />
+          <DetailField label="UAT Days" value={row.uatDays ?? "—"} />
+        </DetailFieldGrid>
+      </MockupSection>
+
+      <MockupSection title="🚀 Pre-Prod Environment">
+        <DetailFieldGrid cols={3}>
+          <DetailField label="Pre-Prod Env" value={dash(row.preProdEnvCode)} />
+          <DetailField label="Pre-Prod Start" value={d(row.preProdStart)} />
+          <DetailField label="Pre-Prod End" value={d(row.preProdEnd)} />
+          <DetailField label="Pre-Prod Days" value={row.preProdDays ?? "—"} />
+        </DetailFieldGrid>
+      </MockupSection>
+
+      <MockupSection title="⚠️ Conflict Details">
+        <DetailFieldGrid cols={2}>
+          <DetailField
+            label="Conflict ID"
+            value={<ConflictLinks raw={row.environmentConflictId} conflicts={row.conflicts} />}
+          />
+          <DetailField label="Notes" value={dash(row.purpose)} />
+        </DetailFieldGrid>
+      </MockupSection>
+    </MockupDetailChrome>
   );
 }

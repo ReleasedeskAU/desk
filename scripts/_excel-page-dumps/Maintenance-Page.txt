@@ -1,0 +1,23 @@
+=== Maintenance Page ===
+
+R1: [B] 🔧 MAINTENANCE DETAIL PAGE
+R3: [B] Select Maintenance:  |  [C] MNT-001  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 MAINTENANCE STATUS AT A GLANCE
+R6: [B] Status  |  [C] 🟡 Scheduled  |  [E] Type  |  [F] Planned  |  [H] Impact  |  [I] Medium
+R8: [B] 📋 MAINTENANCE INFORMATION
+R9: [B] Maintenance ID:  |  [C] MNT-001  |  [E] Vendor:  |  [F] AWS
+R10: [B] Description:  |  [C] Quarterly infrastructure patching - US East region
+R12: [B] 📅 MAINTENANCE WINDOW
+R13: [B] Start Time:  |  [C] 18-Jul-2026 02:00 UTC  |  [E] End Time:  |  [F] 18-Jul-2026 06:00 UTC
+R14: [B] Duration:  |  [C] 4 hours  |  [E] Timezone:  |  [F] UTC
+R16: [B] 💻 AFFECTED SYSTEMS
+R17: [B] System:  |  [C] Anaplan, Kyriba  |  [E] Environment:  |  [F] Production
+R18: [B] Services Affected:  |  [C] Financial planning, Treasury management
+R20: [B] ⚠️ RELEASE IMPACT
+R21: [B] Blocked Releases:  |  [C] REL-0001, REL-0015
+R22: [B] Impact Notes:  |  [C] Releases must complete before or reschedule after window
+R24: [B] 📝 NOTES
+R25: [B] Notes:  |  [C] Standard quarterly patching. Failover to DR site during window.
+R27: [B] ⚡ QUICK ACTIONS
+R28: [B] 📅 View Calendar  |  [C] 📋 View Releases  |  [E] 📧 Notify Teams  |  [F] ✏️ Reschedule  |  [H] 🔙 All Maintenance
+R30: [B] Maintenance Page v1.0  |  Data sourced from Planned Maintenance sheet  |  Vendor & infrastructure maintenance windows

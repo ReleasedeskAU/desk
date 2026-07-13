@@ -314,7 +314,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
   return (
     <DetailPageShell
       entityCode={release.releaseCode}
-      title="Release Page"
+      title="📋 RELEASE DETAIL PAGE"
       subtitle={`${release.releaseCode} — ${release.name}`}
       backHref="/releases"
       backLabel="All Releases"

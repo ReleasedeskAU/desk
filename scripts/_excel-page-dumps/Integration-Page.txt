@@ -1,0 +1,23 @@
+=== Integration Page ===
+
+R1: [B] 🔌 INTEGRATION DETAIL PAGE
+R3: [B] Select System:  |  [C] Anaplan  |  [H] Last Refresh:  |  [I] 46215.906944444447
+R5: [B] 🚦 INTEGRATION STATUS AT A GLANCE
+R6: [B] Status  |  [C] 🟢 Active  |  [E] Integration Count  |  [F] 3  |  [H] Last Tested  |  [I] 46211
+R8: [B] 📋 SYSTEM INFORMATION
+R9: [B] System Name:  |  [C] Anaplan  |  [E] Department:  |  [F] Finance
+R10: [B] System Type:  |  [C] Financial Planning  |  [E] Owner:  |  [F] USR-045
+R12: [B] 🔗 INTEGRATIONS (Systems This Connects To)
+R13: [B] Integrates With  |  [C] Data Flow  |  [E] Key Data Exchanged
+R14: [B] ERP Inventory Module  |  [C] Bi-Directional  |  [E] Financial actuals, Budget data, Forecasts
+R15: [B] Core Banking API  |  [C] Inbound  |  [E] Cash positions, Treasury balances
+R16: [B] Data Warehouse  |  [C] Outbound  |  [E] Planning snapshots, Variance reports
+R18: [B] ⚠️ INTEGRATION DEPENDENCIES
+R19: [B] This system must be available for:
+R20: [B] - REL-0001: Kyriba UI Tweak (Financial data sync)
+R21: [B] - REL-0015: Month-end close process
+R23: [B] 📝 INTEGRATION NOTES
+R24: [B] Notes:  |  [C] Primary planning system. Changes require 48hr notice to downstream systems.
+R26: [B] ⚡ QUICK ACTIONS
+R27: [B] 📊 Integration Map  |  [C] 🔍 Test Connection  |  [E] 📋 View Dependencies  |  [F] 📧 Notify Owners  |  [H] 🔙 All Integrations
+R29: [B] Integration Page v1.0  |  Data sourced from System Mapping sheet  |  System integration & data flow tracking
