@@ -8,6 +8,7 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   DRIFT_COLUMNS,
+  DRIFT_DEFAULT_HIDDEN_COLUMN_KEYS,
   DRIFT_DEFAULT_HIDDEN_FILTER_KEYS,
   DRIFT_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -109,6 +110,14 @@ export default function DriftDashboardContent() {
     () => [...new Set(allDrifts.map((d) => d.environmentName).filter(Boolean))].sort(),
     [allDrifts]
   );
+  const categories = useMemo(
+    () => [...new Set(allDrifts.map((d) => d.driftCategory).filter(Boolean) as string[])].sort(),
+    [allDrifts]
+  );
+  const departments = useMemo(
+    () => [...new Set(allDrifts.map((d) => d.departmentName).filter(Boolean) as string[])].sort(),
+    [allDrifts]
+  );
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "drifts",
@@ -117,6 +126,7 @@ export default function DriftDashboardContent() {
     {
       lockedKeys: ["driftCode"],
       defaultHiddenFilters: DRIFT_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: DRIFT_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -183,6 +193,53 @@ export default function DriftDashboardContent() {
               value={values.detectedDateQ}
               onChange={(v) => setFilter("detectedDateQ", v)}
               placeholder="Detected (YYYY-MM-DD)…"
+            />
+          )}
+          {isFilterVisible("releaseNameQ") && (
+            <FilterTextInput
+              value={values.releaseNameQ}
+              onChange={(v) => setFilter("releaseNameQ", v)}
+              placeholder="Release name…"
+            />
+          )}
+          {isFilterVisible("departmentQ") && (
+            <FilterSelect value={values.departmentQ} onChange={(v) => setFilter("departmentQ", v)}>
+              <option value="">All departments</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </FilterSelect>
+          )}
+          {isFilterVisible("category") && (
+            <FilterSelect value={values.category} onChange={(v) => setFilter("category", v)}>
+              <option value="">All categories</option>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </FilterSelect>
+          )}
+          {isFilterVisible("descriptionQ") && (
+            <FilterTextInput
+              value={values.descriptionQ}
+              onChange={(v) => setFilter("descriptionQ", v)}
+              placeholder="Description…"
+            />
+          )}
+          {isFilterVisible("impactOnReleaseQ") && (
+            <FilterTextInput
+              value={values.impactOnReleaseQ}
+              onChange={(v) => setFilter("impactOnReleaseQ", v)}
+              placeholder="Impact on release…"
+            />
+          )}
+          {isFilterVisible("remediationActionQ") && (
+            <FilterTextInput
+              value={values.remediationActionQ}
+              onChange={(v) => setFilter("remediationActionQ", v)}
+              placeholder="Remediation…"
+            />
+          )}
+          {isFilterVisible("etaToFixQ") && (
+            <FilterTextInput
+              value={values.etaToFixQ}
+              onChange={(v) => setFilter("etaToFixQ", v)}
+              placeholder="ETA to fix (YYYY-MM-DD)…"
             />
           )}
         </TableFilterBar>

@@ -1,3 +1,5 @@
+import { hasMinRole } from "./role-rank";
+
 export type UserRole = "readonly" | "editor" | "admin";
 
 export interface SessionUser {
@@ -16,12 +18,12 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
 };
 
-/** Demo pass: any authenticated user has full access. Real tiers deferred. */
+/** Editor+ may mutate operational data. */
 export function canEdit(user: SessionUser | null): boolean {
-  return user != null;
+  return hasMinRole(user, "editor");
 }
 
-/** Demo pass: any authenticated user has full access. Real tiers deferred. */
+/** Admin-only: user admin, connectors, destructive ops. */
 export function canAdmin(user: SessionUser | null): boolean {
-  return user != null;
+  return hasMinRole(user, "admin");
 }

@@ -4,6 +4,7 @@ import { checkBookingAvailability } from "@/lib/booking";
 import { createEnvBookingRow } from "@/lib/org-compat";
 import { prisma } from "@/lib/prisma";
 import { bookingWhere, mapDbEnvBookingRow, sp } from "@/lib/list-api-filters";
+import { jsonError } from "@/lib/api-errors";
 
 /** Availability check only (readonly+). */
 export async function POST(req: Request) {
@@ -147,9 +148,11 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({ bookings: created.map(mapDbEnvBookingRow) }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Create failed";
-    console.error("[api/bookings PUT]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(err, {
+      publicMessage: "Create failed",
+      status: 500,
+      logLabel: "api/bookings PUT",
+    });
   }
 }
 

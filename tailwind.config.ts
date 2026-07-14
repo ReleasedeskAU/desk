@@ -72,8 +72,8 @@ const config: Config = {
         "level-3": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
         "glass-sm": "0 4px 30px rgba(0, 0, 0, 0.05)",
         "glass-md": "0 8px 32px rgba(31, 38, 135, 0.07)",
-        "focus-ring": "0 0 0 3px rgba(124, 58, 237, 0.15)",
-        "glow-brand": "0 0 20px rgba(124, 58, 237, 0.3)",
+        "focus-ring": "0 0 0 3px rgb(var(--color-brand-500) / 0.15)",
+        "glow-brand": "0 0 20px rgb(var(--color-brand-500) / 0.3)",
         /* legacy aliases mapped to new levels */
         "theme-sm": "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
         "theme-md": "0 10px 15px -3px rgba(0, 0, 0, 0.08)",

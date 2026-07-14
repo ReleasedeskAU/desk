@@ -47,20 +47,23 @@ export function SyntheticReleaseDetail({ id }: { id: string }) {
 
       <TopBar title={`${release.version} — ${release.name}`} subtitle={`${release.team} · Owner: ${release.owner} · Target: ${formatDate(release.targetDate)}`} highlight />
 
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusBadge status={release.status} />
         {decision && <StatusBadge status={decision} />}
         {deploy && deploy.phase !== "Not Started" && <StatusBadge status={deploy.phase} />}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
           <ReleaseScorecardButton release={release} decision={decision} />
           <ProgressLink
             href={`/compare?left=${release.id}`}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200/80 bg-white/80 px-3 py-2 text-sm font-medium text-gray-700 shadow-theme-sm hover:bg-brand-50 hover:text-brand-600 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200/80 bg-white/80 px-3 py-2 text-sm font-medium text-gray-700 shadow-theme-sm transition-colors hover:bg-brand-50 hover:text-brand-600"
           >
-            <Columns2 className="w-4 h-4" /> Compare
+            <Columns2 className="h-4 w-4" /> Compare
           </ProgressLink>
-          <ProgressLink href={`/releases/${release.id}/dependencies`} className="flex items-center gap-1.5 text-sm text-brand-500 hover:text-brand-600 font-medium transition-colors">
-            <Network className="w-4 h-4" /> Dependency Map
+          <ProgressLink
+            href={`/releases/${release.id}/dependencies`}
+            className="flex items-center gap-1.5 text-sm font-medium text-brand-500 transition-colors hover:text-brand-600"
+          >
+            <Network className="h-4 w-4" /> Dependency Map
           </ProgressLink>
         </div>
       </div>

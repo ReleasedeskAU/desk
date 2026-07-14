@@ -88,7 +88,7 @@ export function DataTable({ title, subtitle, icon: Icon, action, toolbar, childr
       innerClassName="min-w-0"
     >
       {hasToolbarSection && (
-        <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-6 py-5 dark:border-[var(--border)] dark:bg-[var(--card)]">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-4 dark:border-[var(--border)] dark:bg-[var(--card)] sm:items-center sm:px-6 sm:py-5">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
             {Icon && (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-100 bg-brand-50 shadow-sm dark:border-brand-500/20 dark:bg-brand-500/10">
@@ -103,7 +103,7 @@ export function DataTable({ title, subtitle, icon: Icon, action, toolbar, childr
             </div>
           </div>
           {(toolbar || action) && (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
               {toolbar}
               {action}
             </div>

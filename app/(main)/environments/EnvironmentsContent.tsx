@@ -6,6 +6,7 @@ import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filt
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import {
   ENVIRONMENT_COLUMNS,
+  ENVIRONMENT_DEFAULT_HIDDEN_COLUMN_KEYS,
   ENVIRONMENT_DEFAULT_HIDDEN_FILTER_KEYS,
   ENVIRONMENT_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -105,6 +106,7 @@ export function EnvironmentsContent() {
     {
       lockedKeys: ["appId"],
       defaultHiddenFilters: ENVIRONMENT_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: ENVIRONMENT_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

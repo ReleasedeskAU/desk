@@ -1,0 +1,98 @@
+# ============================================================
+# Enterprise Coding Standards & Security Compliance
+# Aim Technologies — Cursor AI Rules
+# ============================================================
+# Place this file at the project root as `.cursorrules`.
+# Cursor reads it automatically on every prompt in this repo.
+# ============================================================
+
+## 1. GENERAL CODE QUALITY
+
+- Write concise, efficient code. Prefer clear, single-pass logic over verbose or repetitive blocks.
+- Avoid unnecessary intermediate variables, deep nesting, or duplicated code.
+- Use language/framework built-ins (map/filter/reduce, query builders, ORM methods) over hand-rolled loops when it improves clarity and safety.
+- Extract repeated logic into small, reusable, single-purpose functions.
+- Keep functions short (~40 lines max); split larger ones.
+- No dead code, no commented-out code, no debug console/print statements left in committed code.
+- Match existing project conventions (framework, folder structure, naming) rather than introducing new patterns without reason.
+
+## 2. COMMENTS & DOCUMENTATION
+
+- Comment the "why," not the "what." Skip comments on self-explanatory lines.
+- Every exported function/class/module gets a short docstring: purpose, parameters, return value, side effects, and thrown/rejected errors.
+- Non-obvious business logic gets a 1–2 line comment summarizing the rule being implemented.
+- Any security-relevant decision (e.g., why input is sanitized a certain way, why a permission check exists) MUST be commented — future readers should never have to guess.
+- Keep a CHANGELOG.md entry or PR description summary for any change touching auth, data access, or external integrations.
+
+## 3. NAMING & STRUCTURE
+
+- Descriptive, unambiguous names over comments explaining bad names.
+- Consistent casing per language norm (camelCase JS/TS, snake_case Python, PascalCase classes/types).
+- Group related functions/modules together; predictable, discoverable file structure.
+- No magic numbers or strings — use named constants/enums, especially for status codes, roles, and limits.
+
+## 4. SECURITY — MANDATORY, NON-NEGOTIABLE
+
+### 4.1 Secrets & Credentials
+- NEVER hardcode API keys, passwords, tokens, connection strings, or credentials in source code.
+- All secrets come from environment variables or a secrets manager (e.g., AWS Secrets Manager, Azure Key Vault, Vault).
+- Never log secrets, tokens, full request/response bodies containing credentials, or PII.
+- .env files must be in .gitignore; only .env.example (with placeholder values) is committed.
+
+### 4.2 Input Validation & Injection Prevention
+- Validate and sanitize ALL external input (user input, query params, headers, file uploads, webhook payloads) at the boundary.
+- Use parameterized queries / ORM query builders — never string-concatenated SQL.
+- Escape or sanitize output rendered in HTML to prevent XSS; use framework-native escaping (React JSX, Jinja autoescape, etc.) rather than manual string building.
+- Validate file uploads: type, size, and content — never trust the client-supplied MIME type or extension alone.
+- Reject unexpected/extra fields in API payloads (schema validation — e.g., Zod, Joi, Pydantic) rather than silently accepting them.
+
+### 4.3 Authentication & Authorization
+- Every endpoint/route must have explicit authentication and authorization checks — default to "deny," not "allow."
+- Never rely on client-side checks alone for access control; enforce server-side.
+- Use industry-standard libraries for auth (OAuth2/OIDC, JWT with proper signature verification and expiry) — never roll custom crypto or session logic.
+- Passwords: hash with bcrypt/argon2 (never MD5/SHA1, never plaintext, never reversible encryption).
+- Enforce least privilege: services, DB users, and API keys get only the permissions they need.
+
+### 4.4 Data Protection
+- Encrypt sensitive data at rest and in transit (TLS everywhere; no plain HTTP for internal or external calls carrying data).
+- PII/sensitive fields (email, phone, government IDs, financial data) must be identified and handled per data-classification policy — mask in logs, minimize retention.
+- Never return internal error details, stack traces, or DB error messages to the client in production — log internally, return a generic error to the caller.
+
+### 4.5 Dependency & Supply Chain Security
+- Pin dependency versions; avoid wildcard/latest version ranges in production manifests.
+- Run npm audit / pip-audit / equivalent before merging; do not introduce packages with known critical/high vulnerabilities.
+- Avoid unmaintained or low-trust packages for security-sensitive functionality (auth, crypto, file parsing).
+
+### 4.6 Error Handling & Logging
+- No empty catch blocks and no silent failures — every caught error is either handled meaningfully or logged with context.
+- Structured logging (not raw print/console.log) for anything shipped to production.
+- Logs must never contain secrets, tokens, passwords, or full PII payloads.
+- Fail securely: on error, default to the most restrictive state (deny access, reject transaction) rather than the most permissive.
+
+### 4.7 API & Infra Hygiene
+- Rate-limit public-facing endpoints where applicable.
+- CORS configured explicitly (no * wildcard on authenticated endpoints).
+- Security headers set where relevant (CSP, X-Frame-Options, HSTS) for web-facing apps.
+- Any new external integration (third-party API, webhook, MCP server) gets a brief note on what data it can access and why.
+
+## 5. BEFORE FINISHING ANY TASK — CHECKLIST
+
+- [ ] Re-read the diff; remove unused imports, variables, functions, and debug code.
+- [ ] Check for repeated logic that should be a shared helper.
+- [ ] Confirm no secrets, credentials, or PII are hardcoded or logged.
+- [ ] Confirm all external input is validated at the boundary.
+- [ ] Confirm auth/authorization checks exist on any new/changed endpoint.
+- [ ] Confirm error handling is present, meaningful, and doesn't leak internals to the client.
+- [ ] Confirm comments and docstrings match the final logic, not an earlier draft.
+- [ ] Confirm naming, structure, and style match existing project conventions.
+
+## 6. WHEN EXPLAINING CHANGES
+
+- Summarize what changed and why in plain language — not a line-by-line narration.
+- Explicitly flag any change touching security, auth, data handling, or external integrations, even if minor.
+- If a security tradeoff was made (e.g., relaxed validation for a specific reason), state it clearly rather than leaving it implicit.
+
+# ============================================================
+# End of rules. These apply to all code generated or modified
+# in this repository, regardless of how the request is phrased.
+# ============================================================

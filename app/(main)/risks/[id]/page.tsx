@@ -14,7 +14,7 @@ import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
-import { Calendar, LayoutDashboard, List, Package, Shield } from "lucide-react";
+import { Calendar, LayoutDashboard, List, Package } from "lucide-react";
 
 type RiskDetail = {
   id: string;
@@ -133,7 +133,6 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           icon: <Calendar className="mr-1 inline h-4 w-4" />,
         },
         { href: "/risks", label: "📊 Risk Matrix", icon: <LayoutDashboard className="mr-1 inline h-4 w-4" /> },
-        { href: `/risks/${row.id}`, label: "🛡️ Mitigate", icon: <Shield className="mr-1 inline h-4 w-4" /> },
         { href: "/risks", label: "🔙 All Risks", icon: <List className="mr-1 inline h-4 w-4" /> },
       ]}
     >

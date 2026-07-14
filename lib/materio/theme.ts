@@ -1,9 +1,17 @@
-import { createTheme, type Theme, type ThemeOptions } from "@mui/material/styles";
+import { alpha, createTheme, type Theme, type ThemeOptions } from "@mui/material/styles";
+import {
+  COLOR_THEME_BY_ID,
+  type ColorThemeDefinition,
+  type ColorThemeId,
+} from "@/lib/color-themes";
 import { palette } from "@/lib/palette";
 
+/** Legacy-compatible mode type; new runtime state only exposes ActiveThemeMode. */
 export type ThemeMode = "light" | "dark" | "semi-dark";
 
-const materioPrimary = palette.brand[500];
+/** Light and dark modes supported by the current application shell. */
+export type ActiveThemeMode = Exclude<ThemeMode, "semi-dark">;
+
 const materioSuccess = palette.success[500];
 const materioWarning = palette.warning[500];
 const materioError = palette.error[500];
@@ -21,10 +29,15 @@ const sharedTypography: ThemeOptions["typography"] = {
 
 const sharedShape: ThemeOptions["shape"] = { borderRadius: 8 };
 
-function lightPalette(): ThemeOptions["palette"] {
+function lightPalette(colorTheme: ColorThemeDefinition): ThemeOptions["palette"] {
   return {
     mode: "light",
-    primary: { main: materioPrimary, light: palette.brand[400], dark: palette.brand[600], contrastText: "#fff" },
+    primary: {
+      main: colorTheme.palette[500],
+      light: colorTheme.palette[400],
+      dark: colorTheme.palette[600],
+      contrastText: colorTheme.onAccent,
+    },
     secondary: { main: palette.gray[600], light: palette.gray[500], dark: palette.gray[700], contrastText: "#fff" },
     success: { main: materioSuccess, light: palette.success[50], dark: palette.success[700], contrastText: "#fff" },
     warning: { main: materioWarning, light: palette.warning[50], dark: palette.warning[700], contrastText: "#fff" },
@@ -36,10 +49,15 @@ function lightPalette(): ThemeOptions["palette"] {
   };
 }
 
-function darkPalette(): ThemeOptions["palette"] {
+function darkPalette(colorTheme: ColorThemeDefinition): ThemeOptions["palette"] {
   return {
     mode: "dark",
-    primary: { main: materioPrimary, light: palette.brand[300], dark: palette.brand[700], contrastText: "#fff" },
+    primary: {
+      main: colorTheme.darkPalette[500],
+      light: colorTheme.darkPalette[600],
+      dark: colorTheme.darkPalette[400],
+      contrastText: colorTheme.palette[950],
+    },
     secondary: { main: palette.gray[500], light: palette.gray[300], dark: palette.gray[700], contrastText: "#fff" },
     success: { main: materioSuccess, light: palette.success[700], dark: palette.success[500], contrastText: "#fff" },
     warning: { main: materioWarning, light: palette.warning[700], dark: palette.warning[500], contrastText: "#fff" },
@@ -51,8 +69,12 @@ function darkPalette(): ThemeOptions["palette"] {
   };
 }
 
-function componentOverrides(mode: ThemeMode): ThemeOptions["components"] {
+function componentOverrides(
+  mode: ActiveThemeMode,
+  colorTheme: ColorThemeDefinition,
+): ThemeOptions["components"] {
   const isDark = mode === "dark";
+  const primary = isDark ? colorTheme.darkPalette[500] : colorTheme.palette[500];
   const paperBg = isDark ? "#2a3142" : "#ffffff";
   const shadow = isDark ? "0px 2px 4px rgba(0, 0, 0, 0.2)" : "0 2px 4px rgba(0,0,0,0.05)";
 
@@ -89,7 +111,7 @@ function componentOverrides(mode: ThemeMode): ThemeOptions["components"] {
           textTransform: "none",
           fontWeight: 500,
           borderRadius: 8,
-          "&.MuiButton-containedPrimary": { boxShadow: "0 2px 6px rgba(59, 91, 219, 0.4)" },
+          "&.MuiButton-containedPrimary": { boxShadow: `0 2px 6px ${alpha(primary, 0.4)}` },
         },
       },
     },
@@ -139,21 +161,33 @@ function componentOverrides(mode: ThemeMode): ThemeOptions["components"] {
       styleOverrides: {
         root: {
           "&:hover": { backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : undefined },
-          "&.Mui-selected": { backgroundColor: isDark ? "rgba(59, 91, 219, 0.22)" : undefined },
+          "&.Mui-selected": { backgroundColor: isDark ? alpha(primary, 0.22) : undefined },
         },
       },
     },
   };
 }
 
-export function createMaterioTheme(mode: ThemeMode): Theme {
+/**
+ * Creates the MUI theme for a display mode and runtime color theme.
+ * Accepts either a public color-theme id or its resolved configuration.
+ */
+export function createMaterioTheme(
+  mode: ActiveThemeMode,
+  colorTheme: ColorThemeId | ColorThemeDefinition = "sky",
+): Theme {
   const muiMode = mode === "dark" ? "dark" : "light";
-  const paletteConfig = muiMode === "dark" ? darkPalette() : lightPalette();
+  const resolvedColorTheme =
+    typeof colorTheme === "string" ? COLOR_THEME_BY_ID[colorTheme] : colorTheme;
+  const paletteConfig =
+    muiMode === "dark"
+      ? darkPalette(resolvedColorTheme)
+      : lightPalette(resolvedColorTheme);
 
   return createTheme({
     palette: paletteConfig,
     typography: sharedTypography,
     shape: sharedShape,
-    components: componentOverrides(mode),
+    components: componentOverrides(mode, resolvedColorTheme),
   });
 }

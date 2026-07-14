@@ -25,6 +25,7 @@ import { BookingMonthGrid } from "@/components/booking/BookingMonthGrid";
 import { BookingTimelineGantt } from "@/components/booking/BookingTimelineGantt";
 import {
   BOOKING_COLUMNS,
+  BOOKING_DEFAULT_HIDDEN_COLUMN_KEYS,
   BOOKING_DEFAULT_HIDDEN_FILTER_KEYS,
   BOOKING_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -44,6 +45,7 @@ import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnPrimary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/auth/roles";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 
 type BookingDisplay = "calendar" | "timeline" | "table";
 
@@ -218,7 +220,7 @@ export default function BookingContent() {
   const [highlightCode, setHighlightCode] = useState<string | null>(null);
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
 
-  const canEdit = user?.role === "editor" || user?.role === "admin";
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
@@ -302,13 +304,14 @@ export default function BookingContent() {
     {
       lockedKeys: ["bookingCode"],
       defaultHiddenFilters: BOOKING_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: BOOKING_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
 
   const viewSwitcher = (
-    <div className="flex items-center gap-1.5 rounded-2xl bg-slate-50 p-1.5 dark:bg-slate-900/60 dark:ring-1 dark:ring-slate-700">
+    <div className="flex items-center gap-1 rounded-2xl bg-slate-50 p-1 dark:bg-slate-900/60 dark:ring-1 dark:ring-slate-700 sm:gap-1.5 sm:p-1.5">
       {(
         [
           { id: "calendar" as const, label: "Calendar", Icon: LayoutGrid },
@@ -324,13 +327,16 @@ export default function BookingContent() {
             if (id !== "timeline") setFocusDayIso(null);
           }}
           className={cn(
-            "flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold transition-all",
+            "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-semibold transition-all sm:px-4 sm:text-[13px]",
             display === id
-              ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md"
+              ? "text-white shadow-md"
               : "text-slate-500 hover:bg-white dark:text-white/60 dark:hover:bg-white/5"
           )}
+          style={display === id ? { backgroundImage: "var(--theme-gradient)" } : undefined}
+          aria-label={label}
         >
-          <Icon size={15} /> {label}
+          <Icon size={15} />
+          <span className="hidden sm:inline">{label}</span>
         </button>
       ))}
     </div>
@@ -381,7 +387,7 @@ export default function BookingContent() {
         {(display === "calendar" || display === "timeline") && (
           <div className="flex flex-wrap items-center gap-2">
             <select
-              className={cn(SELECT_CLASS, "h-8 min-w-[110px] text-xs font-semibold")}
+              className={cn(SELECT_CLASS, "h-8 min-w-0 flex-1 text-xs font-semibold sm:min-w-[110px] sm:flex-none")}
               value={period}
               onChange={(e) => {
                 setPeriod(e.target.value as Period);
@@ -401,12 +407,12 @@ export default function BookingContent() {
                 setAnchor(shiftPeriodAnchor(period, anchor, -1));
                 setFocusDayIso(null);
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
               aria-label="Previous period"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="min-w-[100px] text-center text-sm font-semibold text-slate-800 dark:text-white">
+            <span className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-slate-800 dark:text-white sm:min-w-[100px] sm:flex-none">
               {navLabel}
             </span>
             <button
@@ -427,7 +433,7 @@ export default function BookingContent() {
           <button
             type="button"
             onClick={() => setFocusDayIso(null)}
-            className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+            className="text-xs font-semibold text-brand-600 hover:underline dark:text-brand-400"
           >
             Clear day focus
           </button>
@@ -626,6 +632,13 @@ export default function BookingContent() {
               placeholder="Notes…"
             />
           )}
+          {isFilterVisible("environmentConflictIdQ") && (
+            <FilterTextInput
+              value={values.environmentConflictIdQ}
+              onChange={(v) => setFilter("environmentConflictIdQ", v)}
+              placeholder="Env conflict ID…"
+            />
+          )}
         </TableFilterBar>
       )}
 
@@ -717,7 +730,7 @@ export default function BookingContent() {
                                 className={cn(
                                   tableCell,
                                   "whitespace-nowrap",
-                                  col.key === "releaseId" && "font-semibold text-brand-600 dark:text-brand-400",
+                                  col.key === "releaseId" && "text-brand-600 dark:text-brand-400",
                                   isConflict && "font-medium text-error-600 dark:text-rose-400",
                                   isNotes && "max-w-[280px] truncate"
                                 )}
@@ -733,7 +746,7 @@ export default function BookingContent() {
                                 ) : col.key === "releaseId" && row.release?.id && row.release.releaseCode ? (
                                   <ProgressLink
                                     href={`/releases/${row.release.id}`}
-                                    className="font-semibold text-brand-600 hover:underline dark:text-brand-400"
+                                    className="text-brand-600 hover:underline dark:text-brand-400"
                                   >
                                     {row.release.releaseCode}
                                   </ProgressLink>

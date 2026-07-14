@@ -1,23 +1,41 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { zodErrorResponse } from "@/lib/api-errors";
 
+const patchUserSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    email: z.string().trim().email().max(320).optional(),
+    role: z.string().trim().max(120).optional(),
+    department: z.string().trim().max(120).optional(),
+    manager: z.string().trim().max(200).nullable().optional(),
+    accessLevel: z.enum(["Standard", "Admin", "Executive"]).optional(),
+    status: z.enum(["Active", "Inactive"]).optional(),
+  })
+  .strict();
+
+/** Updating users is admin-only (privilege provisioning). */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error } = await requireRole("editor");
+  const { error } = await requireRole("admin");
   if (error) return error;
 
-  const body = await req.json();
+  const parsed = patchUserSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+
+  const body = parsed.data;
   const row = await prisma.user.update({
     where: { id },
     data: {
-      name: body.name,
-      email: body.email,
-      role: body.role,
-      department: body.department,
-      manager: body.manager ?? null,
-      accessLevel: body.accessLevel,
-      status: body.status,
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.email !== undefined ? { email: body.email } : {}),
+      ...(body.role !== undefined ? { role: body.role } : {}),
+      ...(body.department !== undefined ? { department: body.department } : {}),
+      ...(body.manager !== undefined ? { manager: body.manager } : {}),
+      ...(body.accessLevel !== undefined ? { accessLevel: body.accessLevel } : {}),
+      ...(body.status !== undefined ? { status: body.status } : {}),
     },
   });
   return NextResponse.json(row);
@@ -25,29 +43,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error } = await requireRole("editor");
+  const { error } = await requireRole("admin");
   if (error) return error;
 
-  const [releaseCount, riskCount, approvalCount, stakeholderCount] = await Promise.all([
-    prisma.release.count({ where: { releaseOwnerId: id } }),
-    prisma.risk.count({ where: { riskOwnerId: id } }),
-    prisma.approval.count({ where: { approverId: id } }),
-    prisma.releaseStakeholder.count({ where: { userId: id } }),
-  ]);
-
-  const total = releaseCount + riskCount + approvalCount + stakeholderCount;
-  if (total > 0) {
-    const parts: string[] = [];
-    if (releaseCount > 0) parts.push(`${releaseCount} release${releaseCount === 1 ? "" : "s"}`);
-    if (riskCount > 0) parts.push(`${riskCount} risk${riskCount === 1 ? "" : "s"}`);
-    if (approvalCount > 0) parts.push(`${approvalCount} approval${approvalCount === 1 ? "" : "s"}`);
-    if (stakeholderCount > 0) parts.push(`${stakeholderCount} stakeholder link${stakeholderCount === 1 ? "" : "s"}`);
-    return NextResponse.json(
-      { error: `Cannot delete — linked to ${parts.join(", ")}` },
-      { status: 409 }
-    );
+  try {
+    await prisma.user.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: "User not found or in use" }, { status: 404 });
   }
-
-  await prisma.user.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
 }

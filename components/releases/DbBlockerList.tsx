@@ -37,6 +37,7 @@ type Props = {
   applicationName: string;
   canEdit?: boolean;
   raisedByDefault?: string;
+  onChanged?: () => void;
   /** When true, render list only (parent supplies section chrome). */
   embedded?: boolean;
 };
@@ -48,13 +49,17 @@ export function DbBlockerList({
   applicationName,
   canEdit = false,
   raisedByDefault = "",
+  onChanged,
   embedded = false,
 }: Props) {
   const [blockers, setBlockers] = useState<LiveBlocker[] | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+  const reload = useCallback(() => {
+    setReloadKey((key) => key + 1);
+    onChanged?.();
+  }, [onChanged]);
 
   useEffect(() => {
     return loadJsonEffect<LiveBlocker[]>(

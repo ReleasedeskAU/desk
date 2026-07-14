@@ -18,6 +18,7 @@ import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import {
   APPLICATION_COLUMNS,
+  APPLICATION_DEFAULT_HIDDEN_COLUMN_KEYS,
   APPLICATION_DEFAULT_HIDDEN_FILTER_KEYS,
   APPLICATION_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -191,6 +192,7 @@ export function ApplicationsBrowse() {
     {
       lockedKeys: ["name", "actions"],
       defaultHiddenFilters: APPLICATION_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: APPLICATION_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

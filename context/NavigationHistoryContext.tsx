@@ -34,8 +34,16 @@ type NavigationHistoryContextValue = {
 
 const NavigationHistoryContext = createContext<NavigationHistoryContextValue | null>(null);
 
+/** Keep only the most recent clicks so the trail stays on one line. */
+export const NAV_HISTORY_MAX = 12;
+
 function buildHref(pathname: string, search: string): string {
   return search ? `${pathname}?${search}` : pathname;
+}
+
+function capTrail(crumbs: NavHistoryCrumb[]): NavHistoryCrumb[] {
+  if (crumbs.length <= NAV_HISTORY_MAX) return crumbs;
+  return crumbs.slice(-NAV_HISTORY_MAX);
 }
 
 function preferLabel(existing: string, resolved: string): string {
@@ -70,7 +78,7 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
           const last = sliced[idx]!;
           const label = preferLabel(last.label, resolved);
           if (last.href === href && last.label === label && sliced.length === prev.length) return prev;
-          return [...sliced.slice(0, -1), { ...last, href, label }];
+          return capTrail([...sliced.slice(0, -1), { ...last, href, label }]);
         }
         return [{ href, pathname, label: resolved }];
       });
@@ -86,10 +94,10 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
       if (last.pathname === pathname) {
         const label = preferLabel(last.label, resolved);
         if (last.href === href && last.label === label) return prev;
-        return [...prev.slice(0, -1), { href, pathname, label }];
+        return capTrail([...prev.slice(0, -1), { href, pathname, label }]);
       }
 
-      return [...prev, { href, pathname, label: resolved }];
+      return capTrail([...prev, { href, pathname, label: resolved }]);
     });
   }, [pathname, search]);
 

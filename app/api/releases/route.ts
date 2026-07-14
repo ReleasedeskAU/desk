@@ -48,10 +48,12 @@ export async function POST(req: Request) {
   if (error) return error;
   const body = await req.json();
 
-  const existing = await prisma.release.findMany({ select: { releaseCode: true } });
-  const releaseCode =
-    body.releaseCode?.trim() ||
-    generateReleaseId(existing.map((r) => r.releaseCode));
+  // Only load codes when we need to generate one — avoid a full-table scan on every create.
+  let releaseCode = typeof body.releaseCode === "string" ? body.releaseCode.trim() : "";
+  if (!releaseCode) {
+    const existing = await prisma.release.findMany({ select: { releaseCode: true } });
+    releaseCode = generateReleaseId(existing.map((r) => r.releaseCode));
+  }
 
   const releaseDate = body.releaseDate ? new Date(body.releaseDate) : new Date();
 

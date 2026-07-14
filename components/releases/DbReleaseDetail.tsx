@@ -4,27 +4,48 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
+import {
+  ConfirmDeleteDialog,
+  DetailSection,
+  EmptyHint,
+  HeroStatusRow,
+  ScoreBar,
+  SignoffChip,
+  StatusChip,
+  TintedCallout,
+  type ChipTone,
+  type HeroTone,
+} from "@/components/detail/editable";
 import { DbReleaseCommandCenter } from "@/components/releases/DbReleaseCommandCenter";
 import { DbBlockerList } from "@/components/releases/DbBlockerList";
 import { DbReleaseDriftList } from "@/components/releases/DbReleaseDriftList";
 import { StakeholderCommsPanel } from "@/components/releases/StakeholderCommsPanel";
 import { ReleaseFormModal } from "@/components/releases/ReleaseFormModal";
-import { AdvancedCard } from "@/components/ui/advanced-card";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/auth/roles";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import {
+  AlertTriangle,
   Calendar,
   CalendarCheck,
+  CheckCircle2,
   ClipboardCheck,
+  FileText,
   GitCompareArrows,
   History,
   LayoutDashboard,
   List,
+  Megaphone,
+  Package,
   Pencil,
+  Server,
   ShieldAlert,
+  SlidersHorizontal,
   Trash2,
+  Users,
+  Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -131,6 +152,30 @@ function healthClass(health?: string | null): string {
   return "bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-white/80";
 }
 
+function healthTone(health?: string | null): HeroTone {
+  const normalized = (health ?? "").toLowerCase();
+  if (normalized.includes("no-go") || normalized.includes("nogo") || normalized.includes("red")) return "rose";
+  if (normalized.includes("caution") || normalized.includes("amber") || normalized.includes("risk")) return "amber";
+  if (normalized.includes("go") || normalized.includes("green") || normalized.includes("ready")) return "emerald";
+  return "indigo";
+}
+
+function statusTone(status?: string | null): ChipTone {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized.includes("block")) return "bad";
+  if (normalized.includes("risk") || normalized.includes("hold") || normalized.includes("progress")) return "warn";
+  if (normalized.includes("complete") || normalized.includes("ready") || normalized.includes("approve")) return "good";
+  if (normalized.includes("plan")) return "info";
+  return "neutral";
+}
+
+function signalDone(value?: string | null): boolean {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return ["yes", "done", "approved", "complete", "completed", "ready", "passed", "cleared"].some(
+    (token) => normalized === token || normalized.startsWith(`${token} `)
+  );
+}
+
 function ConflictCodeLinks({ raw }: { raw?: string | null }) {
   const codes = (raw ?? "")
     .split(",")
@@ -196,13 +241,18 @@ export function DbReleaseDetail({ id }: { id: string }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [computedReadiness, setComputedReadiness] = useState<number | null>(null);
+  const [commandRefreshKey, setCommandRefreshKey] = useState(0);
   const [note, setNote] = useState("");
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
   const [lookups, setLookups] = useState<{
     departments: { id: string; name: string }[];
-    applications: { id: string; name: string }[];
+    applications: { id: string; name: string; departmentId: string }[];
+    environments: { id: string; name: string; applicationId: string }[];
     releases: { id: string; releaseCode: string; name: string }[];
-  }>({ departments: [], applications: [], releases: [] });
+  }>({ departments: [], applications: [], environments: [], releases: [] });
 
   const load = useCallback(() => {
     void (async () => {
@@ -214,6 +264,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
+    setComputedReadiness(null);
     load();
   }, [load]);
 
@@ -225,9 +276,16 @@ export function DbReleaseDetail({ id }: { id: string }) {
     );
     const ac = new AbortController();
     void (async () => {
-      const [deptRes, appRes, relRes] = await Promise.all([
+      const [deptRes, appRes, envRes, relRes] = await Promise.all([
         safeFetchJson<{ id: string; name: string }[]>("/api/departments", { signal: ac.signal, label: "departments" }),
-        safeFetchJson<{ id: string; name: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
+        safeFetchJson<{ id: string; name: string; departmentId: string }[]>("/api/applications", {
+          signal: ac.signal,
+          label: "applications",
+        }),
+        safeFetchJson<{ id: string; name: string; applicationId: string }[]>("/api/environments", {
+          signal: ac.signal,
+          label: "environments",
+        }),
         safeFetchJson<{ id: string; releaseCode: string; name: string }[]>("/api/releases", {
           signal: ac.signal,
           label: "releases",
@@ -237,6 +295,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
       setLookups({
         departments: deptRes.ok ? deptRes.data : [],
         applications: appRes.ok ? appRes.data : [],
+        environments: envRes.ok ? envRes.data : [],
         releases: relRes.ok ? relRes.data : [],
       });
     })();
@@ -246,7 +305,10 @@ export function DbReleaseDetail({ id }: { id: string }) {
     };
   }, []);
 
-  const canEdit = user?.role === "editor" || user?.role === "admin";
+  const canEdit = sessionCanEdit(user);
+  const refreshCommandCenter = useCallback(() => {
+    setCommandRefreshKey((key) => key + 1);
+  }, []);
 
   const releaseOptions = useMemo(
     () =>
@@ -262,6 +324,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
       label: "release-patch-status",
     });
     load();
+    refreshCommandCenter();
   };
 
   const recordDecision = async (detail: string) => {
@@ -272,6 +335,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
       label: "release-record-decision",
     });
     load();
+    refreshCommandCenter();
   };
 
   const addNote = async () => {
@@ -287,8 +351,14 @@ export function DbReleaseDetail({ id }: { id: string }) {
   };
 
   const remove = async () => {
-    if (!confirm("Delete this release?")) return;
-    await safeFetchJson(`/api/releases/${id}`, { method: "DELETE", label: "release-delete" });
+    setDeleting(true);
+    const result = await safeFetchJson(`/api/releases/${id}`, {
+      method: "DELETE",
+      label: "release-delete",
+      rejectHttpErrors: false,
+    });
+    setDeleting(false);
+    if (!result.ok || result.status >= 300) return;
     router.push("/releases");
   };
 
@@ -301,10 +371,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
   const ownerDisplay = release.releaseOwner
     ? `${release.releaseOwner.userId} (${release.releaseOwner.name})`
     : release.owner;
-  const readinessDisplay =
-    release.readinessPercent != null ? `${release.readinessPercent}%` : "—";
-  const checklistDisplay =
-    release.goLiveChecklistPercent != null ? `${release.goLiveChecklistPercent}%` : "—";
   const conflictFlagDisplay = release.conflictFlag
     ? release.conflictId
       ? "⚠️ CONFLICT"
@@ -314,7 +380,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
   return (
     <DetailPageShell
       entityCode={release.releaseCode}
-      title="📋 RELEASE DETAIL PAGE"
+      title="Release Detail"
       subtitle={`${release.releaseCode} — ${release.name}`}
       backHref="/releases"
       backLabel="All Releases"
@@ -331,29 +397,33 @@ export function DbReleaseDetail({ id }: { id: string }) {
       actions={
         canEdit ? (
           <>
-            <button type="button" className={taBtnSecondary + " text-sm !py-2"} onClick={() => setEditOpen(true)}>
-              <Pencil className="h-4 w-4 inline mr-1" /> Edit
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+              Delete
             </button>
             <button
               type="button"
-              className={
-                taBtnSecondary +
-                " text-sm !py-2 !text-error-600 !border-error-200 hover:!bg-error-50 dark:!border-error-800/50 dark:hover:!bg-error-950/30"
-              }
-              onClick={remove}
+              onClick={() => setEditOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97] dark:shadow-indigo-900/40"
             >
-              <Trash2 className="h-4 w-4 inline mr-1" /> Delete
+              <Pencil className="h-4 w-4" aria-hidden />
+              Edit Release
             </button>
           </>
         ) : undefined
       }
     >
-      {/* Header: Select Release + Last Refresh */}
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-gray-200 bg-white/80 px-4 py-3 dark:border-[var(--border)] dark:bg-[var(--card)]">
-        <label className="text-sm text-gray-700 dark:text-white/80">
-          <span className="block text-xs text-gray-400 dark:text-white/45 mb-1">Select Release</span>
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-[22px] bg-white px-5 py-4 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)]">
+        <label className="min-w-0 w-full text-sm text-gray-700 dark:text-white/80 sm:w-auto">
+          <span className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+            Select Release
+          </span>
           <select
-            className={cn(taInput, "min-w-[220px] font-mono text-sm")}
+            className={cn(taInput, "w-full min-w-0 max-w-full rounded-xl font-mono text-sm sm:w-auto sm:min-w-[220px]")}
             value={release.id}
             onChange={(e) => {
               if (e.target.value && e.target.value !== release.id) {
@@ -377,25 +447,109 @@ export function DbReleaseDetail({ id }: { id: string }) {
         </p>
       </div>
 
-      {/* RELEASE STATUS AT A GLANCE */}
-      <AdvancedCard title="🚦 Release Status at a Glance">
-        <DetailFieldGrid cols={3}>
-          <DetailField
-            label="Release Health"
-            value={
-              <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-sm font-semibold", healthClass(release.releaseHealth))}>
-                {dash(release.releaseHealth)}
-              </span>
-            }
-          />
-          <DetailField label="Status" value={<StatusBadge status={release.status} />} />
-          <DetailField label="Readiness %" value={readinessDisplay} />
-        </DetailFieldGrid>
-      </AdvancedCard>
+      <HeroStatusRow
+        hero={{
+          icon: ShieldAlert,
+          label: "Release Health",
+          value: release.releaseHealth ?? "Not assessed",
+          tone: healthTone(release.releaseHealth),
+        }}
+        secondary={{ icon: Zap, label: "Status", value: release.status }}
+        metric={{
+          icon: CheckCircle2,
+          label: "Operational Readiness",
+          percent: computedReadiness ?? release.readinessPercent ?? 0,
+          caption: computedReadiness == null ? "stored planning readiness" : "computed from live operational signals",
+          tone:
+            (computedReadiness ?? release.readinessPercent ?? 0) >= 80
+              ? "emerald"
+              : (computedReadiness ?? release.readinessPercent ?? 0) >= 50
+                ? "amber"
+                : "rose",
+        }}
+      />
 
-      {/* BLOCKERS & CONFLICTS */}
+      <DbReleaseCommandCenter
+        releaseId={id}
+        storedReadiness={release.readinessPercent}
+        checklistPercent={release.goLiveChecklistPercent}
+        refreshKey={commandRefreshKey}
+        onReadinessChange={setComputedReadiness}
+      />
+
+      <DetailSection
+        id="go-nogo"
+        icon={SlidersHorizontal}
+        tone="indigo"
+        title="Release controls"
+        description="Update operational status and record the deployment decision without leaving this page."
+      >
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <div>
+            <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Quick status</p>
+            {canEdit ? (
+              <div className="flex flex-wrap gap-2">
+                {STATUSES.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => patchStatus(status)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                      release.status === status
+                        ? "border-indigo-600 bg-indigo-600 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-[var(--border)] dark:bg-white/5 dark:text-white/65"
+                    )}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <StatusChip label={release.status} tone={statusTone(release.status)} />
+            )}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/5">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Go / No-Go</p>
+              <StatusChip label={release.decision ?? "No decision"} tone={statusTone(release.decision)} />
+            </div>
+            {canEdit && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className={cn(taBtnPrimary, "!bg-emerald-600 hover:!bg-emerald-700")}
+                  onClick={() => recordDecision("Go — approved for deployment")}
+                >
+                  Record Go
+                </button>
+                <button
+                  type="button"
+                  className={cn(taBtnPrimary, "!bg-rose-600 hover:!bg-rose-700")}
+                  onClick={() => recordDecision("No-Go — blocked")}
+                >
+                  Record No-Go
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </DetailSection>
+
       <div id="blockers">
-        <AdvancedCard title="🚨 Blockers & Conflicts">
+        <DetailSection
+          icon={AlertTriangle}
+          tone="rose"
+          title="Blockers & conflicts"
+          description="Anything actively stopping the release, including environment collisions and live blocker-register rows."
+        >
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <StatusChip
+              label={release.conflictFlag ? "⚠ Conflict detected" : "No environment conflict"}
+              tone={release.conflictFlag ? "bad" : "good"}
+            />
+            {release.changeFreeze && <StatusChip label={release.changeFreeze} tone="warn" />}
+          </div>
           <DetailFieldGrid cols={3}>
             <DetailField label="Conflict Flag" value={conflictFlagDisplay} />
             <DetailField label="Conflict ID" value={<ConflictCodeLinks raw={release.conflictId} />} />
@@ -407,9 +561,11 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <DetailField label="Change Freeze" value={dash(release.changeFreeze)} />
             <DetailField label="Vendor Maintenance" value={dash(release.vendorMaintenance)} />
           </DetailFieldGrid>
-          <div className="mt-4">
-            <DetailField label="Conflict Notes" value={dash(release.conflictNotes)} />
-          </div>
+          {release.conflictNotes && (
+            <div className="mt-4">
+              <TintedCallout tone="rose">{release.conflictNotes}</TintedCallout>
+            </div>
+          )}
           <div className="mt-5 pt-4 border-t border-gray-100 dark:border-[var(--border)]">
             <DbBlockerList
               embedded
@@ -419,13 +575,18 @@ export function DbReleaseDetail({ id }: { id: string }) {
               applicationName={release.applications[0]?.application.name ?? ""}
               canEdit={canEdit}
               raisedByDefault={user?.name ?? ""}
+              onChanged={refreshCommandCenter}
             />
           </div>
-        </AdvancedCard>
+        </DetailSection>
       </div>
 
-      {/* RELEASE INFORMATION */}
-      <AdvancedCard title="📦 Release Information">
+      <DetailSection
+        icon={Package}
+        tone="indigo"
+        title="Release information"
+        description="Core identity, ownership, scope, and upstream dependencies for this release."
+      >
         <DetailFieldGrid cols={3}>
           <DetailField label="Release ID" value={<span className="font-mono">{release.releaseCode}</span>} />
           <DetailField label="Priority" value={dash(release.priority)} />
@@ -459,14 +620,57 @@ export function DbReleaseDetail({ id }: { id: string }) {
             }
           />
         </DetailFieldGrid>
-      </AdvancedCard>
+      </DetailSection>
 
-      {/* KEY DATES & TIMELINE */}
-      <AdvancedCard title="📅 Key Dates & Timeline">
-        <div className="overflow-x-auto">
+      <DetailSection
+        icon={Calendar}
+        tone="violet"
+        title="Key dates & timeline"
+        description="CAB, execution, and deployment timing with relative milestones for fast scheduling decisions."
+      >
+        <div className="md:hidden">
+          <DetailFieldGrid cols={2}>
+            <DetailField
+              label="CAB Date"
+              value={
+                <span>
+                  {release.cabDate ? formatDate(release.cabDate) : "—"}
+                  <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-white/55">
+                    {relativeLabel(release.cabDate)}
+                  </span>
+                </span>
+              }
+            />
+            <DetailField
+              label="Start Date"
+              value={
+                <span>
+                  {release.startDate ? formatDate(release.startDate) : "—"}
+                  <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-white/55">
+                    {relativeLabel(release.startDate)}
+                  </span>
+                </span>
+              }
+            />
+            <DetailField
+              label="End Date"
+              value={
+                <span>
+                  {formatDate(release.releaseDate)}
+                  <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-white/55">
+                    {relativeLabel(release.releaseDate)}
+                  </span>
+                </span>
+              }
+            />
+            <DetailField label="Duration" value={durationLabel(release.startDate, release.releaseDate)} />
+            <DetailField label="Deploy Window" value={dash(release.deploymentWindow)} />
+          </DetailFieldGrid>
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-gray-400 dark:text-white/45 border-b border-gray-100 dark:border-[var(--border)]">
+              <tr className="border-b border-gray-100 text-left text-xs text-gray-400 dark:border-[var(--border)] dark:text-white/45">
                 <th className="py-2 pr-3 font-medium">CAB Date</th>
                 <th className="py-2 pr-3 font-medium">Start Date</th>
                 <th className="py-2 pr-3 font-medium">End Date</th>
@@ -502,10 +706,14 @@ export function DbReleaseDetail({ id }: { id: string }) {
             </tbody>
           </table>
         </div>
-      </AdvancedCard>
+      </DetailSection>
 
-      {/* ENVIRONMENTS */}
-      <AdvancedCard title="🖥️ Environments">
+      <DetailSection
+        icon={Server}
+        tone="sky"
+        title="Environments & bookings"
+        description="Required test infrastructure, collision state, and every linked environment reservation."
+      >
         <DetailFieldGrid cols={3}>
           <DetailField label="Test Env Required" value={dash(release.testEnvRequired)} />
           <DetailField label="UAT Env Required" value={dash(release.uatEnvRequired)} />
@@ -525,198 +733,200 @@ export function DbReleaseDetail({ id }: { id: string }) {
             }
           />
         </DetailFieldGrid>
-      </AdvancedCard>
-
-      {/* SIGN-OFFS & APPROVALS */}
-      <AdvancedCard title="✅ Sign-offs & Approvals">
-        <DetailFieldGrid cols={2}>
-          <DetailField label="Approval Status" value={dash(release.approvalStatus)} />
-          <DetailField label="Rollback Plan" value={dash(release.rollbackPlan)} />
-        </DetailFieldGrid>
-        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-[var(--border)]">
-          <DetailFieldGrid cols={3}>
-            <DetailField label="Dev Signoff" value={dash(release.devSignoff)} />
-            <DetailField label="Test Sign-off" value={dash(release.testSignoff)} />
-            <DetailField label="UAT Sign-off" value={dash(release.uatSignoff)} />
-            <DetailField label="Security Clearance" value={dash(release.securityClearance)} />
-            <DetailField label="Dress Rehearsal" value={dash(release.dressRehearsal)} />
-            <DetailField label="Go-Live Checklist (%)" value={checklistDisplay} />
-          </DetailFieldGrid>
-        </div>
-      </AdvancedCard>
-
-      {/* COMMUNICATIONS & TRAINING */}
-      <AdvancedCard title="📢 Communications & Training">
-        <DetailFieldGrid cols={3}>
-          <DetailField label="Hypercare Plan" value={dash(release.hypercarePlan)} />
-          <DetailField label="Comms Plan" value={dash(release.commsPlan)} />
-          <DetailField label="Training Status" value={dash(release.trainingStatus)} />
-        </DetailFieldGrid>
-      </AdvancedCard>
-
-      {/* STAKEHOLDERS & CONTACTS */}
-      <AdvancedCard title="👥 Stakeholders & Contacts">
-        <DetailFieldGrid cols={3}>
-          <DetailField label="Release Owner" value={dash(ownerDisplay)} />
-          <DetailField label="Stakeholder IDs" value={<span className="font-mono text-xs">{stakeholderIds}</span>} />
-          <DetailField label="Regulatory" value={dash(release.regulatory)} />
-        </DetailFieldGrid>
-      </AdvancedCard>
-
-      {/* NOTES */}
-      <AdvancedCard title="📝 Notes & Additional Information">
-        <DetailFieldGrid cols={2}>
-          <DetailField label="Conflict Notes" value={dash(release.conflictNotes)} />
-          <DetailField label="Release Notes" value={dash(release.notes)} />
-        </DetailFieldGrid>
-      </AdvancedCard>
-
-      {/* DRIFT (Batch 7 — required, not in original mockup) */}
-      <div id="drift">
-        <AdvancedCard title="Drift" icon={GitCompareArrows}>
-          <DbReleaseDriftList releaseId={id} embedded />
-        </AdvancedCard>
-      </div>
-
-      {/* QUICK ACTIONS */}
-      <AdvancedCard title="⚡ Quick Actions">
-        <div className="flex flex-wrap gap-2">
-          <ProgressLink href="/calendar" className={taBtnSecondary + " text-sm !py-2"}>
-            <Calendar className="h-4 w-4 inline mr-1" /> View Calendar
-          </ProgressLink>
-          <ProgressLink href="/booking" className={taBtnSecondary + " text-sm !py-2"}>
-            <CalendarCheck className="h-4 w-4 inline mr-1" /> Env Booking
-          </ProgressLink>
-          <ProgressLink href="/approvals" className={taBtnSecondary + " text-sm !py-2"}>
-            <ClipboardCheck className="h-4 w-4 inline mr-1" /> Approvals
-          </ProgressLink>
-          <ProgressLink href="/risks" className={taBtnSecondary + " text-sm !py-2"}>
-            <ShieldAlert className="h-4 w-4 inline mr-1" /> View Risks
-          </ProgressLink>
-          <ProgressLink href="/dashboard" className={taBtnSecondary + " text-sm !py-2"}>
-            <LayoutDashboard className="h-4 w-4 inline mr-1" /> Dashboard
-          </ProgressLink>
-          <ProgressLink href="/releases" className={taBtnSecondary + " text-sm !py-2"}>
-            <List className="h-4 w-4 inline mr-1" /> All Releases
-          </ProgressLink>
-        </div>
-      </AdvancedCard>
-
-      <p className="text-center text-xs text-gray-400 dark:text-white/40">
-        Release Page v1.0 | Data sourced from Releases sheet | For questions contact Release Management Team
-      </p>
-
-      {/* —— Supplemental tools (beyond mockup; kept intentionally) —— */}
-      <div className="pt-2 border-t border-dashed border-gray-200 dark:border-[var(--border)] space-y-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-white/40">
-          Additional tools
-        </p>
-
-        <DbReleaseCommandCenter releaseId={id} />
-
-        <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} />
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            {canEdit && (
-              <AdvancedCard title="Quick status">
-                <div className="flex flex-wrap gap-2">
-                  {STATUSES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => patchStatus(s)}
-                      className={cn(
-                        "rounded-lg px-2.5 py-1 text-xs border transition-colors",
-                        release.status === s
-                          ? "bg-brand-500 text-white border-brand-500"
-                          : "border-gray-200 dark:border-[var(--border)] hover:border-brand-300 dark:hover:border-brand-500/50 dark:text-white/75"
-                      )}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </AdvancedCard>
-            )}
-          </div>
-          <div id="go-nogo">
-            <AdvancedCard title="Go / No-Go" subtitle="Recorded to audit trail">
-              {canEdit ? (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={taBtnPrimary + " flex-1 !bg-success-600"}
-                    onClick={() => recordDecision("Go — approved for deployment")}
-                  >
-                    Go
-                  </button>
-                  <button
-                    type="button"
-                    className={taBtnPrimary + " flex-1 !bg-error-600"}
-                    onClick={() => recordDecision("No-Go — blocked")}
-                  >
-                    No-Go
-                  </button>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500 dark:text-white/60">{release.decision ?? "No decision recorded"}</p>
-              )}
-            </AdvancedCard>
-          </div>
-        </div>
-
-        {release.bookings.length > 0 && (
-          <AdvancedCard title="Linked environment bookings">
-            <ul className="space-y-2 text-sm">
-              {release.bookings.map((b) => (
-                <li key={b.id} className="text-gray-700 dark:text-white/80">
+        <div className="mt-5 border-t border-slate-100 pt-4 dark:border-[var(--border)]">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+            Linked environment bookings
+          </p>
+          {release.bookings.length ? (
+            <ul className="space-y-2">
+              {release.bookings.map((booking) => (
+                <li
+                  key={booking.id}
+                  className="rounded-xl bg-sky-50/70 px-3 py-2.5 text-sm text-slate-700 dark:bg-sky-500/10 dark:text-white/75"
+                >
                   <ProgressLink
-                    href={`/booking/${b.id}`}
-                    className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+                    href={`/booking/${booking.id}`}
+                    className="font-mono text-xs font-bold text-sky-700 hover:underline dark:text-sky-300"
                   >
-                    {b.bookingCode ?? b.id}
+                    {booking.bookingCode ?? booking.id}
                   </ProgressLink>
                   {" · "}
-                  <strong>{b.application.name}</strong> · {formatDate(b.fromDate)} → {formatDate(b.toDate)}
-                  {b.bookedBy && <span className="text-gray-500 dark:text-white/50"> · Booked by {b.bookedBy}</span>}
-                  {b.team && <span className="text-gray-500 dark:text-white/50"> · Team {b.team}</span>}
-                  {b.purpose && <span className="text-gray-500 dark:text-white/50"> · {b.purpose}</span>}
+                  <strong>{booking.application.name}</strong> · {formatDate(booking.fromDate)} →{" "}
+                  {formatDate(booking.toDate)}
+                  {booking.bookedBy && <span className="opacity-65"> · Booked by {booking.bookedBy}</span>}
+                  {booking.team && <span className="opacity-65"> · Team {booking.team}</span>}
+                  {booking.purpose && <span className="opacity-65"> · {booking.purpose}</span>}
                 </li>
               ))}
             </ul>
-          </AdvancedCard>
-        )}
+          ) : (
+            <EmptyHint>No environment bookings are linked to this release.</EmptyHint>
+          )}
+        </div>
+      </DetailSection>
 
-        <AdvancedCard title="Audit trail" icon={History}>
+      <DetailSection
+        icon={CheckCircle2}
+        tone="emerald"
+        title="Sign-offs & approvals"
+        description="Every formal gate that must clear before the deployment decision can safely move to Go."
+      >
+        <DetailFieldGrid cols={2}>
+          <DetailField
+            label="Approval Status"
+            value={<StatusChip label={String(dash(release.approvalStatus))} tone={statusTone(release.approvalStatus)} />}
+          />
+          <DetailField
+            label="Rollback Plan"
+            value={<StatusChip label={String(dash(release.rollbackPlan))} tone={statusTone(release.rollbackPlan)} />}
+          />
+        </DetailFieldGrid>
+        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          <SignoffChip label="Dev sign-off" done={signalDone(release.devSignoff)} />
+          <SignoffChip label="Test sign-off" done={signalDone(release.testSignoff)} />
+          <SignoffChip label="UAT sign-off" done={signalDone(release.uatSignoff)} />
+          <SignoffChip label="Security clearance" done={signalDone(release.securityClearance)} />
+          <SignoffChip label="Dress rehearsal" done={signalDone(release.dressRehearsal)} />
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
+            <ScoreBar
+              value={release.goLiveChecklistPercent ?? 0}
+              asPercent
+              label={release.goLiveChecklistPercent == null ? "Checklist not set" : "Go-live checklist"}
+            />
+          </div>
+        </div>
+      </DetailSection>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <DetailSection
+          icon={Megaphone}
+          tone="amber"
+          title="Communications & training"
+          description="Human readiness across hypercare, stakeholder messaging, and enablement."
+        >
+          <DetailFieldGrid cols={3}>
+            <DetailField label="Hypercare Plan" value={dash(release.hypercarePlan)} />
+            <DetailField label="Comms Plan" value={dash(release.commsPlan)} />
+            <DetailField label="Training Status" value={dash(release.trainingStatus)} />
+          </DetailFieldGrid>
+        </DetailSection>
+
+        <DetailSection
+          icon={Users}
+          tone="indigo"
+          title="Stakeholders & contacts"
+          description="Accountability, interested parties, and regulatory context."
+        >
+          <DetailFieldGrid cols={3}>
+            <DetailField label="Release Owner" value={dash(ownerDisplay)} />
+            <DetailField label="Stakeholder IDs" value={<span className="font-mono text-xs">{stakeholderIds}</span>} />
+            <DetailField label="Regulatory" value={dash(release.regulatory)} />
+          </DetailFieldGrid>
+        </DetailSection>
+      </div>
+
+      <DetailSection
+        icon={FileText}
+        tone="amber"
+        title="Release notes"
+        description="Additional context for CAB, deployment teams, and the release audit record."
+      >
+        {release.notes ? (
+          <TintedCallout tone="amber">{release.notes}</TintedCallout>
+        ) : (
+          <EmptyHint>No additional release notes have been recorded.</EmptyHint>
+        )}
+      </DetailSection>
+
+      <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} />
+
+      <div id="drift">
+        <DetailSection
+          icon={GitCompareArrows}
+          tone="sky"
+          title="Release drift"
+          description="Changes between planned and current delivery state that need review."
+        >
+          <DbReleaseDriftList releaseId={id} embedded />
+        </DetailSection>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+        <DetailSection
+          icon={Zap}
+          tone="indigo"
+          title="Quick actions"
+          description="Jump to the operational views most relevant to this release."
+        >
+          <div className="flex flex-wrap gap-2">
+            <ProgressLink href="/calendar" className={taBtnSecondary + " text-sm !py-2"}>
+              <Calendar className="h-4 w-4 inline mr-1" /> View Calendar
+            </ProgressLink>
+            <ProgressLink href="/booking" className={taBtnSecondary + " text-sm !py-2"}>
+              <CalendarCheck className="h-4 w-4 inline mr-1" /> Env Booking
+            </ProgressLink>
+            <ProgressLink href="/approvals" className={taBtnSecondary + " text-sm !py-2"}>
+              <ClipboardCheck className="h-4 w-4 inline mr-1" /> Approvals
+            </ProgressLink>
+            <ProgressLink href="/risks" className={taBtnSecondary + " text-sm !py-2"}>
+              <ShieldAlert className="h-4 w-4 inline mr-1" /> View Risks
+            </ProgressLink>
+            <ProgressLink href="/dashboard" className={taBtnSecondary + " text-sm !py-2"}>
+              <LayoutDashboard className="h-4 w-4 inline mr-1" /> Dashboard
+            </ProgressLink>
+            <ProgressLink href="/releases" className={taBtnSecondary + " text-sm !py-2"}>
+              <List className="h-4 w-4 inline mr-1" /> All Releases
+            </ProgressLink>
+          </div>
+        </DetailSection>
+
+        <DetailSection
+          icon={History}
+          tone="violet"
+          title="Audit trail"
+          description="Immutable operational history, decisions, status changes, and release notes."
+        >
           <div className="space-y-3">
             {canEdit && (
               <div className="flex gap-2">
                 <input
-                  className={taInput}
-                  placeholder="Add a note…"
+                  className={cn(taInput, "rounded-xl")}
+                  placeholder="Add an audit note…"
                   value={note}
-                  onChange={(e) => setNote(e.target.value)}
+                  onChange={(event) => setNote(event.target.value)}
                 />
                 <button type="button" className={taBtnSecondary} onClick={addNote}>
                   Add
                 </button>
               </div>
             )}
-            {release.auditEvents.map((e) => (
-              <div key={e.id} className="text-sm border-b border-gray-100 dark:border-[var(--border)] pb-2">
-                <span className="text-xs text-gray-400 dark:text-white/45">
-                  {formatDateTime(e.createdAt)} · {e.actor}
-                </span>
-                <p className="text-gray-700 dark:text-white/80 capitalize">
-                  {e.action.replace("_", " ")}
-                  {e.detail ? ` — ${e.detail}` : ""}
-                </p>
+            {release.auditEvents.length ? (
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {release.auditEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm dark:bg-white/5"
+                  >
+                    <span className="text-[10.5px] text-slate-400 dark:text-white/45">
+                      {formatDateTime(event.createdAt)} · {event.actor}
+                    </span>
+                    <p className="text-slate-700 dark:text-white/75">
+                      <span className="font-semibold capitalize">{event.action.replace("_", " ")}</span>
+                      {event.detail ? ` — ${event.detail}` : ""}
+                    </p>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <EmptyHint>No audit events have been recorded for this release.</EmptyHint>
+            )}
           </div>
-        </AdvancedCard>
+        </DetailSection>
       </div>
+
+      <p className="text-center text-[11px] text-slate-400 dark:text-white/40">
+        Release Page v2.0 · Live release, readiness, lifecycle, blocker, booking, and audit data
+      </p>
 
       <ReleaseFormModal
         open={editOpen}
@@ -743,13 +953,30 @@ export function DbReleaseDetail({ id }: { id: string }) {
         }}
         existingReleaseCodes={lookups.releases.map((r) => r.releaseCode)}
         departments={lookups.departments.map((d) => ({ value: d.id, label: d.name }))}
-        applications={lookups.applications.map((a) => ({ value: a.id, label: a.name }))}
+        applications={lookups.applications.map((a) => ({
+          value: a.id,
+          label: a.name,
+          departmentId: a.departmentId,
+        }))}
+        environments={lookups.environments.map((e) => ({
+          value: e.name,
+          label: e.name,
+          applicationId: e.applicationId,
+        }))}
         releases={lookups.releases.map((r) => ({
           value: r.id,
           label: r.name ? `${r.releaseCode} — ${r.name}` : r.releaseCode,
         }))}
         onClose={() => setEditOpen(false)}
         onSaved={load}
+      />
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        entityLabel="release"
+        entityCode={release.releaseCode}
+        busy={deleting}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={remove}
       />
     </DetailPageShell>
   );

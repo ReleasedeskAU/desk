@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSession } from "./session";
+import { hasMinRole } from "./role-rank";
+import type { UserRole } from "./roles";
 
+/**
+ * Requires an authenticated Clerk session.
+ * @returns `{ user, error }` — if error is set, return it from the route handler.
+ */
 export async function requireSession() {
   const user = await getSession();
   if (!user) {
@@ -9,7 +15,18 @@ export async function requireSession() {
   return { user, error: null };
 }
 
-/** Demo pass: any Clerk session passes; minRole kept for call-site compatibility. */
-export async function requireRole(_minRole: "readonly" | "editor" | "admin") {
-  return requireSession();
+/**
+ * Requires authentication and a minimum privilege tier (deny by default).
+ * @param minRole - Lowest role allowed for this endpoint.
+ */
+export async function requireRole(minRole: UserRole) {
+  const { user, error } = await requireSession();
+  if (error) return { user: null, error };
+  if (!hasMinRole(user, minRole)) {
+    return {
+      user,
+      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
+  }
+  return { user, error: null };
 }

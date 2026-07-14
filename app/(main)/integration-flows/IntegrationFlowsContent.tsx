@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   INTEGRATION_FLOW_COLUMNS,
+  INTEGRATION_FLOW_DEFAULT_HIDDEN_COLUMN_KEYS,
   INTEGRATION_FLOW_DEFAULT_HIDDEN_FILTER_KEYS,
   INTEGRATION_FLOW_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -89,6 +90,7 @@ export default function IntegrationFlowsContent() {
     {
       lockedKeys: ["flowCode"],
       defaultHiddenFilters: INTEGRATION_FLOW_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: INTEGRATION_FLOW_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

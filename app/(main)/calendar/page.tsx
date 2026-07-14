@@ -216,7 +216,7 @@ export default function CalendarPage() {
                 disabled={loading}
                 value={filters.dateFrom}
                 onChange={(e) => setFilter("dateFrom", e.target.value)}
-                className={cn(SELECT_CLASS, "min-w-[132px]")}
+                className={cn(SELECT_CLASS, "min-w-0 flex-1 sm:min-w-[132px] sm:flex-none")}
                 aria-label="Date from"
               />
               <span className="text-xs text-gray-400">–</span>
@@ -225,14 +225,14 @@ export default function CalendarPage() {
                 disabled={loading}
                 value={filters.dateTo}
                 onChange={(e) => setFilter("dateTo", e.target.value)}
-                className={cn(SELECT_CLASS, "min-w-[132px]")}
+                className={cn(SELECT_CLASS, "min-w-0 flex-1 sm:min-w-[132px] sm:flex-none")}
                 aria-label="Date to"
               />
             </div>
           )}
         </ReleaseFiltersBar>
 
-        <div className="px-5 pb-4 pt-4">
+        <div className="px-4 pb-4 pt-4 sm:px-5">
           <TopBar
             className="mb-3"
             pageKey="calendar"
@@ -241,7 +241,7 @@ export default function CalendarPage() {
             trailing={
               <div className="flex flex-wrap items-center gap-2">
                 <PageDocumentation pageKey="calendar" />
-                <div className="flex items-center gap-1.5 rounded-2xl bg-slate-50 p-1.5 dark:bg-slate-900/60 dark:ring-1 dark:ring-slate-700">
+                <div className="flex items-center gap-1 rounded-2xl bg-slate-50 p-1 dark:bg-slate-900/60 dark:ring-1 dark:ring-slate-700 sm:gap-1.5 sm:p-1.5">
                   {(
                     [
                       { id: "calendar" as const, label: "Calendar", Icon: LayoutGrid },
@@ -253,14 +253,16 @@ export default function CalendarPage() {
                       key={id}
                       type="button"
                       onClick={() => setDisplay(id)}
+                      aria-label={label}
                       className={cn(
-                        "flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold transition-all",
+                        "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-semibold transition-all sm:px-4 sm:text-[13px]",
                         display === id
                           ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md"
                           : "text-slate-500 hover:bg-white dark:text-white/60 dark:hover:bg-white/5",
                       )}
                     >
-                      <Icon size={15} /> {label}
+                      <Icon size={15} />
+                      <span className="hidden sm:inline">{label}</span>
                     </button>
                   ))}
                 </div>
@@ -269,23 +271,22 @@ export default function CalendarPage() {
           />
           <CalendarStatusLegend className="mb-3" />
 
-          {/* A3: keep ◀ ▶ as window shifter; period dropdown above remains grain control */}
-          <div className="mb-1 flex items-center justify-center gap-4">
+          <div className="mb-1 flex items-center justify-center gap-2 sm:gap-4">
             <button
               type="button"
               onClick={prevPeriod}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
               aria-label="Previous period"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="min-w-[160px] text-center text-sm font-semibold text-gray-800 dark:text-white">
+            <span className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-gray-800 dark:text-white sm:min-w-[160px] sm:flex-none">
               {navLabel}
             </span>
             <button
               type="button"
               onClick={nextPeriod}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-white/5"
               aria-label="Next period"
             >
               <ChevronRight className="h-4 w-4" />
@@ -295,7 +296,7 @@ export default function CalendarPage() {
 
         <div
           className={cn(
-            "bg-gray-50/30 p-6 pt-4 dark:bg-transparent",
+            "bg-gray-50/30 p-4 pt-4 dark:bg-transparent sm:p-6",
             display === "timeline" && "overflow-visible pt-2",
           )}
         >
@@ -311,7 +312,11 @@ export default function CalendarPage() {
                   Loading calendar events…
                 </div>
               )}
-              <MonthGridCalendar events={filteredEvents} viewDate={viewDate} />
+              <MonthGridCalendar
+                events={filteredEvents}
+                viewDate={viewDate}
+                onShowDayOnTimeline={() => setDisplay("timeline")}
+              />
             </>
           ) : display === "timeline" ? (
             <ReleaseTimelineView

@@ -53,7 +53,7 @@ export function ClerkSignIn() {
         <p className="mt-2 text-rose-900/90">
           <strong>On Vercel with test keys (`pk_test_…`):</strong> open Clerk Dashboard →{" "}
           <strong>Configure → Paths</strong> and confirm sign-in is <code className="rounded bg-rose-100 px-1">/sign-in</code>.
-          Then run this once (replace with your secret key):
+          Then allow this site origin (e.g. <code className="rounded bg-rose-100 px-1">https://releasedesk.vercel.app</code>) once:
         </p>
         <pre className="mt-2 overflow-x-auto rounded bg-rose-100/80 p-2 text-[11px] text-rose-950">
 {`curl -X PATCH https://api.clerk.com/v1/instance \\
@@ -71,7 +71,14 @@ export function ClerkSignIn() {
 
   return (
     <div className="clerk-sign-in-host w-full min-h-[420px]">
-      <SignIn routing="path" path="/sign-in" signUpUrl="/sign-up" appearance={CLERK_APPEARANCE} />
+      <SignIn
+        routing="path"
+        path="/sign-in"
+        signUpUrl="/sign-up"
+        forceRedirectUrl="/dashboard"
+        fallbackRedirectUrl="/dashboard"
+        appearance={CLERK_APPEARANCE}
+      />
     </div>
   );
 }

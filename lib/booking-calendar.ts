@@ -1,4 +1,5 @@
 import { periodRange, type Period } from "@/lib/period-range";
+import { TIMELINE_TONES, type TimelineTone } from "@/lib/release-timeline";
 
 export type BookingPhase = "test" | "uat" | "preProd";
 
@@ -47,46 +48,83 @@ export type BookingMilestone = {
 };
 
 /**
- * Phase colors — shared by Calendar + Timeline.
- * Use `hex` via inline style so fills always render (Tailwind may not
- * emit classes that only appear in lib/*.ts).
+ * Phase → shared Calendar Timeline tone (`TIMELINE_TONES` in release-timeline.ts).
+ * Do not invent a separate Booking palette — wash/solid come from that module.
+ */
+export const BOOKING_PHASE_TONE: Record<BookingPhase, TimelineTone> = {
+  test: "indigo",
+  uat: "violet",
+  preProd: "emerald",
+};
+
+export const BOOKING_MILESTONE_TONE = {
+  cab: "amber" as TimelineTone,
+  prod: "rose" as TimelineTone,
+};
+
+/**
+ * Phase visuals — wash pills for calendar chips; pastelBg/pastelText for timeline bars.
  */
 export const BOOKING_PHASE_STYLE: Record<
   BookingPhase,
-  { label: string; short: string; hex: string; text: string }
+  {
+    label: string;
+    short: string;
+    tone: TimelineTone;
+    wash: string;
+    solid: string;
+    pastelBg: string;
+    pastelText: string;
+  }
 > = {
   test: {
     label: "Test",
     short: "T",
-    hex: "#0284c7",
-    text: "text-white",
+    tone: "indigo",
+    wash: TIMELINE_TONES.indigo.pill,
+    solid: "#0ea5e9",
+    pastelBg: "#e0f2fe",
+    pastelText: "#0369a1",
   },
   uat: {
     label: "UAT",
     short: "U",
-    hex: "#7c3aed",
-    text: "text-white",
+    tone: "violet",
+    wash: TIMELINE_TONES.violet.pill,
+    solid: "#8b5cf6",
+    pastelBg: "#ede9fe",
+    pastelText: "#6d28d9",
   },
   preProd: {
     label: "Pre-Prod",
     short: "P",
-    hex: "#0f766e",
-    text: "text-white",
+    tone: "emerald",
+    wash: TIMELINE_TONES.emerald.pill,
+    solid: "#10b981",
+    pastelBg: "#d1fae5",
+    pastelText: "#047857",
   },
 };
 
 export const BOOKING_MILESTONE_STYLE = {
   cab: {
     label: "CAB",
-    hex: "#d97706",
-    text: "text-amber-800 dark:text-amber-200",
+    tone: BOOKING_MILESTONE_TONE.cab,
+    wash: TIMELINE_TONES.amber.pill,
+    solid: "#f59e0b",
+    pastelBg: "#fef3c7",
+    pastelText: "#92400e",
   },
   prod: {
     label: "Prod",
-    hex: "#e11d48",
-    text: "text-rose-800 dark:text-rose-200",
+    tone: BOOKING_MILESTONE_TONE.prod,
+    wash: TIMELINE_TONES.rose.pill,
+    solid: "#ec4899",
+    pastelBg: "#fce7f3",
+    pastelText: "#9d174d",
   },
 } as const;
+
 
 function toLocalIso(d: Date): string {
   const offset = d.getTimezoneOffset() * 60000;

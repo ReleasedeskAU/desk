@@ -14,8 +14,10 @@ import {
   Server,
   UserCircle,
   AlertTriangle,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { TeamMembersTab } from "@/components/settings/TeamMembersTab";
 import { DepartmentsTab } from "@/components/settings/master-data/DepartmentsTab";
 import { ApplicationsTab } from "@/components/settings/master-data/ApplicationsTab";
@@ -25,6 +27,7 @@ import { RiskFactorsTab } from "@/components/settings/master-data/RiskFactorsTab
 
 const VALID_TABS = new Set([
   "general",
+  "appearance",
   "team",
   "departments",
   "applications",
@@ -63,6 +66,7 @@ function SettingsPageInner() {
 
   const sidebarNav = [
     { id: "general", label: "General", icon: SettingsIcon },
+    { id: "appearance", label: "Appearance", icon: Palette },
     { id: "team", label: "Team Members", icon: Users },
     { id: "departments", label: "Departments", icon: Building2 },
     { id: "applications", label: "Applications", icon: Package },
@@ -77,10 +81,10 @@ function SettingsPageInner() {
   const masterDataTabs = new Set(["departments", "applications", "environments", "users", "risk-factors"]);
 
   return (
-    <div className="max-w-[1200px] font-sans pb-24">
+    <div className="max-w-[1200px] pb-24 font-sans">
       <div className="mb-10 mt-2">
-        <h1 className="text-[32px] font-bold text-[#111827] tracking-tight mb-2">Settings</h1>
-        <p className="text-[15px] text-gray-500 font-medium leading-relaxed">
+        <h1 className="mb-2 text-[32px] font-bold tracking-tight text-gray-900 dark:text-white">Settings</h1>
+        <p className="text-[15px] font-medium leading-relaxed text-gray-500 dark:text-gray-300">
           Manage your account settings, team configuration, and master data ingestion.
         </p>
       </div>
@@ -95,12 +99,13 @@ function SettingsPageInner() {
                 <button
                   key={item.id}
                   type="button"
+                  aria-pressed={isActive}
                   onClick={() => setTab(item.id)}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-2.5 rounded-lg text-[14px] font-semibold transition-colors text-left",
+                    "flex items-center gap-3 rounded-lg px-4 py-2.5 text-left text-[14px] font-semibold transition-colors",
                     isActive
-                      ? "bg-[#EFF3FF] text-[#2548C9]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      ? "bg-[var(--theme-accent-soft,#EFF3FF)] text-[var(--theme-accent,#2548C9)]"
+                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.07] dark:hover:text-white"
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -112,6 +117,7 @@ function SettingsPageInner() {
         </div>
 
         <div className="flex-1 min-w-0">
+          {activeTab === "appearance" && <AppearanceSettings />}
           {activeTab === "team" && <TeamMembersTab />}
           {activeTab === "departments" && <DepartmentsTab />}
           {activeTab === "applications" && <ApplicationsTab />}
@@ -119,13 +125,13 @@ function SettingsPageInner() {
           {activeTab === "users" && <UsersTab />}
           {activeTab === "risk-factors" && <RiskFactorsTab />}
 
-          {!masterDataTabs.has(activeTab) && activeTab !== "team" && (
-            <div className="flex flex-col items-center justify-center py-24 text-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50">
-              <div className="h-12 w-12 rounded-full bg-white border border-gray-200 flex items-center justify-center mb-4 shadow-sm">
-                <SettingsIcon className="h-6 w-6 text-gray-400" />
+          {!masterDataTabs.has(activeTab) && activeTab !== "team" && activeTab !== "appearance" && (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50 py-24 text-center dark:border-[var(--border)] dark:bg-white/[0.025]">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
+                <SettingsIcon className="h-6 w-6 text-gray-400 dark:text-gray-300" />
               </div>
-              <h3 className="text-[16px] font-bold text-gray-900">Module Coming Soon</h3>
-              <p className="text-[14px] text-gray-500 mt-1 max-w-sm">
+              <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">Module Coming Soon</h3>
+              <p className="mt-1 max-w-sm text-[14px] text-gray-500 dark:text-gray-300">
                 This configuration section is currently under development. Please check back later.
               </p>
             </div>

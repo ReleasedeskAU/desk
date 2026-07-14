@@ -15,6 +15,7 @@ import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import {
   RISK_FACTOR_COLUMNS,
+  RISK_FACTOR_DEFAULT_HIDDEN_COLUMN_KEYS,
   RISK_FACTOR_DEFAULT_HIDDEN_FILTER_KEYS,
   RISK_FACTOR_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -99,6 +100,7 @@ export function RiskFactorsBrowse() {
     {
       lockedKeys: ["factorName", "actions"],
       defaultHiddenFilters: RISK_FACTOR_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: RISK_FACTOR_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

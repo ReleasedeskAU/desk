@@ -232,7 +232,7 @@ export default function CommandDashboardContent() {
         <p className="text-sm text-gray-500 dark:text-white/60">{error ?? "No dashboard data"}</p>
         <button
           onClick={() => setRefreshKey((k) => k + 1)}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
         >
           Retry
         </button>
@@ -248,21 +248,22 @@ export default function CommandDashboardContent() {
       <div className="mx-auto max-w-[1380px]">
         <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-[30px] font-bold tracking-tight text-[#1B2559] dark:text-white">Command Dashboard</h1>
+            <h1 className="text-[24px] font-bold tracking-tight text-[#1B2559] dark:text-white sm:text-[30px]">Command Dashboard</h1>
           </div>
           <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-            <div className="flex min-w-[min(100%,22rem)] flex-1 items-center gap-1 rounded-2xl bg-white p-1.5 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.4)] sm:min-w-[28rem] sm:flex-none">
+            <div className="flex min-w-0 flex-1 items-center gap-1 rounded-2xl bg-white p-1 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.4)] sm:flex-none sm:p-1.5">
               {DASHBOARD_PERIOD_OPTIONS.map((f) => (
                 <button
                   key={f.value}
                   type="button"
                   onClick={() => setPeriod(f.value)}
                   className={cn(
-                    "min-w-[4.5rem] flex-1 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition-all sm:min-w-[6.5rem] sm:px-8",
+                    "min-w-0 flex-1 rounded-xl px-2.5 py-2 text-[12px] font-semibold transition-all sm:px-6 sm:py-2.5 sm:text-[13px]",
                     period === f.value
-                      ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md"
+                      ? "text-white shadow-md"
                       : "text-slate-500 hover:bg-slate-50 dark:text-white/55 dark:hover:bg-white/5"
                   )}
+                  style={period === f.value ? { backgroundImage: "var(--theme-gradient)" } : undefined}
                 >
                   {f.label}
                 </button>
@@ -280,7 +281,10 @@ export default function CommandDashboardContent() {
         </div>
 
         {/* Hero */}
-        <div className="relative mb-7 overflow-hidden rounded-[22px] bg-gradient-to-r from-[#3E2CBB] via-[#5A3FE0] to-[#7C5CFF] px-5 py-4 text-white shadow-[0_24px_48px_-22px_rgba(90,63,224,0.5)]">
+        <div
+          className="relative mb-7 overflow-hidden rounded-[22px] px-5 py-4 text-white"
+          style={{ backgroundImage: "var(--theme-gradient)", boxShadow: "var(--theme-shadow)" }}
+        >
           <div className="pointer-events-none absolute -right-16 -top-24 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
           <div className="relative">
             <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
@@ -304,7 +308,7 @@ export default function CommandDashboardContent() {
                     </div>
                     <div className="mt-0.5 flex items-center gap-1 text-[12px] font-medium text-white/70 group-hover:text-white">
                       {x.l}
-                      <ArrowUpRight size={13} className="opacity-0 transition-opacity group-hover:opacity-100" />
+                      <ArrowUpRight size={13} className="opacity-70 transition-opacity group-hover:opacity-100" aria-hidden />
                     </div>
                   </button>
                 ))}
@@ -334,7 +338,7 @@ export default function CommandDashboardContent() {
           subtitle={`${data.pipelineDetail.total} releases in period`}
           info="Status mix and priority distribution for releases whose go-live date falls in the selected period. Click a segment to filter the releases list."
           href="/releases"
-          accent="bg-indigo-400"
+          accent="bg-brand-400"
           className="mb-7"
           titleAlign="center"
           onNavigate={onNavigate}
@@ -366,7 +370,7 @@ export default function CommandDashboardContent() {
             subtitle={`${data.envBookings.activeBookings} active bookings`}
             info="Environment booking conflicts overlapping the selected period versus total active bookings in that window."
             href="/booking"
-            accent="bg-violet-400"
+            accent="bg-brand-400"
             onNavigate={onNavigate}
           >
             <HorizontalCompareVisual
@@ -427,7 +431,7 @@ export default function CommandDashboardContent() {
             subtitle="Governance queue"
             info="CAB meetings scheduled in the next 7 days and approval records still pending decision in the selected period."
             href="/approvals"
-            accent="bg-indigo-400"
+            accent="bg-brand-400"
             onNavigate={onNavigate}
           >
             <HorizontalCompareVisual
@@ -527,10 +531,10 @@ export default function CommandDashboardContent() {
             />
             <ChartLegend items={incidentSeverityData} onNavigate={onNavigate} />
             <div className="mt-2 flex justify-center gap-4 text-[11px] text-slate-500 dark:text-white/50">
-              <button type="button" onClick={() => onNavigate("/incidents?status=Investigating")} className="hover:text-indigo-500 dark:hover:text-indigo-400">
+              <button type="button" onClick={() => onNavigate("/incidents?status=Investigating")} className="hover:text-brand-600 dark:hover:text-brand-400">
                 Investigating: <strong className="text-slate-800 dark:text-white">{data.incidentsDetail.investigating}</strong>
               </button>
-              <button type="button" onClick={() => onNavigate("/incidents?status=Resolved")} className="hover:text-indigo-500 dark:hover:text-indigo-400">
+              <button type="button" onClick={() => onNavigate("/incidents?status=Resolved")} className="hover:text-brand-600 dark:hover:text-brand-400">
                 Resolved 24h: <strong className="text-slate-800 dark:text-white">{data.incidentsDetail.resolved24h}</strong>
               </button>
             </div>
@@ -575,10 +579,10 @@ export default function CommandDashboardContent() {
             />
             <ChartLegend items={alertSeverityData} onNavigate={onNavigate} />
             <div className="mt-2 flex justify-center gap-4 text-[11px] text-slate-500 dark:text-white/50">
-              <button type="button" onClick={() => onNavigate("/monitoring-alerts?status=Acknowledged")} className="hover:text-indigo-500 dark:hover:text-indigo-400">
+              <button type="button" onClick={() => onNavigate("/monitoring-alerts?status=Acknowledged")} className="hover:text-brand-600 dark:hover:text-brand-400">
                 Acknowledged: <strong className="text-slate-800 dark:text-white">{data.alertsDetail.acknowledged}</strong>
               </button>
-              <button type="button" onClick={() => onNavigate("/monitoring-alerts?status=Resolved")} className="hover:text-indigo-500 dark:hover:text-indigo-400">
+              <button type="button" onClick={() => onNavigate("/monitoring-alerts?status=Resolved")} className="hover:text-brand-600 dark:hover:text-brand-400">
                 Resolved 24h: <strong className="text-slate-800 dark:text-white">{data.alertsDetail.resolved24h}</strong>
               </button>
             </div>
@@ -589,7 +593,7 @@ export default function CommandDashboardContent() {
             subtitle={INCIDENT_TREND_LABEL[period]}
             info="How incident volume changes over time for the selected period — useful for spotting escalation patterns."
             href="/incidents"
-            accent="bg-indigo-400"
+            accent="bg-brand-400"
             badge={
               incidentTrendChange && (
                 <span
@@ -613,14 +617,14 @@ export default function CommandDashboardContent() {
                 <AreaChart data={incidentTrendChart} margin={{ left: -18, right: 6, top: 8 }}>
                   <defs>
                     <linearGradient id="incG" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#7C5CFF" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#7C5CFF" stopOpacity={0} />
+                      <stop offset="0%" stopColor="var(--theme-accent)" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="var(--theme-accent)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="d" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
                   <Tooltip contentStyle={chartTheme.tooltip} />
-                  <Area type="monotone" dataKey="v" stroke="#7C5CFF" strokeWidth={3} fill="url(#incG)" dot={false} />
+                  <Area type="monotone" dataKey="v" stroke="var(--theme-accent)" strokeWidth={3} fill="url(#incG)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -634,7 +638,7 @@ export default function CommandDashboardContent() {
             subtitle={RELEASE_TREND_LABEL[period]}
             info="Scheduled release volume across the trend window for the selected period filter."
             href="/calendar"
-            accent="bg-violet-400"
+            accent="bg-brand-400"
             badge={
               releaseTrendDirection && (
                 <span
@@ -662,7 +666,7 @@ export default function CommandDashboardContent() {
                     dataKey="v"
                     radius={[8, 8, 8, 8]}
                     barSize={30}
-                    fill="#7C5CFF"
+                    fill="var(--theme-accent)"
                     onClick={(bar) => onNavigate("/calendar")}
                     className="cursor-pointer"
                   />
@@ -704,7 +708,7 @@ export default function CommandDashboardContent() {
             subtitle="Readiness & rollback posture"
             info="Go-live checklist completion average, rollback plan readiness, and release volume for this week and month."
             href="/releases"
-            accent="bg-purple-400"
+            accent="bg-brand-400"
             onNavigate={onNavigate}
           >
             <QuickStatsVisual

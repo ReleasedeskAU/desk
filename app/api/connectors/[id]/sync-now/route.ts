@@ -38,7 +38,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       lastError: result.lastError ?? null,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Connector engine unavailable";
-    return NextResponse.json({ error: message }, { status: 502 });
+    const { logger } = await import("@/lib/logger");
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error("api/connectors/[id]/sync-now", { detail: detail.slice(0, 500) });
+    return NextResponse.json({ error: "Connector engine unavailable" }, { status: 502 });
   }
 }

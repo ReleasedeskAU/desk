@@ -4,14 +4,26 @@ import { prisma } from "@/lib/prisma";
 
 type Params = { params: Promise<{ id: string }> };
 
+async function findConflict(id: string) {
+  return (
+    (await prisma.environmentConflict.findUnique({ where: { id } })) ??
+    (await prisma.environmentConflict.findUnique({ where: { conflictCode: id } }))
+  );
+}
+
+function optionalString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const s = String(value).trim();
+  return s === "" ? null : s;
+}
+
 export async function GET(_req: Request, { params }: Params) {
   const { error } = await requireRole("readonly");
   if (error) return error;
 
   const { id } = await params;
-  const row =
-    (await prisma.environmentConflict.findUnique({ where: { id } })) ??
-    (await prisma.environmentConflict.findUnique({ where: { conflictCode: id } }));
+  const row = await findConflict(id);
 
   if (!row) return NextResponse.json({ error: "Conflict not found" }, { status: 404 });
 
@@ -65,4 +77,55 @@ export async function GET(_req: Request, { params }: Params) {
       release: b.release,
     })),
   });
+}
+
+/**
+ * Updates mutable conflict fields. Conflict ID (conflictCode) is intentionally immutable.
+ */
+export async function PATCH(req: Request, { params }: Params) {
+  const { error } = await requireRole("editor");
+  if (error) return error;
+
+  const { id } = await params;
+  const existing = await findConflict(id);
+  if (!existing) return NextResponse.json({ error: "Conflict not found" }, { status: 404 });
+
+  const body = await req.json();
+  const data: Record<string, unknown> = {};
+
+  if (body.status !== undefined) data.status = String(body.status);
+  if (body.priority !== undefined) data.priority = String(body.priority);
+  if (body.release1Code !== undefined) data.release1Code = String(body.release1Code).trim();
+  if (body.release2Code !== undefined) data.release2Code = String(body.release2Code).trim();
+  if (body.application !== undefined) data.applicationName = String(body.application).trim();
+  if (body.department !== undefined) data.departmentName = String(body.department).trim();
+  if (body.conflictingEnvironment !== undefined) {
+    data.conflictingEnvironment = String(body.conflictingEnvironment).trim();
+  }
+  if (body.environmentConflictType !== undefined) {
+    data.environmentConflictType = String(body.environmentConflictType).trim();
+  }
+  const assignedTo = optionalString(body.assignedTo);
+  if (assignedTo !== undefined) data.assignedTo = assignedTo;
+  const notes = optionalString(body.notes);
+  if (notes !== undefined) data.notes = notes;
+
+  const row = await prisma.environmentConflict.update({
+    where: { id: existing.id },
+    data,
+  });
+
+  return NextResponse.json({ id: row.id, conflictCode: row.conflictCode });
+}
+
+export async function DELETE(_req: Request, { params }: Params) {
+  const { error } = await requireRole("editor");
+  if (error) return error;
+
+  const { id } = await params;
+  const existing = await findConflict(id);
+  if (!existing) return NextResponse.json({ error: "Conflict not found" }, { status: 404 });
+
+  await prisma.environmentConflict.delete({ where: { id: existing.id } });
+  return NextResponse.json({ ok: true });
 }

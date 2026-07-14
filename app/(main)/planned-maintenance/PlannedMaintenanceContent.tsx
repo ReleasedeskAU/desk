@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/badges/StatusBadge";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   PLANNED_MAINTENANCE_COLUMNS,
+  PLANNED_MAINTENANCE_DEFAULT_HIDDEN_COLUMN_KEYS,
   PLANNED_MAINTENANCE_DEFAULT_HIDDEN_FILTER_KEYS,
   PLANNED_MAINTENANCE_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -96,8 +97,9 @@ export default function PlannedMaintenanceContent() {
     PLANNED_MAINTENANCE_COLUMNS,
     PLANNED_MAINTENANCE_FILTER_FIELDS,
     {
-      lockedKeys: ["scheduled"],
+      lockedKeys: ["maintenanceCode"],
       defaultHiddenFilters: PLANNED_MAINTENANCE_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: PLANNED_MAINTENANCE_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -160,6 +162,34 @@ export default function PlannedMaintenanceContent() {
               value={values.notesQ}
               onChange={(v) => setFilter("notesQ", v)}
               placeholder="Notes…"
+            />
+          )}
+          {isFilterVisible("maintenanceCodeQ") && (
+            <FilterTextInput
+              value={values.maintenanceCodeQ}
+              onChange={(v) => setFilter("maintenanceCodeQ", v)}
+              placeholder="Maintenance ID…"
+            />
+          )}
+          {isFilterVisible("startTimeQ") && (
+            <FilterTextInput
+              value={values.startTimeQ}
+              onChange={(v) => setFilter("startTimeQ", v)}
+              placeholder="Start time…"
+            />
+          )}
+          {isFilterVisible("endTimeQ") && (
+            <FilterTextInput
+              value={values.endTimeQ}
+              onChange={(v) => setFilter("endTimeQ", v)}
+              placeholder="End time…"
+            />
+          )}
+          {isFilterVisible("departmentQ") && (
+            <FilterTextInput
+              value={values.departmentQ}
+              onChange={(v) => setFilter("departmentQ", v)}
+              placeholder="Department…"
             />
           )}
         </TableFilterBar>

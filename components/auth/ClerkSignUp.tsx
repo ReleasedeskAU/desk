@@ -32,7 +32,14 @@ export function ClerkSignUp() {
 
   return (
     <div className="clerk-sign-in-host w-full min-h-[420px]">
-      <SignUp routing="path" path="/sign-up" signInUrl="/sign-in" appearance={CLERK_APPEARANCE} />
+      <SignUp
+        routing="path"
+        path="/sign-up"
+        signInUrl="/sign-in"
+        forceRedirectUrl="/dashboard"
+        fallbackRedirectUrl="/dashboard"
+        appearance={CLERK_APPEARANCE}
+      />
     </div>
   );
 }

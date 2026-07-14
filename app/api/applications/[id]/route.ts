@@ -1,22 +1,32 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { patchApplicationSchema } from "@/lib/validation/org-patch";
+import { zodErrorResponse } from "@/lib/api-errors";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { error } = await requireRole("editor");
   if (error) return error;
-  const body = await req.json();
+
+  const parsed = patchApplicationSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
   const row = await prisma.application.update({
-    where: { id: id },
+    where: { id },
     data: {
-      name: body.name,
-      departmentId: body.departmentId,
-      type: body.type,
-      productOwner: body.productOwner,
-      techLead: body.techLead,
-      support: body.support,
-      criticality: body.criticality,
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.departmentId !== undefined ? { departmentId: body.departmentId } : {}),
+      ...(body.type !== undefined ? { type: body.type } : {}),
+      ...(body.productOwner !== undefined ? { productOwner: body.productOwner } : {}),
+      ...(body.techLead !== undefined ? { techLead: body.techLead } : {}),
+      ...(body.support !== undefined ? { support: body.support } : {}),
+      ...(body.criticality !== undefined ? { criticality: body.criticality } : {}),
     },
     include: { department: true },
   });

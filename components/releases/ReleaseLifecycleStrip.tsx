@@ -45,47 +45,105 @@ const statusStyles: Record<string, { circle: string; line: string; text: string 
   },
 };
 
-export function ReleaseLifecycleStrip({ stages }: { stages: LifecycleStageView[] }) {
+function StageIcon({ stage }: { stage: LifecycleStageView }) {
+  const Icon = icons[stage.id] ?? GitBranch;
+  const s = statusStyles[stage.status];
   return (
-    <AdvancedCard title="Release Lifecycle" variant="glass" innerClassName="p-5 md:p-6 overflow-x-auto">
-      <div className="flex items-center min-w-[700px] w-full pt-6 pb-20 px-8">
+    <div
+      className={cn(
+        "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-[3px] shadow-sm transition-all",
+        s.circle,
+        stage.status === "active" && "animate-pulse ring-4 ring-brand-100 dark:ring-brand-500/20"
+      )}
+    >
+      {stage.status === "complete" ? (
+        <Check className="h-5 w-5 shrink-0" strokeWidth={3} />
+      ) : (
+        <Icon className="h-5 w-5 shrink-0" />
+      )}
+    </div>
+  );
+}
+
+type ReleaseLifecycleStripProps = {
+  stages: LifecycleStageView[];
+  /** Render only the visualization when a parent detail section already supplies the card chrome. */
+  embedded?: boolean;
+};
+
+/** Visualize the release's progress from planning through deployment. */
+export function ReleaseLifecycleStrip({ stages, embedded = false }: ReleaseLifecycleStripProps) {
+  const content = (
+    <>
+      {/* Mobile: vertical stepper — no forced 700px scroll */}
+      <ol className="space-y-0 md:hidden">
         {stages.map((stage, idx) => {
-          const Icon = icons[stage.id] ?? GitBranch;
           const s = statusStyles[stage.status];
           const isLast = idx === stages.length - 1;
-
           return (
-            <div key={stage.id} className={cn("relative flex items-center", isLast ? "flex-none" : "flex-1")}>
-              
-              <div className="relative z-10 flex flex-col items-center">
-                <div
-                  className={cn(
-                    "w-12 h-12 rounded-full border-[3px] flex items-center justify-center shrink-0 transition-all shadow-sm",
-                    s.circle,
-                    stage.status === "active" && "animate-pulse ring-4 ring-brand-100 dark:ring-brand-500/20"
-                  )}
-                >
-                  {stage.status === "complete" ? (
-                    <Check className="w-5 h-5 shrink-0" strokeWidth={3} />
-                  ) : (
-                    <Icon className="w-5 h-5 shrink-0" />
-                  )}
-                </div>
-                
-                {/* Absolute Text Container to prevent layout shifts/cut-offs */}
-                <div className="absolute top-14 left-1/2 -translate-x-1/2 w-36 text-center">
-                  <p className={cn("text-xs font-bold uppercase tracking-wider mb-1", s.text)}>{stage.label}</p>
-                  <p className="text-[11px] text-gray-500 dark:text-white/50 leading-snug">{stage.detail}</p>
-                </div>
+            <li key={stage.id} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <StageIcon stage={stage} />
+                {!isLast && (
+                  <div
+                    className={cn(
+                      "my-1 w-1 flex-1 min-h-[20px] rounded-full",
+                      s.line,
+                      stage.status === "pending" && "bg-gray-200 dark:bg-gray-700"
+                    )}
+                  />
+                )}
               </div>
-
-              {!isLast && (
-                <div className={cn("flex-1 h-1 z-0", s.line, stage.status === "pending" && "bg-gray-200 dark:bg-gray-700")} />
-              )}
-            </div>
+              <div className={cn("min-w-0 pb-4", isLast && "pb-0")}>
+                <p className={cn("text-xs font-bold uppercase tracking-wider", s.text)}>{stage.label}</p>
+                <p className="mt-0.5 text-[12px] leading-snug text-gray-500 dark:text-white/50">{stage.detail}</p>
+              </div>
+            </li>
           );
         })}
+      </ol>
+
+      {/* Desktop: horizontal strip */}
+      <div className="hidden overflow-x-auto md:block">
+        <div className="flex w-full min-w-[700px] items-center px-8 pb-20 pt-6">
+          {stages.map((stage, idx) => {
+            const s = statusStyles[stage.status];
+            const isLast = idx === stages.length - 1;
+
+            return (
+              <div key={stage.id} className={cn("relative flex items-center", isLast ? "flex-none" : "flex-1")}>
+                <div className="relative z-10 flex flex-col items-center">
+                  <StageIcon stage={stage} />
+                  <div className="absolute left-1/2 top-14 w-36 -translate-x-1/2 text-center">
+                    <p className={cn("mb-1 text-xs font-bold uppercase tracking-wider", s.text)}>{stage.label}</p>
+                    <p className="text-[11px] leading-snug text-gray-500 dark:text-white/50">{stage.detail}</p>
+                  </div>
+                </div>
+
+                {!isLast && (
+                  <div
+                    className={cn(
+                      "z-0 h-1 flex-1",
+                      s.line,
+                      stage.status === "pending" && "bg-gray-200 dark:bg-gray-700"
+                    )}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="px-1 md:px-2">{content}</div>;
+  }
+
+  return (
+    <AdvancedCard title="Release Lifecycle" variant="glass" innerClassName="p-4 md:p-6">
+      {content}
     </AdvancedCard>
   );
 }

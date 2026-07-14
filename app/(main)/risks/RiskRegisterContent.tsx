@@ -20,6 +20,7 @@ import { getRiskLevel, RISK_LEVEL_COLOR, type RiskLevel } from "@/lib/risk-level
 import { FilterPills, FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   RISK_COLUMNS,
+  RISK_DEFAULT_HIDDEN_COLUMN_KEYS,
   RISK_DEFAULT_HIDDEN_FILTER_KEYS,
   RISK_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -27,6 +28,7 @@ import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
+import { useHoverCapable } from "@/hooks/useHoverCapable";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { RISKS_FILTER_SCHEMA } from "@/lib/table-filters";
@@ -252,7 +254,8 @@ function HeatMapCell({
   onSelect: (likelihood: number, impact: number) => void;
   dark: boolean;
 }) {
-  const [hover, setHover] = useState(false);
+  const [tipOpen, setTipOpen] = useState(false);
+  const hoverCapable = useHoverCapable();
   const score = likelihood * impact;
   const band = getRiskLevel(score);
   const empty = count === 0;
@@ -261,9 +264,17 @@ function HeatMapCell({
   return (
     <button
       type="button"
-      onClick={() => !empty && onSelect(likelihood, impact)}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onClick={() => {
+        if (empty) return;
+        if (!hoverCapable) setTipOpen((v) => !v);
+        onSelect(likelihood, impact);
+      }}
+      onMouseEnter={() => {
+        if (hoverCapable && !empty) setTipOpen(true);
+      }}
+      onMouseLeave={() => {
+        if (hoverCapable) setTipOpen(false);
+      }}
       disabled={empty}
       aria-label={
         empty
@@ -282,7 +293,7 @@ function HeatMapCell({
       }
     >
       {count > 0 ? count : ""}
-      {hover && !empty && (
+      {tipOpen && !empty && (
         <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-44 -translate-x-1/2 rounded-xl bg-slate-900 p-2.5 text-left text-[11px] leading-snug text-white shadow-xl dark:bg-slate-950">
           <div className="font-bold">
             {count} risk{count !== 1 ? "s" : ""} · Score {score}
@@ -391,6 +402,7 @@ function BubbleView({
     y: size - pad - (likelihood - 0.5) * step,
   });
   const scale = maxCount > 0 ? maxCount : 1;
+  const hoverCapable = useHoverCapable();
   const [tip, setTip] = useState<{
     x: number;
     y: number;
@@ -461,15 +473,25 @@ function BubbleView({
             const band = getRiskLevel(score);
             const solid = BAND_COLOR[band].solid;
             const r = 9 + (count / scale) * 26;
+            const tipPayload = { x: p.x, y: p.y - r, count, score, band, likelihood, impact };
             return (
               <g
                 key={`${likelihood}-${impact}`}
                 className="cursor-pointer"
-                onClick={() => onSelect(likelihood, impact)}
-                onMouseEnter={() =>
-                  setTip({ x: p.x, y: p.y - r, count, score, band, likelihood, impact })
-                }
-                onMouseLeave={() => setTip(null)}
+                onClick={() => {
+                  onSelect(likelihood, impact);
+                  if (!hoverCapable) {
+                    setTip((prev) =>
+                      prev?.likelihood === likelihood && prev?.impact === impact ? null : tipPayload
+                    );
+                  }
+                }}
+                onMouseEnter={() => {
+                  if (hoverCapable) setTip(tipPayload);
+                }}
+                onMouseLeave={() => {
+                  if (hoverCapable) setTip(null);
+                }}
               >
                 <circle cx={p.x} cy={p.y} r={r} fill={solid} fillOpacity={0.82} stroke={solid} strokeWidth={2} />
                 <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff">
@@ -651,16 +673,16 @@ function LegendRow({
   const c = BAND_COLOR[band];
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
       <span className="h-3 w-3 shrink-0 rounded-md" style={{ background: c.solid }} />
-      <span className="w-[4.5rem] text-[12px] font-semibold text-slate-700 dark:text-slate-200">{band}</span>
-      <span className="w-10 shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+      <span className="text-[12px] font-semibold text-slate-700 dark:text-slate-200">{band}</span>
+      <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
         {BAND_SCORE_RANGE[band]}
       </span>
       <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c.solid }} />
       </div>
-      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
+      <span className="min-w-0 flex-1 basis-full text-[11px] text-slate-500 sm:basis-auto dark:text-slate-400">
         {BAND_GUIDE[band]}
       </span>
     </div>
@@ -700,13 +722,13 @@ function RiskHeatMapSection({
 
   return (
     <div className="mb-4 w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5 dark:border-[var(--border)]">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5 dark:border-[var(--border)]">
+        <div className="min-w-0">
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
             Risk Heat Map
           </h2>
           <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">
-            Qualitative risks for the filtered set · click a cell to filter the table below
+            Qualitative risks for the filtered set · tap a cell to filter the table below
           </p>
         </div>
         <div className="flex rounded-lg bg-slate-100/90 p-0.5 dark:bg-slate-800">
@@ -717,14 +739,16 @@ function RiskHeatMapSection({
                 key={v.key}
                 type="button"
                 onClick={() => setView(v.key)}
+                aria-label={v.label}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-semibold transition-colors sm:px-3",
                   view === v.key
                     ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
                     : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                 )}
               >
-                <Icon size={13} /> {v.label}
+                <Icon size={13} />
+                <span className="hidden sm:inline">{v.label}</span>
               </button>
             );
           })}
@@ -732,9 +756,8 @@ function RiskHeatMapSection({
       </div>
 
       <div className="grid lg:grid-cols-2 lg:items-stretch">
-        {/* Visual — fills the existing left panel */}
-        <div className="flex min-h-[380px] items-stretch justify-stretch border-b border-slate-100 bg-[#f8fafc] p-4 dark:border-[var(--border)] dark:bg-slate-900/40 lg:border-b-0 lg:border-r">
-          <div className="h-full min-h-[348px] w-full">
+        <div className="flex min-h-[240px] items-stretch justify-stretch border-b border-slate-100 bg-[#f8fafc] p-3 sm:min-h-[320px] sm:p-4 dark:border-[var(--border)] dark:bg-slate-900/40 lg:min-h-[380px] lg:border-b-0 lg:border-r">
+          <div className="h-full min-h-[200px] w-full sm:min-h-[280px] lg:min-h-[348px]">
             {view === "matrix" && (
               <MatrixView grid={grid} selLi={selLi} selIm={selIm} onSelect={onCellSelect} dark={dark} />
             )}
@@ -745,9 +768,29 @@ function RiskHeatMapSection({
           </div>
         </div>
 
-        {/* Guide — equal half */}
-        <div className="flex min-w-0 flex-col justify-center gap-4 px-6 py-6 lg:min-h-[380px]">
-          <div>
+        <div className="flex min-w-0 flex-col justify-center gap-4 px-4 py-4 sm:px-6 sm:py-6 lg:min-h-[380px]">
+          <details className="group lg:hidden">
+            <summary className="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 marker:content-none dark:text-slate-500">
+              <span className="inline-flex items-center gap-1">
+                How to read
+                <ChevronRight size={12} className="transition group-open:rotate-90" />
+              </span>
+            </summary>
+            <div className="mt-2 space-y-2">
+              <p className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                Each risk is scored on{" "}
+                <span className="font-semibold text-slate-800 dark:text-white">Likelihood</span> (Y-axis)
+                and{" "}
+                <span className="font-semibold text-slate-800 dark:text-white">Impact</span> (X-axis), each
+                from 1–5. Cell numbers are risk counts. Hotter cells are higher CAB priority.
+              </p>
+              <div className="inline-flex rounded-lg bg-brand-50 px-3 py-1.5 text-[12.5px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                Score = Likelihood × Impact (1–25)
+              </div>
+            </div>
+          </details>
+
+          <div className="hidden lg:block">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
               How to read
             </p>
@@ -905,6 +948,7 @@ export default function RiskRegisterContent() {
     {
       lockedKeys: ["riskCode"],
       defaultHiddenFilters: RISK_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: RISK_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

@@ -65,7 +65,7 @@ export function FilterTextInput({
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => onChange(next), debounceMs);
       }}
-      className={cn(SELECT_CLASS, "min-w-[140px]", className)}
+      className={cn(SELECT_CLASS, "min-w-[min(100%,140px)]", className)}
     />
   );
 }

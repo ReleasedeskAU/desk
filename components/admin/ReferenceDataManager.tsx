@@ -32,6 +32,8 @@ import {
   thClass,
 } from "@/components/master-data/shared";
 import type { SortDirection } from "@/lib/table-sort";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { loadJsonEffect } from "@/lib/safe-fetch";
 
 type ReferenceDataRow = {
   id: string;
@@ -54,6 +56,8 @@ const emptyValueForm: ValueFormState = { value: "", sortOrder: "0", active: true
 export function ReferenceDataManager() {
   const { values, setFilter, setSort, clearAll, hasActive, apiQuery } = useTableFilters(REFERENCE_DATA_FILTER_SCHEMA);
   const [rows, setRows] = useState<ReferenceDataRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const canEdit = sessionCanEdit(user);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const selectedCategory = values.category;
@@ -96,6 +100,12 @@ export function ReferenceDataManager() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "reference-data-auth",
+    });
+  }, []);
 
   const categories = useMemo(() => {
     const map = new Map<string, { total: number; active: number }>();
@@ -231,17 +241,19 @@ export function ReferenceDataManager() {
       <aside className="hidden lg:block w-72 shrink-0 sticky top-24 h-[calc(100vh-140px)] flex flex-col border border-gray-200 rounded-xl bg-white p-4 shadow-theme-sm overflow-hidden">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-gray-900">Categories</h2>
-          <button
-            type="button"
-            onClick={() => {
-              setCategoryForm({ category: "", value: "" });
-              setCategoryFormError(null);
-              setCategoryModalOpen(true);
-            }}
-            className="flex items-center gap-1 rounded-lg bg-[#2548C9] px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1E3A9F]"
-          >
-            <Plus className="h-3.5 w-3.5" /> New
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryForm({ category: "", value: "" });
+                setCategoryFormError(null);
+                setCategoryModalOpen(true);
+              }}
+              className="flex items-center gap-1 rounded-lg bg-[#2548C9] px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1E3A9F]"
+            >
+              <Plus className="h-3.5 w-3.5" /> New
+            </button>
+          ) : null}
         </div>
         <div className="flex-1 overflow-y-auto space-y-1 pr-1">
           {categories.map((c) => (
@@ -273,6 +285,44 @@ export function ReferenceDataManager() {
           title="Reference Data"
           trailing={<PageDocumentation pageKey="reference-data" />}
         />
+
+        {/* Mobile / tablet category picker — sidebar is lg+ only */}
+        <div className="flex flex-wrap items-end gap-2 lg:hidden">
+          <label className="min-w-0 flex-1 text-sm text-gray-700 dark:text-white/80">
+            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-white/45">
+              Category
+            </span>
+            <select
+              className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white"
+              value={selectedCategory ?? ""}
+              onChange={(e) => setFilter("category", e.target.value)}
+              aria-label="Select category"
+            >
+              {categories.length === 0 ? (
+                <option value="">No categories yet</option>
+              ) : (
+                categories.map((c) => (
+                  <option key={c.category} value={c.category}>
+                    {c.category} ({c.active}/{c.total})
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryForm({ category: "", value: "" });
+                setCategoryFormError(null);
+                setCategoryModalOpen(true);
+              }}
+              className="flex h-10 shrink-0 items-center gap-1 rounded-lg bg-[#2548C9] px-3 text-[12px] font-semibold text-white hover:bg-[#1E3A9F]"
+            >
+              <Plus className="h-3.5 w-3.5" /> New
+            </button>
+          ) : null}
+        </div>
 
         {error && <MasterDataError message={error} onRetry={load} />}
 
@@ -307,15 +357,21 @@ export function ReferenceDataManager() {
         {tablePending ? (
           <MasterDataLoading columns={REFERENCE_DATA_COLUMNS.length} />
         ) : !selectedCategory ? (
-          <MasterDataEmptyState
-            entityLabel="categories"
-            addLabel="New Category"
-            onAdd={() => {
-              setCategoryForm({ category: "", value: "" });
-              setCategoryFormError(null);
-              setCategoryModalOpen(true);
-            }}
-          />
+          canEdit ? (
+            <MasterDataEmptyState
+              entityLabel="categories"
+              addLabel="New Category"
+              onAdd={() => {
+                setCategoryForm({ category: "", value: "" });
+                setCategoryFormError(null);
+                setCategoryModalOpen(true);
+              }}
+            />
+          ) : (
+            <p className="py-16 text-center text-[15px] font-medium text-gray-600">
+              No categories yet. Ask an editor to create one.
+            </p>
+          )
         ) : (
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -323,13 +379,15 @@ export function ReferenceDataManager() {
                 <Database className="h-4 w-4 text-gray-400" />
                 {selectedCategory}
               </h2>
-              <button
-                type="button"
-                onClick={openAddValue}
-                className="flex items-center gap-2 rounded-lg bg-[#2548C9] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#1E3A9F]"
-              >
-                <Plus className="h-4 w-4" /> Add Value
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={openAddValue}
+                  className="flex items-center gap-2 rounded-lg bg-[#2548C9] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#1E3A9F]"
+                >
+                  <Plus className="h-4 w-4" /> Add Value
+                </button>
+              ) : null}
             </div>
 
             <MasterDataTableShell
@@ -387,28 +445,45 @@ export function ReferenceDataManager() {
                         {isColumnVisible("sortOrder") && <td className={cn(tdClass, "font-mono text-gray-500")}>{row.sortOrder}</td>}
                         {isColumnVisible("active") && (
                         <td className={tdClass}>
-                          <button
-                            type="button"
-                            onClick={() => toggleActive(row)}
-                            className={cn(
-                              "px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border",
-                              row.active
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-gray-50 text-gray-500 border-gray-200"
-                            )}
-                          >
-                            {row.active ? "Active" : "Inactive"}
-                          </button>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleActive(row)}
+                              className={cn(
+                                "px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border",
+                                row.active
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-gray-50 text-gray-500 border-gray-200"
+                              )}
+                            >
+                              {row.active ? "Active" : "Inactive"}
+                            </button>
+                          ) : (
+                            <span
+                              className={cn(
+                                "px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border",
+                                row.active
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-gray-50 text-gray-500 border-gray-200"
+                              )}
+                            >
+                              {row.active ? "Active" : "Inactive"}
+                            </span>
+                          )}
                         </td>
                         )}
                         <td className={`${tdClass} text-right`}>
-                          <button
-                            type="button"
-                            onClick={() => openEditValue(row)}
-                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-                          >
-                            Edit
-                          </button>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => openEditValue(row)}
+                              className="rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                            >
+                              Edit
+                            </button>
+                          ) : (
+                            <span className="text-[12px] text-gray-400">View only</span>
+                          )}
                         </td>
                       </tr>
                     ))}

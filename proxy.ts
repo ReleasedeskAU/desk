@@ -4,18 +4,43 @@ import { NextResponse } from "next/server";
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/api/auth/login(.*)",
+  // Legacy /api/auth/login removed from public allowlist — Clerk-only auth.
   // Dev-only overlay diagnostic (no auth). Safe: no secrets, local verification only.
-  ...(process.env.NODE_ENV === "development" ? ["/dev/sidebar-peek-test(.*)"] : []),
+  ...(process.env.NODE_ENV === "development"
+    ? ["/dev/sidebar-peek-test(.*)", "/dev/detail-visual-preview(.*)"]
+    : []),
 ]);
 
-const authorizedParties = [
-  process.env.NEXT_PUBLIC_APP_URL,
-  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
-  process.env.NODE_ENV === "development" ? "http://localhost:3000" : null,
-  process.env.NODE_ENV === "development" ? "http://127.0.0.1:3000" : null,
-  process.env.NODE_ENV === "development" ? "http://10.138.194.41:3000" : null,
-].filter((v): v is string => Boolean(v));
+/** Origins allowed to present Clerk session JWTs (azp). Must include the URL users actually visit. */
+function buildAuthorizedParties(): string[] {
+  const parties = new Set<string>();
+  const add = (v?: string | null) => {
+    if (!v) return;
+    const trimmed = v.trim().replace(/\/$/, "");
+    if (!trimmed) return;
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      parties.add(trimmed);
+    } else {
+      parties.add(`https://${trimmed}`);
+    }
+  };
+
+  add(process.env.NEXT_PUBLIC_APP_URL);
+  add(process.env.VERCEL_PROJECT_PRODUCTION_URL);
+  add(process.env.VERCEL_URL);
+  // Production alias used in the wild — keep even if env vars lag behind DNS.
+  add("https://releasedesk.vercel.app");
+
+  if (process.env.NODE_ENV === "development") {
+    add("http://localhost:3000");
+    add("http://127.0.0.1:3000");
+    add("http://10.138.194.41:3000");
+  }
+
+  return [...parties];
+}
+
+const authorizedParties = buildAuthorizedParties();
 
 export default clerkMiddleware(
   async (auth, req) => {
@@ -35,7 +60,9 @@ export default clerkMiddleware(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
       const signIn = new URL("/sign-in", req.url);
-      signIn.searchParams.set("redirect_url", req.nextUrl.pathname + req.nextUrl.search);
+      // Prefer dashboard as the post-login landing when the user hit `/`.
+      const nextPath = pathname === "/" ? "/dashboard" : pathname + req.nextUrl.search;
+      signIn.searchParams.set("redirect_url", nextPath);
       return NextResponse.redirect(signIn);
     }
 

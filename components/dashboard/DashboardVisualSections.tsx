@@ -84,7 +84,7 @@ export function SectionCard({
             <button
               type="button"
               onClick={() => onNavigate(href)}
-              className="flex items-center gap-0.5 text-[12px] font-semibold text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+              className="flex items-center gap-0.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
             >
               View <ChevronRight size={14} />
             </button>
@@ -404,7 +404,7 @@ export function QuickStatsVisual({
               cy="44"
               r="36"
               fill="none"
-              stroke="#7C5CFF"
+              stroke="var(--theme-accent)"
               strokeWidth="8"
               strokeLinecap="round"
               strokeDasharray={`${(checklistPct / 100) * 226} 226`}

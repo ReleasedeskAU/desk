@@ -14,7 +14,7 @@ import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
-import { LayoutDashboard, List, Package, Server, Wrench } from "lucide-react";
+import { LayoutDashboard, List, Package, Server } from "lucide-react";
 
 type DriftDetail = {
   id: string;
@@ -109,7 +109,6 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
           icon: <Package className="mr-1 inline h-4 w-4" />,
         },
         { href: "/environments", label: "🖥️ View Env", icon: <Server className="mr-1 inline h-4 w-4" /> },
-        { href: `/drifts/${row.id}`, label: "🛠️ Update Status", icon: <Wrench className="mr-1 inline h-4 w-4" /> },
         { href: "/dashboard", label: "📊 Dashboard", icon: <LayoutDashboard className="mr-1 inline h-4 w-4" /> },
         { href: "/drifts", label: "🔙 All Drifts", icon: <List className="mr-1 inline h-4 w-4" /> },
       ]}

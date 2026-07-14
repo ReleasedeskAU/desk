@@ -345,6 +345,10 @@ export function bookingWhere(sp: URLSearchParams): Prisma.EnvBookingWhereInput {
   if (testEnv) parts.push({ testEnvCode: { contains: testEnv, mode: "insensitive" } });
   if (uatEnv) parts.push({ uatEnvCode: { contains: uatEnv, mode: "insensitive" } });
   if (preProdEnv) parts.push({ preProdEnvCode: { contains: preProdEnv, mode: "insensitive" } });
+  const envConflictId = str(sp, "envConflictId");
+  if (envConflictId) {
+    parts.push({ environmentConflictId: { contains: envConflictId, mode: "insensitive" } });
+  }
 
   for (const [param, field] of [
     ["prodDate", "prodReleaseDate"],
@@ -506,6 +510,14 @@ export function approvalWhere(sp: URLSearchParams): Prisma.ApprovalWhereInput {
   if (cab) parts.push({ cabMeetingId: { contains: cab, mode: "insensitive" } });
   if (submitted) parts.push({ submittedDate: submitted });
   if (decided) parts.push({ decisionDate: decided });
+  const application = str(sp, "application");
+  const department = str(sp, "department");
+  if (application) {
+    parts.push({ applicationName: { contains: application, mode: "insensitive" } });
+  }
+  if (department) {
+    parts.push({ departmentName: { contains: department, mode: "insensitive" } });
+  }
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];
@@ -559,6 +571,27 @@ export function leaveWhere(sp: URLSearchParams): Prisma.LeaveRecordWhereInput {
     if (daysMax !== undefined) range.lte = daysMax;
     parts.push({ days: range });
   }
+  const userId = str(sp, "userId");
+  const role = str(sp, "role");
+  const riskImpact = str(sp, "riskImpact");
+  const riskScoreMin = num(sp, "riskScoreMin");
+  const riskScoreMax = num(sp, "riskScoreMax");
+  if (userId) {
+    parts.push({
+      OR: [
+        { user: { userId: { contains: userId, mode: "insensitive" } } },
+        { userId },
+      ],
+    });
+  }
+  if (role) parts.push({ user: { role } });
+  if (riskImpact) parts.push({ riskImpact: { equals: riskImpact, mode: "insensitive" } });
+  if (riskScoreMin !== undefined || riskScoreMax !== undefined) {
+    const range: { gte?: number; lte?: number } = {};
+    if (riskScoreMin !== undefined) range.gte = riskScoreMin;
+    if (riskScoreMax !== undefined) range.lte = riskScoreMax;
+    parts.push({ riskScore: range });
+  }
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];
@@ -592,6 +625,10 @@ export function incidentWhere(sp: URLSearchParams): Prisma.IncidentWhereInput {
     parts.push({ relatedReleaseCode: { contains: relatedRelease, mode: "insensitive" } });
   }
   if (timestamp) parts.push({ timestamp });
+  const department = str(sp, "department");
+  if (department) {
+    parts.push({ departmentName: { contains: department, mode: "insensitive" } });
+  }
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];
@@ -622,14 +659,17 @@ export function monitoringAlertWhere(sp: URLSearchParams): Prisma.MonitoringAler
   if (alertCode) parts.push({ alertCode: { contains: alertCode, mode: "insensitive" } });
   if (metric) parts.push({ metric: { contains: metric, mode: "insensitive" } });
   if (threshold) {
-    parts.push({
-      OR: [
-        { threshold: { contains: threshold, mode: "insensitive" } },
-        { currentValue: { contains: threshold, mode: "insensitive" } },
-      ],
-    });
+    parts.push({ threshold: { contains: threshold, mode: "insensitive" } });
+  }
+  const currentValue = str(sp, "currentValue");
+  if (currentValue) {
+    parts.push({ currentValue: { contains: currentValue, mode: "insensitive" } });
   }
   if (timestamp) parts.push({ timestamp });
+  const department = str(sp, "department");
+  if (department) {
+    parts.push({ departmentName: { contains: department, mode: "insensitive" } });
+  }
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];
@@ -654,6 +694,12 @@ export function applicationStatusWhere(sp: URLSearchParams): Prisma.ApplicationS
   if (app) parts.push({ applicationId: app });
   if (notes) parts.push({ notes: { contains: notes, mode: "insensitive" } });
   if (lastCheck) parts.push({ lastCheck });
+  const department = str(sp, "department");
+  if (department) {
+    parts.push({
+      application: { department: { name: { contains: department, mode: "insensitive" } } },
+    });
+  }
   if (uptimeMinPct !== undefined || uptimeMaxPct !== undefined) {
     const range: { gte?: number; lte?: number } = {};
     if (uptimeMinPct !== undefined) range.gte = uptimeMinPct / 100;
@@ -687,6 +733,18 @@ export function plannedMaintenanceWhere(sp: URLSearchParams): Prisma.PlannedMain
   if (requestor) parts.push({ requestor: { contains: requestor, mode: "insensitive" } });
   if (scheduled) parts.push({ scheduledDate: scheduled });
   if (notes) parts.push({ notes: { contains: notes, mode: "insensitive" } });
+  const maintenanceCode = str(sp, "maintenanceCode");
+  const startTime = str(sp, "startTime");
+  const endTime = str(sp, "endTime");
+  const department = str(sp, "department");
+  if (maintenanceCode) {
+    parts.push({ maintenanceCode: { contains: maintenanceCode, mode: "insensitive" } });
+  }
+  if (startTime) parts.push({ startTime: { contains: startTime, mode: "insensitive" } });
+  if (endTime) parts.push({ endTime: { contains: endTime, mode: "insensitive" } });
+  if (department) {
+    parts.push({ departmentName: { contains: department, mode: "insensitive" } });
+  }
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];
@@ -858,6 +916,26 @@ export function driftWhere(sp: URLSearchParams): Prisma.DriftWhereInput {
   if (driftCode) parts.push({ driftCode: { contains: driftCode, mode: "insensitive" } });
   if (env) parts.push({ environmentName: { contains: env, mode: "insensitive" } });
   if (detected) parts.push({ detectedDate: detected });
+  const releaseName = str(sp, "releaseName");
+  const department = str(sp, "department");
+  const category = str(sp, "category");
+  const description = str(sp, "description");
+  const impact = str(sp, "impact");
+  const remediation = str(sp, "remediation");
+  const eta = dateTextRange(str(sp, "eta"));
+  if (releaseName) {
+    parts.push({ release: { name: { contains: releaseName, mode: "insensitive" } } });
+  }
+  if (department) {
+    parts.push({ departmentName: { contains: department, mode: "insensitive" } });
+  }
+  if (category) parts.push({ driftCategory: category });
+  if (description) parts.push({ description: { contains: description, mode: "insensitive" } });
+  if (impact) parts.push({ impactOnRelease: { contains: impact, mode: "insensitive" } });
+  if (remediation) {
+    parts.push({ remediationAction: { contains: remediation, mode: "insensitive" } });
+  }
+  if (eta) parts.push({ etaToFix: eta });
 
   if (!parts.length) return {};
   if (parts.length === 1) return parts[0];

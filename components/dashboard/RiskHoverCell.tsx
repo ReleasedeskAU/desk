@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Flag } from "lucide-react";
 import { callAgent } from "@/lib/agent-client";
 import { AISkeleton } from "@/components/ui/AISkeleton";
+import { useHoverCapable } from "@/hooks/useHoverCapable";
 import type { Release } from "@/lib/types";
 
 interface RiskCacheEntry {
@@ -21,16 +22,26 @@ interface RiskHoverCellProps {
 export function RiskHoverCell({ release, median, cache, onCacheUpdate }: RiskHoverCellProps) {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const hoverCapable = useHoverCapable();
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const hasRisk = release.filesChanged > 400;
-  if (!hasRisk) return null;
-
   const entry = cache[release.id];
 
-  const handleMouseEnter = () => {
-    setVisible(true);
-    if (entry) return;
+  useEffect(() => {
+    if (!visible || hoverCapable) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current?.contains(e.target as Node)) return;
+      setVisible(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [visible, hoverCapable]);
 
+  if (!hasRisk) return null;
+
+  const fetchIfNeeded = () => {
+    if (entry) return;
     setLoading(true);
     callAgent({
       agentRole: "Risk Agent",
@@ -47,20 +58,42 @@ export function RiskHoverCell({ release, median, cache, onCacheUpdate }: RiskHov
 
   return (
     <div
+      ref={rootRef}
       className="relative inline-block"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={() => setVisible(false)}
+      onMouseEnter={() => {
+        if (!hoverCapable) return;
+        setVisible(true);
+        fetchIfNeeded();
+      }}
+      onMouseLeave={() => {
+        if (hoverCapable) setVisible(false);
+      }}
     >
-      <Flag className="w-4 h-4 text-ai cursor-help" aria-label="Risk indicator" />
+      <button
+        type="button"
+        className="inline-flex rounded p-0.5 text-ai focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+        aria-label="Risk indicator — show AI note"
+        aria-expanded={visible}
+        onClick={() => {
+          if (hoverCapable) return;
+          setVisible((v) => {
+            const next = !v;
+            if (next) fetchIfNeeded();
+            return next;
+          });
+        }}
+      >
+        <Flag className="h-4 w-4" />
+      </button>
       {visible && (
         <div
           role="tooltip"
-          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-lg pointer-events-none"
+          className="absolute bottom-full left-1/2 z-50 mb-2 w-72 -translate-x-1/2 rounded-lg bg-slate-900 p-3 text-xs text-white shadow-lg"
         >
           {loading && !entry && <AISkeleton lines={1} className="[&_div]:!bg-slate-600 [&_div]:shimmer" />}
           {entry?.text && <p className="leading-relaxed">{entry.text}</p>}
           {entry?.error && !loading && <p className="text-red-300">{entry.error}</p>}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+          <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
         </div>
       )}
     </div>

@@ -8,8 +8,8 @@ import { ThemeModeProvider, useThemeMode } from "@/context/ThemeModeContext";
 import { createMaterioTheme } from "@/lib/materio/theme";
 
 function MaterioThemeInner({ children }: { children: React.ReactNode }) {
-  const { mode } = useThemeMode();
-  const theme = useMemo(() => createMaterioTheme(mode), [mode]);
+  const { mode, colorTheme } = useThemeMode();
+  const theme = useMemo(() => createMaterioTheme(mode, colorTheme), [mode, colorTheme]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -19,6 +19,7 @@ function MaterioThemeInner({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Installs the synchronized Sentinel mode, color, and MUI theme providers. */
 export function MuiThemeProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppRouterCacheProvider>

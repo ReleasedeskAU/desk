@@ -8,6 +8,7 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   INCIDENT_COLUMNS,
+  INCIDENT_DEFAULT_HIDDEN_COLUMN_KEYS,
   INCIDENT_DEFAULT_HIDDEN_FILTER_KEYS,
   INCIDENT_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -83,6 +84,7 @@ export default function IncidentsContent() {
     {
       lockedKeys: ["incidentCode"],
       defaultHiddenFilters: INCIDENT_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: INCIDENT_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -94,6 +96,10 @@ export default function IncidentsContent() {
   const statuses = useMemo(() => [...new Set(incidents.map((i) => i.status))].sort(), [incidents]);
   const impacts = useMemo(() => [...new Set(incidents.map((i) => i.impact).filter(Boolean))].sort(), [incidents]);
   const envs = useMemo(() => [...new Set(incidents.map((i) => i.environmentName))].sort(), [incidents]);
+  const departments = useMemo(
+    () => [...new Set(incidents.map((i) => i.departmentName).filter(Boolean) as string[])].sort(),
+    [incidents]
+  );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
 
@@ -182,6 +188,14 @@ export default function IncidentsContent() {
               onChange={(v) => setFilter("timestampQ", v)}
               placeholder="Timestamp (YYYY-MM-DD)…"
             />
+          )}
+          {isFilterVisible("departmentQ") && (
+            <FilterSelect value={values.departmentQ} onChange={(v) => setFilter("departmentQ", v)}>
+              <option value="">All departments</option>
+              {departments.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </FilterSelect>
           )}
         </TableFilterBar>
       )}

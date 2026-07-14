@@ -14,6 +14,7 @@ import { AnalyseRiskSection } from "@/components/system-mapping/AnalyseRiskSecti
 import { ArchitectureInfoPanel } from "@/components/system-mapping/ArchitectureInfoPanel";
 import type { MappingGroupRow } from "@/lib/system-mapping-types";
 import type { SessionUser } from "@/lib/auth/roles";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 
 import { DepartmentNode } from "@/components/system-mapping/DepartmentNode";
@@ -40,7 +41,7 @@ export function SystemMappingContent() {
   const [activeSidePanel, setActiveSidePanel] = useState<"risk" | "info" | "none">("info");
 
   const activeGroupId = values.groupId;
-  const canEdit = user?.role === "editor" || user?.role === "admin";
+  const canEdit = sessionCanEdit(user);
 
   const loadGroups = useCallback(() => {
     return loadJsonEffect<{ groups?: MappingGroupRow[] }>(

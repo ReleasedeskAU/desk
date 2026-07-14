@@ -84,6 +84,20 @@ export const DRIFT_COLUMNS: ColumnDef[] = [
   { key: "etaToFix", label: "ETA to Fix" },
 ];
 
+/** Phone-friendly defaults — secondary columns stay available via Manage Columns. */
+export const DRIFT_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "driftCode",
+  "release",
+  "application",
+  "type",
+  "severity",
+  "status",
+] as const;
+
+export const DRIFT_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = DRIFT_COLUMNS.map((c) => c.key).filter(
+  (k) => !(DRIFT_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const INCIDENT_COLUMNS: ColumnDef[] = [
   { key: "incidentCode", label: "Incident ID" },
   { key: "timestamp", label: "Timestamp" },
@@ -98,6 +112,20 @@ export const INCIDENT_COLUMNS: ColumnDef[] = [
   { key: "environment", label: "Environment" },
 ];
 
+/** Phone-friendly defaults — secondary columns stay available via Manage Columns. */
+export const INCIDENT_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "incidentCode",
+  "timestamp",
+  "application",
+  "severity",
+  "title",
+  "status",
+] as const;
+
+export const INCIDENT_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = INCIDENT_COLUMNS.map((c) => c.key).filter(
+  (k) => !(INCIDENT_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const APPLICATION_STATUS_COLUMNS: ColumnDef[] = [
   { key: "application", label: "Application" },
   { key: "department", label: "Department" },
@@ -107,6 +135,17 @@ export const APPLICATION_STATUS_COLUMNS: ColumnDef[] = [
   { key: "uptimePercent", label: "Uptime %" },
   { key: "notes", label: "Notes" },
 ];
+
+export const APPLICATION_STATUS_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "application",
+  "environment",
+  "status",
+  "uptimePercent",
+] as const;
+
+export const APPLICATION_STATUS_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = APPLICATION_STATUS_COLUMNS.map((c) => c.key).filter(
+  (k) => !(APPLICATION_STATUS_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 export const ENVIRONMENT_COLUMNS: ColumnDef[] = [
   { key: "appId", label: "App ID" },
@@ -120,6 +159,18 @@ export const ENVIRONMENT_COLUMNS: ColumnDef[] = [
   { key: "status", label: "Status" },
   { key: "notes", label: "Notes" },
 ];
+
+export const ENVIRONMENT_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "appId",
+  "application",
+  "environment",
+  "status",
+  "version",
+] as const;
+
+export const ENVIRONMENT_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = ENVIRONMENT_COLUMNS.map((c) => c.key).filter(
+  (k) => !(ENVIRONMENT_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 export const REFERENCE_DATA_COLUMNS: ColumnDef[] = [
   { key: "value", label: "Value" },
@@ -148,6 +199,20 @@ export const RISK_COLUMNS: ColumnDef[] = [
   { key: "riskOwnerId", label: "Risk Owner ID" },
 ];
 
+export const RISK_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "riskCode",
+  "releaseCode",
+  "category",
+  "likelihood",
+  "impact",
+  "riskScore",
+  "status",
+] as const;
+
+export const RISK_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = RISK_COLUMNS.map((c) => c.key).filter(
+  (k) => !(RISK_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const RISK_FACTOR_COLUMNS: ColumnDef[] = [
   { key: "category", label: "Category" },
   { key: "factorName", label: "Factor Name" },
@@ -155,6 +220,17 @@ export const RISK_FACTOR_COLUMNS: ColumnDef[] = [
   { key: "description", label: "Description" },
   { key: "active", label: "Active" },
 ];
+
+export const RISK_FACTOR_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "category",
+  "factorName",
+  "weight",
+  "active",
+] as const;
+
+export const RISK_FACTOR_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = RISK_FACTOR_COLUMNS.map((c) => c.key).filter(
+  (k) => !(RISK_FACTOR_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 export const APPROVAL_COLUMNS: ColumnDef[] = [
   { key: "approvalCode", label: "Approval ID" },
@@ -173,6 +249,21 @@ export const APPROVAL_COLUMNS: ColumnDef[] = [
   { key: "cabMeetingId", label: "CAB Meeting ID" },
 ];
 
+/** Phone-friendly defaults — secondary columns stay available via Manage Columns. */
+export const APPROVAL_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "approvalCode",
+  "releaseId",
+  "releaseName",
+  "application",
+  "approvalType",
+  "decision",
+  "submittedDate",
+] as const;
+
+export const APPROVAL_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = APPROVAL_COLUMNS.map((c) => c.key).filter(
+  (k) => !(APPROVAL_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const LEAVE_COLUMNS: ColumnDef[] = [
   { key: "leaveCode", label: "Leave ID" },
   { key: "userId", label: "User ID" },
@@ -187,6 +278,19 @@ export const LEAVE_COLUMNS: ColumnDef[] = [
   { key: "riskImpact", label: "Risk Impact" },
   { key: "riskScore", label: "Risk Score" },
 ];
+
+export const LEAVE_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "leaveCode",
+  "staffMember",
+  "leaveStart",
+  "leaveEnd",
+  "type",
+  "riskImpact",
+] as const;
+
+export const LEAVE_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = LEAVE_COLUMNS.map((c) => c.key).filter(
+  (k) => !(LEAVE_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 export const MONITORING_ALERT_COLUMNS: ColumnDef[] = [
   { key: "alertCode", label: "Alert ID" },
@@ -203,6 +307,19 @@ export const MONITORING_ALERT_COLUMNS: ColumnDef[] = [
   { key: "environment", label: "Environment" },
 ];
 
+export const MONITORING_ALERT_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "alertCode",
+  "timestamp",
+  "application",
+  "alertType",
+  "severity",
+  "status",
+] as const;
+
+export const MONITORING_ALERT_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = MONITORING_ALERT_COLUMNS.map((c) => c.key).filter(
+  (k) => !(MONITORING_ALERT_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const PLANNED_MAINTENANCE_COLUMNS: ColumnDef[] = [
   { key: "maintenanceCode", label: "Maintenance ID" },
   { key: "scheduledDate", label: "Scheduled Date" },
@@ -218,6 +335,20 @@ export const PLANNED_MAINTENANCE_COLUMNS: ColumnDef[] = [
   { key: "notes", label: "Notes" },
 ];
 
+export const PLANNED_MAINTENANCE_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "maintenanceCode",
+  "scheduledDate",
+  "type",
+  "application",
+  "environment",
+  "impact",
+  "approval",
+] as const;
+
+export const PLANNED_MAINTENANCE_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = PLANNED_MAINTENANCE_COLUMNS.map((c) => c.key).filter(
+  (k) => !(PLANNED_MAINTENANCE_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const INTEGRATION_FLOW_COLUMNS: ColumnDef[] = [
   { key: "flowCode", label: "Flow ID" },
   { key: "sourceSystem", label: "Source System" },
@@ -227,6 +358,18 @@ export const INTEGRATION_FLOW_COLUMNS: ColumnDef[] = [
   { key: "dataElements", label: "Data Elements" },
   { key: "businessPurpose", label: "Business Purpose" },
 ];
+
+export const INTEGRATION_FLOW_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "flowCode",
+  "sourceSystem",
+  "targetSystem",
+  "integrationType",
+  "frequency",
+] as const;
+
+export const INTEGRATION_FLOW_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = INTEGRATION_FLOW_COLUMNS.map((c) => c.key).filter(
+  (k) => !(INTEGRATION_FLOW_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 export const DEPARTMENT_COLUMNS: ColumnDef[] = [
   { key: "name", label: "Department" },
@@ -244,6 +387,17 @@ export const APPLICATION_COLUMNS: ColumnDef[] = [
   { key: "envCount", label: "Environments" },
 ];
 
+export const APPLICATION_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "name",
+  "department",
+  "type",
+  "criticality",
+] as const;
+
+export const APPLICATION_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = APPLICATION_COLUMNS.map((c) => c.key).filter(
+  (k) => !(APPLICATION_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const USER_COLUMNS: ColumnDef[] = [
   { key: "name", label: "Name" },
   { key: "email", label: "Email" },
@@ -254,7 +408,21 @@ export const USER_COLUMNS: ColumnDef[] = [
   { key: "lastLogin", label: "Last Login" },
 ];
 
-/** Date is first so DataTable sticky-first-col sticks the row identifier (rule #8). */
+export const USER_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "name",
+  "role",
+  "department",
+  "status",
+] as const;
+
+export const USER_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = USER_COLUMNS.map((c) => c.key).filter(
+  (k) => !(USER_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
+/**
+ * Column order kept for Manage Columns / Excel parity.
+ * Default-hidden month/week so first *rendered* cell is `date` (sticky ID).
+ */
 export const CALENDAR_TABLE_COLUMNS: ColumnDef[] = [
   { key: "month", label: "Month" },
   { key: "week", label: "Week" },
@@ -269,6 +437,19 @@ export const CALENDAR_TABLE_COLUMNS: ColumnDef[] = [
   { key: "notes", label: "Notes" },
 ];
 
+export const CALENDAR_TABLE_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "date",
+  "eventType",
+  "releaseCode",
+  "releaseName",
+  "application",
+  "sizeImpact",
+] as const;
+
+export const CALENDAR_TABLE_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = CALENDAR_TABLE_COLUMNS.map((c) => c.key).filter(
+  (k) => !(CALENDAR_TABLE_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const CONFLICT_COLUMNS: ColumnDef[] = [
   { key: "conflictCode", label: "Conflict ID" },
   { key: "status", label: "Status" },
@@ -282,6 +463,19 @@ export const CONFLICT_COLUMNS: ColumnDef[] = [
   { key: "environmentConflictType", label: "Environment Conflict Type" },
   { key: "notes", label: "Notes" },
 ];
+
+export const CONFLICT_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "conflictCode",
+  "status",
+  "priority",
+  "release1Code",
+  "release2Code",
+  "application",
+] as const;
+
+export const CONFLICT_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = CONFLICT_COLUMNS.map((c) => c.key).filter(
+  (k) => !(CONFLICT_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 /** Blockers sheet — exact V0.6 Excel headers / left-to-right order. */
 export const BLOCKER_COLUMNS: ColumnDef[] = [
@@ -306,6 +500,22 @@ export const BLOCKER_COLUMNS: ColumnDef[] = [
   { key: "impactOnRelease", label: "Impact on Release" },
 ];
 
+/** Phone-friendly defaults — secondary columns stay available via Manage Columns. */
+export const BLOCKER_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "blockerCode",
+  "releaseCode",
+  "releaseName",
+  "application",
+  "blockerType",
+  "severity",
+  "status",
+  "raisedDate",
+] as const;
+
+export const BLOCKER_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = BLOCKER_COLUMNS.map((c) => c.key).filter(
+  (k) => !(BLOCKER_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const DEPENDENCY_COLUMNS: ColumnDef[] = [
   { key: "depCode", label: "Dep ID" },
   { key: "releaseCode", label: "Release ID" },
@@ -317,6 +527,18 @@ export const DEPENDENCY_COLUMNS: ColumnDef[] = [
   { key: "impactIfBlocked", label: "Impact if Blocked" },
   { key: "notes", label: "Notes" },
 ];
+
+export const DEPENDENCY_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "depCode",
+  "releaseCode",
+  "dependsOnCode",
+  "dependencyType",
+  "status",
+] as const;
+
+export const DEPENDENCY_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = DEPENDENCY_COLUMNS.map((c) => c.key).filter(
+  (k) => !(DEPENDENCY_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
 
 export const BOOKING_COLUMNS: ColumnDef[] = [
   { key: "bookingCode", label: "Booking ID" },
@@ -344,6 +566,21 @@ export const BOOKING_COLUMNS: ColumnDef[] = [
   { key: "environmentConflictId", label: "Environment Conflict ID" },
 ];
 
+/** Core booking desk columns — env phase blocks stay hidden until enabled. */
+export const BOOKING_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "bookingCode",
+  "releaseId",
+  "application",
+  "department",
+  "releaseSize",
+  "prodReleaseDate",
+  "conflictFlag",
+] as const;
+
+export const BOOKING_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = BOOKING_COLUMNS.map((c) => c.key).filter(
+  (k) => !(BOOKING_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 /** All page keys that support per-user column visibility (used for prefetch). */
 export const TABLE_PAGE_KEYS = [
   "releases",
@@ -370,7 +607,7 @@ export const TABLE_PAGE_KEYS = [
 ] as const;
 
 /**
- * Incidents — own schema only (columns only; departmentName dropped — not a table column).
+ * Incidents — own schema only.
  * Default-visible: severity / status / application / environment / assigned to / title.
  */
 export const INCIDENT_FILTER_FIELDS: FilterFieldDef[] = [
@@ -384,6 +621,7 @@ export const INCIDENT_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "impact", label: "Impact" },
   { key: "relatedReleaseQ", label: "Related Release" },
   { key: "timestampQ", label: "Timestamp" },
+  { key: "departmentQ", label: "Department" },
 ];
 
 export const INCIDENT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = INCIDENT_FILTER_FIELDS
@@ -401,19 +639,25 @@ export const INCIDENT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = INCIDENT_FILTER_FIE
   );
 
 /**
- * Drift — own schema only.
+ * Drift — own schema only (15 table columns).
  * Default-visible: type / severity / status / application / release.
- * Orphan `releaseId` registry key is replaced by releaseCodeQ (wired in UI).
  */
 export const DRIFT_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "driftType", label: "Drift type" },
   { key: "severity", label: "Severity" },
   { key: "status", label: "Status" },
   { key: "applicationId", label: "Application" },
-  { key: "releaseCodeQ", label: "Release" },
-  { key: "driftCodeQ", label: "Drift" },
-  { key: "environmentName", label: "Env" },
-  { key: "detectedDateQ", label: "Detected" },
+  { key: "releaseCodeQ", label: "Release ID" },
+  { key: "driftCodeQ", label: "Drift ID" },
+  { key: "environmentName", label: "Environment" },
+  { key: "detectedDateQ", label: "Detected Date" },
+  { key: "releaseNameQ", label: "Release Name" },
+  { key: "departmentQ", label: "Department" },
+  { key: "category", label: "Drift Category" },
+  { key: "descriptionQ", label: "Description" },
+  { key: "impactOnReleaseQ", label: "Impact on Release" },
+  { key: "remediationActionQ", label: "Remediation Action" },
+  { key: "etaToFixQ", label: "ETA to Fix" },
 ];
 
 export const DRIFT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = DRIFT_FILTER_FIELDS
@@ -426,7 +670,6 @@ export const DRIFT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = DRIFT_FILTER_FIELDS
 /**
  * Monitoring Alerts — own schema only.
  * Default-visible: severity / status / application / alert type / environment / assigned to.
- * Orphan `departmentName` removed (not a table column; was never wired in UI).
  */
 export const MONITORING_ALERTS_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "severity", label: "Severity" },
@@ -437,8 +680,10 @@ export const MONITORING_ALERTS_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "assignedToQ", label: "Assigned To" },
   { key: "alertCodeQ", label: "Alert" },
   { key: "metricQ", label: "Metric" },
-  { key: "thresholdQ", label: "Threshold vs Current" },
+  { key: "thresholdQ", label: "Threshold" },
+  { key: "currentValueQ", label: "Current Value" },
   { key: "timestampQ", label: "Timestamp" },
+  { key: "departmentQ", label: "Department" },
 ];
 
 export const MONITORING_ALERTS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = MONITORING_ALERTS_FILTER_FIELDS
@@ -456,9 +701,8 @@ export const MONITORING_ALERTS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = MONITORING
   );
 
 /**
- * Application Status — own schema only (6 table columns).
+ * Application Status — own schema only (7 table columns).
  * Default-visible: status / application / environment / uptime % / notes.
- * Orphan `departmentName` removed (not a table column; was never wired in UI).
  */
 export const APPLICATION_STATUS_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "status", label: "Status" },
@@ -467,6 +711,7 @@ export const APPLICATION_STATUS_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "uptimePercent", label: "Uptime %" },
   { key: "notesQ", label: "Notes" },
   { key: "lastCheckQ", label: "Last Check" },
+  { key: "departmentQ", label: "Department" },
 ];
 
 export const APPLICATION_STATUS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = APPLICATION_STATUS_FILTER_FIELDS
@@ -479,7 +724,7 @@ export const APPLICATION_STATUS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = APPLICATI
 /**
  * Approvals — own schema only.
  * Default-visible: decision / type / approver (text) / release ID / release name.
- * Orphan `releaseId` is wired as releaseCodeQ; approver is text (not ID dropdown).
+ * Approver Name + Approver ID share `approverQ` (table-standard #2 person rule).
  */
 export const APPROVALS_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "decision", label: "Decision" },
@@ -494,6 +739,8 @@ export const APPROVALS_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "decisionDateQ", label: "Decision Date" },
   { key: "commentsQ", label: "Comments" },
   { key: "cabMeetingIdQ", label: "CAB Meeting ID" },
+  { key: "applicationQ", label: "Application" },
+  { key: "departmentQ", label: "Department" },
 ];
 
 export const APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = APPROVALS_FILTER_FIELDS
@@ -616,18 +863,24 @@ export const CALENDAR_DEFAULT_HIDDEN_FILTER_KEYS: string[] = [
 ];
 
 /**
- * Leave Calendar — own schema only.
+ * Leave Calendar — own schema only (12 table columns).
  * Default-visible: leave type / department / risk / staff member / affected releases.
+ * `datesQ` covers Leave Start + Leave End (overlap). `riskLevel` is a convenience
+ * bucket over Risk Score; dedicated riskImpact / riskScore filters also exist.
  */
 export const LEAVE_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "leaveType", label: "Leave type" },
   { key: "department", label: "Department" },
   { key: "riskLevel", label: "Risk level" },
-  { key: "staffMemberQ", label: "Staff Member" },
-  { key: "affectedReleaseQ", label: "Affected Releases" },
+  { key: "staffMemberQ", label: "User Name" },
+  { key: "affectedReleaseQ", label: "Affected Release" },
   { key: "leaveCodeQ", label: "Leave ID" },
   { key: "datesQ", label: "Dates" },
   { key: "days", label: "Days" },
+  { key: "userIdQ", label: "User ID" },
+  { key: "role", label: "Role" },
+  { key: "riskImpact", label: "Risk Impact" },
+  { key: "riskScore", label: "Risk Score" },
 ];
 
 export const LEAVE_DEFAULT_HIDDEN_FILTER_KEYS: string[] = LEAVE_FILTER_FIELDS
@@ -640,7 +893,7 @@ export const LEAVE_DEFAULT_HIDDEN_FILTER_KEYS: string[] = LEAVE_FILTER_FIELDS
 /**
  * Risk Register — own schema only.
  * Default-visible: status / category / likelihood / impact / risk owner / risk score.
- * application / department / prod date / days out / release name default hidden.
+ * `riskOwnerQ` covers both Risk Owner and Risk Owner ID (person rule).
  */
 export const RISK_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "status", label: "Status" },
@@ -778,6 +1031,7 @@ export const BOOKING_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "preProdEndQ", label: "Pre-Prod End" },
   { key: "preProdDays", label: "Pre-Prod Days" },
   { key: "notesQ", label: "Notes" },
+  { key: "environmentConflictIdQ", label: "Environment Conflict ID" },
 ];
 
 export const BOOKING_DEFAULT_HIDDEN_FILTER_KEYS: string[] = BOOKING_FILTER_FIELDS
@@ -827,9 +1081,8 @@ export const ENVIRONMENT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = ENVIRONMENT_FILT
   );
 
 /**
- * Planned Maintenance — own schema only.
+ * Planned Maintenance — own schema only (12 table columns).
  * Default-visible: type / approval / application / environment / impact / requestor.
- * `departmentName` dropped from Manage Filters (not a table column).
  */
 export const PLANNED_MAINTENANCE_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "type", label: "Type" },
@@ -838,8 +1091,12 @@ export const PLANNED_MAINTENANCE_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "environmentName", label: "Environment" },
   { key: "impact", label: "Impact" },
   { key: "requestorQ", label: "Requestor" },
-  { key: "scheduledQ", label: "Scheduled" },
+  { key: "scheduledQ", label: "Scheduled Date" },
   { key: "notesQ", label: "Notes" },
+  { key: "maintenanceCodeQ", label: "Maintenance ID" },
+  { key: "startTimeQ", label: "Start Time" },
+  { key: "endTimeQ", label: "End Time" },
+  { key: "departmentQ", label: "Department" },
 ];
 
 export const PLANNED_MAINTENANCE_DEFAULT_HIDDEN_FILTER_KEYS: string[] = PLANNED_MAINTENANCE_FILTER_FIELDS

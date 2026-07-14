@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { CalendarStatusLegend } from "@/components/calendar/CalendarStatusLegend";
+import { useHoverCapable } from "@/hooks/useHoverCapable";
 import {
   buildMonthAxisLabels,
   buildPeriodSegments,
@@ -115,20 +116,68 @@ function MilestoneCard({ milestone }: { milestone: TimelineMilestone }) {
 
 function HoverTip({
   isUp,
+  open,
   children,
 }: {
   isUp: boolean;
+  open: boolean;
   children: React.ReactNode;
 }) {
+  if (!open) return null;
   return (
     <span
       className={cn(
-        "pointer-events-none absolute left-1/2 z-40 w-56 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-left text-[11px] leading-snug text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 dark:bg-slate-950",
+        "pointer-events-none absolute left-1/2 z-40 w-56 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-left text-[11px] leading-snug text-white shadow-xl dark:bg-slate-950",
         isUp ? "bottom-[calc(100%+10px)]" : "top-[calc(100%+10px)]",
       )}
     >
       {children}
     </span>
+  );
+}
+
+/** ProgressLink that shows tip on hover (desktop) or first-tap (touch); second tap navigates. */
+function TipMarkerLink({
+  href,
+  title,
+  isUp,
+  tip,
+  className,
+  children,
+}: {
+  href: string;
+  title: string;
+  isUp: boolean;
+  tip: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  const hoverCapable = useHoverCapable();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <ProgressLink
+      href={href}
+      title={title}
+      className={cn("relative no-underline", className)}
+      onMouseEnter={() => {
+        if (hoverCapable) setOpen(true);
+      }}
+      onMouseLeave={() => {
+        if (hoverCapable) setOpen(false);
+      }}
+      onClick={(e) => {
+        if (!hoverCapable && !open) {
+          e.preventDefault();
+          setOpen(true);
+        }
+      }}
+    >
+      {children}
+      <HoverTip isUp={isUp} open={open}>
+        {tip}
+      </HoverTip>
+    </ProgressLink>
   );
 }
 
@@ -173,10 +222,20 @@ function DotStemMarker({ marker }: { marker: TimelineMarker }) {
   if (marker.kind === "single") {
     const m = marker.milestone;
     const body = (
-      <ProgressLink
+      <TipMarkerLink
         href={m.href}
         title={`${m.code} · ${m.name} · ${m.status} · ${m.dateLabel}`}
-        className="group relative flex max-w-[112px] flex-col items-center no-underline"
+        isUp={isUp}
+        className="group flex max-w-[112px] flex-col items-center"
+        tip={
+          <>
+            <span className="block font-bold">{m.code}</span>
+            <span className="mt-0.5 block text-white/85">{m.name}</span>
+            <span className="mt-1 block text-white/60">
+              {m.status} · {m.dateLabel}
+            </span>
+          </>
+        }
       >
         {balloonHead()}
         <span className="mt-1.5 block w-full truncate text-center text-[11px] font-semibold leading-tight text-slate-700 dark:text-slate-200">
@@ -185,14 +244,7 @@ function DotStemMarker({ marker }: { marker: TimelineMarker }) {
         <span className="mt-0.5 block w-full truncate text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400">
           {m.dateLabel}
         </span>
-        <HoverTip isUp={isUp}>
-          <span className="block font-bold">{m.code}</span>
-          <span className="mt-0.5 block text-white/85">{m.name}</span>
-          <span className="mt-1 block text-white/60">
-            {m.status} · {m.dateLabel}
-          </span>
-        </HoverTip>
-      </ProgressLink>
+      </TipMarkerLink>
     );
 
     return (
@@ -227,10 +279,27 @@ function DotStemMarker({ marker }: { marker: TimelineMarker }) {
 
   const primary = marker.members[0];
   const body = (
-    <ProgressLink
+    <TipMarkerLink
       href={primary.href}
       title={marker.members.map((m) => `${m.code} (${m.dateLabel})`).join(" · ")}
-      className="group relative flex max-w-[120px] flex-col items-center no-underline"
+      isUp={isUp}
+      className="group flex max-w-[120px] flex-col items-center"
+      tip={
+        <>
+          <span className="mb-1 block font-bold">{marker.count} releases in this window</span>
+          <ul className="max-h-40 space-y-1 overflow-y-auto">
+            {marker.members.map((m) => (
+              <li key={m.id} className="text-white/85">
+                <span className="font-semibold text-white">{m.code}</span>
+                <span className="text-white/55">
+                  {" "}
+                  · {m.dateLabel} · {m.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      }
     >
       {balloonHead(marker.count)}
       <span className="mt-1.5 block w-full truncate text-center text-[11px] font-semibold leading-tight text-slate-700 dark:text-slate-200">
@@ -239,21 +308,7 @@ function DotStemMarker({ marker }: { marker: TimelineMarker }) {
       <span className="mt-0.5 block w-full truncate text-center text-[10px] leading-tight text-slate-500 dark:text-slate-400">
         {marker.dateLabel}
       </span>
-      <HoverTip isUp={isUp}>
-        <span className="mb-1 block font-bold">{marker.count} releases in this window</span>
-        <ul className="max-h-40 space-y-1 overflow-y-auto">
-          {marker.members.map((m) => (
-            <li key={m.id} className="text-white/85">
-              <span className="font-semibold text-white">{m.code}</span>
-              <span className="text-white/55">
-                {" "}
-                · {m.dateLabel} · {m.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </HoverTip>
-    </ProgressLink>
+    </TipMarkerLink>
   );
 
   return (
@@ -774,9 +829,55 @@ export function ReleaseTimelineView({
 
   return (
     <>
-      <div className="overflow-visible rounded-[24px] bg-white px-4 py-5 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.18)] dark:bg-[var(--card)]">
+      {/* Mobile release list — gantt is desktop-first */}
+      <div className="mb-3 space-y-2 md:hidden">
+        <p className="text-[11px] text-slate-500 dark:text-white/45">
+          {releases.length} release{releases.length === 1 ? "" : "s"} in this period
+          {useDots ? " · open Expand for year timeline" : ""}
+        </p>
+        <ul className="space-y-2">
+          {[...releases]
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+            .map((r) => (
+              <li key={r.id}>
+                <ProgressLink
+                  href={r.href}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 no-underline shadow-sm dark:border-slate-600 dark:bg-[var(--card)]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-bold text-slate-800 dark:text-white">{r.code}</p>
+                    <p className="truncate text-[12px] text-slate-500 dark:text-white/55">{r.name}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-[11px] font-semibold text-slate-600 dark:text-white/70">{r.status}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-white/45">
+                      {new Date(r.date).toLocaleDateString("en-AU", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </p>
+                  </div>
+                </ProgressLink>
+              </li>
+            ))}
+        </ul>
         {useDots && (
-          <div className="mb-3 flex items-center justify-end px-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] font-semibold text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white/85"
+          >
+            <Expand size={14} /> Expand year timeline
+          </button>
+        )}
+      </div>
+
+      <div className="hidden overflow-visible rounded-[24px] bg-white px-4 py-5 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.18)] md:block dark:bg-[var(--card)]">
+        {useDots && (
+          <div className="mb-3 flex items-center justify-between gap-2 px-2">
+            <p className="text-[11px] text-slate-400 dark:text-white/40">
+              Scroll horizontally · Expand for full-year fit
+            </p>
             <button
               type="button"
               onClick={() => setExpanded(true)}
@@ -785,6 +886,11 @@ export function ReleaseTimelineView({
               <Expand size={14} /> Expand View
             </button>
           </div>
+        )}
+        {!useDots && (
+          <p className="mb-2 px-2 text-[11px] text-slate-400 dark:text-white/40">
+            Scroll horizontally · hover or tap a marker for details
+          </p>
         )}
         <div className="relative">
           <button

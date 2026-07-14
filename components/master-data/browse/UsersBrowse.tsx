@@ -19,6 +19,7 @@ import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import {
   USER_COLUMNS,
+  USER_DEFAULT_HIDDEN_COLUMN_KEYS,
   USER_DEFAULT_HIDDEN_FILTER_KEYS,
   USER_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -125,6 +126,7 @@ export function UsersBrowse() {
     {
       lockedKeys: ["name", "actions"],
       defaultHiddenFilters: USER_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: USER_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

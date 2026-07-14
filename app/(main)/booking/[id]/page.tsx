@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MockupDetailChrome,
@@ -11,9 +11,12 @@ import {
   dash,
 } from "@/components/detail/MockupDetailChrome";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
-import { safeFetchJson } from "@/lib/safe-fetch";
-import { formatDate } from "@/lib/utils";
-import { AlertOctagon, Calendar, LayoutDashboard, List, Package } from "lucide-react";
+import { BookingEditModal } from "@/components/booking/BookingEditModal";
+import { safeFetchJson, loadJsonEffect } from "@/lib/safe-fetch";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { formatDate, cn } from "@/lib/utils";
+import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
+import { AlertOctagon, Calendar, LayoutDashboard, List, Package, Pencil, Trash2 } from "lucide-react";
 
 type BookingDetail = {
   id: string;
@@ -82,26 +85,43 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [options, setOptions] = useState<BookingOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const canEdit = sessionCanEdit(user);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ac = new AbortController();
-    void (async () => {
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
       const [detail, list] = await Promise.all([
         safeFetchJson<BookingDetail>(`/api/bookings/${id}`, {
-          signal: ac.signal,
+          signal,
           label: "booking-detail",
           rejectHttpErrors: false,
         }),
-        safeFetchJson<BookingOption[]>("/api/bookings", { signal: ac.signal, label: "bookings-list" }),
+        safeFetchJson<BookingOption[]>("/api/bookings", { signal, label: "bookings-list" }),
       ]);
-      if (ac.signal.aborted) return;
+      if (signal?.aborted) return;
       setRow(detail.ok && detail.status < 300 ? detail.data : null);
       setOptions(list.ok ? list.data.map((b) => ({ id: b.id, bookingCode: b.bookingCode })) : []);
       setLastRefresh(new Date());
       setLoading(false);
-    })();
+    },
+    [id]
+  );
+
+  useEffect(() => {
+    const ac = new AbortController();
+    setLoading(true);
+    void load(ac.signal);
     return () => ac.abort();
-  }, [id]);
+  }, [load]);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "booking-detail-auth",
+    });
+  }, []);
 
   const selectOptions = useMemo(
     () =>
@@ -112,134 +132,223 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     [options]
   );
 
+  const onDelete = async () => {
+    if (!row) return;
+    const label = row.bookingCode || "this booking";
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+    setDeleting(true);
+    setActionError(null);
+    const result = await safeFetchJson(`/api/bookings/${row.id}`, {
+      method: "DELETE",
+      label: "delete-booking",
+      rejectHttpErrors: false,
+    });
+    setDeleting(false);
+    if (!result.ok || result.status >= 300) {
+      setActionError("Failed to delete booking");
+      return;
+    }
+    router.push("/booking");
+  };
+
   if (loading) return <p className="text-gray-500 dark:text-white/60">Loading booking…</p>;
   if (!row) return <p className="text-gray-500 dark:text-white/60">Booking not found.</p>;
 
   const code = row.bookingCode ?? row.id;
 
   return (
-    <MockupDetailChrome
-      pageTitle="🖥️ ENVIRONMENT BOOKING DETAIL PAGE"
-      entityCode={code}
-      selectLabel="Select Booking"
-      selectValue={row.id}
-      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: code }]}
-      onSelectChange={(v) => v !== row.id && router.push(`/booking/${v}`)}
-      lastRefresh={lastRefresh}
-      footer="Env Booking Page v1.0 | Data sourced from Env booking sheet"
-      quickActions={[
-        { href: "/calendar", label: "📅 View Calendar", icon: <Calendar className="mr-1 inline h-4 w-4" /> },
-        ...(row.release
-          ? [{ href: `/releases/${row.release.id}`, label: "📋 View Release", icon: <Package className="mr-1 inline h-4 w-4" /> }]
-          : []),
-        ...(row.conflicts[0]
-          ? [
-              {
-                href: `/conflicts/${row.conflicts[0].id}`,
-                label: "⚠️ View Conflict",
-                icon: <AlertOctagon className="mr-1 inline h-4 w-4" />,
-              },
-            ]
-          : row.environmentConflictId
+    <>
+      <MockupDetailChrome
+        pageTitle="🖥️ ENVIRONMENT BOOKING DETAIL PAGE"
+        entityCode={code}
+        selectLabel="Select Booking"
+        selectValue={row.id}
+        selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: code }]}
+        onSelectChange={(v) => v !== row.id && router.push(`/booking/${v}`)}
+        lastRefresh={lastRefresh}
+        footer="Env Booking Page v1.0 | Data sourced from Env booking sheet"
+        headerActions={
+          canEdit ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={cn(taBtnSecondary, "text-sm !py-1.5")}
+                onClick={() => {
+                  setActionError(null);
+                  setEditOpen(true);
+                }}
+              >
+                <Pencil className="mr-1 inline h-3.5 w-3.5" />
+                Edit
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  taBtnPrimary,
+                  "text-sm !py-1.5 !bg-rose-600 hover:!bg-rose-700 dark:!bg-rose-600 dark:hover:!bg-rose-500"
+                )}
+                onClick={() => void onDelete()}
+                disabled={deleting}
+              >
+                <Trash2 className="mr-1 inline h-3.5 w-3.5" />
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          ) : null
+        }
+        quickActions={[
+          { href: "/calendar", label: "📅 View Calendar", icon: <Calendar className="mr-1 inline h-4 w-4" /> },
+          ...(row.release
+            ? [{ href: `/releases/${row.release.id}`, label: "📋 View Release", icon: <Package className="mr-1 inline h-4 w-4" /> }]
+            : []),
+          ...(row.conflicts[0]
             ? [
                 {
-                  href: `/conflicts/${encodeURIComponent(row.environmentConflictId.split(",")[0].trim())}`,
+                  href: `/conflicts/${row.conflicts[0].id}`,
                   label: "⚠️ View Conflict",
                   icon: <AlertOctagon className="mr-1 inline h-4 w-4" />,
                 },
               ]
-            : []),
-        { href: "/dashboard", label: "📊 Dashboard", icon: <LayoutDashboard className="mr-1 inline h-4 w-4" /> },
-        { href: "/booking", label: "🔙 All Bookings", icon: <List className="mr-1 inline h-4 w-4" /> },
-      ]}
-    >
-      <MockupSection title="🚦 Booking Status at a Glance">
-        <GlanceStrip
-          items={[
-            {
-              label: "Conflict Flag",
-              value: row.conflictFlag ? "⚠️ CONFLICT" : "Clear",
-              tone: row.conflictFlag ? "warn" : "good",
-            },
-            {
-              label: "Release ID",
-              value: row.release ? (
-                <ProgressLink href={`/releases/${row.release.id}`} className="font-mono text-brand-600 hover:underline dark:text-brand-400">
-                  {row.release.releaseCode}
-                </ProgressLink>
-              ) : (
-                "—"
-              ),
-            },
-            { label: "Application", value: row.application.name },
-          ]}
-        />
-      </MockupSection>
+            : row.environmentConflictId
+              ? [
+                  {
+                    href: `/conflicts/${encodeURIComponent(row.environmentConflictId.split(",")[0].trim())}`,
+                    label: "⚠️ View Conflict",
+                    icon: <AlertOctagon className="mr-1 inline h-4 w-4" />,
+                  },
+                ]
+              : []),
+          { href: "/dashboard", label: "📊 Dashboard", icon: <LayoutDashboard className="mr-1 inline h-4 w-4" /> },
+          { href: "/booking", label: "🔙 All Bookings", icon: <List className="mr-1 inline h-4 w-4" /> },
+        ]}
+      >
+        {actionError ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+            {actionError}
+          </p>
+        ) : null}
 
-      <MockupSection title="📦 Release Information">
-        <DetailFieldGrid cols={2}>
-          <DetailField
-            label="Release ID"
-            value={
-              row.release ? (
-                <ProgressLink href={`/releases/${row.release.id}`} className="font-mono text-brand-600 hover:underline dark:text-brand-400">
-                  {row.release.releaseCode}
-                </ProgressLink>
-              ) : (
-                "—"
-              )
-            }
+        <MockupSection title="🚦 Booking Status at a Glance">
+          <GlanceStrip
+            items={[
+              {
+                label: "Conflict Flag",
+                value: row.conflictFlag ? "⚠️ CONFLICT" : "Clear",
+                tone: row.conflictFlag ? "warn" : "good",
+              },
+              {
+                label: "Release ID",
+                value: row.release ? (
+                  <ProgressLink
+                    href={`/releases/${row.release.id}`}
+                    className="font-mono text-brand-600 hover:underline dark:text-brand-400"
+                  >
+                    {row.release.releaseCode}
+                  </ProgressLink>
+                ) : (
+                  "—"
+                ),
+              },
+              { label: "Application", value: row.application.name },
+            ]}
           />
-          <DetailField label="Application" value={row.application.name} />
-          <DetailField label="Department" value={dash(row.departmentName)} />
-          <DetailField label="Release Size" value={dash(row.releaseSize)} />
-          <DetailField label="Dependencies" value={dash(row.dependencies ?? "NA")} />
-        </DetailFieldGrid>
-      </MockupSection>
+        </MockupSection>
 
-      <MockupSection title="📅 Key Dates">
-        <DetailFieldGrid cols={2}>
-          <DetailField label="Prod Release Date" value={d(row.prodReleaseDate)} />
-          <DetailField label="CAB Date" value={d(row.cabDate)} />
-        </DetailFieldGrid>
-      </MockupSection>
+        <MockupSection title="📦 Release Information">
+          <DetailFieldGrid cols={2}>
+            <DetailField
+              label="Release ID"
+              value={
+                row.release ? (
+                  <ProgressLink
+                    href={`/releases/${row.release.id}`}
+                    className="font-mono text-brand-600 hover:underline dark:text-brand-400"
+                  >
+                    {row.release.releaseCode}
+                  </ProgressLink>
+                ) : (
+                  "—"
+                )
+              }
+            />
+            <DetailField label="Application" value={row.application.name} />
+            <DetailField label="Department" value={dash(row.departmentName)} />
+            <DetailField label="Release Size" value={dash(row.releaseSize)} />
+            <DetailField label="Dependencies" value={dash(row.dependencies ?? "NA")} />
+          </DetailFieldGrid>
+        </MockupSection>
 
-      <MockupSection title="🧪 Test Environment">
-        <DetailFieldGrid cols={3}>
-          <DetailField label="Test Env" value={dash(row.testEnvCode)} />
-          <DetailField label="Test Start" value={d(row.testStart)} />
-          <DetailField label="Test End" value={d(row.testEnd)} />
-          <DetailField label="Test Days" value={row.testDays ?? "—"} />
-        </DetailFieldGrid>
-      </MockupSection>
+        <MockupSection title="📅 Key Dates">
+          <DetailFieldGrid cols={2}>
+            <DetailField label="Prod Release Date" value={d(row.prodReleaseDate)} />
+            <DetailField label="CAB Date" value={d(row.cabDate)} />
+          </DetailFieldGrid>
+        </MockupSection>
 
-      <MockupSection title="✅ UAT Environment">
-        <DetailFieldGrid cols={3}>
-          <DetailField label="UAT Env" value={dash(row.uatEnvCode)} />
-          <DetailField label="UAT Start" value={d(row.uatStart)} />
-          <DetailField label="UAT End" value={d(row.uatEnd)} />
-          <DetailField label="UAT Days" value={row.uatDays ?? "—"} />
-        </DetailFieldGrid>
-      </MockupSection>
+        <MockupSection title="🧪 Test Environment">
+          <DetailFieldGrid cols={3}>
+            <DetailField label="Test Env" value={dash(row.testEnvCode)} />
+            <DetailField label="Test Start" value={d(row.testStart)} />
+            <DetailField label="Test End" value={d(row.testEnd)} />
+            <DetailField label="Test Days" value={row.testDays ?? "—"} />
+          </DetailFieldGrid>
+        </MockupSection>
 
-      <MockupSection title="🚀 Pre-Prod Environment">
-        <DetailFieldGrid cols={3}>
-          <DetailField label="Pre-Prod Env" value={dash(row.preProdEnvCode)} />
-          <DetailField label="Pre-Prod Start" value={d(row.preProdStart)} />
-          <DetailField label="Pre-Prod End" value={d(row.preProdEnd)} />
-          <DetailField label="Pre-Prod Days" value={row.preProdDays ?? "—"} />
-        </DetailFieldGrid>
-      </MockupSection>
+        <MockupSection title="✅ UAT Environment">
+          <DetailFieldGrid cols={3}>
+            <DetailField label="UAT Env" value={dash(row.uatEnvCode)} />
+            <DetailField label="UAT Start" value={d(row.uatStart)} />
+            <DetailField label="UAT End" value={d(row.uatEnd)} />
+            <DetailField label="UAT Days" value={row.uatDays ?? "—"} />
+          </DetailFieldGrid>
+        </MockupSection>
 
-      <MockupSection title="⚠️ Conflict Details">
-        <DetailFieldGrid cols={2}>
-          <DetailField
-            label="Conflict ID"
-            value={<ConflictLinks raw={row.environmentConflictId} conflicts={row.conflicts} />}
-          />
-          <DetailField label="Notes" value={dash(row.purpose)} />
-        </DetailFieldGrid>
-      </MockupSection>
-    </MockupDetailChrome>
+        <MockupSection title="🚀 Pre-Prod Environment">
+          <DetailFieldGrid cols={3}>
+            <DetailField label="Pre-Prod Env" value={dash(row.preProdEnvCode)} />
+            <DetailField label="Pre-Prod Start" value={d(row.preProdStart)} />
+            <DetailField label="Pre-Prod End" value={d(row.preProdEnd)} />
+            <DetailField label="Pre-Prod Days" value={row.preProdDays ?? "—"} />
+          </DetailFieldGrid>
+        </MockupSection>
+
+        <MockupSection title="⚠️ Conflict Details">
+          <DetailFieldGrid cols={2}>
+            <DetailField
+              label="Conflict ID"
+              value={<ConflictLinks raw={row.environmentConflictId} conflicts={row.conflicts} />}
+            />
+            <DetailField label="Notes" value={dash(row.purpose)} />
+          </DetailFieldGrid>
+        </MockupSection>
+      </MockupDetailChrome>
+
+      <BookingEditModal
+        open={editOpen}
+        bookingId={row.id}
+        bookingCode={code}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => void load()}
+        initial={{
+          releaseId: row.release?.id ?? "",
+          releaseSize: row.releaseSize ?? "",
+          dependencies: row.dependencies ?? "",
+          purpose: row.purpose ?? "",
+          prodReleaseDate: row.prodReleaseDate ?? "",
+          cabDate: row.cabDate ?? "",
+          testEnvCode: row.testEnvCode ?? "",
+          testStart: row.testStart ?? "",
+          testEnd: row.testEnd ?? "",
+          uatEnvCode: row.uatEnvCode ?? "",
+          uatStart: row.uatStart ?? "",
+          uatEnd: row.uatEnd ?? "",
+          preProdEnvCode: row.preProdEnvCode ?? "",
+          preProdStart: row.preProdStart ?? "",
+          preProdEnd: row.preProdEnd ?? "",
+          conflictFlag: row.conflictFlag,
+          environmentConflictId: row.environmentConflictId ?? "",
+        }}
+      />
+    </>
   );
 }

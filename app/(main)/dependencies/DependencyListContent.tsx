@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
@@ -8,6 +8,7 @@ import { FilterPills, FilterSelect, FilterTextInput, TableFilterBar } from "@/co
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import {
   DEPENDENCY_COLUMNS,
+  DEPENDENCY_DEFAULT_HIDDEN_COLUMN_KEYS,
   DEPENDENCY_DEFAULT_HIDDEN_FILTER_KEYS,
   DEPENDENCY_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -15,12 +16,17 @@ import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { DEPENDENCY_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
-import { Network } from "lucide-react";
+import { Network, Plus } from "lucide-react";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { DEPENDENCIES_FILTER_SCHEMA } from "@/lib/table-filters";
+import { DependencyFormModal } from "@/components/dependencies/DependencyFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { loadJsonEffect } from "@/lib/safe-fetch";
+import { taBtnPrimary } from "@/lib/styles";
+import { DEPENDENCY_IMPACTS, DEPENDENCY_STATUSES } from "@/lib/validation/dependency";
 
 type DepRow = {
   id: string;
@@ -47,14 +53,8 @@ const TYPE_CLASSES: Record<string, string> = {
   Integration: "bg-cyan-100 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300",
 };
 
-const STATUS_OPTIONS = ["Blocked", "At Risk", "Clear", "Resolved"] as const;
-const IMPACT_OPTIONS = [
-  "Release Delay",
-  "Partial Functionality",
-  "Data Integrity Risk",
-  "Integration Failure",
-  "Scope Reduction",
-] as const;
+const STATUS_OPTIONS = DEPENDENCY_STATUSES;
+const IMPACT_OPTIONS = DEPENDENCY_IMPACTS;
 
 function ReleaseLink({ code, dbId, name }: { code: string; dbId: string | null; name?: string }) {
   if (dbId) {
@@ -129,6 +129,10 @@ function renderDepCell(d: DepRow, key: DepColumnKey) {
 }
 
 export default function DependencyListContent() {
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const canEdit = sessionCanEdit(user);
+  const [modalOpen, setModalOpen] = useState(false);
+
   const {
     rows: deps,
     loading,
@@ -140,6 +144,7 @@ export default function DependencyListContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<DepRow>("/api/dependencies", DEPENDENCIES_FILTER_SCHEMA, {
     defaultSortKey: "depCode",
     defaultSortDir: "asc",
@@ -156,6 +161,12 @@ export default function DependencyListContent() {
     },
   });
 
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "dependencies-auth",
+    });
+  }, []);
+
   const { visibleColumns, isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "dependencies",
     DEPENDENCY_COLUMNS,
@@ -163,6 +174,7 @@ export default function DependencyListContent() {
     {
       lockedKeys: ["depCode"],
       defaultHiddenFilters: DEPENDENCY_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: DEPENDENCY_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -178,9 +190,27 @@ export default function DependencyListContent() {
     <div>
       <TopBar
         pageKey="dependencies"
-        trailing={<PageDocumentation pageKey="dependencies" />}
+        trailing={
+          <div className="flex items-center gap-2">
+            {canEdit ? (
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+              >
+                <Plus className="mr-1 inline h-4 w-4" /> New Dependency
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="dependencies" />
+          </div>
+        }
         title="Release Dependencies"
         subtitle={`${deps.length} dependencies${blockedCount > 0 ? ` · ${blockedCount} blocked or at risk` : ""}`}
+      />
+      <DependencyFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => refetch()}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

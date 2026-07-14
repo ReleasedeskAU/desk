@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   APPLICATION_STATUS_COLUMNS,
+  APPLICATION_STATUS_DEFAULT_HIDDEN_COLUMN_KEYS,
   APPLICATION_STATUS_DEFAULT_HIDDEN_FILTER_KEYS,
   APPLICATION_STATUS_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -82,6 +83,10 @@ export default function ApplicationStatusContent() {
 
   const statuses = useMemo(() => [...new Set(allRows.map((r) => r.status))].sort(), [allRows]);
   const envs = useMemo(() => [...new Set(allRows.map((r) => r.environmentName))].sort(), [allRows]);
+  const departments = useMemo(
+    () => [...new Set(allRows.map((r) => r.application.department.name).filter(Boolean))].sort(),
+    [allRows]
+  );
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "application-status",
@@ -90,6 +95,7 @@ export default function ApplicationStatusContent() {
     {
       lockedKeys: ["application"],
       defaultHiddenFilters: APPLICATION_STATUS_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: APPLICATION_STATUS_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -147,6 +153,12 @@ export default function ApplicationStatusContent() {
               onChange={(v) => setFilter("lastCheckQ", v)}
               placeholder="Last check (YYYY-MM-DD)…"
             />
+          )}
+          {isFilterVisible("departmentQ") && (
+            <FilterSelect value={values.departmentQ} onChange={(v) => setFilter("departmentQ", v)}>
+              <option value="">All departments</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </FilterSelect>
           )}
         </TableFilterBar>
       )}

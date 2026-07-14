@@ -218,7 +218,7 @@ export function NeedsYourDecisionPanel({
 
       {loading ? (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
-          <PanelCard accent="bg-gradient-to-r from-indigo-500 to-violet-500">
+          <PanelCard accent="bg-brand-500">
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-20 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" />
@@ -232,7 +232,7 @@ export function NeedsYourDecisionPanel({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
-          <PanelCard accent="bg-gradient-to-r from-indigo-500 to-violet-500">
+          <PanelCard accent="bg-brand-500">
             <div className="space-y-3">
               {(data?.topIssues ?? []).length > 0 ? (
                 data!.topIssues.map((issue, i) => (
@@ -286,7 +286,7 @@ export function NeedsYourDecisionPanel({
               </div>
             </PanelCard>
 
-            <PanelCard accent="bg-indigo-400">
+            <PanelCard accent="bg-brand-400">
               <h3 className="text-[13px] font-bold text-slate-800 dark:text-white">Pipeline snapshot</h3>
               <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/50">Key release statuses</p>
               <div className="mt-2 h-[150px] min-w-0">

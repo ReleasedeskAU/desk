@@ -1,15 +1,28 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { patchDepartmentSchema } from "@/lib/validation/org-patch";
+import { zodErrorResponse } from "@/lib/api-errors";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { error } = await requireRole("editor");
   if (error) return error;
-  const body = await req.json();
+
+  const parsed = patchDepartmentSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+
+  const body = parsed.data;
+  if (body.name === undefined && body.head === undefined) {
+    return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
   const row = await prisma.department.update({
-    where: { id: id },
-    data: { name: body.name, head: body.head },
+    where: { id },
+    data: {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.head !== undefined ? { head: body.head } : {}),
+    },
   });
   return NextResponse.json(row);
 }

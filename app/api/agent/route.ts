@@ -1,7 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { requireRole } from "@/lib/auth/api";
 import { getAgentSystemPrompt, isStructuredAgent } from "@/lib/agent-prompts";
 import { completeChat } from "@/lib/llm";
 import type { AgentRole } from "@/lib/types";
+import { jsonError, zodErrorResponse } from "@/lib/api-errors";
+
+const agentBodySchema = z
+  .object({
+    agentRole: z.string().min(1).max(120),
+    context: z.record(z.string(), z.any()),
+    userMessage: z.string().max(8000).optional(),
+    conversationHistory: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().max(8000),
+        })
+      )
+      .max(40)
+      .optional(),
+    mode: z.enum(["structured", "line", "prose"]).optional(),
+  })
+  .strict();
 
 function parseJson<T>(text: string): T | null {
   try {
@@ -13,18 +34,17 @@ function parseJson<T>(text: string): T | null {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { agentRole, context, userMessage, conversationHistory, mode } = body as {
-      agentRole: AgentRole;
-      context: object;
-      userMessage?: string;
-      conversationHistory?: { role: "user" | "assistant"; content: string }[];
-      mode?: "structured" | "line" | "prose";
-    };
+  const { error: authError } = await requireRole("readonly");
+  if (authError) return authError;
 
-    const structured = isStructuredAgent(agentRole, mode);
-    const system = getAgentSystemPrompt(agentRole, structured);
+  try {
+    const raw = await req.json();
+    const parsed = agentBodySchema.safeParse(raw);
+    if (!parsed.success) return zodErrorResponse(parsed.error);
+
+    const { agentRole, context, userMessage, conversationHistory, mode } = parsed.data;
+    const structured = isStructuredAgent(agentRole as AgentRole, mode);
+    const system = getAgentSystemPrompt(agentRole as AgentRole, structured);
 
     const contextMsg = `Context JSON:\n${JSON.stringify(context, null, 2)}`;
     const messages: { role: "user" | "assistant"; content: string }[] = [];
@@ -56,7 +76,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ text, provider });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "AI unavailable";
-    return NextResponse.json({ error: message }, { status: 503 });
+    return jsonError(err, {
+      publicMessage: "AI unavailable",
+      status: 503,
+      logLabel: "api/agent",
+    });
   }
 }

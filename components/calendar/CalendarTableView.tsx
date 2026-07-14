@@ -16,7 +16,11 @@ import {
   type CalendarEventApi,
 } from "@/lib/calendar-table";
 import { DEFAULT_PAGE_SIZE, pageCount, paginateRows } from "@/lib/master-data/table-utils";
-import { CALENDAR_TABLE_COLUMNS, CALENDAR_TABLE_FILTER_FIELDS } from "@/lib/table-page-columns";
+import {
+  CALENDAR_TABLE_COLUMNS,
+  CALENDAR_TABLE_DEFAULT_HIDDEN_COLUMN_KEYS,
+  CALENDAR_TABLE_FILTER_FIELDS,
+} from "@/lib/table-page-columns";
 import { readSortFromValues } from "@/lib/table-sort";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -52,7 +56,10 @@ export function CalendarTableView({
     "calendar-table",
     CALENDAR_TABLE_COLUMNS,
     CALENDAR_TABLE_FILTER_FIELDS,
-    { lockedKeys: ["date"] }
+    {
+      lockedKeys: ["date"],
+      defaultHiddenColumns: CALENDAR_TABLE_DEFAULT_HIDDEN_COLUMN_KEYS,
+    }
   );
 
   const tablePending = useTablePageLoading(dataLoading, prefsLoaded);

@@ -787,3 +787,11 @@ model UserTablePreference {
 
   @@unique([clerkUserId, pageKey])
 }
+
+model UserAppearancePreference {
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique
+  colorTheme  String   @default("sky")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

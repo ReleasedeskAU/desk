@@ -8,6 +8,7 @@ import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filt
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import {
   CONFLICT_COLUMNS,
+  CONFLICT_DEFAULT_HIDDEN_COLUMN_KEYS,
   CONFLICT_DEFAULT_HIDDEN_FILTER_KEYS,
   CONFLICT_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -184,6 +185,7 @@ export default function ConflictQueueContent() {
     {
       lockedKeys: ["conflictCode"],
       defaultHiddenFilters: CONFLICT_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: CONFLICT_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

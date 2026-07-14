@@ -13,6 +13,7 @@ import {
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import {
   BLOCKER_COLUMNS,
+  BLOCKER_DEFAULT_HIDDEN_COLUMN_KEYS,
   BLOCKER_DEFAULT_HIDDEN_FILTER_KEYS,
   BLOCKER_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -252,6 +253,7 @@ export default function BlockersContent() {
     {
       lockedKeys: ["blockerCode"],
       defaultHiddenFilters: BLOCKER_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: BLOCKER_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 

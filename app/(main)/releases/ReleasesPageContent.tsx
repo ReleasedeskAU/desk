@@ -33,6 +33,7 @@ import { RELEASE_TABLE_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { readSortFromValues, sortRows } from "@/lib/table-sort";
 import { taBtnPrimary } from "@/lib/styles";
 import type { SessionUser } from "@/lib/auth/roles";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 
 
@@ -278,7 +279,7 @@ export default function ReleasesPageContent() {
     [unified, sortKey, sortDir]
   );
 
-  const canEdit = user?.role === "editor" || user?.role === "admin";
+  const canEdit = sessionCanEdit(user);
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "releases",
@@ -449,7 +450,16 @@ export default function ReleasesPageContent() {
         initial={formPrefill ?? undefined}
         existingReleaseCodes={releaseCodes}
         departments={departments.map((d) => ({ value: d.id, label: d.name }))}
-        applications={applications.map((a) => ({ value: a.id, label: a.name }))}
+        applications={applications.map((a) => ({
+          value: a.id,
+          label: a.name,
+          departmentId: a.departmentId,
+        }))}
+        environments={environments.map((e) => ({
+          value: e.name,
+          label: e.name,
+          applicationId: e.applicationId,
+        }))}
         releases={(dbRows as ReleaseRow[]).map((r) => ({
           value: r.id,
           label: r.name ? `${r.releaseCode} — ${r.name}` : r.releaseCode,

@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/badges/StatusBadge";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   MONITORING_ALERT_COLUMNS,
+  MONITORING_ALERT_DEFAULT_HIDDEN_COLUMN_KEYS,
   MONITORING_ALERTS_DEFAULT_HIDDEN_FILTER_KEYS,
   MONITORING_ALERTS_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -96,6 +97,10 @@ export default function MonitoringAlertsContent() {
   const statuses = useMemo(() => [...new Set(allAlerts.map((a) => a.status))].sort(), [allAlerts]);
   const alertTypes = useMemo(() => [...new Set(allAlerts.map((a) => a.alertType))].sort(), [allAlerts]);
   const envs = useMemo(() => [...new Set(allAlerts.map((a) => a.environmentName))].sort(), [allAlerts]);
+  const departments = useMemo(
+    () => [...new Set(allAlerts.map((a) => a.departmentName).filter(Boolean) as string[])].sort(),
+    [allAlerts]
+  );
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "monitoring-alerts",
@@ -104,6 +109,7 @@ export default function MonitoringAlertsContent() {
     {
       lockedKeys: ["alertCode"],
       defaultHiddenFilters: MONITORING_ALERTS_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: MONITORING_ALERT_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -172,7 +178,14 @@ export default function MonitoringAlertsContent() {
             <FilterTextInput
               value={values.thresholdQ}
               onChange={(v) => setFilter("thresholdQ", v)}
-              placeholder="Threshold / current…"
+              placeholder="Threshold…"
+            />
+          )}
+          {isFilterVisible("currentValueQ") && (
+            <FilterTextInput
+              value={values.currentValueQ}
+              onChange={(v) => setFilter("currentValueQ", v)}
+              placeholder="Current value…"
             />
           )}
           {isFilterVisible("timestampQ") && (
@@ -181,6 +194,12 @@ export default function MonitoringAlertsContent() {
               onChange={(v) => setFilter("timestampQ", v)}
               placeholder="Timestamp (YYYY-MM-DD)…"
             />
+          )}
+          {isFilterVisible("departmentQ") && (
+            <FilterSelect value={values.departmentQ} onChange={(v) => setFilter("departmentQ", v)}>
+              <option value="">All departments</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </FilterSelect>
           )}
         </TableFilterBar>
       )}

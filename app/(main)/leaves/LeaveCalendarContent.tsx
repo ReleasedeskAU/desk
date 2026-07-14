@@ -10,6 +10,7 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   LEAVE_COLUMNS,
+  LEAVE_DEFAULT_HIDDEN_COLUMN_KEYS,
   LEAVE_DEFAULT_HIDDEN_FILTER_KEYS,
   LEAVE_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -75,6 +76,11 @@ export default function LeaveCalendarContent() {
 
   const leaveTypes = useMemo(() => [...new Set(allLeaves.map((l) => l.leaveType))].sort(), [allLeaves]);
   const departments = useMemo(() => [...new Set(allLeaves.map((l) => l.user.department))].sort(), [allLeaves]);
+  const roles = useMemo(() => [...new Set(allLeaves.map((l) => l.user.role).filter(Boolean))].sort(), [allLeaves]);
+  const riskImpacts = useMemo(
+    () => [...new Set(allLeaves.map((l) => l.riskImpact).filter(Boolean) as string[])].sort(),
+    [allLeaves]
+  );
   const highRiskCount = leaves.filter((l) => l.riskScore >= 7).length;
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
@@ -84,6 +90,7 @@ export default function LeaveCalendarContent() {
     {
       lockedKeys: ["leaveCode"],
       defaultHiddenFilters: LEAVE_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: LEAVE_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -155,6 +162,36 @@ export default function LeaveCalendarContent() {
                 maxValue={values.daysMax}
                 onMinChange={(v) => setFilter("daysMin", v)}
                 onMaxChange={(v) => setFilter("daysMax", v)}
+              />
+            </div>
+          )}
+          {isFilterVisible("userIdQ") && (
+            <FilterTextInput
+              value={values.userIdQ}
+              onChange={(v) => setFilter("userIdQ", v)}
+              placeholder="User ID…"
+            />
+          )}
+          {isFilterVisible("role") && (
+            <FilterSelect value={values.role} onChange={(v) => setFilter("role", v)}>
+              <option value="">All roles</option>
+              {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+            </FilterSelect>
+          )}
+          {isFilterVisible("riskImpact") && (
+            <FilterSelect value={values.riskImpact} onChange={(v) => setFilter("riskImpact", v)}>
+              <option value="">All risk impacts</option>
+              {riskImpacts.map((r) => <option key={r} value={r}>{r}</option>)}
+            </FilterSelect>
+          )}
+          {isFilterVisible("riskScore") && (
+            <div className="inline-flex items-center gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Score</span>
+              <FilterRangeInputs
+                minValue={values.riskScoreMin}
+                maxValue={values.riskScoreMax}
+                onMinChange={(v) => setFilter("riskScoreMin", v)}
+                onMaxChange={(v) => setFilter("riskScoreMax", v)}
               />
             </div>
           )}

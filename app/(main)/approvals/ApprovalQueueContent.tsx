@@ -10,6 +10,7 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   APPROVAL_COLUMNS,
+  APPROVAL_DEFAULT_HIDDEN_COLUMN_KEYS,
   APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS,
   APPROVALS_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
@@ -106,6 +107,7 @@ export default function ApprovalQueueContent() {
     {
       lockedKeys: ["approvalCode"],
       defaultHiddenFilters: APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS,
+      defaultHiddenColumns: APPROVAL_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
   );
 
@@ -193,6 +195,20 @@ export default function ApprovalQueueContent() {
               value={values.cabMeetingIdQ}
               onChange={(v) => setFilter("cabMeetingIdQ", v)}
               placeholder="CAB meeting…"
+            />
+          )}
+          {isFilterVisible("applicationQ") && (
+            <FilterTextInput
+              value={values.applicationQ}
+              onChange={(v) => setFilter("applicationQ", v)}
+              placeholder="Application…"
+            />
+          )}
+          {isFilterVisible("departmentQ") && (
+            <FilterTextInput
+              value={values.departmentQ}
+              onChange={(v) => setFilter("departmentQ", v)}
+              placeholder="Department…"
             />
           )}
         </TableFilterBar>

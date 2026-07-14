@@ -1,25 +1,15 @@
 import { NextResponse } from "next/server";
-import { resolveSessionName } from "@/lib/user-match";
-import { encodeSession } from "@/lib/auth/cookie";
-import { SESSION_COOKIE, type SessionUser, type UserRole } from "@/lib/auth/roles";
 
-export async function POST(req: Request) {
-  const body = (await req.json()) as { email?: string; name?: string; role?: UserRole };
-  const role = body.role ?? "readonly";
-  const email = body.email ?? "user@company.com";
-  const user: SessionUser = {
-    id: email,
-    email,
-    name: resolveSessionName(email, body.name),
-    role,
-  };
-
-  const res = NextResponse.json({ user });
-  res.cookies.set(SESSION_COOKIE, encodeSession(user), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
-  return res;
+/**
+ * Legacy pre-Clerk login is disabled.
+ * Authentication is Clerk-only; this endpoint must not mint unsigned session cookies.
+ */
+export async function POST() {
+  return NextResponse.json(
+    {
+      error: "Gone",
+      message: "Legacy session login is disabled. Use Clerk sign-in at /sign-in.",
+    },
+    { status: 410 }
+  );
 }

@@ -134,26 +134,27 @@ export function MorningInboxView() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-[30px] font-bold tracking-tight text-[#1B2559] dark:text-white">Morning Inbox</h1>
+            <h1 className="text-[24px] font-bold tracking-tight text-[#1B2559] dark:text-white sm:text-[30px]">Morning Inbox</h1>
             <p className="mt-1 text-[13px] text-slate-500 dark:text-white/55">
               {hasRefinement
                 ? `Action queue for ${scopeLabel}`
                 : "Your daily action queue — blockers, P1s, mapping conflicts, and approvals"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-2xl bg-white p-1.5 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.4)]">
+          <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+            <div className="flex min-w-0 flex-1 items-center gap-1 rounded-2xl bg-white p-1 shadow-[0_18px_40px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.4)] sm:flex-none sm:gap-1.5 sm:p-1.5">
               {(["month", "quarter", "year"] as Period[]).map((p) => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPeriod(p)}
                   className={cn(
-                    "rounded-xl px-4 py-2 text-[13px] font-semibold capitalize transition-all",
+                    "min-w-0 flex-1 rounded-xl px-2.5 py-2 text-[12px] font-semibold capitalize transition-all sm:px-4 sm:text-[13px]",
                     period === p
-                      ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md"
+                      ? "text-white shadow-md"
                       : "text-slate-500 hover:bg-slate-50 dark:text-white/55 dark:hover:bg-white/5"
                   )}
+                  style={period === p ? { backgroundImage: "var(--theme-gradient)" } : undefined}
                 >
                   {p}
                 </button>
@@ -171,14 +172,17 @@ export function MorningInboxView() {
         </div>
 
         {/* Hero */}
-        <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-r from-[#3E2CBB] via-[#5A3FE0] to-[#7C5CFF] p-7 text-white shadow-[0_30px_60px_-25px_rgba(90,63,224,0.55)]">
+        <div
+          className="relative overflow-hidden rounded-[22px] px-5 py-5 text-white sm:rounded-[28px] sm:p-7"
+          style={{ backgroundImage: "var(--theme-gradient)", boxShadow: "var(--theme-shadow)" }}
+        >
           <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-white/60">
                 <Sparkles size={13} /> {PERIOD_LABEL[period]}
               </div>
-              <div className="mt-2 flex flex-wrap items-end gap-8">
+              <div className="mt-2 flex flex-wrap items-end gap-5 sm:gap-8">
                 {[
                   { n: totalCount, l: "Total items", href: "/inbox" },
                   { n: attentionCount, l: "Blocked & at risk", href: "/inbox?section=attention" },
@@ -186,11 +190,11 @@ export function MorningInboxView() {
                   { n: approvalsCount, l: "Pending approvals", href: "/inbox?section=approvals" },
                 ].map((x) => (
                   <ProgressLink key={x.l} href={x.href} className="group text-left focus:outline-none">
-                    <div className="text-[44px] font-bold leading-none tabular-nums transition-transform duration-300 group-hover:scale-105">
+                    <div className="text-[32px] font-bold leading-none tabular-nums transition-transform duration-300 group-hover:scale-105 sm:text-[44px]">
                       {loading ? "—" : x.n}
                     </div>
-                    <div className="mt-1 flex items-center gap-1 text-[13px] font-medium text-white/70 group-hover:text-white">
-                      {x.l} <ArrowUpRight size={14} className="opacity-0 transition-opacity group-hover:opacity-100" />
+                    <div className="mt-1 flex items-center gap-1 text-[12px] font-medium text-white/70 group-hover:text-white sm:text-[13px]">
+                      {x.l} <ArrowUpRight size={14} className="opacity-70 transition-opacity group-hover:opacity-100" aria-hidden />
                     </div>
                   </ProgressLink>
                 ))}
@@ -222,9 +226,10 @@ export function MorningInboxView() {
                 className={cn(
                   "rounded-full px-4 py-2 text-[12px] font-bold border transition-all duration-300",
                   active
-                    ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white border-transparent shadow-md"
+                    ? "text-white border-transparent shadow-md"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white/70 dark:hover:bg-white/5"
                 )}
+                style={active ? { backgroundImage: "var(--theme-gradient)" } : undefined}
               >
                 {f.label}
                 {count > 0 && (
@@ -282,7 +287,7 @@ function InboxSectionBlock({ section, items }: { section: InboxSection; items: I
   return (
     <InboxCard accent={accents[section]}>
       <div className="mb-4 flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
           <Icon size={18} />
         </span>
         <div>
@@ -303,7 +308,7 @@ function InboxSectionBlock({ section, items }: { section: InboxSection; items: I
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <SourceBadgeInline source={item.source} />
-                  <ProgressLink href={item.href} className="text-[13px] font-bold text-indigo-600 hover:underline dark:text-indigo-400">
+                  <ProgressLink href={item.href} className="text-[13px] font-bold text-brand-600 hover:underline dark:text-brand-400">
                     {item.title}
                   </ProgressLink>
                 </div>

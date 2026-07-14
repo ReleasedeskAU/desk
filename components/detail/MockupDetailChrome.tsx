@@ -80,12 +80,12 @@ export function MockupDetailChrome({
       <TopBar title={pageTitle} highlight />
 
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-gray-200/80 bg-gradient-to-r from-white via-brand-50/40 to-white px-4 py-3 shadow-sm dark:border-[var(--border)] dark:from-[var(--card)] dark:via-brand-500/5 dark:to-[var(--card)]">
-        <label className="text-sm text-gray-700 dark:text-white/80">
+        <label className="min-w-0 w-full text-sm text-gray-700 dark:text-white/80 sm:w-auto">
           <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-white/45">
             {selectLabel}
           </span>
           <select
-            className={cn(taInput, "min-w-[240px] font-mono text-sm")}
+            className={cn(taInput, "w-full min-w-0 max-w-full font-mono text-sm sm:w-auto sm:min-w-[200px]")}
             value={selectValue}
             onChange={(e) => onSelectChange(e.target.value)}
           >
