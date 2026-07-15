@@ -36,7 +36,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sentinel — Release Management",
+  title: "Release Desk — Release Management",
   description: "AI-powered release command center for software engineering teams",
   icons: {
     icon: "/sentinel-logo.png",

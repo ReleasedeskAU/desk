@@ -5,18 +5,36 @@ import logoSrc from "@/public/sentinel-logo.png";
 const LOGO_SRC = logoSrc as StaticImageData;
 
 type SentinelLogoProps = {
-  /** full — sidebar expanded / login; icon — collapsed sidebar shield crop; hero — login marketing panel */
+  /** full — sidebar expanded / login; icon — collapsed sidebar RD crop; hero — login marketing panel */
   variant?: "full" | "icon" | "hero";
   className?: string;
   priority?: boolean;
 };
 
 const VARIANTS = {
-  full: { width: 220, height: 88, imgClass: "h-[52px] w-auto max-w-[220px] object-contain object-left" },
-  icon: { width: 80, height: 80, imgClass: "h-10 w-10 object-cover object-[12%_center] scale-[2.2]" },
-  hero: { width: 360, height: 360, imgClass: "h-auto w-full max-w-[320px] object-contain drop-shadow-2xl" },
+  full: {
+    width: 220,
+    height: 178,
+    imgClass: "h-[52px] w-auto max-w-[180px] object-contain object-left",
+  },
+  icon: {
+    width: 80,
+    height: 80,
+    imgClass: "h-10 w-10 object-cover",
+  },
+  hero: {
+    width: 420,
+    height: 340,
+    imgClass: "h-auto w-full max-w-[320px] object-contain drop-shadow-2xl",
+  },
 } as const;
 
+/**
+ * Renders the Release Desk brand mark.
+ * @param variant - Layout treatment for sidebar, auth, or marketing surfaces.
+ * @param className - Optional extra classes on the image or icon shell.
+ * @param priority - When true, Next/Image loads the asset eagerly.
+ */
 export function SentinelLogo({ variant = "full", className, priority }: SentinelLogoProps) {
   const v = VARIANTS[variant];
 
@@ -35,7 +53,8 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
           fill
           sizes="40px"
           unoptimized
-          className="object-cover object-[50%_18%] scale-[2.35]"
+          // Crop to the RD monogram; text lives below in the full mark.
+          className="object-cover object-[50%_22%] scale-[1.85]"
           priority={priority}
         />
       </div>
@@ -45,7 +64,7 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
   return (
     <Image
       src={LOGO_SRC}
-      alt="Sentinel Release Management"
+      alt="Release Desk"
       width={v.width}
       height={v.height}
       unoptimized

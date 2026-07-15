@@ -1,17 +1,34 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  MockupDetailChrome,
-  MockupSection,
-  GlanceStrip,
-  DetailField,
-  DetailFieldGrid,
-  dash,
-} from "@/components/detail/MockupDetailChrome";
+  ArrowLeftRight,
+  Database,
+  FileText,
+  List,
+  Network,
+  Plug,
+  Zap,
+} from "lucide-react";
+import {
+  EditableDetailShell,
+  DetailSection,
+  LockedIdField,
+  EditableField,
+  EditableFieldGrid,
+  StatusChip,
+  HeroStatusRow,
+  TintedCallout,
+  EntityConnection,
+  type ChipTone,
+} from "@/components/detail/editable";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
+import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import { LayoutDashboard, List, Mail, Network, Plug } from "lucide-react";
+import { taBtnSecondary } from "@/lib/styles";
 
 type FlowDetail = {
   id: string;
@@ -26,44 +43,102 @@ type FlowDetail = {
 
 type FlowOption = { id: string; flowCode: string; sourceSystem?: string };
 
-export default function IntegrationFlowDetailPage({ params }: { params: Promise<{ id: string }> }) {
+type FlowDraft = {
+  sourceSystem: string;
+  targetSystem: string;
+  integrationType: string;
+  frequency: string;
+  dataElements: string;
+  businessPurpose: string;
+};
+
+function typeTone(integrationType: string): ChipTone {
+  const t = integrationType.toLowerCase();
+  if (t.includes("real") || t.includes("sync") || t.includes("api")) return "info";
+  if (t.includes("batch") || t.includes("file")) return "neutral";
+  if (t.includes("event") || t.includes("stream")) return "warn";
+  return "neutral";
+}
+
+function typeHeroTone(integrationType: string): "indigo" | "sky" | "violet" | "amber" {
+  const t = typeTone(integrationType);
+  if (t === "info") return "sky";
+  if (t === "warn") return "amber";
+  return "indigo";
+}
+
+/** Rough connectivity weight from how many distinct systems the flow touches. */
+function systemsPercent(source: string, target: string): number {
+  const names = [source.trim(), target.trim()].filter(Boolean);
+  if (names.length === 0) return 0;
+  const unique = new Set(names.map((n) => n.toLowerCase()));
+  if (unique.size >= 2) return 100;
+  return 50;
+}
+
+function toDraft(row: FlowDetail): FlowDraft {
+  return {
+    sourceSystem: row.sourceSystem ?? "",
+    targetSystem: row.targetSystem ?? "",
+    integrationType: row.integrationType ?? "",
+    frequency: row.frequency ?? "",
+    dataElements: row.dataElements ?? "",
+    businessPurpose: row.businessPurpose ?? "",
+  };
+}
+
+export default function IntegrationFlowDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const router = useRouter();
   const [row, setRow] = useState<FlowDetail | null>(null);
   const [options, setOptions] = useState<FlowOption[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const [detail, list, me] = await Promise.all([
+      safeFetchJson<FlowDetail>(`/api/integration-flows/${id}`, {
+        signal,
+        label: "integration-flow-detail",
+        rejectHttpErrors: false,
+      }),
+      safeFetchJson<FlowOption[]>("/api/integration-flows", {
+        signal,
+        label: "integration-flows-list",
+      }),
+      safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
+    ]);
+    if (signal?.aborted) return;
+    setRow(detail.ok && detail.status < 300 ? detail.data : null);
+    setOptions(
+      list.ok
+        ? list.data.map((f) => ({
+            id: f.id,
+            flowCode: f.flowCode,
+            sourceSystem: f.sourceSystem,
+          }))
+        : []
+    );
+    if (me.ok) setUser(me.data.user);
+    setLastRefresh(new Date());
+    setLoading(false);
+  }, [id]);
+
   useEffect(() => {
     const ac = new AbortController();
-    void (async () => {
-      const [detail, list] = await Promise.all([
-        safeFetchJson<FlowDetail>(`/api/integration-flows/${id}`, {
-          signal: ac.signal,
-          label: "integration-flow-detail",
-          rejectHttpErrors: false,
-        }),
-        safeFetchJson<FlowOption[]>("/api/integration-flows", {
-          signal: ac.signal,
-          label: "integration-flows-list",
-        }),
-      ]);
-      if (ac.signal.aborted) return;
-      setRow(detail.ok && detail.status < 300 ? detail.data : null);
-      setOptions(
-        list.ok
-          ? list.data.map((f) => ({
-              id: f.id,
-              flowCode: f.flowCode,
-              sourceSystem: f.sourceSystem,
-            }))
-          : []
-      );
-      setLastRefresh(new Date());
-      setLoading(false);
-    })();
+    void load(ac.signal);
     return () => ac.abort();
-  }, [id]);
+  }, [load]);
+
+  const source = useMemo(() => (row ? toDraft(row) : null), [row]);
+  const edit = useEditableDetail(source);
+  const canEdit = sessionCanEdit(user);
+  const v = edit.values;
 
   const selectOptions = useMemo(
     () =>
@@ -76,97 +151,243 @@ export default function IntegrationFlowDetailPage({ params }: { params: Promise<
     [options]
   );
 
-  if (loading) return <p className="text-gray-500 dark:text-white/60">Loading integration flow…</p>;
-  if (!row) return <p className="text-gray-500 dark:text-white/60">Integration flow not found.</p>;
+  const save = async () => {
+    if (!row || !edit.draft) return;
+    edit.setSaving(true);
+    edit.setError(null);
+    const d = edit.draft;
+    // flowCode is immutable — never include it in the PATCH body.
+    const res = await safeFetchJson(`/api/integration-flows/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceSystem: d.sourceSystem.trim(),
+        targetSystem: d.targetSystem.trim(),
+        integrationType: d.integrationType.trim(),
+        frequency: d.frequency.trim(),
+        dataElements: d.dataElements.trim(),
+        businessPurpose: d.businessPurpose.trim(),
+      }),
+      label: "integration-flow-patch",
+      rejectHttpErrors: false,
+    });
+    edit.setSaving(false);
+    if (!res.ok || res.status >= 300) {
+      edit.setError("Couldn’t save changes. Try again.");
+      return;
+    }
+    edit.discard();
+    edit.setSaveMessage("Saved");
+    await load();
+  };
+
+  const remove = async () => {
+    if (!row) return;
+    edit.setDeleting(true);
+    const res = await safeFetchJson(`/api/integration-flows/${row.id}`, {
+      method: "DELETE",
+      label: "integration-flow-delete",
+      rejectHttpErrors: false,
+    });
+    edit.setDeleting(false);
+    if (!res.ok || res.status >= 300) {
+      edit.setError("Couldn’t delete this integration flow.");
+      edit.setDeleteOpen(false);
+      return;
+    }
+    router.push("/integration-flows");
+  };
+
+  if (loading) {
+    return <p className="text-slate-500 dark:text-white/60">Loading integration flow…</p>;
+  }
+  if (!row || !v) {
+    return <p className="text-slate-500 dark:text-white/60">Integration flow not found.</p>;
+  }
+
+  const uniqueSystems = new Set(
+    [v.sourceSystem.trim(), v.targetSystem.trim()]
+      .filter(Boolean)
+      .map((n) => n.toLowerCase())
+  ).size;
+  const systemsPct = systemsPercent(v.sourceSystem, v.targetSystem);
 
   return (
-    <MockupDetailChrome
-      pageTitle="🔌 INTEGRATION DETAIL PAGE"
+    <EditableDetailShell
+      pageTitle="Integration Detail"
+      pageDescription="System-to-system data path — source, target, type, and frequency show what breaks if either side is unavailable during a release."
+      entityLabel="Integration"
       entityCode={row.flowCode}
-      selectLabel="Select System"
+      entityName={
+        v.sourceSystem && v.targetSystem
+          ? `${v.sourceSystem} → ${v.targetSystem}`
+          : row.flowCode
+      }
+      selectLabel="Select Integration"
       selectValue={row.id}
-      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: row.flowCode }]}
-      onSelectChange={(v) => v !== row.id && router.push(`/integration-flows/${v}`)}
+      selectOptions={selectOptions}
+      onSelectChange={(next) => next !== row.id && router.push(`/integration-flows/${next}`)}
       lastRefresh={lastRefresh}
-      footer="Integration Page v1.0 | Data sourced from System Mapping sheet | System integration & data flow tracking"
-      quickActions={[
-        {
-          href: "/integration-flows",
-          label: "📊 Integration Map",
-          icon: <Network className="mr-1 inline h-4 w-4" />,
-        },
-        {
-          href: `/integration-flows/${row.id}`,
-          label: "🔍 Test Connection",
-          icon: <Plug className="mr-1 inline h-4 w-4" />,
-        },
-        {
-          href: "/dependencies",
-          label: "📋 View Dependencies",
-          icon: <LayoutDashboard className="mr-1 inline h-4 w-4" />,
-        },
-        {
-          href: `/integration-flows/${row.id}`,
-          label: "📧 Notify Owners",
-          icon: <Mail className="mr-1 inline h-4 w-4" />,
-        },
-        {
-          href: "/integration-flows",
-          label: "🔙 All Integrations",
-          icon: <List className="mr-1 inline h-4 w-4" />,
-        },
-      ]}
+      footer="Integration Page v2.0 · System mapping · Integration ID is locked"
+      editing={edit.editing}
+      canEdit={canEdit}
+      saving={edit.saving}
+      deleting={edit.deleting}
+      saveMessage={edit.saveMessage}
+      onEdit={edit.startEdit}
+      onDiscard={edit.discard}
+      onSave={save}
+      deleteOpen={edit.deleteOpen}
+      onDeleteOpen={() => edit.setDeleteOpen(true)}
+      onDeleteCancel={() => edit.setDeleteOpen(false)}
+      onDeleteConfirm={remove}
+      relatedLinks={
+        <>
+          <ProgressLink href="/integration-flows" className={taBtnSecondary + " text-sm !py-2"}>
+            <Network className="mr-1.5 inline h-4 w-4" aria-hidden />
+            Integration Map
+          </ProgressLink>
+          <ProgressLink href="/dependencies" className={taBtnSecondary + " text-sm !py-2"}>
+            <Plug className="mr-1.5 inline h-4 w-4" aria-hidden />
+            View Dependencies
+          </ProgressLink>
+          <ProgressLink href="/integration-flows" className={taBtnSecondary + " text-sm !py-2"}>
+            <List className="mr-1.5 inline h-4 w-4" aria-hidden />
+            All Integrations
+          </ProgressLink>
+        </>
+      }
     >
-      <MockupSection title="🚦 INTEGRATION STATUS AT A GLANCE">
-        <GlanceStrip
-          items={[
-            { label: "Status", value: "🟢 Active", tone: "good" },
-            { label: "Integration Count", value: 1 },
-            { label: "Last Tested", value: "—" },
-          ]}
+      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
+
+      <HeroStatusRow
+        hero={{
+          icon: ArrowLeftRight,
+          label: "Type",
+          value: v.integrationType.trim() || "—",
+          tone: typeHeroTone(v.integrationType),
+        }}
+        secondary={{
+          icon: Zap,
+          label: "Frequency",
+          value: v.frequency.trim() || "—",
+        }}
+        metric={{
+          icon: Network,
+          label: "Systems",
+          percent: systemsPct,
+          caption:
+            uniqueSystems === 0
+              ? "no systems recorded"
+              : uniqueSystems === 1
+                ? "1 system recorded"
+                : `${uniqueSystems} systems linked`,
+          tone: uniqueSystems >= 2 ? "emerald" : "amber",
+        }}
+      />
+
+      <DetailSection
+        icon={Network}
+        tone="sky"
+        title="Data path"
+        description="Directional link between systems — if either side is down, this flow stops."
+      >
+        <EntityConnection
+          source={v.sourceSystem.trim() || "—"}
+          target={v.targetSystem.trim() || "—"}
+          caption={`${v.integrationType.trim() || "Type n/a"} · ${v.frequency.trim() || "Frequency n/a"}`}
         />
-      </MockupSection>
+      </DetailSection>
 
-      <MockupSection title="📋 SYSTEM INFORMATION">
-        <DetailFieldGrid cols={2}>
-          <DetailField label="System Name" value={dash(row.sourceSystem)} />
-          <DetailField label="Department" value="—" />
-          <DetailField label="System Type" value={dash(row.integrationType)} />
-          <DetailField label="Owner" value="—" />
-        </DetailFieldGrid>
-      </MockupSection>
+      <DetailSection
+        icon={Plug}
+        tone="indigo"
+        title="Systems"
+        description="Source and target endpoints for this integration."
+      >
+        <EditableFieldGrid cols={3}>
+          <LockedIdField label="Integration ID" value={row.flowCode} />
+          <EditableField
+            label="Source System"
+            value={v.sourceSystem}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("sourceSystem", n)}
+            placeholder="Source system…"
+          />
+          <EditableField
+            label="Target System"
+            value={v.targetSystem}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("targetSystem", n)}
+            placeholder="Target system…"
+          />
+          <EditableField
+            label="Integration Type"
+            value={v.integrationType}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("integrationType", n)}
+            display={
+              v.integrationType.trim() ? (
+                <StatusChip label={v.integrationType} tone={typeTone(v.integrationType)} />
+              ) : (
+                "—"
+              )
+            }
+            placeholder="e.g. API, Batch…"
+          />
+          <EditableField
+            label="Frequency"
+            value={v.frequency}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("frequency", n)}
+            placeholder="e.g. Real-time, Daily…"
+          />
+        </EditableFieldGrid>
+      </DetailSection>
 
-      <MockupSection title="🔗 INTEGRATIONS (Systems This Connects To)">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[480px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-[var(--border)] dark:text-white/45">
-                <th className="px-2 py-2 font-semibold">Integrates With</th>
-                <th className="px-2 py-2 font-semibold">Data Flow</th>
-                <th className="px-2 py-2 font-semibold">Key Data Exchanged</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-gray-100 dark:border-[var(--border)]">
-                <td className="px-2 py-2.5 font-medium text-gray-900 dark:text-white">
-                  {row.targetSystem}
-                </td>
-                <td className="px-2 py-2.5 text-gray-800 dark:text-white/85">{row.integrationType}</td>
-                <td className="px-2 py-2.5 text-gray-700 dark:text-white/75">{row.dataElements}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </MockupSection>
+      <DetailSection
+        icon={Database}
+        tone="violet"
+        title="Data exchanged"
+        description="Which data elements move across this path and matter for release impact."
+      >
+        {edit.editing ? (
+          <EditableField
+            label="Data Elements"
+            value={v.dataElements}
+            editing
+            kind="textarea"
+            onChange={(n) => edit.setField("dataElements", n)}
+            placeholder="Key data elements…"
+          />
+        ) : (
+          <TintedCallout tone="violet">
+            {v.dataElements.trim() ? v.dataElements : "No data elements recorded."}
+          </TintedCallout>
+        )}
+      </DetailSection>
 
-      <MockupSection title="⚠️ INTEGRATION DEPENDENCIES">
-        <p className="text-sm text-gray-600 dark:text-white/70">This system must be available for:</p>
-        <p className="mt-2 text-sm text-gray-500 dark:text-white/55">—</p>
-      </MockupSection>
-
-      <MockupSection title="📝 INTEGRATION NOTES">
-        <DetailField label="Notes" value={dash(row.businessPurpose)} />
-      </MockupSection>
-    </MockupDetailChrome>
+      <DetailSection
+        icon={FileText}
+        tone="amber"
+        title="Notes"
+        description="Business purpose — why this integration exists and what fails without it."
+      >
+        {edit.editing ? (
+          <EditableField
+            label="Business Purpose"
+            value={v.businessPurpose}
+            editing
+            kind="textarea"
+            onChange={(n) => edit.setField("businessPurpose", n)}
+            placeholder="Why this integration matters…"
+          />
+        ) : (
+          <TintedCallout tone="amber">
+            {v.businessPurpose.trim() ? v.businessPurpose : "No business purpose recorded yet."}
+          </TintedCallout>
+        )}
+      </DetailSection>
+    </EditableDetailShell>
   );
 }

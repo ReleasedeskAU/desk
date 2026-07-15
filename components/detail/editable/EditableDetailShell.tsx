@@ -12,6 +12,8 @@ export type EntitySelectOption = { value: string; label: string };
 
 type EditableDetailShellProps = {
   pageTitle: string;
+  /** 1–2 line plain-language description of what this record type is and why it matters. */
+  pageDescription?: string;
   entityLabel: string;
   entityCode: string;
   /** Optional display name under the code (e.g. release name). */
@@ -40,10 +42,11 @@ type EditableDetailShellProps = {
 
 /**
  * Shared chrome for redesigned editable detail pages.
- * Visual layer matches ReleaseDetailRedesign; rules: one primary action, quieter Delete.
+ * One primary Edit action; quieter Delete; brand-themed accents.
  */
 export function EditableDetailShell({
   pageTitle,
+  pageDescription,
   entityLabel,
   entityCode,
   entityName,
@@ -84,6 +87,11 @@ export function EditableDetailShell({
               {entityCode}
             </span>
           </div>
+          {pageDescription ? (
+            <p className="mt-2 max-w-3xl text-[13.5px] leading-relaxed text-slate-500 dark:text-white/60">
+              {pageDescription}
+            </p>
+          ) : null}
           <p className="mt-1 text-[12.5px] text-slate-400 dark:text-white/50">
             Last refresh {formatDateTime(lastRefresh.toISOString())}
           </p>
@@ -104,7 +112,8 @@ export function EditableDetailShell({
                 <button
                   type="button"
                   onClick={onEdit}
-                  className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 transition-all duration-150 hover:bg-indigo-700 hover:shadow-md active:scale-[0.97] dark:shadow-indigo-900/40"
+                  className="flex items-center gap-1.5 rounded-xl bg-brand-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition-all duration-150 hover:bg-brand-600 hover:shadow-md active:scale-[0.97]"
+                  style={{ boxShadow: "var(--theme-shadow)" }}
                 >
                   <Edit3 size={14} aria-hidden />
                   Edit {entityLabel}
@@ -139,7 +148,7 @@ export function EditableDetailShell({
       {editing && (
         <div
           role="status"
-          className="rounded-2xl bg-indigo-50 px-4 py-3 text-[13px] font-semibold text-indigo-800 ring-1 ring-indigo-200 transition-all duration-200 ease-out dark:bg-indigo-500/10 dark:text-indigo-200 dark:ring-indigo-500/30"
+          className="rounded-2xl bg-brand-50 px-4 py-3 text-[13px] font-semibold text-brand-800 ring-1 ring-brand-200 transition-all duration-200 ease-out dark:bg-brand-500/10 dark:text-brand-200 dark:ring-brand-500/30"
         >
           Editing {entityLabel.toLowerCase()} — changes aren’t saved until you click Save Changes.
         </div>

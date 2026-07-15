@@ -1,6 +1,6 @@
 # ============================================================
 # Enterprise Coding Standards & Security Compliance
-# Aim Technologies — Cursor AI Rules
+# Release Desk— Cursor AI Rules
 # ============================================================
 # Place this file at the project root as `.cursorrules`.
 # Cursor reads it automatically on every prompt in this repo.
@@ -91,6 +91,50 @@
 - Summarize what changed and why in plain language — not a line-by-line narration.
 - Explicitly flag any change touching security, auth, data handling, or external integrations, even if minor.
 - If a security tradeoff was made (e.g., relaxed validation for a specific reason), state it clearly rather than leaving it implicit.
+
+## 7. SIMPLICITY & REUSE — OPTIMIZATION LAYER (applied last, after Sections 1–6)
+
+Before writing new code, ask in order:
+1. Does this code actually need to exist? (YAGNI)
+2. Can existing project code be reused?
+3. Can the standard library solve it?
+4. Can the framework/platform solve it?
+5. Can an existing dependency solve it?
+6. Only then, write the minimum custom code required.
+
+Goal is simple code, not short code at any cost. Do not:
+- strip out validation, error handling, or auth checks to save lines
+- collapse necessary abstractions into a single function just to reduce line count
+- skip documentation or comments required by Sections 2–3 in the name of brevity
+
+Safeguard: Simplicity must never reduce maintainability, readability, testability, security, or scalability.
+
+### Priority order when goals conflict
+1. Security
+2. Correctness
+3. Existing project architecture
+4. Maintainability
+5. Simplicity/reuse optimization (this section)
+6. Token efficiency
+
+Token savings and code brevity are the last consideration, never the first. If a simpler implementation would compromise anything above it in this list, choose the more robust implementation instead.
+
+## 8. TESTING & VERIFICATION (bug-free requirement — scoped)
+
+Applies to: core business logic, calculations, validation rules, auth/permission
+logic, data transformations, and any bug fix.
+Does NOT apply to: minor UI tweaks, styling changes, copy/text edits, or other
+trivial/cosmetic changes — skip this section for those to keep responses fast
+and token-light.
+
+For in-scope changes:
+- Write at least one test covering the main path and one covering an edge/error case.
+- Before declaring a task complete, trace through the logic with a realistic
+  input and one invalid/edge input — mentally or via a quick check — before saying it's done.
+- Bug fixes must include a regression test that would have caught the original bug.
+- Never say "should work now" without stating what was actually verified
+  (e.g., "traced logic for empty-array input, confirmed no crash").
+- If requirements are ambiguous, state the assumption made rather than silently guessing.
 
 # ============================================================
 # End of rules. These apply to all code generated or modified

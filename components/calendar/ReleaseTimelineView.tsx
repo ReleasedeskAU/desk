@@ -357,10 +357,10 @@ function TodayMarker({
       style={{ left: x, top: `${TIMELINE_AXIS_PERCENT}%`, transform: "translate(-50%, -50%)" }}
     >
       <div className="flex flex-col items-center">
-        <span className="mb-1 whitespace-nowrap rounded-sm bg-violet-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-violet-500">
+        <span className="mb-1 whitespace-nowrap rounded-sm bg-brand-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-brand-500">
           {label}
         </span>
-        <span className="h-3 w-3 rounded-sm bg-violet-600 ring-2 ring-white dark:bg-violet-500 dark:ring-[var(--card)]" />
+        <span className="h-3 w-3 rounded-sm bg-brand-500 ring-2 ring-white dark:bg-brand-500 dark:ring-[var(--card)]" />
       </div>
     </div>
   );

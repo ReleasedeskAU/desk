@@ -23,3 +23,28 @@ export const createRiskSchema = z
   .strict();
 
 export type CreateRiskInput = z.infer<typeof createRiskSchema>;
+
+const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).optional();
+
+/**
+ * PATCH /api/risks/[id] — allowlisted fields only.
+ * riskCode is immutable; riskScore is server-derived from likelihood × impact.
+ */
+export const patchRiskSchema = z
+  .object({
+    releaseId: z.string().trim().min(1).max(64).optional(),
+    applicationName: optionalNullableString,
+    departmentName: optionalNullableString,
+    category: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().min(1).max(4000).optional(),
+    likelihood: RISK_SCORE_DIM.optional(),
+    impact: RISK_SCORE_DIM.optional(),
+    affectedArea: optionalNullableString,
+    mitigationStrategy: optionalNullableString,
+    riskOwnerId: z.union([z.string().trim().min(1).max(64), z.null()]).optional(),
+    status: z.string().trim().min(1).max(64).optional(),
+    notes: optionalNullableString,
+  })
+  .strict();
+
+export type PatchRiskInput = z.infer<typeof patchRiskSchema>;

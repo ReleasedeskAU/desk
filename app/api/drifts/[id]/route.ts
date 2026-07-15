@@ -1,30 +1,107 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { zodErrorResponse } from "@/lib/api-errors";
+import { patchDriftSchema } from "@/lib/validation/drift";
 
 type Params = { params: Promise<{ id: string }> };
+
+const driftInclude = {
+  release: { select: { id: true, releaseCode: true, name: true, status: true } },
+  application: { select: { id: true, name: true } },
+} as const;
+
+async function findDrift(id: string) {
+  return (
+    (await prisma.drift.findUnique({ where: { id }, include: driftInclude })) ??
+    (await prisma.drift.findUnique({ where: { driftCode: id }, include: driftInclude }))
+  );
+}
+
+function parseDate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
 
 export async function GET(_req: Request, { params }: Params) {
   const { error } = await requireRole("readonly");
   if (error) return error;
 
   const { id } = await params;
-  const row =
-    (await prisma.drift.findUnique({
-      where: { id },
-      include: {
-        release: { select: { id: true, releaseCode: true, name: true, status: true } },
-        application: { select: { id: true, name: true } },
-      },
-    })) ??
-    (await prisma.drift.findUnique({
-      where: { driftCode: id },
-      include: {
-        release: { select: { id: true, releaseCode: true, name: true, status: true } },
-        application: { select: { id: true, name: true } },
-      },
-    }));
-
+  const row = await findDrift(id);
   if (!row) return NextResponse.json({ error: "Drift not found" }, { status: 404 });
   return NextResponse.json(row);
+}
+
+/**
+ * Updates allowlisted drift fields. driftCode is immutable (schema.strict).
+ */
+export async function PATCH(req: Request, { params }: Params) {
+  const { error } = await requireRole("editor");
+  if (error) return error;
+
+  const { id } = await params;
+  const existing = await findDrift(id);
+  if (!existing) return NextResponse.json({ error: "Drift not found" }, { status: 404 });
+
+  const parsed = patchDriftSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  const detectedDate = parseDate(body.detectedDate);
+  const etaToFix = parseDate(body.etaToFix);
+  if (body.detectedDate !== undefined && detectedDate === undefined) {
+    return NextResponse.json({ error: "Invalid detectedDate" }, { status: 400 });
+  }
+  if (body.etaToFix !== undefined && body.etaToFix !== null && etaToFix === undefined) {
+    return NextResponse.json({ error: "Invalid etaToFix" }, { status: 400 });
+  }
+
+  if (body.releaseId !== undefined) {
+    const release = await prisma.release.findUnique({ where: { id: body.releaseId }, select: { id: true } });
+    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+  }
+  if (body.applicationId !== undefined) {
+    const app = await prisma.application.findUnique({ where: { id: body.applicationId }, select: { id: true } });
+    if (!app) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+  }
+
+  const data: Record<string, unknown> = {};
+  if (body.releaseId !== undefined) data.releaseId = body.releaseId;
+  if (body.applicationId !== undefined) data.applicationId = body.applicationId;
+  if (body.departmentName !== undefined) data.departmentName = body.departmentName;
+  if (body.environmentName !== undefined) data.environmentName = body.environmentName;
+  if (body.driftType !== undefined) data.driftType = body.driftType;
+  if (body.driftCategory !== undefined) data.driftCategory = body.driftCategory;
+  if (detectedDate !== undefined) data.detectedDate = detectedDate;
+  if (body.severity !== undefined) data.severity = body.severity;
+  if (body.description !== undefined) data.description = body.description;
+  if (body.impactOnRelease !== undefined) data.impactOnRelease = body.impactOnRelease;
+  if (body.remediationAction !== undefined) data.remediationAction = body.remediationAction;
+  if (body.status !== undefined) data.status = body.status;
+  if (etaToFix !== undefined) data.etaToFix = etaToFix;
+
+  const row = await prisma.drift.update({
+    where: { id: existing.id },
+    data,
+    include: driftInclude,
+  });
+  return NextResponse.json(row);
+}
+
+export async function DELETE(_req: Request, { params }: Params) {
+  const { error } = await requireRole("editor");
+  if (error) return error;
+
+  const { id } = await params;
+  const existing = await findDrift(id);
+  if (!existing) return NextResponse.json({ error: "Drift not found" }, { status: 404 });
+
+  await prisma.drift.delete({ where: { id: existing.id } });
+  return NextResponse.json({ ok: true });
 }

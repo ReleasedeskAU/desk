@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { zodErrorResponse } from "@/lib/api-errors";
+import { patchBlockerSchema } from "@/lib/validation/blocker";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -11,33 +13,22 @@ async function findBlocker(id: string) {
   );
 }
 
-function optionalString(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  const s = String(value).trim();
-  return s === "" ? null : s;
-}
-
-function optionalDate(value: unknown): Date | null | undefined {
+function parseDate(value: string | null | undefined): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? null : d;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
-function optionalInt(value: unknown): number | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.round(n) : null;
-}
-
-function mapBlocker(row: NonNullable<Awaited<ReturnType<typeof findBlocker>>>, release: {
-  id: string;
-  releaseCode: string;
-  name: string;
-  status: string;
-} | null) {
+function mapBlocker(
+  row: NonNullable<Awaited<ReturnType<typeof findBlocker>>>,
+  release: {
+    id: string;
+    releaseCode: string;
+    name: string;
+    status: string;
+  } | null
+) {
   return {
     id: row.id,
     blockerCode: row.blockerCode,
@@ -80,7 +71,8 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 /**
- * Updates blocker fields. Blocker ID (blockerCode) is intentionally immutable.
+ * Updates blocker fields. Blocker ID (blockerCode) is intentionally immutable —
+ * rejected by patchBlockerSchema.strict() if present in the body.
  */
 export async function PATCH(req: Request, { params }: Params) {
   const { error } = await requireRole("editor");
@@ -90,40 +82,45 @@ export async function PATCH(req: Request, { params }: Params) {
   const existing = await findBlocker(id);
   if (!existing) return NextResponse.json({ error: "Blocker not found" }, { status: 404 });
 
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
-
-  for (const [bodyKey, dbKey] of [
-    ["releaseCode", "releaseCode"],
-    ["releaseName", "releaseName"],
-    ["department", "departmentName"],
-    ["application", "applicationName"],
-    ["blockerType", "blockerType"],
-    ["blockerDescription", "blockerDescription"],
-    ["severity", "severity"],
-    ["raisedBy", "raisedBy"],
-    ["status", "status"],
-    ["escalationLevel", "escalationLevel"],
-    ["impactOnRelease", "impactOnRelease"],
-  ] as const) {
-    if (body[bodyKey] !== undefined) data[dbKey] = String(body[bodyKey]).trim();
+  const parsed = patchBlockerSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
-  const assignedTo = optionalString(body.assignedTo);
-  if (assignedTo !== undefined) data.assignedTo = assignedTo;
-  const rootCause = optionalString(body.rootCause);
-  if (rootCause !== undefined) data.rootCause = rootCause;
-  const resolutionNotes = optionalString(body.resolutionNotes);
-  if (resolutionNotes !== undefined) data.resolutionNotes = resolutionNotes;
+  const raisedDate = parseDate(body.raisedDate);
+  const targetResolutionDate = parseDate(body.targetResolutionDate);
+  const actualResolutionDate = parseDate(body.actualResolutionDate);
+  for (const [key, raw, parsedDate] of [
+    ["raisedDate", body.raisedDate, raisedDate],
+    ["targetResolutionDate", body.targetResolutionDate, targetResolutionDate],
+    ["actualResolutionDate", body.actualResolutionDate, actualResolutionDate],
+  ] as const) {
+    if (raw !== undefined && raw !== null && parsedDate === undefined) {
+      return NextResponse.json({ error: `Invalid ${key}` }, { status: 400 });
+    }
+  }
 
-  const raisedDate = optionalDate(body.raisedDate);
+  const data: Record<string, unknown> = {};
+  if (body.releaseCode !== undefined) data.releaseCode = body.releaseCode;
+  if (body.releaseName !== undefined) data.releaseName = body.releaseName;
+  if (body.department !== undefined) data.departmentName = body.department;
+  if (body.application !== undefined) data.applicationName = body.application;
+  if (body.blockerType !== undefined) data.blockerType = body.blockerType;
+  if (body.blockerDescription !== undefined) data.blockerDescription = body.blockerDescription;
+  if (body.severity !== undefined) data.severity = body.severity;
+  if (body.raisedBy !== undefined) data.raisedBy = body.raisedBy;
+  if (body.status !== undefined) data.status = body.status;
+  if (body.escalationLevel !== undefined) data.escalationLevel = body.escalationLevel;
+  if (body.impactOnRelease !== undefined) data.impactOnRelease = body.impactOnRelease;
+  if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
+  if (body.rootCause !== undefined) data.rootCause = body.rootCause;
+  if (body.resolutionNotes !== undefined) data.resolutionNotes = body.resolutionNotes;
   if (raisedDate !== undefined) data.raisedDate = raisedDate;
-  const targetResolutionDate = optionalDate(body.targetResolutionDate);
   if (targetResolutionDate !== undefined) data.targetResolutionDate = targetResolutionDate;
-  const actualResolutionDate = optionalDate(body.actualResolutionDate);
   if (actualResolutionDate !== undefined) data.actualResolutionDate = actualResolutionDate;
-  const daysOpen = optionalInt(body.daysOpen);
-  if (daysOpen !== undefined) data.daysOpen = daysOpen;
+  if (body.daysOpen !== undefined) data.daysOpen = body.daysOpen;
 
   const row = await prisma.blocker.update({ where: { id: existing.id }, data });
   const release = await prisma.release.findUnique({

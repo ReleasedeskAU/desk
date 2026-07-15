@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { zodErrorResponse } from "@/lib/api-errors";
+import { patchConflictSchema } from "@/lib/validation/conflict";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,13 +11,6 @@ async function findConflict(id: string) {
     (await prisma.environmentConflict.findUnique({ where: { id } })) ??
     (await prisma.environmentConflict.findUnique({ where: { conflictCode: id } }))
   );
-}
-
-function optionalString(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  const s = String(value).trim();
-  return s === "" ? null : s;
 }
 
 export async function GET(_req: Request, { params }: Params) {
@@ -80,7 +75,8 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 /**
- * Updates mutable conflict fields. Conflict ID (conflictCode) is intentionally immutable.
+ * Updates mutable conflict fields. Conflict ID (conflictCode) is intentionally immutable —
+ * rejected by patchConflictSchema.strict() if present in the body.
  */
 export async function PATCH(req: Request, { params }: Params) {
   const { error } = await requireRole("editor");
@@ -90,25 +86,28 @@ export async function PATCH(req: Request, { params }: Params) {
   const existing = await findConflict(id);
   if (!existing) return NextResponse.json({ error: "Conflict not found" }, { status: 404 });
 
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
+  const parsed = patchConflictSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
 
-  if (body.status !== undefined) data.status = String(body.status);
-  if (body.priority !== undefined) data.priority = String(body.priority);
-  if (body.release1Code !== undefined) data.release1Code = String(body.release1Code).trim();
-  if (body.release2Code !== undefined) data.release2Code = String(body.release2Code).trim();
-  if (body.application !== undefined) data.applicationName = String(body.application).trim();
-  if (body.department !== undefined) data.departmentName = String(body.department).trim();
+  const data: Record<string, unknown> = {};
+  if (body.status !== undefined) data.status = body.status;
+  if (body.priority !== undefined) data.priority = body.priority;
+  if (body.release1Code !== undefined) data.release1Code = body.release1Code;
+  if (body.release2Code !== undefined) data.release2Code = body.release2Code;
+  if (body.application !== undefined) data.applicationName = body.application;
+  if (body.department !== undefined) data.departmentName = body.department;
   if (body.conflictingEnvironment !== undefined) {
-    data.conflictingEnvironment = String(body.conflictingEnvironment).trim();
+    data.conflictingEnvironment = body.conflictingEnvironment;
   }
   if (body.environmentConflictType !== undefined) {
-    data.environmentConflictType = String(body.environmentConflictType).trim();
+    data.environmentConflictType = body.environmentConflictType;
   }
-  const assignedTo = optionalString(body.assignedTo);
-  if (assignedTo !== undefined) data.assignedTo = assignedTo;
-  const notes = optionalString(body.notes);
-  if (notes !== undefined) data.notes = notes;
+  if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
+  if (body.notes !== undefined) data.notes = body.notes;
 
   const row = await prisma.environmentConflict.update({
     where: { id: existing.id },

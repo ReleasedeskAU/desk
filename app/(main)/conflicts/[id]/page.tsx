@@ -205,6 +205,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   return (
     <EditableDetailShell
       pageTitle="Conflict Detail"
+      pageDescription="Environment window clashes between releases — left unresolved, these block shared Test/UAT/Pre-Prod bookings and force last-minute schedule changes."
       entityLabel="Conflict"
       entityCode={row.conflictCode}
       entityName={`${v.release1Code} vs ${v.release2Code}`}

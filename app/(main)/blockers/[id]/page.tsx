@@ -266,6 +266,7 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   return (
     <EditableDetailShell
       pageTitle="Blocker Detail"
+      pageDescription="An open issue preventing a release from progressing — days open and severity show how urgently this must clear before the deployment window."
       entityLabel="Blocker"
       entityCode={row.blockerCode}
       entityName={v.blockerType || row.blockerCode}

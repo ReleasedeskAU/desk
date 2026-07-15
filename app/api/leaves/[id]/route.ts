@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { zodErrorResponse } from "@/lib/api-errors";
+import { patchLeaveSchema } from "@/lib/validation/leave";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,25 +22,11 @@ async function findLeave(id: string) {
   );
 }
 
-function optionalString(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  const s = String(value).trim();
-  return s === "" ? null : s;
-}
-
-function optionalDate(value: unknown): Date | null | undefined {
+function parseDate(value: string | null | undefined): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function optionalInt(value: unknown): number | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.round(n) : null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
 export async function GET(_req: Request, { params }: Params) {
@@ -63,20 +51,29 @@ export async function PATCH(req: Request, { params }: Params) {
   const existing = await findLeave(id);
   if (!existing) return NextResponse.json({ error: "Leave record not found" }, { status: 404 });
 
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
+  const parsed = patchLeaveSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
 
-  if (body.leaveType !== undefined) data.leaveType = String(body.leaveType).trim();
-  const leaveStart = optionalDate(body.leaveStart);
+  const leaveStart = parseDate(body.leaveStart);
+  const leaveEnd = parseDate(body.leaveEnd);
+  if (body.leaveStart !== undefined && body.leaveStart !== null && leaveStart === undefined) {
+    return NextResponse.json({ error: "Invalid leaveStart" }, { status: 400 });
+  }
+  if (body.leaveEnd !== undefined && body.leaveEnd !== null && leaveEnd === undefined) {
+    return NextResponse.json({ error: "Invalid leaveEnd" }, { status: 400 });
+  }
+
+  const data: Record<string, unknown> = {};
+  if (body.leaveType !== undefined) data.leaveType = body.leaveType;
   if (leaveStart !== undefined) data.leaveStart = leaveStart;
-  const leaveEnd = optionalDate(body.leaveEnd);
   if (leaveEnd !== undefined) data.leaveEnd = leaveEnd;
-  const days = optionalInt(body.days);
-  if (days !== undefined) data.days = days;
-  const riskImpact = optionalString(body.riskImpact);
-  if (riskImpact !== undefined) data.riskImpact = riskImpact;
-  const riskScore = optionalInt(body.riskScore);
-  if (riskScore !== undefined) data.riskScore = riskScore;
+  if (body.days !== undefined) data.days = body.days;
+  if (body.riskImpact !== undefined) data.riskImpact = body.riskImpact;
+  if (body.riskScore !== undefined) data.riskScore = body.riskScore;
 
   const row = await prisma.leaveRecord.update({
     where: { id: existing.id },

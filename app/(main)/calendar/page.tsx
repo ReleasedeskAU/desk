@@ -257,9 +257,10 @@ export default function CalendarPage() {
                       className={cn(
                         "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-semibold transition-all sm:px-4 sm:text-[13px]",
                         display === id
-                          ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md"
+                          ? "text-white shadow-md"
                           : "text-slate-500 hover:bg-white dark:text-white/60 dark:hover:bg-white/5",
                       )}
+                      style={display === id ? { backgroundImage: "var(--theme-gradient)" } : undefined}
                     >
                       <Icon size={15} />
                       <span className="hidden sm:inline">{label}</span>

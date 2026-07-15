@@ -1,27 +1,45 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  MockupDetailChrome,
-  MockupSection,
-  GlanceStrip,
-  DetailField,
-  DetailFieldGrid,
-  dash,
-} from "@/components/detail/MockupDetailChrome";
-import { StatusBadge } from "@/components/badges/StatusBadge";
+  Calendar,
+  CheckCircle2,
+  ClipboardCheck,
+  List,
+  MessageSquare,
+  Package,
+  User,
+  Zap,
+} from "lucide-react";
+import {
+  EditableDetailShell,
+  DetailSection,
+  LockedIdField,
+  EditableField,
+  EditableFieldGrid,
+  StatusChip,
+  HeroStatusRow,
+  TintedCallout,
+  EntityTimeline,
+  type ChipTone,
+} from "@/components/detail/editable";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
+import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
-import { Calendar, List, Mail, MessageSquare, Package } from "lucide-react";
+import { taBtnSecondary } from "@/lib/styles";
 
 type ApprovalDetail = {
   id: string;
   approvalCode: string;
+  releaseId: string;
   applicationName: string | null;
   departmentName: string | null;
   approvalType: string;
+  approverId: string;
   submittedDate: string;
   decisionDate: string | null;
   decision: string;
@@ -32,13 +50,72 @@ type ApprovalDetail = {
 };
 
 type ApprovalOption = { id: string; approvalCode: string };
+type ReleaseOption = { id: string; releaseCode: string };
+type UserOption = { id: string; name: string };
 
-function decisionTone(decision: string): "good" | "warn" | "bad" | "neutral" {
+type ApprovalDraft = {
+  releaseId: string;
+  applicationName: string;
+  departmentName: string;
+  approvalType: string;
+  approverId: string;
+  submittedDate: string;
+  decisionDate: string;
+  decision: string;
+  comments: string;
+  cabMeetingId: string;
+};
+
+const DECISION_OPTIONS = ["Pending", "Approved", "Rejected", "Deferred"].map((v) => ({
+  value: v,
+  label: v,
+}));
+
+function toDateInput(iso: string | null) {
+  if (!iso) return "";
+  return iso.slice(0, 10);
+}
+
+function decisionTone(decision: string): ChipTone {
   const d = decision.toLowerCase();
   if (d.includes("approv")) return "good";
   if (d.includes("reject") || d.includes("denied")) return "bad";
-  if (d.includes("pending")) return "warn";
+  if (d.includes("defer")) return "info";
+  if (d.includes("pending") || d.includes("review")) return "warn";
   return "neutral";
+}
+
+function heroToneFromDecision(decision: string): "emerald" | "rose" | "amber" | "sky" {
+  const t = decisionTone(decision);
+  if (t === "good") return "emerald";
+  if (t === "bad") return "rose";
+  if (t === "warn") return "amber";
+  return "sky";
+}
+
+/** Rough CAB clearance progress from decision state for the hero ring. */
+function decisionPercent(decision: string): number {
+  const d = decision.toLowerCase();
+  if (d.includes("approv") || d.includes("reject") || d.includes("denied")) return 100;
+  if (d.includes("defer")) return 70;
+  if (d.includes("review")) return 55;
+  if (d.includes("pending")) return 30;
+  return 40;
+}
+
+function toDraft(row: ApprovalDetail): ApprovalDraft {
+  return {
+    releaseId: row.releaseId,
+    applicationName: row.applicationName ?? "",
+    departmentName: row.departmentName ?? "",
+    approvalType: row.approvalType,
+    approverId: row.approverId,
+    submittedDate: toDateInput(row.submittedDate),
+    decisionDate: toDateInput(row.decisionDate),
+    decision: row.decision,
+    comments: row.comments ?? "",
+    cabMeetingId: row.cabMeetingId ?? "",
+  };
 }
 
 export default function ApprovalDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -46,31 +123,46 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
   const router = useRouter();
   const [row, setRow] = useState<ApprovalDetail | null>(null);
   const [options, setOptions] = useState<ApprovalOption[]>([]);
+  const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const [detail, list, releaseList, userList, me] = await Promise.all([
+      safeFetchJson<ApprovalDetail>(`/api/approvals/${id}`, {
+        signal,
+        label: "approval-detail",
+        rejectHttpErrors: false,
+      }),
+      safeFetchJson<ApprovalOption[]>("/api/approvals", { signal, label: "approvals-list" }),
+      safeFetchJson<ReleaseOption[]>("/api/releases", { signal, label: "releases-list" }),
+      safeFetchJson<UserOption[]>("/api/users", { signal, label: "users-list" }),
+      safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
+    ]);
+    if (signal?.aborted) return;
+    setRow(detail.ok && detail.status < 300 ? detail.data : null);
+    setOptions(list.ok ? list.data.map((a) => ({ id: a.id, approvalCode: a.approvalCode })) : []);
+    setReleases(
+      releaseList.ok ? releaseList.data.map((r) => ({ id: r.id, releaseCode: r.releaseCode })) : []
+    );
+    setUsers(userList.ok ? userList.data.map((u) => ({ id: u.id, name: u.name })) : []);
+    if (me.ok) setUser(me.data.user);
+    setLastRefresh(new Date());
+    setLoading(false);
+  }, [id]);
+
   useEffect(() => {
     const ac = new AbortController();
-    void (async () => {
-      const [detail, list] = await Promise.all([
-        safeFetchJson<ApprovalDetail>(`/api/approvals/${id}`, {
-          signal: ac.signal,
-          label: "approval-detail",
-          rejectHttpErrors: false,
-        }),
-        safeFetchJson<ApprovalOption[]>("/api/approvals", {
-          signal: ac.signal,
-          label: "approvals-list",
-        }),
-      ]);
-      if (ac.signal.aborted) return;
-      setRow(detail.ok && detail.status < 300 ? detail.data : null);
-      setOptions(list.ok ? list.data.map((a) => ({ id: a.id, approvalCode: a.approvalCode })) : []);
-      setLastRefresh(new Date());
-      setLoading(false);
-    })();
+    void load(ac.signal);
     return () => ac.abort();
-  }, [id]);
+  }, [load]);
+
+  const source = useMemo(() => (row ? toDraft(row) : null), [row]);
+  const edit = useEditableDetail(source);
+  const canEdit = sessionCanEdit(user);
+  const v = edit.values;
 
   const selectOptions = useMemo(
     () =>
@@ -80,89 +172,375 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
     [options]
   );
 
-  if (loading) return <p className="text-gray-500 dark:text-white/60">Loading approval…</p>;
-  if (!row) return <p className="text-gray-500 dark:text-white/60">Approval not found.</p>;
+  const releaseOptions = useMemo(() => {
+    const opts = [...releases]
+      .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode, undefined, { numeric: true }))
+      .map((r) => ({ value: r.id, label: r.releaseCode }));
+    if (row?.releaseId && !opts.some((o) => o.value === row.releaseId)) {
+      opts.unshift({
+        value: row.releaseId,
+        label: row.release?.releaseCode ?? row.releaseId,
+      });
+    }
+    return opts;
+  }, [releases, row?.releaseId, row?.release?.releaseCode]);
+
+  const approverOptions = useMemo(() => {
+    const opts = [...users]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((u) => ({ value: u.id, label: u.name }));
+    if (row?.approver && !opts.some((o) => o.value === row.approver.id)) {
+      opts.unshift({ value: row.approver.id, label: row.approver.name });
+    }
+    return opts;
+  }, [users, row?.approver]);
+
+  const decisionOptions = useMemo(() => {
+    const set = new Set(DECISION_OPTIONS.map((o) => o.value));
+    if (row?.decision && !set.has(row.decision)) {
+      return [{ value: row.decision, label: row.decision }, ...DECISION_OPTIONS];
+    }
+    return DECISION_OPTIONS;
+  }, [row?.decision]);
+
+  const save = async () => {
+    if (!row || !edit.draft) return;
+    edit.setSaving(true);
+    edit.setError(null);
+    const d = edit.draft;
+    // approvalCode is immutable — never include it in PATCH.
+    const res = await safeFetchJson(`/api/approvals/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        releaseId: d.releaseId,
+        applicationName: d.applicationName || null,
+        departmentName: d.departmentName || null,
+        approvalType: d.approvalType,
+        approverId: d.approverId,
+        submittedDate: d.submittedDate,
+        decisionDate: d.decisionDate || null,
+        decision: d.decision,
+        comments: d.comments || null,
+        cabMeetingId: d.cabMeetingId || null,
+      }),
+      label: "approval-patch",
+      rejectHttpErrors: false,
+    });
+    edit.setSaving(false);
+    if (!res.ok || res.status >= 300) {
+      edit.setError("Couldn’t save changes. Try again.");
+      return;
+    }
+    edit.discard();
+    edit.setSaveMessage("Saved");
+    await load();
+  };
+
+  const remove = async () => {
+    if (!row) return;
+    edit.setDeleting(true);
+    const res = await safeFetchJson(`/api/approvals/${row.id}`, {
+      method: "DELETE",
+      label: "approval-delete",
+      rejectHttpErrors: false,
+    });
+    edit.setDeleting(false);
+    if (!res.ok || res.status >= 300) {
+      edit.setError("Couldn’t delete this approval.");
+      edit.setDeleteOpen(false);
+      return;
+    }
+    router.push("/approvals");
+  };
+
+  if (loading) return <p className="text-slate-500 dark:text-white/60">Loading approval…</p>;
+  if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Approval not found.</p>;
+
+  const pendingish = /pending|review/i.test(v.decision);
+  const decided = Boolean(v.decisionDate) || !pendingish;
+  const selectedRelease = releases.find((r) => r.id === v.releaseId);
+  const selectedApprover = users.find((u) => u.id === v.approverId) ?? row.approver;
+  const pct = decisionPercent(v.decision);
 
   return (
-    <MockupDetailChrome
-      pageTitle="✅ APPROVAL DETAIL PAGE"
+    <EditableDetailShell
+      pageTitle="Approval Detail"
+      pageDescription="CAB / sign-off gate on a release — decision and dates show whether the release can clear governance before go-live."
+      entityLabel="Approval"
       entityCode={row.approvalCode}
+      entityName={v.approvalType || row.approvalCode}
       selectLabel="Select Approval"
       selectValue={row.id}
-      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: row.approvalCode }]}
-      onSelectChange={(v) => v !== row.id && router.push(`/approvals/${v}`)}
+      selectOptions={selectOptions}
+      onSelectChange={(next) => next !== row.id && router.push(`/approvals/${next}`)}
       lastRefresh={lastRefresh}
-      footer="Approvals Page v1.0 | Data sourced from Approvals sheet | CAB & sign-off workflow tracking"
-      quickActions={[
-        {
-          href: `/releases/${row.release.id}`,
-          label: "📋 View Release",
-          icon: <Package className="mr-1 inline h-4 w-4" />,
-        },
-        { href: "/calendar", label: "📅 View CAB", icon: <Calendar className="mr-1 inline h-4 w-4" /> },
-        {
-          href: `/approvals/${row.id}`,
-          label: "✏️ Add Comment",
-          icon: <MessageSquare className="mr-1 inline h-4 w-4" />,
-        },
-        { href: `/approvals/${row.id}`, label: "📧 Notify", icon: <Mail className="mr-1 inline h-4 w-4" /> },
-        { href: "/approvals", label: "🔙 All Approvals", icon: <List className="mr-1 inline h-4 w-4" /> },
-      ]}
+      footer="Approvals Page v2.0 · CAB & sign-off · Approval ID is locked"
+      editing={edit.editing}
+      canEdit={canEdit}
+      saving={edit.saving}
+      deleting={edit.deleting}
+      saveMessage={edit.saveMessage}
+      onEdit={edit.startEdit}
+      onDiscard={edit.discard}
+      onSave={save}
+      deleteOpen={edit.deleteOpen}
+      onDeleteOpen={() => edit.setDeleteOpen(true)}
+      onDeleteCancel={() => edit.setDeleteOpen(false)}
+      onDeleteConfirm={remove}
+      relatedLinks={
+        <>
+          <ProgressLink
+            href={`/releases/${v.releaseId || row.release.id}`}
+            className={taBtnSecondary + " text-sm !py-2"}
+          >
+            <Package className="mr-1.5 inline h-4 w-4" aria-hidden />
+            View Release
+          </ProgressLink>
+          <ProgressLink href="/calendar" className={taBtnSecondary + " text-sm !py-2"}>
+            <Calendar className="mr-1.5 inline h-4 w-4" aria-hidden />
+            View CAB
+          </ProgressLink>
+          <ProgressLink href="/approvals" className={taBtnSecondary + " text-sm !py-2"}>
+            <List className="mr-1.5 inline h-4 w-4" aria-hidden />
+            All Approvals
+          </ProgressLink>
+        </>
+      }
     >
-      <MockupSection title="🚦 APPROVAL STATUS AT A GLANCE">
-        <GlanceStrip
-          items={[
+      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
+
+      <HeroStatusRow
+        hero={{
+          icon: CheckCircle2,
+          label: "Decision",
+          value: v.decision,
+          tone: heroToneFromDecision(v.decision),
+        }}
+        secondary={{
+          icon: ClipboardCheck,
+          label: "Approval Type",
+          value: v.approvalType || "—",
+        }}
+        metric={{
+          icon: Zap,
+          label: "Progress",
+          percent: pct,
+          caption: pendingish ? "awaiting CAB decision" : "decision recorded",
+          tone: heroToneFromDecision(v.decision),
+        }}
+      />
+
+      <DetailSection
+        icon={ClipboardCheck}
+        tone="violet"
+        title="Approval journey"
+        description="Submitted → CAB review → decision — the path that clears governance before go-live."
+      >
+        <EntityTimeline
+          phases={[
+            {
+              label: "Submitted",
+              detail: v.submittedDate ? formatDate(v.submittedDate) : "—",
+              complete: true,
+              tone: "indigo",
+            },
+            {
+              label: "CAB Review",
+              detail: v.cabMeetingId.trim() || "Meeting not linked",
+              active: pendingish,
+              complete: !pendingish,
+              tone: "violet",
+            },
             {
               label: "Decision",
-              value: <StatusBadge status={row.decision} />,
-              tone: decisionTone(row.decision),
+              detail: v.decisionDate
+                ? `${v.decision} · ${formatDate(v.decisionDate)}`
+                : v.decision,
+              complete: decided && !pendingish,
+              tone:
+                decisionTone(v.decision) === "bad"
+                  ? "rose"
+                  : decisionTone(v.decision) === "good"
+                    ? "emerald"
+                    : "amber",
             },
-            { label: "Approval Type", value: dash(row.approvalType) },
-            { label: "CAB Meeting", value: dash(row.cabMeetingId) },
           ]}
         />
-      </MockupSection>
+      </DetailSection>
 
-      <MockupSection title="📦 RELEASE INFORMATION">
-        <DetailFieldGrid cols={2}>
-          <DetailField
-            label="Release ID"
-            value={
+      <DetailSection
+        icon={CheckCircle2}
+        tone="indigo"
+        title="Decision status"
+        description="Current CAB outcome and the approval type that gates this release."
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <StatusChip
+            label={pendingish ? "⚠️ AWAITING DECISION" : "✓ DECISION RECORDED"}
+            tone={pendingish ? "warn" : decisionTone(v.decision)}
+          />
+          <StatusChip label={v.decision} tone={decisionTone(v.decision)} />
+        </div>
+        <EditableFieldGrid cols={3}>
+          <LockedIdField label="Approval ID" value={row.approvalCode} />
+          <EditableField
+            label="Decision"
+            value={v.decision}
+            editing={edit.editing}
+            kind="select"
+            options={decisionOptions}
+            onChange={(n) => edit.setField("decision", n)}
+            display={<StatusChip label={v.decision} tone={decisionTone(v.decision)} />}
+          />
+          <EditableField
+            label="Approval Type"
+            value={v.approvalType}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("approvalType", n)}
+            placeholder="e.g. CAB Sign-off…"
+          />
+        </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={Package}
+        tone="sky"
+        title="Release information"
+        description="Which release this sign-off covers and the org context around it."
+      >
+        <EditableFieldGrid>
+          <EditableField
+            label="Release"
+            value={v.releaseId}
+            editing={edit.editing}
+            kind="select"
+            options={releaseOptions}
+            onChange={(n) => edit.setField("releaseId", n)}
+            display={
               <ProgressLink
-                href={`/releases/${row.release.id}`}
-                className="font-mono text-brand-600 hover:underline dark:text-brand-400"
+                href={`/releases/${v.releaseId || row.release.id}`}
+                className="font-mono text-[13.5px] font-semibold text-sky-600 hover:underline dark:text-sky-300"
               >
-                {row.release.releaseCode}
+                {selectedRelease?.releaseCode ?? row.release.releaseCode}
               </ProgressLink>
             }
           />
-          <DetailField label="Release Name" value={dash(row.release.name)} />
-          <DetailField label="Application" value={dash(row.applicationName)} />
-          <DetailField label="Department" value={dash(row.departmentName)} />
-        </DetailFieldGrid>
-      </MockupSection>
-
-      <MockupSection title="👤 APPROVER DETAILS">
-        <DetailFieldGrid cols={2}>
-          <DetailField label="Approver ID" value={dash(row.approver.userId)} />
-          <DetailField label="Approver Name" value={dash(row.approver.name)} />
-          <DetailField label="Approver Role" value={dash(row.approver.role)} />
-        </DetailFieldGrid>
-      </MockupSection>
-
-      <MockupSection title="📅 TIMELINE">
-        <DetailFieldGrid cols={2}>
-          <DetailField label="Submitted Date" value={formatDate(row.submittedDate)} />
-          <DetailField
-            label="Decision Date"
-            value={row.decisionDate ? formatDate(row.decisionDate) : "—"}
+          <EditableField
+            label="Release Name"
+            value={row.release.name}
+            editing={false}
+            display={
+              v.releaseId === row.releaseId
+                ? row.release.name
+                : (selectedRelease?.releaseCode ?? "—")
+            }
           />
-        </DetailFieldGrid>
-      </MockupSection>
+          <EditableField
+            label="Application"
+            value={v.applicationName}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("applicationName", n)}
+            placeholder="Application name…"
+          />
+          <EditableField
+            label="Department"
+            value={v.departmentName}
+            editing={edit.editing}
+            onChange={(n) => edit.setField("departmentName", n)}
+            placeholder="Department…"
+          />
+        </EditableFieldGrid>
+      </DetailSection>
 
-      <MockupSection title="💬 COMMENTS">
-        <DetailField label="Comments" value={dash(row.comments)} />
-      </MockupSection>
-    </MockupDetailChrome>
+      <DetailSection
+        icon={User}
+        tone="emerald"
+        title="Approver details"
+        description="Who owns the CAB decision for this release."
+      >
+        <EditableFieldGrid>
+          <EditableField
+            label="Approver"
+            value={v.approverId}
+            editing={edit.editing}
+            kind="select"
+            options={approverOptions}
+            onChange={(n) => edit.setField("approverId", n)}
+            display={selectedApprover?.name ?? "—"}
+          />
+          <EditableField
+            label="Approver ID"
+            value={row.approver.userId}
+            editing={false}
+            display={
+              v.approverId === row.approverId ? (row.approver.userId ?? "—") : "—"
+            }
+          />
+          <EditableField
+            label="Approver Role"
+            value={row.approver.role}
+            editing={false}
+            display={v.approverId === row.approverId ? (row.approver.role ?? "—") : "—"}
+          />
+        </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={Calendar}
+        tone="amber"
+        title="Timeline & CAB"
+        description="Submission and decision dates, plus the linked CAB meeting when available."
+      >
+        <EditableFieldGrid>
+          <EditableField
+            label="Submitted Date"
+            value={v.submittedDate}
+            editing={edit.editing}
+            kind="date"
+            onChange={(n) => edit.setField("submittedDate", n)}
+            display={v.submittedDate ? formatDate(v.submittedDate) : "—"}
+          />
+          <EditableField
+            label="Decision Date"
+            value={v.decisionDate}
+            editing={edit.editing}
+            kind="date"
+            onChange={(n) => edit.setField("decisionDate", n)}
+            display={v.decisionDate ? formatDate(v.decisionDate) : "—"}
+          />
+          <EditableField
+            label="CAB Meeting"
+            value={v.cabMeetingId}
+            editing={edit.editing}
+            mono
+            onChange={(n) => edit.setField("cabMeetingId", n)}
+            placeholder="CAB meeting id…"
+          />
+        </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={MessageSquare}
+        tone="violet"
+        title="Comments"
+        description="CAB notes and sign-off rationale that reviewers leave with the decision."
+      >
+        {edit.editing ? (
+          <EditableField
+            label="Comments"
+            value={v.comments}
+            editing
+            kind="textarea"
+            onChange={(n) => edit.setField("comments", n)}
+            placeholder="CAB comments…"
+          />
+        ) : (
+          <TintedCallout tone="violet">
+            {v.comments.trim() ? v.comments : "No comments recorded yet."}
+          </TintedCallout>
+        )}
+      </DetailSection>
+    </EditableDetailShell>
   );
 }

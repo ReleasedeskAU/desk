@@ -38,13 +38,18 @@ import {
   StatusChip,
   ScoreBar,
   TintedCallout,
+  EntityConnection,
+  EntityTimeline,
+  RiskMatrix,
+  ThresholdVisual,
 } from "@/components/detail/editable";
+import { GlanceStrip, MockupSection } from "@/components/detail/MockupDetailChrome";
 import { ReadinessGauge } from "@/components/gauges/ReadinessGauge";
 import { ReleaseLifecycleStrip } from "@/components/releases/ReleaseLifecycleStrip";
 import { ThemeModeProvider, useThemeMode } from "@/context/ThemeModeContext";
 import { cn } from "@/lib/utils";
 
-type Tab = "release" | "conflict" | "leave" | "blocker";
+type Tab = "release" | "operations" | "conflict" | "leave" | "blocker";
 
 function PreviewChrome({
   title,
@@ -268,6 +273,47 @@ function ReleasePreview() {
           </div>
         </div>
       </DetailSection>
+    </PreviewChrome>
+  );
+}
+
+function OperationsPreview() {
+  return (
+    <PreviewChrome title="Operational Detail System" code="RISK-0042" name="Shared v2 layout for ten entity pages">
+      <MockupSection title="Risk Status At A Glance">
+        <GlanceStrip
+          items={[
+            { label: "Risk Score", value: "20 / 25", tone: "bad" },
+            { label: "Status", value: "Mitigating", tone: "warn" },
+            { label: "Owner", value: "Platform Operations" },
+          ]}
+        />
+      </MockupSection>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <MockupSection title="Risk Exposure Matrix">
+          <RiskMatrix likelihood={4} impact={5} />
+        </MockupSection>
+        <MockupSection title="Metric Details">
+          <ThresholdVisual current={92} threshold={80} unit="%" />
+        </MockupSection>
+      </div>
+      <MockupSection title="Environment Journey">
+        <EntityTimeline
+          phases={[
+            { label: "Test", detail: "14 Jul → 16 Jul", complete: true, tone: "sky" },
+            { label: "UAT", detail: "17 Jul → 19 Jul", active: true, tone: "violet" },
+            { label: "Pre-Prod", detail: "20 Jul → 21 Jul", tone: "amber" },
+            { label: "Production", detail: "22 Jul", tone: "emerald" },
+          ]}
+        />
+      </MockupSection>
+      <MockupSection title="Dependency Flow">
+        <EntityConnection
+          source="REL-1042 · Payments API"
+          target="REL-1047 · Customer Portal"
+          caption="Hard dependency · release delay if blocked"
+        />
+      </MockupSection>
     </PreviewChrome>
   );
 }
@@ -509,6 +555,19 @@ function DetailVisualPreviewContent() {
           </button>
           <button
             type="button"
+            data-preview-tab="operations"
+            onClick={() => setTab("operations")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-[13px] font-semibold transition-colors",
+              tab === "operations"
+                ? "bg-indigo-600 text-white"
+                : "bg-white text-slate-600 shadow-sm dark:bg-white/10 dark:text-white/70"
+            )}
+          >
+            Operations
+          </button>
+          <button
+            type="button"
             data-preview-tab="conflict"
             onClick={() => setTab("conflict")}
             className={cn(
@@ -558,6 +617,7 @@ function DetailVisualPreviewContent() {
       </div>
 
       {tab === "release" && <ReleasePreview />}
+      {tab === "operations" && <OperationsPreview />}
       {tab === "conflict" && <ConflictPreview />}
       {tab === "leave" && <LeavePreview />}
       {tab === "blocker" && <BlockerPreview />}

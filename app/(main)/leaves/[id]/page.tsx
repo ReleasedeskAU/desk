@@ -204,6 +204,7 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <EditableDetailShell
       pageTitle="Leave Detail"
+      pageDescription="Planned staff absence that may reduce coverage on active releases — without a coverage plan, delivery risk rises even when the release itself is on track."
       entityLabel="Leave"
       entityCode={row.leaveCode}
       entityName={row.user.name}

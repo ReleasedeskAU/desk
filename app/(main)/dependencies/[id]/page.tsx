@@ -2,22 +2,25 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FileText, GitBranch, List, Package, ShieldAlert, Zap } from "lucide-react";
 import {
-  MockupDetailChrome,
-  MockupSection,
-  GlanceStrip,
-  DetailField,
-  DetailFieldGrid,
-  dash,
-} from "@/components/detail/MockupDetailChrome";
-import { StatusBadge } from "@/components/badges/StatusBadge";
+  EditableDetailShell,
+  DetailSection,
+  LockedIdField,
+  EditableField,
+  EditableFieldGrid,
+  StatusChip,
+  HeroStatusRow,
+  TintedCallout,
+  EntityConnection,
+  type ChipTone,
+} from "@/components/detail/editable";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
-import { DependencyFormModal } from "@/components/dependencies/DependencyFormModal";
-import { safeFetchJson, loadJsonEffect } from "@/lib/safe-fetch";
-import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
-import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
-import { cn } from "@/lib/utils";
-import { LayoutDashboard, List, Package, Pencil, Trash2 } from "lucide-react";
+import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
+import type { SessionUser } from "@/lib/auth/roles";
+import { safeFetchJson } from "@/lib/safe-fetch";
+import { taBtnSecondary } from "@/lib/styles";
 import {
   DEPENDENCY_IMPACTS,
   DEPENDENCY_STATUSES,
@@ -36,14 +39,71 @@ type DependencyDetail = {
 };
 
 type DependencyOption = { id: string; depCode: string };
+type ReleaseOption = { id: string; releaseCode: string; name: string };
 
-function impactTone(impact: string): "bad" | "warn" | "neutral" | "good" {
-  const s = impact.toLowerCase();
-  if (s.includes("critical") || s.includes("high") || s.includes("integrity") || s.includes("failure"))
-    return "bad";
-  if (s.includes("medium") || s.includes("delay") || s.includes("partial")) return "warn";
-  if (s.includes("low")) return "good";
+type DependencyDraft = {
+  releaseId: string;
+  dependsOnReleaseId: string;
+  dependencyType: string;
+  status: string;
+  impactIfBlocked: string;
+  notes: string;
+};
+
+const TYPE_OPTIONS = DEPENDENCY_TYPES.map((v) => ({ value: v, label: v }));
+const STATUS_OPTIONS = DEPENDENCY_STATUSES.map((v) => ({ value: v, label: v }));
+const IMPACT_OPTIONS = DEPENDENCY_IMPACTS.map((v) => ({ value: v, label: v }));
+
+function statusTone(status: string): ChipTone {
+  const s = status.toLowerCase();
+  if (s.includes("block")) return "bad";
+  if (s.includes("risk")) return "warn";
+  if (s.includes("clear") || s.includes("resolv")) return "good";
   return "neutral";
+}
+
+function impactTone(impact: string): ChipTone {
+  const s = impact.toLowerCase();
+  if (s.includes("integrity") || s.includes("failure") || s.includes("critical")) return "bad";
+  if (s.includes("delay") || s.includes("partial") || s.includes("scope")) return "warn";
+  return "neutral";
+}
+
+function statusHeroTone(status: string): "rose" | "amber" | "emerald" | "indigo" {
+  const t = statusTone(status);
+  if (t === "bad") return "rose";
+  if (t === "warn") return "amber";
+  if (t === "good") return "emerald";
+  return "indigo";
+}
+
+/** Rough clearance progress from dependency status for the hero ring. */
+function statusPercent(status: string): number {
+  const s = status.toLowerCase();
+  if (s.includes("resolv") || s.includes("clear")) return 100;
+  if (s.includes("risk")) return 45;
+  if (s.includes("block")) return 15;
+  return 35;
+}
+
+function withCurrentOption(
+  options: { value: string; label: string }[],
+  current: string | undefined
+) {
+  if (!current) return options;
+  if (options.some((o) => o.value === current)) return options;
+  return [{ value: current, label: current }, ...options];
+}
+
+function toDraft(row: DependencyDetail): DependencyDraft {
+  return {
+    releaseId: row.release.id,
+    dependsOnReleaseId: row.dependsOnRelease.id,
+    dependencyType: row.dependencyType,
+    status: row.status,
+    impactIfBlocked: row.impactIfBlocked,
+    notes: row.notes ?? "",
+  };
 }
 
 export default function DependencyDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -51,16 +111,13 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const router = useRouter();
   const [row, setRow] = useState<DependencyDetail | null>(null);
   const [options, setOptions] = useState<DependencyOption[]>([]);
+  const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const canEdit = sessionCanEdit(user);
-  const [editOpen, setEditOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const [detail, list] = await Promise.all([
+    const [detail, list, releaseList, me] = await Promise.all([
       safeFetchJson<DependencyDetail>(`/api/dependencies/${id}`, {
         signal,
         label: "dependency-detail",
@@ -70,26 +127,37 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
         signal,
         label: "dependencies-list",
       }),
+      safeFetchJson<ReleaseOption[]>("/api/releases", {
+        signal,
+        label: "dependency-releases",
+      }),
+      safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
     ]);
     if (signal?.aborted) return;
     setRow(detail.ok && detail.status < 300 ? detail.data : null);
     setOptions(list.ok ? list.data.map((d) => ({ id: d.id, depCode: d.depCode })) : []);
+    setReleases(
+      releaseList.ok
+        ? releaseList.data
+            .map((r) => ({ id: r.id, releaseCode: r.releaseCode, name: r.name }))
+            .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode))
+        : []
+    );
+    if (me.ok) setUser(me.data.user);
     setLastRefresh(new Date());
     setLoading(false);
   }, [id]);
 
   useEffect(() => {
     const ac = new AbortController();
-    setLoading(true);
     void load(ac.signal);
     return () => ac.abort();
   }, [load]);
 
-  useEffect(() => {
-    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
-      label: "dependency-detail-auth",
-    });
-  }, []);
+  const source = useMemo(() => (row ? toDraft(row) : null), [row]);
+  const edit = useEditableDetail(source);
+  const canEdit = sessionCanEdit(user);
+  const v = edit.values;
 
   const selectOptions = useMemo(
     () =>
@@ -100,184 +168,321 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     [options]
   );
 
-  const onDelete = async () => {
-    if (!row) return;
-    const ok = window.confirm(
-      `Delete ${row.depCode || "this dependency"}? This cannot be undone.`
-    );
-    if (!ok) return;
-    setDeleting(true);
-    setActionError(null);
-    const result = await safeFetchJson(`/api/dependencies/${row.id}`, {
-      method: "DELETE",
-      label: "delete-dependency",
+  const releaseSelectOptions = useMemo(
+    () =>
+      releases.map((r) => ({
+        value: r.id,
+        label: `${r.releaseCode} — ${r.name}`,
+      })),
+    [releases]
+  );
+
+  const typeOptions = useMemo(
+    () => withCurrentOption(TYPE_OPTIONS, row?.dependencyType),
+    [row?.dependencyType]
+  );
+  const statusOptions = useMemo(
+    () => withCurrentOption(STATUS_OPTIONS, row?.status),
+    [row?.status]
+  );
+  const impactOptions = useMemo(
+    () => withCurrentOption(IMPACT_OPTIONS, row?.impactIfBlocked),
+    [row?.impactIfBlocked]
+  );
+
+  const save = async () => {
+    if (!row || !edit.draft) return;
+    if (edit.draft.releaseId === edit.draft.dependsOnReleaseId) {
+      edit.setError("A release cannot depend on itself.");
+      return;
+    }
+    edit.setSaving(true);
+    edit.setError(null);
+    const draft = edit.draft;
+    const res = await safeFetchJson(`/api/dependencies/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        releaseId: draft.releaseId,
+        dependsOnReleaseId: draft.dependsOnReleaseId,
+        dependencyType: draft.dependencyType,
+        status: draft.status,
+        impactIfBlocked: draft.impactIfBlocked,
+        notes: draft.notes.trim() ? draft.notes.trim() : null,
+      }),
+      label: "dependency-patch",
       rejectHttpErrors: false,
     });
-    setDeleting(false);
-    if (!result.ok || result.status >= 300) {
-      setActionError("Failed to delete dependency");
+    edit.setSaving(false);
+    if (!res.ok || res.status >= 300) {
+      edit.setError("Couldn’t save changes. Try again.");
+      return;
+    }
+    edit.discard();
+    edit.setSaveMessage("Saved");
+    await load();
+  };
+
+  const remove = async () => {
+    if (!row) return;
+    edit.setDeleting(true);
+    const res = await safeFetchJson(`/api/dependencies/${row.id}`, {
+      method: "DELETE",
+      label: "dependency-delete",
+      rejectHttpErrors: false,
+    });
+    edit.setDeleting(false);
+    if (!res.ok || res.status >= 300) {
+      edit.setError("Couldn’t delete this dependency.");
+      edit.setDeleteOpen(false);
       return;
     }
     router.push("/dependencies");
   };
 
-  if (loading) return <p className="text-gray-500 dark:text-white/60">Loading dependency…</p>;
-  if (!row) return <p className="text-gray-500 dark:text-white/60">Dependency not found.</p>;
+  if (loading) return <p className="text-slate-500 dark:text-white/60">Loading dependency…</p>;
+  if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Dependency not found.</p>;
 
   const code = row.depCode || row.id;
-  // Excel Source = release (has the dependency); Dependent/Depends On = dependsOnRelease (upstream)
-  const source = row.release;
-  const dependent = row.dependsOnRelease;
+  const sourceRelease =
+    releases.find((r) => r.id === v.releaseId) ??
+    (v.releaseId === row.release.id ? row.release : null);
+  const upstreamRelease =
+    releases.find((r) => r.id === v.dependsOnReleaseId) ??
+    (v.dependsOnReleaseId === row.dependsOnRelease.id ? row.dependsOnRelease : null);
+  const blockedish = /block|risk/i.test(v.status);
 
   return (
-    <>
-      <MockupDetailChrome
-        pageTitle="🔗 DEPENDENCY DETAIL PAGE"
-        entityCode={code}
-        selectLabel="Select Dependency"
-        selectValue={row.id}
-        selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: code }]}
-        onSelectChange={(v) => v !== row.id && router.push(`/dependencies/${v}`)}
-        lastRefresh={lastRefresh}
-        footer="Dependency Page v1.0 | Data sourced from Dependencies sheet | Track inter-release dependencies"
-        headerActions={
-          canEdit ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={cn(taBtnSecondary, "text-sm !py-1.5")}
-                onClick={() => {
-                  setActionError(null);
-                  setEditOpen(true);
-                }}
-              >
-                <Pencil className="mr-1 inline h-3.5 w-3.5" />
-                Edit
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  taBtnPrimary,
-                  "text-sm !py-1.5 !bg-rose-600 hover:!bg-rose-700 dark:!bg-rose-600 dark:hover:!bg-rose-500"
-                )}
-                onClick={() => void onDelete()}
-                disabled={deleting}
-              >
-                <Trash2 className="mr-1 inline h-3.5 w-3.5" />
-                {deleting ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-          ) : null
-        }
-        quickActions={[
-          {
-            href: `/releases/${source.id}`,
-            label: "📋 View Source Release",
-            icon: <Package className="mr-1 inline h-4 w-4" />,
-          },
-          {
-            href: `/releases/${dependent.id}`,
-            label: "📋 View Dependent",
-            icon: <Package className="mr-1 inline h-4 w-4" />,
-          },
-          {
-            href: "/dependencies",
-            label: "📊 Dependency Map",
-            icon: <LayoutDashboard className="mr-1 inline h-4 w-4" />,
-          },
-          { href: "/dependencies", label: "🔙 All Dependencies", icon: <List className="mr-1 inline h-4 w-4" /> },
-        ]}
-      >
-        {actionError ? (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
-            {actionError}
-          </p>
-        ) : null}
+    <EditableDetailShell
+      pageTitle="Dependency Detail"
+      pageDescription="Inter-release link that can block delivery — if the upstream release slips, impact-if-blocked spells out delay, integrity, or scope risk for the dependent."
+      entityLabel="Dependency"
+      entityCode={code}
+      entityName={`${sourceRelease?.releaseCode ?? "—"} → ${upstreamRelease?.releaseCode ?? "—"}`}
+      selectLabel="Select Dependency"
+      selectValue={row.id}
+      selectOptions={selectOptions.length ? selectOptions : [{ value: row.id, label: code }]}
+      onSelectChange={(next) => next !== row.id && router.push(`/dependencies/${next}`)}
+      lastRefresh={lastRefresh}
+      footer="Dependency Page v2.0 · Inter-release links · Dependency ID is locked"
+      editing={edit.editing}
+      canEdit={canEdit}
+      saving={edit.saving}
+      deleting={edit.deleting}
+      saveMessage={edit.saveMessage}
+      onEdit={edit.startEdit}
+      onDiscard={edit.discard}
+      onSave={save}
+      deleteOpen={edit.deleteOpen}
+      onDeleteOpen={() => edit.setDeleteOpen(true)}
+      onDeleteCancel={() => edit.setDeleteOpen(false)}
+      onDeleteConfirm={remove}
+      relatedLinks={
+        <>
+          {sourceRelease && (
+            <ProgressLink
+              href={`/releases/${sourceRelease.id}`}
+              className={taBtnSecondary + " text-sm !py-2"}
+            >
+              <Package className="mr-1.5 inline h-4 w-4" aria-hidden />
+              Source Release
+            </ProgressLink>
+          )}
+          {upstreamRelease && (
+            <ProgressLink
+              href={`/releases/${upstreamRelease.id}`}
+              className={taBtnSecondary + " text-sm !py-2"}
+            >
+              <Package className="mr-1.5 inline h-4 w-4" aria-hidden />
+              Upstream Release
+            </ProgressLink>
+          )}
+          <ProgressLink href="/dependencies" className={taBtnSecondary + " text-sm !py-2"}>
+            <List className="mr-1.5 inline h-4 w-4" aria-hidden />
+            All Dependencies
+          </ProgressLink>
+        </>
+      }
+    >
+      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
 
-        <MockupSection title="🚦 DEPENDENCY STATUS AT A GLANCE">
-          <GlanceStrip
-            items={[
-              {
-                label: "Status",
-                value: row.status ? <StatusBadge status={row.status} /> : "—",
-              },
-              { label: "Dependency Type", value: dash(row.dependencyType) },
-              {
-                label: "Impact if Blocked",
-                value: dash(row.impactIfBlocked),
-                tone: impactTone(row.impactIfBlocked ?? ""),
-              },
-            ]}
-          />
-        </MockupSection>
-
-        <MockupSection title="📤 SOURCE RELEASE (Depends On)">
-          <DetailFieldGrid cols={2}>
-            <DetailField
-              label="Release ID"
-              value={
-                <ProgressLink
-                  href={`/releases/${source.id}`}
-                  className="font-mono text-brand-600 hover:underline dark:text-brand-400"
-                >
-                  {source.releaseCode}
-                </ProgressLink>
-              }
-            />
-            <DetailField label="Release Name" value={dash(source.name)} />
-          </DetailFieldGrid>
-        </MockupSection>
-
-        <MockupSection title="📥 DEPENDENT RELEASE (Waiting For)">
-          <DetailFieldGrid cols={2}>
-            <DetailField
-              label="Depends On ID"
-              value={
-                <ProgressLink
-                  href={`/releases/${dependent.id}`}
-                  className="font-mono text-brand-600 hover:underline dark:text-brand-400"
-                >
-                  {dependent.releaseCode}
-                </ProgressLink>
-              }
-            />
-            <DetailField label="Depends On Name" value={dash(dependent.name)} />
-          </DetailFieldGrid>
-        </MockupSection>
-
-        <MockupSection title="📋 DEPENDENCY DETAILS">
-          <DetailFieldGrid cols={2}>
-            <DetailField label="Dependency Type" value={dash(row.dependencyType)} />
-            <DetailField label="Impact if Blocked" value={dash(row.impactIfBlocked)} />
-          </DetailFieldGrid>
-        </MockupSection>
-
-        <MockupSection title="📝 NOTES">
-          <DetailField label="Notes" value={dash(row.notes)} />
-        </MockupSection>
-      </MockupDetailChrome>
-
-      <DependencyFormModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        onSaved={() => void load()}
-        editId={row.id}
-        depCode={code}
-        initial={{
-          releaseId: source.id,
-          dependsOnReleaseId: dependent.id,
-          dependencyType: (DEPENDENCY_TYPES as readonly string[]).includes(row.dependencyType)
-            ? (row.dependencyType as (typeof DEPENDENCY_TYPES)[number])
-            : "Hard",
-          status: (DEPENDENCY_STATUSES as readonly string[]).includes(row.status)
-            ? (row.status as (typeof DEPENDENCY_STATUSES)[number])
-            : "Clear",
-          impactIfBlocked: (DEPENDENCY_IMPACTS as readonly string[]).includes(row.impactIfBlocked)
-            ? (row.impactIfBlocked as (typeof DEPENDENCY_IMPACTS)[number])
-            : "Release Delay",
-          notes: row.notes ?? "",
+      <HeroStatusRow
+        hero={{
+          icon: ShieldAlert,
+          label: "Status",
+          value: v.status,
+          tone: statusHeroTone(v.status),
+        }}
+        secondary={{
+          icon: Zap,
+          label: "Type",
+          value: v.dependencyType,
+        }}
+        metric={{
+          icon: GitBranch,
+          label: "Impact if blocked",
+          percent: statusPercent(v.status),
+          caption: v.impactIfBlocked || "impact not set",
+          tone: blockedish ? "amber" : "emerald",
         }}
       />
-    </>
+
+      <DetailSection
+        icon={GitBranch}
+        tone="indigo"
+        title="Dependency flow"
+        description="Source release waits on the upstream release named on the right."
+      >
+        <EntityConnection
+          source={
+            sourceRelease ? (
+              <ProgressLink
+                href={`/releases/${sourceRelease.id}`}
+                className="text-indigo-600 hover:underline dark:text-indigo-300"
+              >
+                {sourceRelease.releaseCode}
+              </ProgressLink>
+            ) : (
+              "—"
+            )
+          }
+          target={
+            upstreamRelease ? (
+              <ProgressLink
+                href={`/releases/${upstreamRelease.id}`}
+                className="text-sky-600 hover:underline dark:text-sky-300"
+              >
+                {upstreamRelease.releaseCode}
+              </ProgressLink>
+            ) : (
+              "—"
+            )
+          }
+          caption={`${sourceRelease?.name ?? "Source"} depends on ${upstreamRelease?.name ?? "upstream"} · ${v.dependencyType} dependency`}
+        />
+      </DetailSection>
+
+      <DetailSection
+        icon={Package}
+        tone="sky"
+        title="Linked releases"
+        description="Pick which release depends on which — IDs stay stable; codes come from the release register."
+      >
+        <EditableFieldGrid cols={3}>
+          <LockedIdField label="Dependency ID" value={code} />
+          <EditableField
+            label="Source Release"
+            value={v.releaseId}
+            editing={edit.editing}
+            kind="select"
+            options={releaseSelectOptions}
+            onChange={(n) => edit.setField("releaseId", n)}
+            display={
+              sourceRelease ? (
+                <ProgressLink
+                  href={`/releases/${sourceRelease.id}`}
+                  className="font-mono text-[13.5px] font-semibold text-indigo-600 hover:underline dark:text-indigo-300"
+                >
+                  {sourceRelease.releaseCode}
+                </ProgressLink>
+              ) : (
+                "—"
+              )
+            }
+          />
+          <EditableField
+            label="Source Name"
+            value={sourceRelease?.name ?? ""}
+            editing={false}
+            display={sourceRelease?.name ?? "—"}
+          />
+          <EditableField
+            label="Depends On (Upstream)"
+            value={v.dependsOnReleaseId}
+            editing={edit.editing}
+            kind="select"
+            options={releaseSelectOptions}
+            onChange={(n) => edit.setField("dependsOnReleaseId", n)}
+            display={
+              upstreamRelease ? (
+                <ProgressLink
+                  href={`/releases/${upstreamRelease.id}`}
+                  className="font-mono text-[13.5px] font-semibold text-sky-600 hover:underline dark:text-sky-300"
+                >
+                  {upstreamRelease.releaseCode}
+                </ProgressLink>
+              ) : (
+                "—"
+              )
+            }
+          />
+          <EditableField
+            label="Upstream Name"
+            value={upstreamRelease?.name ?? ""}
+            editing={false}
+            display={upstreamRelease?.name ?? "—"}
+          />
+        </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={ShieldAlert}
+        tone="rose"
+        title="Dependency details"
+        description="Type, clearance status, and what happens if the upstream link stays blocked."
+      >
+        <EditableFieldGrid cols={3}>
+          <EditableField
+            label="Dependency Type"
+            value={v.dependencyType}
+            editing={edit.editing}
+            kind="select"
+            options={typeOptions}
+            onChange={(n) => edit.setField("dependencyType", n)}
+            display={<StatusChip label={v.dependencyType} tone="neutral" />}
+          />
+          <EditableField
+            label="Status"
+            value={v.status}
+            editing={edit.editing}
+            kind="select"
+            options={statusOptions}
+            onChange={(n) => edit.setField("status", n)}
+            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
+          />
+          <EditableField
+            label="Impact if Blocked"
+            value={v.impactIfBlocked}
+            editing={edit.editing}
+            kind="select"
+            options={impactOptions}
+            onChange={(n) => edit.setField("impactIfBlocked", n)}
+            display={<StatusChip label={v.impactIfBlocked} tone={impactTone(v.impactIfBlocked)} />}
+          />
+        </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={FileText}
+        tone="amber"
+        title="Notes"
+        description="Context for owners and CAB when this link threatens delivery."
+      >
+        {edit.editing ? (
+          <EditableField
+            label="Notes"
+            value={v.notes}
+            editing
+            kind="textarea"
+            onChange={(n) => edit.setField("notes", n)}
+            placeholder="Impact context, mitigation, owners…"
+          />
+        ) : (
+          <TintedCallout tone="amber">
+            {v.notes.trim() ? v.notes : "No notes recorded yet."}
+          </TintedCallout>
+        )}
+      </DetailSection>
+    </EditableDetailShell>
   );
 }

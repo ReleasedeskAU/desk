@@ -44,7 +44,7 @@ function daysOutFrom(iso: string | null | undefined): number {
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
 }
 
-type RiskRow = {
+export type RiskRow = {
   id: string;
   riskCode: string;
   releaseId: string;
@@ -79,12 +79,40 @@ const OWNERSHIP_CONCENTRATION_THRESHOLD = 0.5;
 /** Heat-map band palette (v3) — MEDIUM gold vs HIGH tangerine kept clearly distinct. */
 const BAND_COLOR: Record<
   RiskLevel,
-  { bg: string; text: string; solid: string; darkBg: string; darkText: string }
+  { bg: string; text: string; solid: string; darkBg: string; darkText: string; darkSolid: string }
 > = {
-  LOW: { bg: "#d1fae5", text: "#065f46", solid: "#059669", darkBg: "rgba(5,150,105,0.28)", darkText: "#6ee7b7" },
-  MEDIUM: { bg: "#fef9c3", text: "#854d0e", solid: "#eab308", darkBg: "rgba(234,179,8,0.28)", darkText: "#fde047" },
-  HIGH: { bg: "#fed7aa", text: "#9a3412", solid: "#ea580c", darkBg: "rgba(234,88,12,0.32)", darkText: "#fdba74" },
-  CRITICAL: { bg: "#fecaca", text: "#7f1d1d", solid: "#dc2626", darkBg: "rgba(220,38,38,0.32)", darkText: "#fca5a5" },
+  LOW: {
+    bg: "#d1fae5",
+    text: "#065f46",
+    solid: "#059669",
+    darkBg: "rgba(16,185,129,0.16)",
+    darkText: "#10b981",
+    darkSolid: "#10b981",
+  },
+  MEDIUM: {
+    bg: "#fef9c3",
+    text: "#854d0e",
+    solid: "#eab308",
+    darkBg: "rgba(245,158,11,0.17)",
+    darkText: "#f59e0b",
+    darkSolid: "#f59e0b",
+  },
+  HIGH: {
+    bg: "#fed7aa",
+    text: "#9a3412",
+    solid: "#ea580c",
+    darkBg: "rgba(249,115,22,0.18)",
+    darkText: "#f97316",
+    darkSolid: "#f97316",
+  },
+  CRITICAL: {
+    bg: "#fecaca",
+    text: "#7f1d1d",
+    solid: "#dc2626",
+    darkBg: "rgba(239,68,68,0.18)",
+    darkText: "#ef4444",
+    darkSolid: "#ef4444",
+  },
 };
 
 const BAND_ORDER: RiskLevel[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -288,7 +316,9 @@ function HeatMapCell({
       )}
       style={
         empty
-          ? { background: dark ? "#1f2937" : "#eef2f7", color: dark ? "#4b5563" : "#c3cad6" }
+          ? dark
+            ? { background: "#1e293b", border: "1px solid #334155", color: "#64748b" }
+            : { background: "#eef2f7", color: "#c3cad6" }
           : { background: dark ? c.darkBg : c.bg, color: dark ? c.darkText : c.text }
       }
     >
@@ -298,7 +328,7 @@ function HeatMapCell({
           <div className="font-bold">
             {count} risk{count !== 1 ? "s" : ""} · Score {score}
           </div>
-          <div className="mt-0.5" style={{ color: c.solid }}>
+          <div className="mt-0.5" style={{ color: dark ? c.darkSolid : c.solid }}>
             {band}
           </div>
           <div className="mt-1 text-white/60">
@@ -389,10 +419,12 @@ function BubbleView({
   grid,
   maxCount,
   onSelect,
+  dark,
 }: {
   grid: number[][];
   maxCount: number;
   onSelect: (likelihood: number, impact: number) => void;
+  dark: boolean;
 }) {
   const size = 420;
   const pad = 48;
@@ -416,6 +448,14 @@ function BubbleView({
   return (
     <div className="relative h-full w-full">
       <svg viewBox={`0 0 ${size + 16} ${size}`} width="100%" height="100%" className="overflow-visible" preserveAspectRatio="xMidYMid meet">
+        <rect
+          x={pad}
+          y={0}
+          width={size - pad}
+          height={size - pad}
+          fill={dark ? "#1e293b" : "transparent"}
+          stroke={dark ? "#334155" : "transparent"}
+        />
         {[1, 2, 3, 4, 5].map((n) => (
           <g key={n}>
             <line
@@ -471,7 +511,7 @@ function BubbleView({
             const p = pos(likelihood, impact);
             const score = likelihood * impact;
             const band = getRiskLevel(score);
-            const solid = BAND_COLOR[band].solid;
+            const solid = dark ? BAND_COLOR[band].darkSolid : BAND_COLOR[band].solid;
             const r = 9 + (count / scale) * 26;
             const tipPayload = { x: p.x, y: p.y - r, count, score, band, likelihood, impact };
             return (
@@ -493,7 +533,16 @@ function BubbleView({
                   if (hoverCapable) setTip(null);
                 }}
               >
-                <circle cx={p.x} cy={p.y} r={r} fill={solid} fillOpacity={0.82} stroke={solid} strokeWidth={2} />
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={r}
+                  fill={solid}
+                  fillOpacity={dark ? 0.68 : 0.82}
+                  stroke={solid}
+                  strokeOpacity={dark ? 0.82 : 1}
+                  strokeWidth={2}
+                />
                 <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff">
                   {count}
                 </text>
@@ -513,7 +562,10 @@ function BubbleView({
           <div className="font-bold">
             {tip.count} risk{tip.count !== 1 ? "s" : ""} · Score {tip.score}
           </div>
-          <div className="mt-0.5" style={{ color: BAND_COLOR[tip.band].solid }}>
+          <div
+            className="mt-0.5"
+            style={{ color: dark ? BAND_COLOR[tip.band].darkSolid : BAND_COLOR[tip.band].solid }}
+          >
             {tip.band}
           </div>
           <div className="mt-1 text-white/60">
@@ -578,8 +630,16 @@ function DensityView({
         <defs>
           {cells.map((c) => (
             <radialGradient key={`g-${c.likelihood}-${c.impact}`} id={`risk-density-${c.likelihood}-${c.impact}`}>
-              <stop offset="0%" stopColor={BAND_COLOR[c.band].solid} stopOpacity={0.85} />
-              <stop offset="100%" stopColor={BAND_COLOR[c.band].solid} stopOpacity={0} />
+              <stop
+                offset="0%"
+                stopColor={dark ? BAND_COLOR[c.band].darkSolid : BAND_COLOR[c.band].solid}
+                stopOpacity={dark ? 0.62 : 0.85}
+              />
+              <stop
+                offset="100%"
+                stopColor={dark ? BAND_COLOR[c.band].darkSolid : BAND_COLOR[c.band].solid}
+                stopOpacity={0}
+              />
             </radialGradient>
           ))}
         </defs>
@@ -588,9 +648,9 @@ function DensityView({
           y={0}
           width={size - pad}
           height={size - pad}
-          fill={dark ? "rgba(15,23,42,0.45)" : "#fafbfd"}
+          fill={dark ? "#1e293b" : "#fafbfd"}
         />
-        <g style={{ mixBlendMode: dark ? "screen" : "multiply" }}>
+        <g style={{ mixBlendMode: dark ? "normal" : "multiply" }}>
           {cells.map((c) => (
             <circle
               key={`glow-${c.likelihood}-${c.impact}`}
@@ -601,7 +661,7 @@ function DensityView({
             />
           ))}
         </g>
-        <g stroke={dark ? "rgba(255,255,255,0.35)" : "#ffffff"} strokeWidth={2} opacity={0.9}>
+        <g stroke={dark ? "#334155" : "#ffffff"} strokeWidth={dark ? 1 : 2} opacity={0.9}>
           {[0, 1, 2, 3, 4, 5].map((n) => (
             <line key={`gx${n}`} x1={pad + n * step} y1={0} x2={pad + n * step} y2={size - pad} />
           ))}
@@ -665,22 +725,30 @@ function LegendRow({
   band,
   count,
   total,
+  dark,
 }: {
   band: RiskLevel;
   count: number;
   total: number;
+  dark: boolean;
 }) {
   const c = BAND_COLOR[band];
+  const bandColor = dark ? c.darkSolid : c.solid;
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      <span className="h-3 w-3 shrink-0 rounded-md" style={{ background: c.solid }} />
-      <span className="text-[12px] font-semibold text-slate-700 dark:text-slate-200">{band}</span>
+      <span className="h-3 w-3 shrink-0 rounded-md" style={{ background: bandColor }} />
+      <span
+        className="text-[12px] font-semibold text-slate-700 dark:text-slate-200"
+        style={dark ? { color: c.darkText } : undefined}
+      >
+        {band}
+      </span>
       <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
         {BAND_SCORE_RANGE[band]}
       </span>
       <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c.solid }} />
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: bandColor }} />
       </div>
       <span className="min-w-0 flex-1 basis-full text-[11px] text-slate-500 sm:basis-auto dark:text-slate-400">
         {BAND_GUIDE[band]}
@@ -689,7 +757,7 @@ function LegendRow({
   );
 }
 
-function RiskHeatMapSection({
+export function RiskHeatMapSection({
   risks,
   selectedLikelihood,
   selectedImpact,
@@ -761,7 +829,9 @@ function RiskHeatMapSection({
             {view === "matrix" && (
               <MatrixView grid={grid} selLi={selLi} selIm={selIm} onSelect={onCellSelect} dark={dark} />
             )}
-            {view === "bubble" && <BubbleView grid={grid} maxCount={maxCount} onSelect={onCellSelect} />}
+            {view === "bubble" && (
+              <BubbleView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
+            )}
             {view === "density" && (
               <DensityView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
             )}
@@ -831,7 +901,7 @@ function RiskHeatMapSection({
             </p>
             <div className="space-y-2">
               {BAND_ORDER.map((band) => (
-                <LegendRow key={band} band={band} count={counts[band]} total={total} />
+                <LegendRow key={band} band={band} count={counts[band]} total={total} dark={dark} />
               ))}
             </div>
             {total > 0 && (

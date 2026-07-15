@@ -8,8 +8,9 @@ import {
   useSidebar,
 } from "@/context/SidebarContext";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
-import { ChevronsLeft, ChevronsRight, Shield, Sparkles } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SentinelLogo } from "@/components/brand/SentinelLogo";
 import { PRODUCT_TAGLINE } from "@/lib/brand";
 import { QUICK_START_TEMPLATES } from "@/lib/quick-start-templates";
 import { NAV_SECTIONS } from "@/lib/navigation";
@@ -175,19 +176,17 @@ export function Sidebar() {
           href="/dashboard"
           className={cn("flex min-w-0 items-center gap-2.5", !isWide && "lg:justify-center")}
           onClick={handleNavClick}
+          aria-label="Release Desk home"
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-glow-brand dark:shadow-none">
-            <Shield className="h-[20px] w-[20px] text-white" />
-          </div>
-          {isWide && (
+          {isWide ? (
             <div className="min-w-0">
-              <span className="block truncate text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-                Sentinel
-              </span>
-              <p className="mt-0.5 truncate text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+              <SentinelLogo variant="full" className="h-[48px] w-auto max-w-[168px]" priority />
+              <p className="mt-1 truncate text-[11px] leading-snug text-gray-500 dark:text-gray-400">
                 {PRODUCT_TAGLINE}
               </p>
             </div>
+          ) : (
+            <SentinelLogo variant="icon" priority />
           )}
         </ProgressLink>
 
