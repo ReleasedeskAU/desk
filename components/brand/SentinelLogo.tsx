@@ -15,7 +15,8 @@ const VARIANTS = {
   full: {
     width: 220,
     height: 178,
-    imgClass: "h-[52px] w-auto max-w-[180px] object-contain object-left",
+    // PNG has large whitespace; scale crops it so the mark reads at usable size.
+    imgClass: "h-[64px] w-auto max-w-[220px] origin-left scale-[1.35] object-contain object-left",
   },
   icon: {
     width: 80,
@@ -25,7 +26,7 @@ const VARIANTS = {
   hero: {
     width: 420,
     height: 340,
-    imgClass: "h-auto w-full max-w-[320px] object-contain drop-shadow-2xl",
+    imgClass: "h-auto w-full max-w-[280px] origin-center scale-[1.2] object-contain drop-shadow-2xl",
   },
 } as const;
 
@@ -42,7 +43,7 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
     return (
       <div
         className={cn(
-          "relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-[var(--border)]",
+          "relative h-10 w-10 shrink-0 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm dark:border-slate-600",
           className
         )}
         aria-hidden
@@ -50,11 +51,12 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
         <Image
           src={LOGO_SRC}
           alt=""
-          fill
+          width={LOGO_SRC.width}
+          height={LOGO_SRC.height}
           sizes="40px"
           unoptimized
-          // Crop to the RD monogram; text lives below in the full mark.
-          className="object-cover object-[50%_22%] scale-[1.85]"
+          // Preserve the complete wide RD mark while cropping out the wordmark below it.
+          className="absolute left-1/2 top-[-8%] h-auto w-[210%] max-w-none -translate-x-1/2"
           priority={priority}
         />
       </div>
@@ -62,15 +64,17 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
   }
 
   return (
-    <Image
-      src={LOGO_SRC}
-      alt="Release Desk"
-      width={v.width}
-      height={v.height}
-      unoptimized
-      className={cn(v.imgClass, className)}
-      priority={priority}
-    />
+    <div className={cn("overflow-hidden", variant === "full" && "max-h-[72px]", className)}>
+      <Image
+        src={LOGO_SRC}
+        alt="Release Desk"
+        width={v.width}
+        height={v.height}
+        unoptimized
+        className={v.imgClass}
+        priority={priority}
+      />
+    </div>
   );
 }
 

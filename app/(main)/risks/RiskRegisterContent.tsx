@@ -76,42 +76,52 @@ type HeatMapView = "matrix" | "bubble" | "density";
 /** Ownership is "concentrated" when one person owns more than half of owned risks. */
 const OWNERSHIP_CONCENTRATION_THRESHOLD = 0.5;
 
-/** Heat-map band palette (v3) — MEDIUM gold vs HIGH tangerine kept clearly distinct. */
+/** Empty cells — dark graphite (distinct from LOW dark green). */
+const EMPTY_CELL = {
+  bg: "#374151",
+  text: "#9ca3af",
+  border: "#4b5563",
+  darkBg: "#1f2937",
+  darkText: "#6b7280",
+  darkBorder: "#374151",
+} as const;
+
+/** Heat-map band palette — dark green / yellow / orange / red. */
 const BAND_COLOR: Record<
   RiskLevel,
   { bg: string; text: string; solid: string; darkBg: string; darkText: string; darkSolid: string }
 > = {
   LOW: {
-    bg: "#d1fae5",
-    text: "#065f46",
-    solid: "#059669",
-    darkBg: "rgba(16,185,129,0.16)",
-    darkText: "#10b981",
-    darkSolid: "#10b981",
+    bg: "#14532d",
+    text: "#ecfdf5",
+    solid: "#166534",
+    darkBg: "#14532d",
+    darkText: "#bbf7d0",
+    darkSolid: "#22c55e",
   },
   MEDIUM: {
-    bg: "#fef9c3",
-    text: "#854d0e",
-    solid: "#eab308",
-    darkBg: "rgba(245,158,11,0.17)",
-    darkText: "#f59e0b",
-    darkSolid: "#f59e0b",
+    bg: "#eab308",
+    text: "#422006",
+    solid: "#ca8a04",
+    darkBg: "#ca8a04",
+    darkText: "#fef9c3",
+    darkSolid: "#facc15",
   },
   HIGH: {
-    bg: "#fed7aa",
-    text: "#9a3412",
-    solid: "#ea580c",
-    darkBg: "rgba(249,115,22,0.18)",
-    darkText: "#f97316",
-    darkSolid: "#f97316",
+    bg: "#ea580c",
+    text: "#fff7ed",
+    solid: "#c2410c",
+    darkBg: "#c2410c",
+    darkText: "#ffedd5",
+    darkSolid: "#fb923c",
   },
   CRITICAL: {
-    bg: "#fecaca",
-    text: "#7f1d1d",
-    solid: "#dc2626",
-    darkBg: "rgba(239,68,68,0.18)",
-    darkText: "#ef4444",
-    darkSolid: "#ef4444",
+    bg: "#dc2626",
+    text: "#fef2f2",
+    solid: "#b91c1c",
+    darkBg: "#b91c1c",
+    darkText: "#fecaca",
+    darkSolid: "#f87171",
   },
 };
 
@@ -317,8 +327,16 @@ function HeatMapCell({
       style={
         empty
           ? dark
-            ? { background: "#1e293b", border: "1px solid #334155", color: "#64748b" }
-            : { background: "#eef2f7", color: "#c3cad6" }
+            ? {
+                background: EMPTY_CELL.darkBg,
+                border: `1px solid ${EMPTY_CELL.darkBorder}`,
+                color: EMPTY_CELL.darkText,
+              }
+            : {
+                background: EMPTY_CELL.bg,
+                border: `1px solid ${EMPTY_CELL.border}`,
+                color: EMPTY_CELL.text,
+              }
           : { background: dark ? c.darkBg : c.bg, color: dark ? c.darkText : c.text }
       }
     >

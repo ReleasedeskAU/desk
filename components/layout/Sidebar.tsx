@@ -11,7 +11,6 @@ import { useHoverCapable } from "@/hooks/useHoverCapable";
 import { ChevronsLeft, ChevronsRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SentinelLogo } from "@/components/brand/SentinelLogo";
-import { PRODUCT_TAGLINE } from "@/lib/brand";
 import { QUICK_START_TEMPLATES } from "@/lib/quick-start-templates";
 import { NAV_SECTIONS } from "@/lib/navigation";
 
@@ -168,26 +167,21 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          "flex shrink-0 items-center border-b border-[var(--border)] px-4 py-5",
-          isWide ? "justify-between gap-3" : "flex-col gap-3 lg:px-3"
+          "relative flex shrink-0 items-center border-b border-[var(--border)] px-3 py-3",
+          isWide ? "justify-center" : "flex-col gap-3 lg:px-3"
         )}
       >
         <ProgressLink
           href="/dashboard"
-          className={cn("flex min-w-0 items-center gap-2.5", !isWide && "lg:justify-center")}
+          className={cn("flex min-w-0 items-center", !isWide && "lg:justify-center")}
           onClick={handleNavClick}
           aria-label="Release Desk home"
         >
-          {isWide ? (
-            <div className="min-w-0">
-              <SentinelLogo variant="full" className="h-[48px] w-auto max-w-[168px]" priority />
-              <p className="mt-1 truncate text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-                {PRODUCT_TAGLINE}
-              </p>
-            </div>
-          ) : (
-            <SentinelLogo variant="icon" priority />
-          )}
+          <SentinelLogo
+            variant="icon"
+            className={cn(isWide && "h-12 w-12 rounded-md")}
+            priority
+          />
         </ProgressLink>
 
         <button
@@ -195,7 +189,8 @@ export function Sidebar() {
           onClick={handleToggle}
           className={cn(
             "materio-sidebar-toggle flex shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--card)] text-gray-500 dark:text-white/70 transition-all hover:bg-brand-50 dark:hover:bg-white/10 hover:text-brand-600 shadow-sm",
-            "h-8 w-8"
+            "h-8 w-8",
+            isWide && "absolute right-3"
           )}
           aria-label={
             isMobileOpen
