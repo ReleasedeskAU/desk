@@ -1,0 +1,26 @@
+[
+  {
+    "content": "Always check Integration Matrix before scheduling cross-department releases",
+    "sourceOrder": 1
+  },
+  {
+    "content": "Shared environments (especially FIN-TEST-01, IT-TEST-01, INTEG-01) require advance booking",
+    "sourceOrder": 2
+  },
+  {
+    "content": "Critical Integration Paths require coordinated testing across all connected systems",
+    "sourceOrder": 3
+  },
+  {
+    "content": "Month-end, Quarter-end, and Year-end are high-risk periods - minimize changes",
+    "sourceOrder": 4
+  },
+  {
+    "content": "Security systems (PATH-006, PATH-007) require 24/7 availability - schedule carefully",
+    "sourceOrder": 5
+  },
+  {
+    "content": "SAP S/4HANA is the central hub - any SAP changes impact multiple departments",
+    "sourceOrder": 6
+  }
+]

@@ -66,6 +66,20 @@ type AlertDraft = {
   environmentName: string;
 };
 
+const ALERT_FIELD_LABELS: Partial<Record<keyof AlertDraft, string>> = {
+  timestamp: "Triggered",
+  applicationId: "Application",
+  departmentName: "Department",
+  alertType: "Alert Type",
+  severity: "Severity",
+  metric: "Metric",
+  threshold: "Threshold",
+  currentValue: "Current Value",
+  status: "Status",
+  assignedTo: "Assigned To",
+  environmentName: "Environment",
+};
+
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low", "Info"].map((v) => ({
   value: v,
   label: v,
@@ -179,6 +193,7 @@ export default function MonitoringAlertDetailPage({
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -247,8 +262,7 @@ export default function MonitoringAlertDetailPage({
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(ALERT_FIELD_LABELS);
     await load();
   };
 
@@ -295,7 +309,7 @@ export default function MonitoringAlertDetailPage({
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -303,6 +317,96 @@ export default function MonitoringAlertDetailPage({
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Alert ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Severity"
+              value={d.severity}
+              editing
+              kind="select"
+              options={severityOptions}
+              onChange={(n) => edit.setField("severity", n)}
+            />
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={statusOptions}
+              onChange={(n) => edit.setField("status", n)}
+            />
+            <EditableField
+              label="Alert Type"
+              value={d.alertType}
+              editing
+              onChange={(n) => edit.setField("alertType", n)}
+              placeholder="Alert type…"
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationId}
+              editing
+              kind="select"
+              options={applicationOptions}
+              onChange={(n) => edit.setField("applicationId", n)}
+            />
+            <EditableField
+              label="Department"
+              value={d.departmentName}
+              editing
+              onChange={(n) => edit.setField("departmentName", n)}
+              placeholder="Department…"
+            />
+            <EditableField
+              label="Environment"
+              value={d.environmentName}
+              editing
+              mono
+              onChange={(n) => edit.setField("environmentName", n)}
+              placeholder="e.g. Prod…"
+            />
+            <EditableField
+              label="Triggered"
+              value={d.timestamp}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("timestamp", n)}
+            />
+            <EditableField
+              label="Metric"
+              value={d.metric}
+              editing
+              onChange={(n) => edit.setField("metric", n)}
+              placeholder="Metric name…"
+            />
+            <EditableField
+              label="Current Value"
+              value={d.currentValue}
+              editing
+              onChange={(n) => edit.setField("currentValue", n)}
+              placeholder="Current value…"
+            />
+            <EditableField
+              label="Threshold"
+              value={d.threshold}
+              editing
+              onChange={(n) => edit.setField("threshold", n)}
+              placeholder="Threshold…"
+            />
+            <EditableField
+              label="Assigned To"
+              value={d.assignedTo}
+              editing
+              onChange={(n) => edit.setField("assignedTo", n)}
+              placeholder="Owner name…"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href="/monitoring-alerts" className={taBtnSecondary + " text-sm !py-2"}>
@@ -320,8 +424,6 @@ export default function MonitoringAlertDetailPage({
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: Bell,
@@ -362,28 +464,16 @@ export default function MonitoringAlertDetailPage({
           <EditableField
             label="Severity"
             value={v.severity}
-            editing={edit.editing}
-            kind="select"
-            options={severityOptions}
-            onChange={(n) => edit.setField("severity", n)}
+            editing={false}
             display={<StatusChip label={v.severity} tone={severityTone(v.severity)} />}
           />
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={statusOptions}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
           />
-          <EditableField
-            label="Alert Type"
-            value={v.alertType}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("alertType", n)}
-            placeholder="Alert type…"
-          />
+          <EditableField label="Alert Type" value={v.alertType} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -397,33 +487,20 @@ export default function MonitoringAlertDetailPage({
           <EditableField
             label="Application"
             value={v.applicationId}
-            editing={edit.editing}
-            kind="select"
-            options={applicationOptions}
-            onChange={(n) => edit.setField("applicationId", n)}
+            editing={false}
             display={selectedApp?.name ?? row.application.name}
           />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("departmentName", n)}
-            placeholder="Department…"
-          />
+          <EditableField label="Department" value={v.departmentName} editing={false} />
           <EditableField
             label="Environment"
             value={v.environmentName}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("environmentName", n)}
-            placeholder="e.g. Prod…"
           />
           <EditableField
             label="Triggered"
             value={v.timestamp}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("timestamp", n)}
+            editing={false}
             display={v.timestamp ? formatDate(v.timestamp) : "—"}
           />
         </EditableFieldGrid>
@@ -436,27 +513,9 @@ export default function MonitoringAlertDetailPage({
         description="Current reading vs threshold — both stay as text to support mixed seed formats."
       >
         <EditableFieldGrid>
-          <EditableField
-            label="Metric"
-            value={v.metric}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("metric", n)}
-            placeholder="Metric name…"
-          />
-          <EditableField
-            label="Current Value"
-            value={v.currentValue}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("currentValue", n)}
-            placeholder="Current value…"
-          />
-          <EditableField
-            label="Threshold"
-            value={v.threshold}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("threshold", n)}
-            placeholder="Threshold…"
-          />
+          <EditableField label="Metric" value={v.metric} editing={false} />
+          <EditableField label="Current Value" value={v.currentValue} editing={false} />
+          <EditableField label="Threshold" value={v.threshold} editing={false} />
         </EditableFieldGrid>
         {showThreshold && (
           <div className="mt-5 rounded-xl bg-slate-50 p-4 dark:bg-white/5">
@@ -472,15 +531,9 @@ export default function MonitoringAlertDetailPage({
         description="Who owns clearing this alert before it escalates to an incident."
       >
         <EditableFieldGrid>
-          <EditableField
-            label="Assigned To"
-            value={v.assignedTo}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("assignedTo", n)}
-            placeholder="Owner name…"
-          />
+          <EditableField label="Assigned To" value={v.assignedTo} editing={false} />
         </EditableFieldGrid>
-        {!edit.editing && !v.assignedTo.trim() && (
+        {!v.assignedTo.trim() && (
           <div className="mt-3">
             <TintedCallout tone="amber">No owner assigned yet.</TintedCallout>
           </div>

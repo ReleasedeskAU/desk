@@ -38,7 +38,13 @@
   --theme-accent: rgb(var(--color-brand-500));
   --theme-accent-soft: rgb(var(--color-brand-500) / 0.1);
   --theme-gradient: linear-gradient(135deg, rgb(var(--color-brand-400)), rgb(var(--color-brand-600)));
+  /* Detail-page hero tile: darker brand stops keep bold contrast with white text. */
+  --theme-hero-gradient: linear-gradient(145deg, rgb(var(--color-brand-600)), rgb(var(--color-brand-800)));
+  --theme-hero-shadow: 0 18px 40px -14px rgb(var(--color-brand-700) / 0.55);
   --theme-shadow: 0 8px 24px -8px rgb(var(--color-brand-500) / 0.35);
+  /* Hyperlinks stay recognizable in every brand theme (graphite overrides below). */
+  --theme-link: rgb(var(--color-brand-600));
+  --theme-link-hover: rgb(var(--color-brand-700));
   --color-accent-50: 248 250 252;
   --color-accent-100: 241 245 249;
   --color-accent-200: 226 232 240;
@@ -161,6 +167,9 @@
   --color-brand-900: 11 17 32;
   --color-brand-950: 2 6 23;
   --theme-on-accent: #ffffff;
+  /* Graphite brand is gray — keep hyperlinks blue so they never look like body text. */
+  --theme-link: #2563eb;
+  --theme-link-hover: #1d4ed8;
 }
 
 [data-color-theme="amber"] {
@@ -193,6 +202,8 @@
   --materio-primary-o-focus: rgb(var(--color-brand-500) / 0.24);
   --theme-accent-soft: rgb(var(--color-brand-500) / 0.16);
   --theme-shadow: 0 8px 28px -8px rgb(var(--color-brand-500) / 0.28);
+  --theme-link: rgb(var(--color-brand-400));
+  --theme-link-hover: rgb(var(--color-brand-300));
   --color-accent-50: 15 23 42;
   --color-accent-100: 30 41 59;
   --color-accent-200: 51 65 85;
@@ -275,6 +286,8 @@
   --color-brand-500: 148 163 184; --color-brand-600: 203 213 225; --color-brand-700: 226 232 240;
   --color-brand-800: 241 245 249; --color-brand-900: 248 250 252; --color-brand-950: 252 252 253;
   --theme-on-accent: #020617;
+  --theme-link: #60a5fa;
+  --theme-link-hover: #93c5fd;
 }
 
 .theme-dark[data-color-theme="amber"] {
@@ -291,6 +304,25 @@ body {
 }
 
 @layer components {
+  /* Content hyperlinks — underlined + theme link color (graphite uses blue).
+     !important beats per-call text-brand-* so links stay visible in every theme. */
+  a.rd-link,
+  button.rd-link {
+    color: var(--theme-link) !important;
+    text-decoration: underline !important;
+    text-underline-offset: 0.14em;
+    text-decoration-thickness: from-font;
+  }
+  a.rd-link:hover,
+  button.rd-link:hover {
+    color: var(--theme-link-hover) !important;
+  }
+  /* Raw next/link anchors that still use text-brand-* without ProgressLink. */
+  main a[href]:where(.text-brand-600, .text-brand-500, .text-brand-700, .text-brand-400):not(.no-underline):not(.rd-chrome):not(.menu-item):not(.menu-item-active):not(.menu-item-inactive) {
+    color: var(--theme-link) !important;
+    text-decoration: underline !important;
+    text-underline-offset: 0.14em;
+  }
   .menu-section-label {
     @apply text-label-md uppercase tracking-[0.05em] text-gray-500;
   }

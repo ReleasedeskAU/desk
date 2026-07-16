@@ -20,6 +20,11 @@ import { TopBar } from "@/components/layout/TopBar";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { ENVIRONMENTS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { loadJsonEffect } from "@/lib/safe-fetch";
+import { EnvironmentVersionCreateModal } from "@/components/environments/EnvironmentVersionCreateModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
+import { cn } from "@/lib/utils";
+import { Plus } from "lucide-react";
 
 type DeskPayload = {
   versionMatrix: unknown[];
@@ -37,7 +42,7 @@ type DeskPayload = {
   }>;
   applications?: Array<{ id: string; name: string; departmentId?: string }>;
   departments?: Array<{ id: string; name: string }>;
-  environments?: Array<{ id: string; name: string; type: string }>;
+  environments?: Array<{ id: string; name: string; type: string; applicationId?: string }>;
 };
 
 export function EnvironmentsContent() {
@@ -45,19 +50,25 @@ export function EnvironmentsContent() {
   const { sortKey, sortDir, toggleSort } = useTableSort(values, setFilter, "application", "asc");
   const [desk, setDesk] = useState<DeskPayload | null>(null);
   const [deskLoading, setDeskLoading] = useState(true);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const loadDesk = useCallback(() => {
-    setDeskLoading(true);
+  const loadDesk = useCallback((showLoading = true) => {
+    if (showLoading) setDeskLoading(true);
     return loadJsonEffect<DeskPayload>(
       `/api/environment-desk${apiQuery}`,
       setDesk,
-      { label: "environment-desk", onFinally: () => setDeskLoading(false) },
+      { label: "environment-desk", onFinally: () => { if (showLoading) setDeskLoading(false); } },
     );
   }, [apiQuery]);
 
   useEffect(() => {
     return loadDesk();
   }, [loadDesk]);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), { label: "auth-me" });
+  }, []);
 
   const appOptions = useMemo(() => {
     if (!desk?.applications?.length) {
@@ -129,7 +140,25 @@ export function EnvironmentsContent() {
       <TopBar
         pageKey="environments"
         title="Versions & Config"
-        trailing={<PageDocumentation pageKey="environments" />}
+        trailing={
+          <div className="flex items-center gap-2">
+            {sessionCanEdit(user) ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Environment Version
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="environments" />
+          </div>
+        }
+      />
+      <EnvironmentVersionCreateModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => { loadDesk(false); }}
+        departments={desk.departments ?? []}
+        applications={desk.applications ?? []}
+        environments={desk.environments ?? []}
+        statuses={statusOptions}
       />
 
       <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

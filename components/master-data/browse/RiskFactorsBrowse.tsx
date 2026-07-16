@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import {
   DEFAULT_PAGE_SIZE,
@@ -22,6 +23,7 @@ import {
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { RISK_FACTOR_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
+import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import {
   apiJson,
   BrowseToolbar,
@@ -68,6 +70,7 @@ export function RiskFactorsBrowse() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [created, setCreated] = useState<RiskFactorRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +123,7 @@ export function RiskFactorsBrowse() {
 
   const openCreate = () => {
     setEditing(null);
+    setCreated(null);
     setForm(emptyForm);
     setFormError(null);
     setModalOpen(true);
@@ -152,21 +156,29 @@ export function RiskFactorsBrowse() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const payload = { category: form.category, factorName: form.factorName, weight, description: form.description, active: form.active };
+      const payload = {
+        category: form.category.trim(),
+        factorName: form.factorName.trim(),
+        weight,
+        description: form.description.trim() || null,
+        active: form.active,
+      };
       if (editing) {
         await apiJson(`/api/risk-factors/${editing.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        setModalOpen(false);
       } else {
-        await apiJson("/api/risk-factors", {
+        const row = await apiJson<RiskFactorRow>("/api/risk-factors", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        setModalOpen(false);
+        setCreated(row);
       }
-      setModalOpen(false);
       await load();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Save failed");
@@ -364,6 +376,71 @@ export function RiskFactorsBrowse() {
           </select>
         </FormField>
       </FormModal>
+
+      {created && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setCreated(null)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="risk-factor-created-title"
+          >
+            <div className="mb-4 flex items-start gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                <CheckCircle2 className="h-5 w-5" aria-hidden />
+              </span>
+              <div>
+                <h2 id="risk-factor-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Risk factor created
+                </h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
+                  Your risk factor was saved successfully.
+                </p>
+              </div>
+            </div>
+            <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
+              <div className="flex justify-between gap-3">
+                <dt className="text-gray-500 dark:text-white/55">Factor name</dt>
+                <dd className="text-right font-medium text-gray-900 dark:text-white">{created.factorName}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-gray-500 dark:text-white/55">Category</dt>
+                <dd className="text-right font-medium text-gray-900 dark:text-white">{created.category}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-gray-500 dark:text-white/55">Weight</dt>
+                <dd className="text-right font-medium text-gray-900 dark:text-white">{created.weight}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-gray-500 dark:text-white/55">Active</dt>
+                <dd className="text-right font-medium text-gray-900 dark:text-white">
+                  {created.active ? "Yes" : "No"}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className={taBtnSecondary}
+                onClick={() => {
+                  setCreated(null);
+                  openCreate();
+                }}
+              >
+                Create another
+              </button>
+              <button type="button" className={taBtnPrimary} onClick={() => setCreated(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

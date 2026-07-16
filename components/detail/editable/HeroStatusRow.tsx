@@ -2,18 +2,9 @@
 
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 
+/** Kept for call-site compatibility; hero fill now follows the active brand theme. */
 export type HeroTone = "rose" | "amber" | "emerald" | "indigo" | "sky" | "violet";
-
-const GRADIENT: Record<HeroTone, string> = {
-  rose: "from-rose-500 to-rose-600 shadow-rose-200/80 dark:shadow-rose-900/40",
-  amber: "from-amber-500 to-amber-600 shadow-amber-200/80 dark:shadow-amber-900/40",
-  emerald: "from-emerald-500 to-emerald-600 shadow-emerald-200/80 dark:shadow-emerald-900/40",
-  indigo: "from-indigo-500 to-indigo-600 shadow-indigo-200/80 dark:shadow-indigo-900/40",
-  sky: "from-sky-500 to-sky-600 shadow-sky-200/80 dark:shadow-sky-900/40",
-  violet: "from-violet-500 to-violet-600 shadow-violet-200/80 dark:shadow-violet-900/40",
-};
 
 const RING: Record<HeroTone, string> = {
   rose: "#f43f5e",
@@ -30,6 +21,7 @@ type HeroStatusRowProps = {
     icon: LucideIcon;
     label: string;
     value: ReactNode;
+    /** @deprecated Fill always uses the active brand theme; ignored for background. */
     tone?: HeroTone;
   };
   /** Secondary white status card. */
@@ -49,23 +41,24 @@ type HeroStatusRowProps = {
 };
 
 /**
- * Top-of-page glance row: gradient hero + status card + progress ring.
+ * Top-of-page glance row: theme-matched hero + status card + progress ring.
+ * Hero uses dark brand stops so contrast stays bold across all color themes.
  */
 export function HeroStatusRow({ hero, secondary, metric }: HeroStatusRowProps) {
   const HeroIcon = hero.icon;
   const SecondaryIcon = secondary.icon;
   const MetricIcon = metric.icon;
-  const heroTone = hero.tone ?? "rose";
   const ringTone = metric.tone ?? "amber";
   const pct = Math.max(0, Math.min(100, metric.percent));
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div
-        className={cn(
-          "rounded-[22px] bg-gradient-to-br p-5 text-white shadow-lg",
-          GRADIENT[heroTone]
-        )}
+        className="rounded-[22px] p-5 text-white shadow-lg"
+        style={{
+          backgroundImage: "var(--theme-hero-gradient)",
+          boxShadow: "var(--theme-hero-shadow)",
+        }}
       >
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white/80">
           <HeroIcon size={13} aria-hidden />

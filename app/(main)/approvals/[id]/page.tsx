@@ -66,6 +66,19 @@ type ApprovalDraft = {
   cabMeetingId: string;
 };
 
+const APPROVAL_FIELD_LABELS: Partial<Record<keyof ApprovalDraft, string>> = {
+  releaseId: "Release",
+  applicationName: "Application",
+  departmentName: "Department",
+  approvalType: "Approval Type",
+  approverId: "Approver",
+  submittedDate: "Submitted Date",
+  decisionDate: "Decision Date",
+  decision: "Decision",
+  comments: "Comments",
+  cabMeetingId: "CAB Meeting",
+};
+
 const DECISION_OPTIONS = ["Pending", "Approved", "Rejected", "Deferred"].map((v) => ({
   value: v,
   label: v,
@@ -163,6 +176,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -232,8 +246,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(APPROVAL_FIELD_LABELS);
     await load();
   };
 
@@ -280,7 +293,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -288,6 +301,94 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Approval ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Decision"
+              value={d.decision}
+              editing
+              kind="select"
+              options={decisionOptions}
+              onChange={(n) => edit.setField("decision", n)}
+              display={<StatusChip label={d.decision} tone={decisionTone(d.decision)} />}
+            />
+            <EditableField
+              label="Approval Type"
+              value={d.approvalType}
+              editing
+              onChange={(n) => edit.setField("approvalType", n)}
+              placeholder="e.g. CAB Sign-off…"
+            />
+            <EditableField
+              label="Release"
+              value={d.releaseId}
+              editing
+              kind="select"
+              options={releaseOptions}
+              onChange={(n) => edit.setField("releaseId", n)}
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationName}
+              editing
+              onChange={(n) => edit.setField("applicationName", n)}
+              placeholder="Application name…"
+            />
+            <EditableField
+              label="Department"
+              value={d.departmentName}
+              editing
+              onChange={(n) => edit.setField("departmentName", n)}
+              placeholder="Department…"
+            />
+            <EditableField
+              label="Approver"
+              value={d.approverId}
+              editing
+              kind="select"
+              options={approverOptions}
+              onChange={(n) => edit.setField("approverId", n)}
+            />
+            <EditableField
+              label="Submitted Date"
+              value={d.submittedDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("submittedDate", n)}
+              display={d.submittedDate ? formatDate(d.submittedDate) : "—"}
+            />
+            <EditableField
+              label="Decision Date"
+              value={d.decisionDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("decisionDate", n)}
+              display={d.decisionDate ? formatDate(d.decisionDate) : "—"}
+            />
+            <EditableField
+              label="CAB Meeting"
+              value={d.cabMeetingId}
+              editing
+              mono
+              onChange={(n) => edit.setField("cabMeetingId", n)}
+              placeholder="CAB meeting id…"
+            />
+            <EditableField
+              label="Comments"
+              value={d.comments}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("comments", n)}
+              placeholder="CAB comments…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink
@@ -308,8 +409,6 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: CheckCircle2,
@@ -387,18 +486,13 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Decision"
             value={v.decision}
-            editing={edit.editing}
-            kind="select"
-            options={decisionOptions}
-            onChange={(n) => edit.setField("decision", n)}
+            editing={false}
             display={<StatusChip label={v.decision} tone={decisionTone(v.decision)} />}
           />
           <EditableField
             label="Approval Type"
             value={v.approvalType}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("approvalType", n)}
-            placeholder="e.g. CAB Sign-off…"
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -413,10 +507,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Release"
             value={v.releaseId}
-            editing={edit.editing}
-            kind="select"
-            options={releaseOptions}
-            onChange={(n) => edit.setField("releaseId", n)}
+            editing={false}
             display={
               <ProgressLink
                 href={`/releases/${v.releaseId || row.release.id}`}
@@ -439,16 +530,12 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Application"
             value={v.applicationName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("applicationName", n)}
-            placeholder="Application name…"
+            editing={false}
           />
           <EditableField
             label="Department"
             value={v.departmentName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("departmentName", n)}
-            placeholder="Department…"
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -463,10 +550,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Approver"
             value={v.approverId}
-            editing={edit.editing}
-            kind="select"
-            options={approverOptions}
-            onChange={(n) => edit.setField("approverId", n)}
+            editing={false}
             display={selectedApprover?.name ?? "—"}
           />
           <EditableField
@@ -496,26 +580,20 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Submitted Date"
             value={v.submittedDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("submittedDate", n)}
+            editing={false}
             display={v.submittedDate ? formatDate(v.submittedDate) : "—"}
           />
           <EditableField
             label="Decision Date"
             value={v.decisionDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("decisionDate", n)}
+            editing={false}
             display={v.decisionDate ? formatDate(v.decisionDate) : "—"}
           />
           <EditableField
             label="CAB Meeting"
             value={v.cabMeetingId}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("cabMeetingId", n)}
-            placeholder="CAB meeting id…"
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -526,20 +604,9 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
         title="Comments"
         description="CAB notes and sign-off rationale that reviewers leave with the decision."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Comments"
-            value={v.comments}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("comments", n)}
-            placeholder="CAB comments…"
-          />
-        ) : (
-          <TintedCallout tone="violet">
-            {v.comments.trim() ? v.comments : "No comments recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="violet">
+          {v.comments.trim() ? v.comments : "No comments recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

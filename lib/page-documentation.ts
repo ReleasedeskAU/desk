@@ -152,18 +152,18 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
     pageKey: "system-mapping",
     title: "System Mapping",
     summary:
-      "Document how environments depend on each other upstream and downstream. Analyse booking conflicts in a date range so a release is not scheduled when a required downstream env is already taken.",
+      "Plan releases across the system catalog, department relationship matrix, shared environments, and critical paths. Keep release-manager notes in view and run real date-range booking-conflict checks without leaving the workspace.",
     quickReference: [
-      "Document environment dependencies (upstream/downstream edges).",
-      "Set an analysis period to match your planned test window.",
-      "Generate mapping from free-text notes (editors) or add edges manually.",
-      "Analyse booking conflicts for the selected date range.",
-      "Mapping risks appear when a required downstream env is already booked.",
+      "Systems Hub records system ownership, integration reach, data flow, and exchanged data.",
+      "Department Matrix is an editable 8×8 view: Primary, Secondary, or None.",
+      "Shared Environments supports server-side filters, sorting, and saved table preferences.",
+      "Critical Paths capture coordinated upstream/downstream release sequences and blackout windows.",
+      "The persistent sidebar shows all six release-manager notes and real booking-conflict analysis.",
     ],
     fullDocumentation: [
-      "System Mapping stores directed edges between environments — for example, when UAT for App A requires a healthy downstream integration env. The graph feeds conflict analysis when you book overlapping windows.",
-      "Editors can maintain edges manually or use AI-assisted generation from notes. The risk scan cross-references active env bookings in the analysis period and flags releases whose downstream prerequisites are unavailable.",
-      "Pair this page with Env Booking: confirm mapping is current before locking test dates, especially for multi-application end-to-end scenarios.",
+      "System Mapping is organized into four operational tabs. Systems Hub and Critical Paths are database-backed catalogs with create, edit, and delete controls for editors. Department Matrix preserves the stored directional relationship for every pair of the eight supported departments; mirroring the reverse direction is enabled by default when editing.",
+      "Shared Environments follows the common Sentinel table pattern: URL-driven server filters, sortable headers, a sort summary, saved Manage Filters and Manage Columns preferences, sticky headings and identifier, and horizontal scrolling on small screens.",
+      "Release Manager Notes remain visible beside the active tab on desktop and appear expanded before the tab content on mobile. Booking conflicts call the existing real analysis endpoint for the chosen date range and report environment reservations that overlap mapped dependencies.",
     ],
   },
   environments: {

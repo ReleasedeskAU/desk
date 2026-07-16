@@ -50,6 +50,15 @@ type DependencyDraft = {
   notes: string;
 };
 
+const DEPENDENCY_FIELD_LABELS: Partial<Record<keyof DependencyDraft, string>> = {
+  releaseId: "Source Release",
+  dependsOnReleaseId: "Depends On (Upstream)",
+  dependencyType: "Dependency Type",
+  status: "Status",
+  impactIfBlocked: "Impact if Blocked",
+  notes: "Notes",
+};
+
 const TYPE_OPTIONS = DEPENDENCY_TYPES.map((v) => ({ value: v, label: v }));
 const STATUS_OPTIONS = DEPENDENCY_STATUSES.map((v) => ({ value: v, label: v }));
 const IMPACT_OPTIONS = DEPENDENCY_IMPACTS.map((v) => ({ value: v, label: v }));
@@ -158,6 +167,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -218,8 +228,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(DEPENDENCY_FIELD_LABELS);
     await load();
   };
 
@@ -269,7 +278,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -277,6 +286,67 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Dep ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Source Release"
+              value={d.releaseId}
+              editing
+              kind="select"
+              options={releaseSelectOptions}
+              onChange={(n) => edit.setField("releaseId", n)}
+            />
+            <EditableField
+              label="Depends On (Upstream)"
+              value={d.dependsOnReleaseId}
+              editing
+              kind="select"
+              options={releaseSelectOptions}
+              onChange={(n) => edit.setField("dependsOnReleaseId", n)}
+            />
+            <EditableField
+              label="Dependency Type"
+              value={d.dependencyType}
+              editing
+              kind="select"
+              options={typeOptions}
+              onChange={(n) => edit.setField("dependencyType", n)}
+              display={<StatusChip label={d.dependencyType} tone="neutral" />}
+            />
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={statusOptions}
+              onChange={(n) => edit.setField("status", n)}
+              display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
+            />
+            <EditableField
+              label="Impact if Blocked"
+              value={d.impactIfBlocked}
+              editing
+              kind="select"
+              options={impactOptions}
+              onChange={(n) => edit.setField("impactIfBlocked", n)}
+              display={<StatusChip label={d.impactIfBlocked} tone={impactTone(d.impactIfBlocked)} />}
+            />
+            <EditableField
+              label="Notes"
+              value={d.notes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("notes", n)}
+              placeholder="Impact context, mitigation, owners…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           {sourceRelease && (
@@ -304,8 +374,6 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: ShieldAlert,
@@ -373,10 +441,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
           <EditableField
             label="Source Release"
             value={v.releaseId}
-            editing={edit.editing}
-            kind="select"
-            options={releaseSelectOptions}
-            onChange={(n) => edit.setField("releaseId", n)}
+            editing={false}
             display={
               sourceRelease ? (
                 <ProgressLink
@@ -399,10 +464,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
           <EditableField
             label="Depends On (Upstream)"
             value={v.dependsOnReleaseId}
-            editing={edit.editing}
-            kind="select"
-            options={releaseSelectOptions}
-            onChange={(n) => edit.setField("dependsOnReleaseId", n)}
+            editing={false}
             display={
               upstreamRelease ? (
                 <ProgressLink
@@ -435,28 +497,19 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
           <EditableField
             label="Dependency Type"
             value={v.dependencyType}
-            editing={edit.editing}
-            kind="select"
-            options={typeOptions}
-            onChange={(n) => edit.setField("dependencyType", n)}
+            editing={false}
             display={<StatusChip label={v.dependencyType} tone="neutral" />}
           />
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={statusOptions}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
           />
           <EditableField
             label="Impact if Blocked"
             value={v.impactIfBlocked}
-            editing={edit.editing}
-            kind="select"
-            options={impactOptions}
-            onChange={(n) => edit.setField("impactIfBlocked", n)}
+            editing={false}
             display={<StatusChip label={v.impactIfBlocked} tone={impactTone(v.impactIfBlocked)} />}
           />
         </EditableFieldGrid>
@@ -468,20 +521,9 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
         title="Notes"
         description="Context for owners and CAB when this link threatens delivery."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Notes"
-            value={v.notes}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("notes", n)}
-            placeholder="Impact context, mitigation, owners…"
-          />
-        ) : (
-          <TintedCallout tone="amber">
-            {v.notes.trim() ? v.notes : "No notes recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="amber">
+          {v.notes.trim() ? v.notes : "No notes recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

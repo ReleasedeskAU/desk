@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 
-const DEFAULT_COLOR_THEME = "sky";
+const DEFAULT_COLOR_THEME = "graphite";
 const appearancePreferenceSchema = z
   .object({
     colorTheme: z.enum(["sky", "indigo", "emerald", "violet", "graphite", "amber"]),
@@ -33,7 +33,7 @@ function logPersistenceError(operation: "GET" | "PUT", error: unknown): void {
 
 /**
  * Returns the authenticated user's persisted color theme.
- * @returns A JSON color theme; defaults to sky when no preference exists.
+ * @returns A JSON color theme; defaults to graphite when no preference exists.
  * @throws No errors to callers; authentication and persistence failures become generic HTTP responses.
  */
 export async function GET() {

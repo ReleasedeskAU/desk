@@ -345,6 +345,41 @@ model SystemMatrixRow {
   updatedAt      DateTime @updatedAt
 }
 
+model SystemSharedEnvironment {
+  id                 String   @id @default(cuid())
+  environmentCode    String   @unique
+  environmentType    String
+  sharedBy            String
+  capacity            String
+  bookingRequirement  String
+  conflictRisk        String
+  sourceOrder         Int      @unique
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model SystemCriticalPath {
+  id                      String   @id @default(cuid())
+  pathCode                String   @unique
+  name                    String
+  upstreamSystems         String
+  downstreamSystems       String
+  coordinationRequirement String
+  blackoutWindows         String
+  releaseManagerNotes     String
+  sourceOrder             Int      @unique
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model SystemReleaseManagerNote {
+  id          String   @id @default(cuid())
+  content     String
+  sourceOrder Int      @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Connector {
   id           String             @id @default(cuid())
   name         String

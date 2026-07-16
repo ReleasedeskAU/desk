@@ -73,6 +73,21 @@ type RiskDraft = {
   notes: string;
 };
 
+const RISK_FIELD_LABELS: Partial<Record<keyof RiskDraft, string>> = {
+  releaseId: "Release",
+  applicationName: "Application",
+  departmentName: "Department",
+  category: "Category",
+  description: "Description",
+  likelihood: "Likelihood",
+  impact: "Impact",
+  affectedArea: "Affected Area",
+  mitigationStrategy: "Mitigation Strategy",
+  riskOwnerId: "Risk Owner",
+  status: "Status",
+  notes: "Notes",
+};
+
 const LIKELIHOOD: Record<number, string> = {
   1: "Rare",
   2: "Unlikely",
@@ -183,6 +198,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -250,8 +266,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(RISK_FIELD_LABELS);
     await load();
   };
 
@@ -302,7 +317,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -310,6 +325,109 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Risk ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={statusOptions}
+              onChange={(n) => edit.setField("status", n)}
+            />
+            <EditableField
+              label="Category"
+              value={d.category}
+              editing
+              onChange={(n) => edit.setField("category", n)}
+            />
+            <EditableField
+              label="Likelihood"
+              value={d.likelihood}
+              editing
+              kind="select"
+              options={SCALE_OPTIONS}
+              onChange={(n) => edit.setField("likelihood", n)}
+            />
+            <EditableField
+              label="Impact"
+              value={d.impact}
+              editing
+              kind="select"
+              options={SCALE_OPTIONS}
+              onChange={(n) => edit.setField("impact", n)}
+            />
+            <EditableField
+              label="Release"
+              value={d.releaseId}
+              editing
+              kind="select"
+              options={releaseOptions}
+              onChange={(n) => edit.setField("releaseId", n)}
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationName}
+              editing
+              onChange={(n) => edit.setField("applicationName", n)}
+              placeholder="Application name…"
+            />
+            <EditableField
+              label="Department"
+              value={d.departmentName}
+              editing
+              onChange={(n) => edit.setField("departmentName", n)}
+              placeholder="Department…"
+            />
+            <EditableField
+              label="Affected Area"
+              value={d.affectedArea}
+              editing
+              onChange={(n) => edit.setField("affectedArea", n)}
+              placeholder="Area impacted…"
+            />
+            <EditableField
+              label="Risk Owner"
+              value={d.riskOwnerId}
+              editing
+              kind="select"
+              options={ownerOptions}
+              onChange={(n) => edit.setField("riskOwnerId", n)}
+            />
+            <EditableField
+              label="Description"
+              value={d.description}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("description", n)}
+              placeholder="Risk description…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Mitigation Strategy"
+              value={d.mitigationStrategy}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("mitigationStrategy", n)}
+              placeholder="How this risk will be mitigated…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Notes"
+              value={d.notes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("notes", n)}
+              placeholder="Notes…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href={`/releases/${v.releaseId || row.release.id}`} className={taBtnSecondary + " text-sm !py-2"}>
@@ -330,8 +448,6 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: Zap,
@@ -372,18 +488,10 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={statusOptions}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
           />
-          <EditableField
-            label="Category"
-            value={v.category}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("category", n)}
-          />
+          <EditableField label="Category" value={v.category} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -405,19 +513,13 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
               <EditableField
                 label="Likelihood"
                 value={v.likelihood}
-                editing={edit.editing}
-                kind="select"
-                options={SCALE_OPTIONS}
-                onChange={(n) => edit.setField("likelihood", n)}
+                editing={false}
                 display={formatScale(likelihoodNum, LIKELIHOOD)}
               />
               <EditableField
                 label="Impact"
                 value={v.impact}
-                editing={edit.editing}
-                kind="select"
-                options={SCALE_OPTIONS}
-                onChange={(n) => edit.setField("impact", n)}
+                editing={false}
                 display={formatScale(impactNum, IMPACT)}
               />
             </EditableFieldGrid>
@@ -435,10 +537,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           <EditableField
             label="Release"
             value={v.releaseId}
-            editing={edit.editing}
-            kind="select"
-            options={releaseOptions}
-            onChange={(n) => edit.setField("releaseId", n)}
+            editing={false}
             display={
               <ProgressLink
                 href={`/releases/${v.releaseId || row.release.id}`}
@@ -466,27 +565,9 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
               v.releaseId === row.releaseId ? formatDate(row.release.releaseDate) : "—"
             }
           />
-          <EditableField
-            label="Application"
-            value={v.applicationName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("applicationName", n)}
-            placeholder="Application name…"
-          />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("departmentName", n)}
-            placeholder="Department…"
-          />
-          <EditableField
-            label="Affected Area"
-            value={v.affectedArea}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("affectedArea", n)}
-            placeholder="Area impacted…"
-          />
+          <EditableField label="Application" value={v.applicationName} editing={false} />
+          <EditableField label="Department" value={v.departmentName} editing={false} />
+          <EditableField label="Affected Area" value={v.affectedArea} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -496,25 +577,14 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
         title="Risk details"
         description="What can go wrong, and how owners should describe it in CAB and stand-ups."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Description"
-            value={v.description}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("description", n)}
-            placeholder="Risk description…"
-          />
-        ) : (
-          <>
-            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-              Description
-            </p>
-            <TintedCallout tone="amber">
-              {v.description.trim() || "No description recorded."}
-            </TintedCallout>
-          </>
-        )}
+        <>
+          <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+            Description
+          </p>
+          <TintedCallout tone="amber">
+            {v.description.trim() || "No description recorded."}
+          </TintedCallout>
+        </>
       </DetailSection>
 
       <DetailSection
@@ -527,10 +597,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           <EditableField
             label="Risk Owner"
             value={v.riskOwnerId}
-            editing={edit.editing}
-            kind="select"
-            options={ownerOptions}
-            onChange={(n) => edit.setField("riskOwnerId", n)}
+            editing={false}
             display={selectedOwner?.name ?? "—"}
           />
           <EditableField
@@ -545,25 +612,14 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           />
         </EditableFieldGrid>
         <div className="mt-4">
-          {edit.editing ? (
-            <EditableField
-              label="Mitigation Strategy"
-              value={v.mitigationStrategy}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("mitigationStrategy", n)}
-              placeholder="How this risk will be mitigated…"
-            />
-          ) : (
-            <>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Mitigation Strategy
-              </p>
-              <TintedCallout tone="emerald">
-                {v.mitigationStrategy.trim() || "No mitigation strategy recorded yet."}
-              </TintedCallout>
-            </>
-          )}
+          <>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Mitigation Strategy
+            </p>
+            <TintedCallout tone="emerald">
+              {v.mitigationStrategy.trim() || "No mitigation strategy recorded yet."}
+            </TintedCallout>
+          </>
         </div>
       </DetailSection>
 
@@ -573,20 +629,9 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
         title="Notes"
         description="Extra context for reviewers — leave codes, coverage plans, or follow-ups."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Notes"
-            value={v.notes}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("notes", n)}
-            placeholder="Notes…"
-          />
-        ) : (
-          <TintedCallout tone="amber">
-            {v.notes.trim() ? v.notes : "No notes recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="amber">
+          {v.notes.trim() ? v.notes : "No notes recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

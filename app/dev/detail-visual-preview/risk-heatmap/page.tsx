@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import {
   RiskHeatMapSection,
   type RiskRow,
@@ -55,13 +54,20 @@ const RISKS: RiskRow[] = CELLS.flatMap(([likelihood, impact, count], cellIndex) 
 
 function RiskHeatMapPreviewContent() {
   const { mode, setMode } = useThemeMode();
-
-  useEffect(() => {
-    setMode("dark");
-  }, [setMode]);
+  const dark = mode === "dark";
 
   return (
-    <main className={mode === "dark" ? "min-h-screen bg-[#0f172a] p-5 sm:p-8" : "min-h-screen bg-[#f4f7fe] p-5 sm:p-8"}>
+    <main className={dark ? "min-h-screen bg-[#0f172a] p-5 sm:p-8" : "min-h-screen bg-[#f4f7fe] p-5 sm:p-8"}>
+      <div className="mx-auto mb-4 flex max-w-5xl justify-end">
+        <button
+          type="button"
+          data-preview-theme="toggle"
+          onClick={() => setMode(dark ? "light" : "dark")}
+          className="rounded-xl bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 shadow-sm dark:bg-white/10 dark:text-white/70"
+        >
+          {dark ? "Light mode" : "Dark mode"}
+        </button>
+      </div>
       <div className="mx-auto max-w-5xl">
         <RiskHeatMapSection
           risks={RISKS}

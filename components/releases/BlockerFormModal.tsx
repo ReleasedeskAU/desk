@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -23,31 +26,74 @@ const BLOCKER_TYPES = [
 const SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
 const ESCALATIONS = ["L1 - Team Lead", "L2 - Manager", "L3 - Director"] as const;
 
+type ReleaseOption = {
+  id: string;
+  releaseCode: string;
+  name: string;
+  departmentName?: string;
+  applicationName?: string;
+};
+
+type CreatedSummary = {
+  id: string;
+  blockerCode: string;
+  releaseCode: string;
+  releaseName: string;
+  blockerType: string;
+  severity: string;
+  status: string;
+  impactOnRelease: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** Called after successful create (list refresh). */
   onCreated: () => void;
-  releaseCode: string;
-  releaseName: string;
-  departmentName: string;
-  applicationName: string;
+  /**
+   * When set, release is locked (release-detail create).
+   * When omitted, the modal shows a release picker (blockers list create).
+   */
+  releaseCode?: string;
+  releaseName?: string;
+  departmentName?: string;
+  applicationName?: string;
   raisedByDefault?: string;
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+function SummaryRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-gray-500 dark:text-white/55">{label}</dt>
+      <dd className={cn("text-right font-medium text-gray-900 dark:text-white", mono && "font-mono text-xs")}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Create a blocker — either scoped to a release (detail page) or with a release picker (list page).
+ * Shows a confirmation summary after successful create.
+ */
 export function BlockerFormModal({
   open,
   onClose,
   onCreated,
-  releaseCode,
-  releaseName,
-  departmentName,
-  applicationName,
+  releaseCode: lockedReleaseCode,
+  releaseName: lockedReleaseName = "",
+  departmentName: lockedDepartmentName = "",
+  applicationName: lockedApplicationName = "",
   raisedByDefault = "",
 }: Props) {
+  const scoped = Boolean(lockedReleaseCode);
+
   const defaults = useMemo(
     () => ({
+      releaseId: "",
+      releaseCode: lockedReleaseCode ?? "",
       blockerType: "Environment",
       blockerDescription: "",
       severity: "High",
@@ -58,21 +104,61 @@ export function BlockerFormModal({
       escalationLevel: "L1 - Team Lead",
       rootCause: "",
       impactOnRelease: "",
-      applicationName,
+      applicationName: lockedApplicationName,
     }),
-    [applicationName, raisedByDefault]
+    [lockedReleaseCode, lockedApplicationName, raisedByDefault]
   );
 
   const [form, setForm] = useState(defaults);
+  const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  const [loadingReleases, setLoadingReleases] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedSummary | null>(null);
 
   useEffect(() => {
-    if (open) {
-      setForm(defaults);
-      setError(null);
+    if (!open) {
+      setCreated(null);
+      return;
     }
-  }, [open, defaults]);
+    setForm(defaults);
+    setError(null);
+    setCreated(null);
+
+    if (scoped) return;
+
+    setLoadingReleases(true);
+    const ac = new AbortController();
+    void (async () => {
+      const result = await safeFetchJson<
+        {
+          id: string;
+          releaseCode: string;
+          name: string;
+          department?: { name?: string } | null;
+          applications?: { application?: { name?: string } | null }[];
+        }[]
+      >("/api/releases", { signal: ac.signal, label: "blocker-form-releases" });
+      if (ac.signal.aborted) return;
+      setLoadingReleases(false);
+      if (!result.ok) {
+        setError("Could not load releases");
+        return;
+      }
+      setReleases(
+        (result.data ?? [])
+          .map((r) => ({
+            id: r.id,
+            releaseCode: r.releaseCode,
+            name: r.name,
+            departmentName: r.department?.name ?? "",
+            applicationName: r.applications?.[0]?.application?.name ?? "",
+          }))
+          .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode))
+      );
+    })();
+    return () => ac.abort();
+  }, [open, defaults, scoped]);
 
   if (!open) return null;
 
@@ -81,19 +167,34 @@ export function BlockerFormModal({
     (value: string) =>
       setForm((prev) => ({ ...prev, [key]: value }));
 
+  const selectedRelease = releases.find((r) => r.id === form.releaseId);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const releaseCode = scoped ? lockedReleaseCode! : selectedRelease?.releaseCode ?? "";
+    if (!releaseCode) {
+      setError("Select a release");
+      return;
+    }
+    if (!form.blockerDescription.trim() || !form.impactOnRelease.trim()) {
+      setError("Description and impact on release are required");
+      return;
+    }
+
     setSaving(true);
     setError(null);
-    const result = await safeFetchJson("/api/blockers", {
+    const result = await safeFetchJson<CreatedSummary & { error?: string }>("/api/blockers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         releaseCode,
-        departmentName,
-        applicationName: form.applicationName || applicationName,
+        departmentName: scoped ? lockedDepartmentName : selectedRelease?.departmentName,
+        applicationName:
+          form.applicationName.trim() ||
+          (scoped ? lockedApplicationName : selectedRelease?.applicationName) ||
+          undefined,
         blockerType: form.blockerType,
-        blockerDescription: form.blockerDescription,
+        blockerDescription: form.blockerDescription.trim(),
         severity: form.severity,
         raisedDate: form.raisedDate,
         raisedBy: form.raisedBy,
@@ -101,7 +202,7 @@ export function BlockerFormModal({
         targetResolutionDate: form.targetResolutionDate || null,
         escalationLevel: form.escalationLevel,
         rootCause: form.rootCause || null,
-        impactOnRelease: form.impactOnRelease,
+        impactOnRelease: form.impactOnRelease.trim(),
         status: "Open",
         daysOpen: 0,
       }),
@@ -117,24 +218,122 @@ export function BlockerFormModal({
       setError(msg);
       return;
     }
-    setForm(defaults);
+
+    const data = result.data;
     onCreated();
-    onClose();
+    setCreated({
+      id: data.id,
+      blockerCode: data.blockerCode,
+      releaseCode: data.releaseCode || releaseCode,
+      releaseName: data.releaseName || lockedReleaseName || selectedRelease?.name || "—",
+      blockerType: data.blockerType || form.blockerType,
+      severity: data.severity || form.severity,
+      status: data.status || "Open",
+      impactOnRelease: data.impactOnRelease || form.impactOnRelease,
+    });
   };
+
+  if (created) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div
+          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="blocker-created-title"
+        >
+          <div className="mb-4 flex items-start gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+              <CheckCircle2 className="h-5 w-5" aria-hidden />
+            </span>
+            <div>
+              <h2 id="blocker-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+                Blocker created
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
+                Your blocker was saved successfully.
+              </p>
+            </div>
+          </div>
+
+          <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
+            <SummaryRow label="Blocker ID" value={created.blockerCode} mono />
+            <SummaryRow label="Release" value={created.releaseCode} mono />
+            <SummaryRow label="Type" value={created.blockerType} />
+            <SummaryRow label="Severity" value={created.severity} />
+            <SummaryRow label="Status" value={created.status} />
+            <SummaryRow label="Impact" value={created.impactOnRelease} />
+          </dl>
+
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className={taBtnSecondary}
+              onClick={() => {
+                setCreated(null);
+                setForm(defaults);
+                setError(null);
+              }}
+            >
+              Create another
+            </button>
+            <ProgressLink
+              href={`/blockers/${created.id}`}
+              className={cn(taBtnSecondary, "inline-flex items-center")}
+            >
+              View blocker
+            </ProgressLink>
+            <button type="button" className={taBtnPrimary} onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl dark:bg-[var(--card)]">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Blocker</h2>
-          <p className="text-xs text-gray-500 dark:text-white/55 mt-1">
-            {releaseCode} — {releaseName}
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Blocker</h2>
+          <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
+            {scoped
+              ? `${lockedReleaseCode} — ${lockedReleaseName}`
+              : "Link a blocker to a release. Blocker ID is assigned automatically."}
           </p>
         </div>
 
         <form onSubmit={submit} className="space-y-3">
+          {!scoped && (
+            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+              Release <span className="text-rose-500">*</span>
+              <div className="mt-1">
+                <SearchableSelect
+                  options={releases.map((r) => ({
+                    value: r.id,
+                    label: `${r.releaseCode} — ${r.name}`,
+                  }))}
+                  value={form.releaseId}
+                  onChange={(id) => {
+                    const rel = releases.find((r) => r.id === id);
+                    setForm((prev) => ({
+                      ...prev,
+                      releaseId: id,
+                      releaseCode: rel?.releaseCode ?? "",
+                      applicationName: rel?.applicationName || prev.applicationName,
+                    }));
+                  }}
+                  placeholder={loadingReleases ? "Loading…" : "Select release…"}
+                  disabled={loadingReleases}
+                />
+              </div>
+            </label>
+          )}
+
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-            Blocker type
+            Blocker type <span className="text-rose-500">*</span>
             <select
               className={cn(taInput, "mt-1")}
               value={form.blockerType}
@@ -150,7 +349,7 @@ export function BlockerFormModal({
           </label>
 
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-            Description
+            Description <span className="text-rose-500">*</span>
             <textarea
               className={cn(taInput, "mt-1 min-h-[72px]")}
               value={form.blockerDescription}
@@ -161,7 +360,7 @@ export function BlockerFormModal({
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-              Severity
+              Severity <span className="text-rose-500">*</span>
               <select
                 className={cn(taInput, "mt-1")}
                 value={form.severity}
@@ -192,7 +391,7 @@ export function BlockerFormModal({
           </div>
 
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-            Impact on release
+            Impact on release <span className="text-rose-500">*</span>
             <input
               className={cn(taInput, "mt-1")}
               value={form.impactOnRelease}
@@ -203,7 +402,7 @@ export function BlockerFormModal({
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-              Raised date
+              Raised date <span className="text-rose-500">*</span>
               <input
                 type="date"
                 className={cn(taInput, "mt-1")}
@@ -266,7 +465,11 @@ export function BlockerFormModal({
             <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
               Cancel
             </button>
-            <button type="submit" className={taBtnPrimary} disabled={saving}>
+            <button
+              type="submit"
+              className={taBtnPrimary}
+              disabled={saving || (!scoped && (loadingReleases || !form.releaseId))}
+            >
               {saving ? "Saving…" : "Create blocker"}
             </button>
           </div>

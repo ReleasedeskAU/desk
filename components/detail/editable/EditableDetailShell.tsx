@@ -1,10 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Edit3, Save, Trash2, X } from "lucide-react";
+import { Edit3, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { useNavHistoryLabel } from "@/context/NavigationHistoryContext";
 import { ConfirmDeleteDialog } from "@/components/detail/editable/ConfirmDeleteDialog";
+import { DetailEditModal } from "@/components/detail/editable/DetailEditModal";
+import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialog";
+import type { FieldChange } from "@/lib/detail-edit-diff";
 import { taInput } from "@/lib/styles";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -24,11 +27,14 @@ type EditableDetailShellProps = {
   onSelectChange: (value: string) => void;
   lastRefresh: Date;
   footer: string;
+  /** When true, the edit modal is open. */
   editing: boolean;
   canEdit: boolean;
   saving?: boolean;
   deleting?: boolean;
+  /** @deprecated Prefer successChanges dialog; kept for transitional banners. */
   saveMessage?: string | null;
+  editError?: string | null;
   onEdit: () => void;
   onDiscard: () => void;
   onSave: () => void;
@@ -36,13 +42,20 @@ type EditableDetailShellProps = {
   onDeleteOpen: () => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: () => void;
+  /** Locked primary ID shown at the top of the edit modal. */
+  lockedIdLabel: string;
+  /** Form fields rendered inside the edit modal (always in edit mode). */
+  editForm: ReactNode;
+  /** Field-level changes after a successful save; null hides the dialog. */
+  successChanges?: FieldChange[] | null;
+  onSuccessDismiss?: () => void;
   relatedLinks?: ReactNode;
   children: ReactNode;
 };
 
 /**
- * Shared chrome for redesigned editable detail pages.
- * One primary Edit action; quieter Delete; brand-themed accents.
+ * Shared chrome for editable detail pages.
+ * Edit opens a modal; save success shows a confirmation of changed fields.
  */
 export function EditableDetailShell({
   pageTitle,
@@ -61,6 +74,7 @@ export function EditableDetailShell({
   saving = false,
   deleting = false,
   saveMessage,
+  editError,
   onEdit,
   onDiscard,
   onSave,
@@ -68,6 +82,10 @@ export function EditableDetailShell({
   onDeleteOpen,
   onDeleteCancel,
   onDeleteConfirm,
+  lockedIdLabel,
+  editForm,
+  successChanges = null,
+  onSuccessDismiss,
   relatedLinks,
   children,
 }: EditableDetailShellProps) {
@@ -99,62 +117,28 @@ export function EditableDetailShell({
 
         {canEdit && (
           <div className="flex flex-wrap items-center gap-2">
-            {!editing ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onDeleteOpen}
-                  className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                >
-                  <Trash2 size={14} aria-hidden />
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={onEdit}
-                  className="flex items-center gap-1.5 rounded-xl bg-brand-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition-all duration-150 hover:bg-brand-600 hover:shadow-md active:scale-[0.97]"
-                  style={{ boxShadow: "var(--theme-shadow)" }}
-                >
-                  <Edit3 size={14} aria-hidden />
-                  Edit {entityLabel}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={onDiscard}
-                  className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-500 transition-colors duration-150 hover:bg-slate-100 dark:text-white/60 dark:hover:bg-white/10"
-                >
-                  <X size={14} aria-hidden />
-                  Discard
-                </button>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={onSave}
-                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-emerald-200 transition-all duration-150 hover:bg-emerald-700 hover:shadow-md active:scale-[0.97] dark:shadow-emerald-900/40"
-                >
-                  <Save size={14} aria-hidden />
-                  {saving ? "Saving…" : "Save Changes"}
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={onDeleteOpen}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+            >
+              <Trash2 size={14} aria-hidden />
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="flex items-center gap-1.5 rounded-xl bg-brand-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition-all duration-150 hover:bg-brand-600 hover:shadow-md active:scale-[0.97]"
+              style={{ boxShadow: "var(--theme-shadow)" }}
+            >
+              <Edit3 size={14} aria-hidden />
+              Edit {entityLabel}
+            </button>
           </div>
         )}
       </div>
 
-      {editing && (
-        <div
-          role="status"
-          className="rounded-2xl bg-brand-50 px-4 py-3 text-[13px] font-semibold text-brand-800 ring-1 ring-brand-200 transition-all duration-200 ease-out dark:bg-brand-500/10 dark:text-brand-200 dark:ring-brand-500/30"
-        >
-          Editing {entityLabel.toLowerCase()} — changes aren’t saved until you click Save Changes.
-        </div>
-      )}
-
-      {saveMessage && !editing && (
+      {saveMessage && !editing && successChanges == null && (
         <div
           role="status"
           className="rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 transition-all duration-200 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/30"
@@ -193,6 +177,27 @@ export function EditableDetailShell({
       )}
 
       <p className="pb-2 text-center text-[11px] text-slate-400 dark:text-white/40">{footer}</p>
+
+      <DetailEditModal
+        open={editing}
+        title={`Edit ${entityLabel}`}
+        lockedIdLabel={lockedIdLabel}
+        lockedIdValue={entityCode}
+        saving={saving}
+        error={editError}
+        onCancel={onDiscard}
+        onSave={onSave}
+      >
+        {editForm}
+      </DetailEditModal>
+
+      <EditSuccessDialog
+        open={successChanges != null}
+        entityLabel={entityLabel}
+        entityCode={entityCode}
+        changes={successChanges ?? []}
+        onDone={onSuccessDismiss ?? (() => undefined)}
+      />
 
       <ConfirmDeleteDialog
         open={deleteOpen}

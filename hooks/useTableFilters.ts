@@ -13,26 +13,33 @@ import {
 import { readSortFromValues, sortRows, type SortAccessor, type SortDirection } from "@/lib/table-sort";
 import { useTableSort } from "@/hooks/useTableSort";
 
+const EMPTY_FILTER_SCHEMA: FilterSchema = [];
+
 export function useTableFilters(schema: FilterSchema) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Guard against undefined/partial HMR bindings — same pattern as useTablePagePreferences.
+  const resolvedSchema = Array.isArray(schema) ? schema : EMPTY_FILTER_SCHEMA;
 
-  const values = useMemo(() => valuesFromSearchParams(searchParams, schema), [searchParams, schema]);
+  const values = useMemo(
+    () => valuesFromSearchParams(searchParams, resolvedSchema),
+    [searchParams, resolvedSchema]
+  );
 
   const hasActive = useMemo(() => hasActiveFilterValues(values), [values]);
 
   const setFilter = useCallback(
     (key: string, value: string) => {
-      const field = schema.find((f) => f.key === key);
+      const field = resolvedSchema.find((f) => f.key === key);
       if (!field) return;
       const next: FilterValues = { ...values, [key]: value };
       if (key !== "page" && "page" in next) next.page = "";
-      const params = valuesToSearchParams(next, schema, searchParams);
+      const params = valuesToSearchParams(next, resolvedSchema, searchParams);
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [pathname, router, schema, searchParams, values]
+    [pathname, router, resolvedSchema, searchParams, values]
   );
 
   const setFilters = useCallback(
@@ -41,25 +48,28 @@ export function useTableFilters(schema: FilterSchema) {
       for (const [k, v] of Object.entries(patch)) {
         next[k] = v ?? "";
       }
-      const params = valuesToSearchParams(next, schema, searchParams);
+      const params = valuesToSearchParams(next, resolvedSchema, searchParams);
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [pathname, router, schema, searchParams, values]
+    [pathname, router, resolvedSchema, searchParams, values]
   );
 
   const clearAll = useCallback(() => {
     const cleared: FilterValues = {};
-    for (const field of schema) {
+    for (const field of resolvedSchema) {
       if (field.key === "sort" || field.key === "sortDir") continue;
       cleared[field.key] = "";
     }
-    const params = valuesToSearchParams(cleared, schema, searchParams);
+    const params = valuesToSearchParams(cleared, resolvedSchema, searchParams);
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [pathname, router, schema, searchParams]);
+  }, [pathname, router, resolvedSchema, searchParams]);
 
-  const apiQuery = useMemo(() => buildFilterQueryString(values, schema), [values, schema]);
+  const apiQuery = useMemo(
+    () => buildFilterQueryString(values, resolvedSchema),
+    [values, resolvedSchema]
+  );
 
   const apiUrl = useCallback(
     (basePath: string) => `${basePath}${apiQuery}`,

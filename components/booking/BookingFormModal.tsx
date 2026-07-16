@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ type ConflictRow = {
 };
 
 type CreatedBooking = {
+  id?: string;
   bookingCode?: string | null;
   purpose?: string | null;
   departmentName?: string | null;
@@ -53,6 +55,7 @@ type CreatedBooking = {
 };
 
 type BookingDetails = {
+  id?: string;
   bookingCode?: string;
   application: string;
   department: string;
@@ -266,6 +269,7 @@ export function BookingFormModal({
       setResult({
         ok: true,
         details: {
+          id: created?.id,
           bookingCode: created?.bookingCode ?? undefined,
           application: created?.application?.name || attempted.application,
           department:
@@ -285,6 +289,7 @@ export function BookingFormModal({
           notes: created?.purpose || attempted.notes,
         },
       });
+      onSaved();
     } catch {
       const message = "Network error creating booking.";
       setError(message);
@@ -367,14 +372,36 @@ export function BookingFormModal({
             </ul>
           )}
 
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
             {!result.ok && (
               <button type="button" className={taBtnSecondary} onClick={() => setResult(null)}>
                 Edit booking
               </button>
             )}
+            {result.ok && result.details.id && (
+              <ProgressLink
+                href={`/booking/${result.details.id}`}
+                className={cn(taBtnSecondary, "inline-flex items-center")}
+              >
+                View booking
+              </ProgressLink>
+            )}
+            {result.ok && (
+              <button
+                type="button"
+                className={taBtnSecondary}
+                onClick={() => {
+                  setResult(null);
+                  setForm(EMPTY);
+                  setError(null);
+                  setConflicts([]);
+                }}
+              >
+                Create another
+              </button>
+            )}
             <button type="button" className={taBtnPrimary} onClick={dismissResult}>
-              {result.ok ? "Done" : "Close"}
+              Close
             </button>
           </div>
         </div>

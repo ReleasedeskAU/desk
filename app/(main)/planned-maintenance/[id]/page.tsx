@@ -68,6 +68,20 @@ type MaintenanceDraft = {
   notes: string;
 };
 
+const MAINTENANCE_FIELD_LABELS: Partial<Record<keyof MaintenanceDraft, string>> = {
+  scheduledDate: "Scheduled Date",
+  startTime: "Start Time",
+  endTime: "End Time",
+  type: "Type",
+  applicationId: "Application",
+  environmentName: "Environment",
+  departmentName: "Department",
+  impact: "Impact",
+  requestor: "Requestor",
+  approvalStatus: "Approval Status",
+  notes: "Notes",
+};
+
 const APPROVAL_OPTIONS = [
   "Pending",
   "Scheduled",
@@ -215,6 +229,7 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -279,8 +294,7 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(MAINTENANCE_FIELD_LABELS);
     await load();
   };
 
@@ -330,7 +344,7 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -338,6 +352,99 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Maintenance ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Approval Status"
+              value={d.approvalStatus}
+              editing
+              kind="select"
+              options={approvalOptions}
+              onChange={(n) => edit.setField("approvalStatus", n)}
+            />
+            <EditableField
+              label="Type"
+              value={d.type}
+              editing
+              onChange={(n) => edit.setField("type", n)}
+              placeholder="e.g. Patch, Upgrade…"
+            />
+            <EditableField
+              label="Impact"
+              value={d.impact}
+              editing
+              onChange={(n) => edit.setField("impact", n)}
+              placeholder="e.g. Medium…"
+            />
+            <EditableField
+              label="Scheduled Date"
+              value={d.scheduledDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("scheduledDate", n)}
+            />
+            <EditableField
+              label="Start Time"
+              value={d.startTime}
+              editing
+              mono
+              onChange={(n) => edit.setField("startTime", n)}
+              placeholder="HH:MM"
+            />
+            <EditableField
+              label="End Time"
+              value={d.endTime}
+              editing
+              mono
+              onChange={(n) => edit.setField("endTime", n)}
+              placeholder="HH:MM"
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationId}
+              editing
+              kind="select"
+              options={applicationOptions}
+              onChange={(n) => edit.setField("applicationId", n)}
+            />
+            <EditableField
+              label="Environment"
+              value={d.environmentName}
+              editing
+              mono
+              onChange={(n) => edit.setField("environmentName", n)}
+              placeholder="e.g. Prod…"
+            />
+            <EditableField
+              label="Department"
+              value={d.departmentName}
+              editing
+              onChange={(n) => edit.setField("departmentName", n)}
+              placeholder="Department…"
+            />
+            <EditableField
+              label="Requestor"
+              value={d.requestor}
+              editing
+              onChange={(n) => edit.setField("requestor", n)}
+              placeholder="Requestor name…"
+            />
+            <EditableField
+              label="Notes"
+              value={d.notes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("notes", n)}
+              placeholder="Maintenance notes…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href="/calendar" className={taBtnSecondary + " text-sm !py-2"}>
@@ -355,8 +462,6 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: CheckCircle2,
@@ -413,28 +518,17 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
           <EditableField
             label="Approval Status"
             value={v.approvalStatus}
-            editing={edit.editing}
-            kind="select"
-            options={approvalOptions}
-            onChange={(n) => edit.setField("approvalStatus", n)}
+            editing={false}
             display={
               <StatusChip label={v.approvalStatus} tone={approvalTone(v.approvalStatus)} />
             }
           />
-          <EditableField
-            label="Type"
-            value={v.type}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("type", n)}
-            placeholder="e.g. Patch, Upgrade…"
-          />
+          <EditableField label="Type" value={v.type} editing={false} />
           <EditableField
             label="Impact"
             value={v.impact}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("impact", n)}
+            editing={false}
             display={<StatusChip label={v.impact} tone={impactTone(v.impact)} />}
-            placeholder="e.g. Medium…"
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -473,25 +567,19 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
             <EditableField
               label="Scheduled Date"
               value={v.scheduledDate}
-              editing={edit.editing}
-              kind="date"
-              onChange={(n) => edit.setField("scheduledDate", n)}
+              editing={false}
               display={v.scheduledDate ? formatDate(v.scheduledDate) : "—"}
             />
             <EditableField
               label="Start Time"
               value={v.startTime}
-              editing={edit.editing}
-              onChange={(n) => edit.setField("startTime", n)}
-              placeholder="HH:MM"
+              editing={false}
               mono
             />
             <EditableField
               label="End Time"
               value={v.endTime}
-              editing={edit.editing}
-              onChange={(n) => edit.setField("endTime", n)}
-              placeholder="HH:MM"
+              editing={false}
               mono
             />
             <EditableField
@@ -527,27 +615,16 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
           <EditableField
             label="Application"
             value={v.applicationId}
-            editing={edit.editing}
-            kind="select"
-            options={applicationOptions}
-            onChange={(n) => edit.setField("applicationId", n)}
+            editing={false}
             display={appName ?? "—"}
           />
           <EditableField
             label="Environment"
             value={v.environmentName}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("environmentName", n)}
-            placeholder="e.g. Prod…"
           />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("departmentName", n)}
-            placeholder="Department…"
-          />
+          <EditableField label="Department" value={v.departmentName} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -558,15 +635,9 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
         description="Who requested this maintenance window."
       >
         <EditableFieldGrid>
-          <EditableField
-            label="Requestor"
-            value={v.requestor}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("requestor", n)}
-            placeholder="Requestor name…"
-          />
+          <EditableField label="Requestor" value={v.requestor} editing={false} />
         </EditableFieldGrid>
-        {!edit.editing && !v.requestor.trim() && (
+        {!v.requestor.trim() && (
           <div className="mt-3">
             <TintedCallout tone="amber">No requestor recorded yet.</TintedCallout>
           </div>
@@ -579,20 +650,9 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
         title="Notes"
         description="Context for CAB, env owners, and teams that must avoid this slot."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Notes"
-            value={v.notes}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("notes", n)}
-            placeholder="Maintenance notes…"
-          />
-        ) : (
-          <TintedCallout tone="amber">
-            {v.notes.trim() ? v.notes : "No notes recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="amber">
+          {v.notes.trim() ? v.notes : "No notes recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

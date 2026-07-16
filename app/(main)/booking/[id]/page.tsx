@@ -86,6 +86,26 @@ type BookingDraft = {
   environmentConflictId: string;
 };
 
+const BOOKING_FIELD_LABELS: Partial<Record<keyof BookingDraft, string>> = {
+  releaseId: "Release",
+  releaseSize: "Release Size",
+  dependencies: "Dependencies",
+  purpose: "Purpose / Notes",
+  prodReleaseDate: "Prod Release Date",
+  cabDate: "CAB Date",
+  testEnvCode: "Test Env",
+  testStart: "Test Start",
+  testEnd: "Test End",
+  uatEnvCode: "UAT Env",
+  uatStart: "UAT Start",
+  uatEnd: "UAT End",
+  preProdEnvCode: "Pre-Prod Env",
+  preProdStart: "Pre-Prod Start",
+  preProdEnd: "Pre-Prod End",
+  conflictFlag: "Conflict Flag",
+  environmentConflictId: "Environment Conflict ID",
+};
+
 const CONFLICT_FLAG_OPTIONS = [
   { value: "false", label: "No" },
   { value: "true", label: "Yes" },
@@ -96,7 +116,7 @@ function toDateInput(iso: string | null | undefined): string {
   return iso.slice(0, 10);
 }
 
-function d(value: string | null | undefined) {
+function displayDate(value: string | null | undefined) {
   return value ? formatDate(value) : "—";
 }
 
@@ -223,6 +243,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -281,8 +302,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(BOOKING_FIELD_LABELS);
     await load();
   };
 
@@ -328,7 +348,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -336,6 +356,139 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Booking ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Release"
+              value={d.releaseId}
+              editing
+              kind="select"
+              options={releaseSelectOptions}
+              onChange={(n) => edit.setField("releaseId", n)}
+            />
+            <EditableField
+              label="Release Size"
+              value={d.releaseSize}
+              editing
+              onChange={(n) => edit.setField("releaseSize", n)}
+              placeholder="S / M / L…"
+            />
+            <EditableField
+              label="Dependencies"
+              value={d.dependencies}
+              editing
+              onChange={(n) => edit.setField("dependencies", n)}
+              placeholder="NA or dep codes…"
+            />
+            <EditableField
+              label="Prod Release Date"
+              value={d.prodReleaseDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("prodReleaseDate", n)}
+            />
+            <EditableField
+              label="CAB Date"
+              value={d.cabDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("cabDate", n)}
+            />
+            <EditableField
+              label="Test Env"
+              value={d.testEnvCode}
+              editing
+              mono
+              onChange={(n) => edit.setField("testEnvCode", n)}
+            />
+            <EditableField
+              label="Test Start"
+              value={d.testStart}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("testStart", n)}
+            />
+            <EditableField
+              label="Test End"
+              value={d.testEnd}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("testEnd", n)}
+            />
+            <EditableField
+              label="UAT Env"
+              value={d.uatEnvCode}
+              editing
+              mono
+              onChange={(n) => edit.setField("uatEnvCode", n)}
+            />
+            <EditableField
+              label="UAT Start"
+              value={d.uatStart}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("uatStart", n)}
+            />
+            <EditableField
+              label="UAT End"
+              value={d.uatEnd}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("uatEnd", n)}
+            />
+            <EditableField
+              label="Pre-Prod Env"
+              value={d.preProdEnvCode}
+              editing
+              mono
+              onChange={(n) => edit.setField("preProdEnvCode", n)}
+            />
+            <EditableField
+              label="Pre-Prod Start"
+              value={d.preProdStart}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("preProdStart", n)}
+            />
+            <EditableField
+              label="Pre-Prod End"
+              value={d.preProdEnd}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("preProdEnd", n)}
+            />
+            <EditableField
+              label="Conflict Flag"
+              value={d.conflictFlag}
+              editing
+              kind="select"
+              options={CONFLICT_FLAG_OPTIONS}
+              onChange={(n) => edit.setField("conflictFlag", n)}
+            />
+            <EditableField
+              label="Environment Conflict ID"
+              value={d.environmentConflictId}
+              editing
+              mono
+              onChange={(n) => edit.setField("environmentConflictId", n)}
+              placeholder="CNF-001, CNF-002…"
+            />
+            <EditableField
+              label="Purpose / Notes"
+              value={d.purpose}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("purpose", n)}
+              placeholder="Why this booking exists…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href="/calendar" className={taBtnSecondary + " text-sm !py-2"}>
@@ -380,8 +533,6 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: ShieldAlert,
@@ -418,25 +569,25 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           phases={[
             {
               label: "Test",
-              detail: `${d(v.testStart)} → ${d(v.testEnd)} · ${row.testDays ?? "—"} days`,
+              detail: `${displayDate(v.testStart)} → ${displayDate(v.testEnd)} · ${row.testDays ?? "—"} days`,
               tone: "sky",
               complete: windowFilled(v.testStart, v.testEnd),
             },
             {
               label: "UAT",
-              detail: `${d(v.uatStart)} → ${d(v.uatEnd)} · ${row.uatDays ?? "—"} days`,
+              detail: `${displayDate(v.uatStart)} → ${displayDate(v.uatEnd)} · ${row.uatDays ?? "—"} days`,
               tone: "violet",
               complete: windowFilled(v.uatStart, v.uatEnd),
             },
             {
               label: "Pre-Prod",
-              detail: `${d(v.preProdStart)} → ${d(v.preProdEnd)} · ${row.preProdDays ?? "—"} days`,
+              detail: `${displayDate(v.preProdStart)} → ${displayDate(v.preProdEnd)} · ${row.preProdDays ?? "—"} days`,
               tone: "amber",
               complete: windowFilled(v.preProdStart, v.preProdEnd),
             },
             {
               label: "CAB / Prod",
-              detail: `CAB ${d(v.cabDate)} · Prod ${d(v.prodReleaseDate)}`,
+              detail: `CAB ${displayDate(v.cabDate)} · Prod ${displayDate(v.prodReleaseDate)}`,
               tone: hasConflict ? "rose" : "emerald",
               complete: Boolean(v.cabDate && v.prodReleaseDate),
             },
@@ -455,10 +606,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Release"
             value={v.releaseId}
-            editing={edit.editing}
-            kind="select"
-            options={releaseSelectOptions}
-            onChange={(n) => edit.setField("releaseId", n)}
+            editing={false}
             display={
               selectedRelease ? (
                 <ProgressLink
@@ -487,16 +635,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Release Size"
             value={v.releaseSize}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("releaseSize", n)}
-            placeholder="S / M / L…"
+            editing={false}
           />
           <EditableField
             label="Dependencies"
             value={v.dependencies}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("dependencies", n)}
-            placeholder="NA or dep codes…"
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -511,18 +655,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Prod Release Date"
             value={v.prodReleaseDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("prodReleaseDate", n)}
-            display={d(v.prodReleaseDate)}
+            editing={false}
+              display={displayDate(v.prodReleaseDate)}
           />
           <EditableField
             label="CAB Date"
             value={v.cabDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("cabDate", n)}
-            display={d(v.cabDate)}
+            editing={false}
+              display={displayDate(v.cabDate)}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -537,25 +677,20 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Test Env"
             value={v.testEnvCode}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("testEnvCode", n)}
           />
           <EditableField
             label="Test Start"
             value={v.testStart}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("testStart", n)}
-            display={d(v.testStart)}
+            editing={false}
+              display={displayDate(v.testStart)}
           />
           <EditableField
             label="Test End"
             value={v.testEnd}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("testEnd", n)}
-            display={d(v.testEnd)}
+            editing={false}
+              display={displayDate(v.testEnd)}
           />
           <EditableField
             label="Test Days"
@@ -576,25 +711,20 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="UAT Env"
             value={v.uatEnvCode}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("uatEnvCode", n)}
           />
           <EditableField
             label="UAT Start"
             value={v.uatStart}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("uatStart", n)}
-            display={d(v.uatStart)}
+            editing={false}
+              display={displayDate(v.uatStart)}
           />
           <EditableField
             label="UAT End"
             value={v.uatEnd}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("uatEnd", n)}
-            display={d(v.uatEnd)}
+            editing={false}
+              display={displayDate(v.uatEnd)}
           />
           <EditableField
             label="UAT Days"
@@ -615,25 +745,20 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Pre-Prod Env"
             value={v.preProdEnvCode}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("preProdEnvCode", n)}
           />
           <EditableField
             label="Pre-Prod Start"
             value={v.preProdStart}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("preProdStart", n)}
-            display={d(v.preProdStart)}
+            editing={false}
+              display={displayDate(v.preProdStart)}
           />
           <EditableField
             label="Pre-Prod End"
             value={v.preProdEnd}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("preProdEnd", n)}
-            display={d(v.preProdEnd)}
+            editing={false}
+              display={displayDate(v.preProdEnd)}
           />
           <EditableField
             label="Pre-Prod Days"
@@ -654,10 +779,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Conflict Flag"
             value={v.conflictFlag}
-            editing={edit.editing}
-            kind="select"
-            options={CONFLICT_FLAG_OPTIONS}
-            onChange={(n) => edit.setField("conflictFlag", n)}
+            editing={false}
             display={
               <StatusChip
                 label={hasConflict ? "⚠️ CONFLICT" : "Clear"}
@@ -668,33 +790,20 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Environment Conflict ID"
             value={v.environmentConflictId}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("environmentConflictId", n)}
-            placeholder="CNF-001, CNF-002…"
             display={
               <ConflictLinks raw={v.environmentConflictId || null} conflicts={row.conflicts} />
             }
           />
         </EditableFieldGrid>
         <div className="mt-4">
-          {edit.editing ? (
-            <EditableField
-              label="Purpose / Notes"
-              value={v.purpose}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("purpose", n)}
-              placeholder="Why this booking exists…"
-            />
-          ) : (
-            <TintedCallout tone="amber">
-              <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-                Purpose / Notes
-              </span>
-              {v.purpose.trim() ? v.purpose : "No purpose notes recorded yet."}
-            </TintedCallout>
-          )}
+          <TintedCallout tone="amber">
+            <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
+              Purpose / Notes
+            </span>
+            {v.purpose.trim() ? v.purpose : "No purpose notes recorded yet."}
+          </TintedCallout>
         </div>
       </DetailSection>
 

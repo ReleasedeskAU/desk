@@ -2,6 +2,42 @@ import { z } from "zod";
 
 const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).optional();
 const optionalNullableDate = z.union([z.string().trim().min(1).max(40), z.null()]).optional();
+const dateInput = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a valid date")
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, "Must be a valid date");
+
+/** Allowed impact levels for a configuration drift. */
+export const DRIFT_SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
+
+/** Allowed lifecycle states for a configuration drift. */
+export const DRIFT_STATUSES = ["Open", "In Progress", "Resolved", "Closed"] as const;
+
+/**
+ * POST /api/drifts body. Rejects unknown fields and never accepts a client-provided Drift ID.
+ * Drift type membership and release/application/environment relationships are checked by the API.
+ */
+export const createDriftSchema = z
+  .object({
+    releaseId: z.string().trim().min(1).max(64),
+    applicationId: z.string().trim().min(1).max(64),
+    environmentName: z.string().trim().min(1).max(200),
+    driftType: z.string().trim().min(1).max(120),
+    driftCategory: optionalNullableString,
+    detectedDate: dateInput,
+    severity: z.enum(DRIFT_SEVERITIES),
+    description: z.string().trim().min(1).max(4000),
+    impactOnRelease: optionalNullableString,
+    remediationAction: optionalNullableString,
+    status: z.enum(DRIFT_STATUSES).optional(),
+    etaToFix: z.union([dateInput, z.null()]).optional(),
+  })
+  .strict();
+
+export type CreateDriftInput = z.infer<typeof createDriftSchema>;
 
 /**
  * PATCH /api/drifts/[id] — allowlisted fields only.

@@ -59,6 +59,14 @@ export const INTEGRATION_FLOW_SORT_PRESETS: TableSortPreset[] = [
   { id: "frequency", label: "Frequency", sort: "frequency", sortDir: "asc" },
 ];
 
+/** Quick server-side sort choices for shared environments. */
+export const SHARED_ENVIRONMENT_SORT_PRESETS: TableSortPreset[] = [
+  { id: "code-az", label: "Environment Code (A → Z)", sort: "environmentCode", sortDir: "asc" },
+  { id: "code-za", label: "Environment Code (Z → A)", sort: "environmentCode", sortDir: "desc" },
+  { id: "type-az", label: "Environment Type (A → Z)", sort: "environmentType", sortDir: "asc" },
+  { id: "risk-za", label: "Conflict Risk (Z → A)", sort: "conflictRisk", sortDir: "desc" },
+];
+
 export const RISK_SORT_PRESETS: TableSortPreset[] = [
   { id: "score-high", label: "Highest risk score", sort: "riskScore", sortDir: "desc" },
   { id: "score-low", label: "Lowest risk score", sort: "riskScore", sortDir: "asc" },

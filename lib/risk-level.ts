@@ -16,9 +16,10 @@ export function getRiskLevel(score: number): RiskLevel {
   return "CRITICAL";
 }
 
+/** Graphite band chips — same hex system as the Risk Heat Map. */
 export const RISK_LEVEL_COLOR: Record<RiskLevel, string> = {
-  LOW: "bg-[#d1fae5] text-[#065f46] dark:bg-emerald-500/25 dark:text-emerald-300",
-  MEDIUM: "bg-[#fef9c3] text-[#854d0e] dark:bg-yellow-500/25 dark:text-yellow-300",
-  HIGH: "bg-[#fed7aa] text-[#9a3412] dark:bg-orange-500/30 dark:text-orange-300",
-  CRITICAL: "bg-[#fecaca] text-[#7f1d1d] dark:bg-red-500/30 dark:text-red-300",
+  LOW: "bg-[#A8AFB1] text-[#1e293b] dark:bg-[#B8BFC2] dark:text-[#0f172a]",
+  MEDIUM: "bg-[#858C92] text-[#0f172a] dark:bg-[#9AA1A7] dark:text-[#0f172a]",
+  HIGH: "bg-[#6A655F] text-white dark:bg-[#8B837A] dark:text-white",
+  CRITICAL: "bg-[#333A40] text-white dark:bg-[#4B545C] dark:text-[#f8fafc]",
 };

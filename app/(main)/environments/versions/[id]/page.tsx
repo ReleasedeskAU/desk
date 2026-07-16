@@ -74,6 +74,15 @@ type VersionDraft = {
   notes: string;
 };
 
+const VERSION_FIELD_LABELS: Partial<Record<keyof VersionDraft, string>> = {
+  version: "Version",
+  buildNumber: "Build Number",
+  deployDate: "Deploy Date",
+  updatedBy: "Updated By",
+  status: "Status",
+  notes: "Notes",
+};
+
 /** Canonical promotion stages for the progression timeline. */
 const PROGRESSION_STAGES = [
   {
@@ -232,6 +241,7 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(() => {
     const mapped = options
@@ -280,8 +290,7 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(VERSION_FIELD_LABELS);
     await load();
   };
 
@@ -328,7 +337,7 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -336,6 +345,69 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Version ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Version"
+              value={d.version}
+              editing
+              mono
+              onChange={(n) => edit.setField("version", n)}
+              placeholder="e.g. 1.2.3"
+            />
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              onChange={(n) => edit.setField("status", n)}
+              display={
+                d.status.trim() ? (
+                  <StatusChip label={d.status} tone={statusTone(d.status)} />
+                ) : (
+                  "—"
+                )
+              }
+              placeholder="e.g. Current, Behind…"
+            />
+            <EditableField
+              label="Build Number"
+              value={d.buildNumber}
+              editing
+              mono
+              onChange={(n) => edit.setField("buildNumber", n)}
+              placeholder="Build #"
+            />
+            <EditableField
+              label="Deploy Date"
+              value={d.deployDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("deployDate", n)}
+              display={d.deployDate ? formatDate(d.deployDate) : "—"}
+            />
+            <EditableField
+              label="Updated By"
+              value={d.updatedBy}
+              editing
+              onChange={(n) => edit.setField("updatedBy", n)}
+              placeholder="Deployer name…"
+            />
+            <EditableField
+              label="Notes"
+              value={d.notes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("notes", n)}
+              placeholder="Promotion notes…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href="/environments" className={taBtnSecondary + " text-sm !py-2"}>
@@ -353,8 +425,6 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: Zap,
@@ -405,16 +475,13 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Version"
             value={v.version}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("version", n)}
-            placeholder="e.g. 1.2.3"
           />
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={
               v.status.trim() ? (
                 <StatusChip label={v.status} tone={statusTone(v.status)} />
@@ -422,7 +489,6 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
                 "—"
               )
             }
-            placeholder="e.g. Current, Behind…"
           />
           <EditableField
             label="Application"
@@ -456,25 +522,19 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Build Number"
             value={v.buildNumber}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("buildNumber", n)}
-            placeholder="Build #"
           />
           <EditableField
             label="Deploy Date"
             value={v.deployDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("deployDate", n)}
+            editing={false}
             display={v.deployDate ? formatDate(v.deployDate) : "—"}
           />
           <EditableField
             label="Updated By"
             value={v.updatedBy}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("updatedBy", n)}
-            placeholder="Deployer name…"
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -485,20 +545,9 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
         title="Notes"
         description="Context for promotion decisions, known gaps, or rollback hints."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Notes"
-            value={v.notes}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("notes", n)}
-            placeholder="Promotion notes…"
-          />
-        ) : (
-          <TintedCallout tone="amber">
-            {v.notes.trim() ? v.notes : "No notes recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="amber">
+          {v.notes.trim() ? v.notes : "No notes recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

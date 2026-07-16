@@ -55,8 +55,8 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
           height={LOGO_SRC.height}
           sizes="40px"
           unoptimized
-          // Preserve the complete wide RD mark while cropping out the wordmark below it.
-          className="absolute left-1/2 top-[-8%] h-auto w-[210%] max-w-none -translate-x-1/2"
+          // Scale so RD fills the square edge-to-edge; crop out wordmark and PNG padding.
+          className="absolute left-1/2 top-1/2 h-auto w-[340%] max-w-none -translate-x-1/2 -translate-y-[38%]"
           priority={priority}
         />
       </div>

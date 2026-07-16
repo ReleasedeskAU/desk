@@ -49,6 +49,15 @@ type LeaveDraft = {
   riskScore: string;
 };
 
+const LEAVE_FIELD_LABELS: Partial<Record<keyof LeaveDraft, string>> = {
+  leaveType: "Leave Type",
+  leaveStart: "Start Date",
+  leaveEnd: "End Date",
+  days: "Duration (days)",
+  riskImpact: "Risk Impact",
+  riskScore: "Risk Score",
+};
+
 function toDateInput(iso: string) {
   return iso.slice(0, 10);
 }
@@ -129,6 +138,7 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -169,8 +179,7 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(LEAVE_FIELD_LABELS);
     await load();
   };
 
@@ -218,7 +227,7 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -226,6 +235,62 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Leave ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Leave Type"
+              value={d.leaveType}
+              editing
+              kind="select"
+              options={leaveTypes}
+              onChange={(n) => edit.setField("leaveType", n)}
+              display={<StatusChip label={d.leaveType || "—"} tone="info" />}
+            />
+            <EditableField
+              label="Start Date"
+              value={d.leaveStart}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("leaveStart", n)}
+              display={formatDate(d.leaveStart)}
+            />
+            <EditableField
+              label="End Date"
+              value={d.leaveEnd}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("leaveEnd", n)}
+              display={formatDate(d.leaveEnd)}
+            />
+            <EditableField
+              label="Duration (days)"
+              value={d.days}
+              editing
+              kind="number"
+              onChange={(n) => edit.setField("days", n)}
+              display={`${d.days} Day${d.days === "1" ? "" : "s"}`}
+            />
+            <EditableField
+              label="Risk Impact"
+              value={d.riskImpact}
+              editing
+              onChange={(n) => edit.setField("riskImpact", n)}
+              placeholder="e.g. Covered / Partial / Uncovered"
+            />
+            <EditableField
+              label="Risk Score"
+              value={d.riskScore}
+              editing
+              kind="number"
+              onChange={(n) => edit.setField("riskScore", n)}
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink
@@ -242,8 +307,6 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: ShieldAlert,
@@ -276,10 +339,7 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Leave Type"
             value={v.leaveType}
-            editing={edit.editing}
-            kind="select"
-            options={leaveTypes}
-            onChange={(n) => edit.setField("leaveType", n)}
+            editing={false}
             display={<StatusChip label={v.leaveType || "—"} tone="info" />}
           />
           <EditableField
@@ -315,25 +375,19 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Start Date"
             value={v.leaveStart}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("leaveStart", n)}
+            editing={false}
             display={formatDate(v.leaveStart)}
           />
           <EditableField
             label="End Date"
             value={v.leaveEnd}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("leaveEnd", n)}
+            editing={false}
             display={formatDate(v.leaveEnd)}
           />
           <EditableField
             label="Duration (days)"
             value={v.days}
-            editing={edit.editing}
-            kind="number"
-            onChange={(n) => edit.setField("days", n)}
+            editing={false}
             display={`${v.days} Day${v.days === "1" ? "" : "s"}`}
           />
         </EditableFieldGrid>
@@ -371,31 +425,19 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Risk Impact"
             value={v.riskImpact}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("riskImpact", n)}
-            placeholder="e.g. Covered / Partial / Uncovered"
+            editing={false}
           />
           <div>
             <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
               Risk Score
             </p>
-            {edit.editing ? (
-              <EditableField
-                label=""
-                value={v.riskScore}
-                editing
-                kind="number"
-                onChange={(n) => edit.setField("riskScore", n)}
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
+              <ScoreBar
+                value={riskScoreNum}
+                max={10}
+                label={`${band.label} risk`}
               />
-            ) : (
-              <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-                <ScoreBar
-                  value={riskScoreNum}
-                  max={10}
-                  label={`${band.label} risk`}
-                />
-              </div>
-            )}
+            </div>
           </div>
         </EditableFieldGrid>
       </DetailSection>

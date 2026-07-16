@@ -238,12 +238,6 @@ export function GlanceStrip({
     warn: "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200",
     bad: "bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200",
   } as const;
-  const heroTone = {
-    neutral: "from-indigo-500 to-indigo-600 shadow-indigo-200/80 dark:shadow-indigo-900/40",
-    good: "from-emerald-500 to-emerald-600 shadow-emerald-200/80 dark:shadow-emerald-900/40",
-    warn: "from-amber-500 to-amber-600 shadow-amber-200/80 dark:shadow-amber-900/40",
-    bad: "from-rose-500 to-rose-600 shadow-rose-200/80 dark:shadow-rose-900/40",
-  } as const;
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -253,12 +247,20 @@ export function GlanceStrip({
           className={cn(
             "min-h-[94px] rounded-[18px] px-4 py-3.5 transition-transform duration-200 hover:-translate-y-0.5",
             index === 0
-              ? cn("bg-gradient-to-br text-white shadow-lg", heroTone[item.tone ?? "neutral"])
+              ? "text-white shadow-lg"
               : cn(
                   "border border-slate-100 shadow-[0_12px_28px_-24px_rgba(112,144,176,0.35)] dark:border-[var(--border)]",
                   toneClass[item.tone ?? "neutral"]
                 )
           )}
+          style={
+            index === 0
+              ? {
+                  backgroundImage: "var(--theme-hero-gradient)",
+                  boxShadow: "var(--theme-hero-shadow)",
+                }
+              : undefined
+          }
         >
           <div className="flex items-center gap-1.5">
             {index === 0 ? <Activity size={12} aria-hidden /> : index === 1 ? <Zap size={12} aria-hidden /> : <ListChecks size={12} aria-hidden />}

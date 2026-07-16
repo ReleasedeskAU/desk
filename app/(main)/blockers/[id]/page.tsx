@@ -82,6 +82,27 @@ type BlockerDraft = {
   impactOnRelease: string;
 };
 
+const BLOCKER_FIELD_LABELS: Partial<Record<keyof BlockerDraft, string>> = {
+  releaseCode: "Release ID",
+  releaseName: "Release Name",
+  department: "Department",
+  application: "Application",
+  blockerType: "Category",
+  blockerDescription: "Description",
+  severity: "Severity",
+  raisedDate: "Raised Date",
+  raisedBy: "Raised By",
+  assignedTo: "Assigned To",
+  status: "Status",
+  targetResolutionDate: "Target Resolution",
+  actualResolutionDate: "Actual Resolution",
+  daysOpen: "Days Open",
+  escalationLevel: "Escalation Level",
+  rootCause: "Root Cause",
+  resolutionNotes: "Resolution Notes",
+  impactOnRelease: "Impact on Release",
+};
+
 function toDateInput(iso: string | null) {
   if (!iso) return "";
   return iso.slice(0, 10);
@@ -185,6 +206,7 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -235,8 +257,7 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(BLOCKER_FIELD_LABELS);
     await load();
   };
 
@@ -280,7 +301,7 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -288,6 +309,144 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Blocker ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={statusOptions}
+              onChange={(n) => edit.setField("status", n)}
+            />
+            <EditableField
+              label="Severity"
+              value={d.severity}
+              editing
+              kind="select"
+              options={severityOptions}
+              onChange={(n) => edit.setField("severity", n)}
+            />
+            <EditableField
+              label="Days Open"
+              value={d.daysOpen}
+              editing
+              kind="number"
+              onChange={(n) => edit.setField("daysOpen", n)}
+            />
+            <EditableField
+              label="Category"
+              value={d.blockerType}
+              editing
+              onChange={(n) => edit.setField("blockerType", n)}
+            />
+            <EditableField
+              label="Department"
+              value={d.department}
+              editing
+              onChange={(n) => edit.setField("department", n)}
+            />
+            <EditableField
+              label="Application"
+              value={d.application}
+              editing
+              onChange={(n) => edit.setField("application", n)}
+            />
+            <EditableField
+              label="Description"
+              value={d.blockerDescription}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("blockerDescription", n)}
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Release ID"
+              value={d.releaseCode}
+              editing
+              mono
+              onChange={(n) => edit.setField("releaseCode", n)}
+            />
+            <EditableField
+              label="Release Name"
+              value={d.releaseName}
+              editing
+              onChange={(n) => edit.setField("releaseName", n)}
+            />
+            <EditableField
+              label="Impact on Release"
+              value={d.impactOnRelease}
+              editing
+              onChange={(n) => edit.setField("impactOnRelease", n)}
+            />
+            <EditableField
+              label="Raised By"
+              value={d.raisedBy}
+              editing
+              onChange={(n) => edit.setField("raisedBy", n)}
+            />
+            <EditableField
+              label="Assigned To"
+              value={d.assignedTo}
+              editing
+              onChange={(n) => edit.setField("assignedTo", n)}
+              placeholder="Assignee…"
+            />
+            <EditableField
+              label="Escalation Level"
+              value={d.escalationLevel}
+              editing
+              onChange={(n) => edit.setField("escalationLevel", n)}
+            />
+            <EditableField
+              label="Raised Date"
+              value={d.raisedDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("raisedDate", n)}
+              display={d.raisedDate ? formatDate(d.raisedDate) : "—"}
+            />
+            <EditableField
+              label="Target Resolution"
+              value={d.targetResolutionDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("targetResolutionDate", n)}
+              display={d.targetResolutionDate ? formatDate(d.targetResolutionDate) : "—"}
+            />
+            <EditableField
+              label="Actual Resolution"
+              value={d.actualResolutionDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("actualResolutionDate", n)}
+              display={d.actualResolutionDate ? formatDate(d.actualResolutionDate) : "—"}
+            />
+            <EditableField
+              label="Root Cause"
+              value={d.rootCause}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("rootCause", n)}
+              placeholder="What’s causing the block…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Resolution Notes"
+              value={d.resolutionNotes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("resolutionNotes", n)}
+              placeholder="Plan or outcome…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           {row.release && (
@@ -303,8 +462,6 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: AlertOctagon,
@@ -345,36 +502,20 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={statusOptions}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
           />
           <EditableField
             label="Severity"
             value={v.severity}
-            editing={edit.editing}
-            kind="select"
-            options={severityOptions}
-            onChange={(n) => edit.setField("severity", n)}
+            editing={false}
           />
           <div>
             <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
               Days Open
             </p>
-            {edit.editing ? (
-              <EditableField
-                label=""
-                value={v.daysOpen}
-                editing
-                kind="number"
-                onChange={(n) => edit.setField("daysOpen", n)}
-              />
-            ) : (
-              <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-                <ScoreBar value={Math.min(daysOpenNum, 30)} max={30} label={`${daysOpenNum} days`} />
-              </div>
-            )}
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
+              <ScoreBar value={Math.min(daysOpenNum, 30)} max={30} label={`${daysOpenNum} days`} />
+            </div>
           </div>
         </EditableFieldGrid>
       </DetailSection>
@@ -389,41 +530,28 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Category"
             value={v.blockerType}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("blockerType", n)}
+            editing={false}
           />
           <EditableField
             label="Department"
             value={v.department}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("department", n)}
+            editing={false}
           />
           <EditableField
             label="Application"
             value={v.application}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("application", n)}
+            editing={false}
           />
         </EditableFieldGrid>
         <div className="mt-4">
-          {edit.editing ? (
-            <EditableField
-              label="Description"
-              value={v.blockerDescription}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("blockerDescription", n)}
-            />
-          ) : (
-            <>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Description
-              </p>
-              <TintedCallout tone="amber">
-                {v.blockerDescription.trim() || "No description recorded."}
-              </TintedCallout>
-            </>
-          )}
+          <>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Description
+            </p>
+            <TintedCallout tone="amber">
+              {v.blockerDescription.trim() || "No description recorded."}
+            </TintedCallout>
+          </>
         </div>
       </DetailSection>
 
@@ -437,9 +565,8 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Release ID"
             value={v.releaseCode}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("releaseCode", n)}
             display={
               row.release ? (
                 <ProgressLink
@@ -456,14 +583,12 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Release Name"
             value={v.releaseName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("releaseName", n)}
+            editing={false}
           />
           <EditableField
             label="Impact on Release"
             value={v.impactOnRelease}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("impactOnRelease", n)}
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -478,21 +603,17 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Raised By"
             value={v.raisedBy}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("raisedBy", n)}
+            editing={false}
           />
           <EditableField
             label="Assigned To"
             value={v.assignedTo}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("assignedTo", n)}
-            placeholder="Assignee…"
+            editing={false}
           />
           <EditableField
             label="Escalation Level"
             value={v.escalationLevel}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("escalationLevel", n)}
+            editing={false}
           />
         </EditableFieldGrid>
         <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -514,25 +635,19 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           <EditableField
             label="Raised Date"
             value={v.raisedDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("raisedDate", n)}
+            editing={false}
             display={v.raisedDate ? formatDate(v.raisedDate) : "—"}
           />
           <EditableField
             label="Target Resolution"
             value={v.targetResolutionDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("targetResolutionDate", n)}
+            editing={false}
             display={v.targetResolutionDate ? formatDate(v.targetResolutionDate) : "—"}
           />
           <EditableField
             label="Actual Resolution"
             value={v.actualResolutionDate}
-            editing={edit.editing}
-            kind="date"
-            onChange={(n) => edit.setField("actualResolutionDate", n)}
+            editing={false}
             display={v.actualResolutionDate ? formatDate(v.actualResolutionDate) : "—"}
           />
         </EditableFieldGrid>
@@ -544,47 +659,24 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         title="Resolution progress"
         description="Root cause and the plan to clear this blocker."
       >
-        {edit.editing ? (
-          <>
-            <EditableField
-              label="Root Cause"
-              value={v.rootCause}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("rootCause", n)}
-              placeholder="What’s causing the block…"
-            />
-            <div className="mt-4">
-              <EditableField
-                label="Resolution Notes"
-                value={v.resolutionNotes}
-                editing
-                kind="textarea"
-                onChange={(n) => edit.setField("resolutionNotes", n)}
-                placeholder="Plan or outcome…"
-              />
-            </div>
-          </>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Root Cause
-              </p>
-              <TintedCallout tone="amber">
-                {v.rootCause.trim() || "Root cause not recorded yet."}
-              </TintedCallout>
-            </div>
-            <div>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Resolution Notes
-              </p>
-              <TintedCallout tone="emerald">
-                {v.resolutionNotes.trim() || "No resolution plan recorded yet."}
-              </TintedCallout>
-            </div>
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Root Cause
+            </p>
+            <TintedCallout tone="amber">
+              {v.rootCause.trim() || "Root cause not recorded yet."}
+            </TintedCallout>
           </div>
-        )}
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Resolution Notes
+            </p>
+            <TintedCallout tone="emerald">
+              {v.resolutionNotes.trim() || "No resolution plan recorded yet."}
+            </TintedCallout>
+          </div>
+        </div>
       </DetailSection>
     </EditableDetailShell>
   );

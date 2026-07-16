@@ -7,6 +7,7 @@ import {
   Circle,
   Flame,
   Grid3x3,
+  Plus,
   User,
 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
@@ -26,12 +27,15 @@ import {
 } from "@/lib/table-page-columns";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
-import { loadJsonEffect } from "@/lib/safe-fetch";
+import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { RISKS_FILTER_SCHEMA } from "@/lib/table-filters";
+import { RiskFormModal } from "@/components/risks/RiskFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 /** Calendar days from today to prod/start date (can be negative if past). */
 function daysOutFrom(iso: string | null | undefined): number {
@@ -76,52 +80,56 @@ type HeatMapView = "matrix" | "bubble" | "density";
 /** Ownership is "concentrated" when one person owns more than half of owned risks. */
 const OWNERSHIP_CONCENTRATION_THRESHOLD = 0.5;
 
-/** Empty cells — dark graphite (distinct from LOW dark green). */
+/**
+ * Empty cells use treatment, not a competing fifth fill.
+ * #B6B2B2 is outline-only so LOW (#A8AFB1) stays clearly filled vs "nothing."
+ */
 const EMPTY_CELL = {
-  bg: "#374151",
-  text: "#9ca3af",
-  border: "#4b5563",
-  darkBg: "#1f2937",
-  darkText: "#6b7280",
-  darkBorder: "#374151",
+  bg: "transparent",
+  border: "#B6B2B2",
+  darkBg: "transparent",
+  darkBorder: "#B6B2B2",
 } as const;
 
-/** Heat-map band palette — dark green / yellow / orange / red. */
+/**
+ * Heat-map band palette — exact graphite hexes (light) + dark-canvas retunes.
+ * Dark variants keep the same cool MEDIUM vs warmer HIGH distinction.
+ */
 const BAND_COLOR: Record<
   RiskLevel,
   { bg: string; text: string; solid: string; darkBg: string; darkText: string; darkSolid: string }
 > = {
   LOW: {
-    bg: "#14532d",
-    text: "#ecfdf5",
-    solid: "#166534",
-    darkBg: "#14532d",
-    darkText: "#bbf7d0",
-    darkSolid: "#22c55e",
+    bg: "#A8AFB1",
+    text: "#1e293b",
+    solid: "#A8AFB1",
+    darkBg: "#B8BFC2",
+    darkText: "#0f172a",
+    darkSolid: "#B8BFC2",
   },
   MEDIUM: {
-    bg: "#eab308",
-    text: "#422006",
-    solid: "#ca8a04",
-    darkBg: "#ca8a04",
-    darkText: "#fef9c3",
-    darkSolid: "#facc15",
+    bg: "#858C92",
+    text: "#0f172a",
+    solid: "#858C92",
+    darkBg: "#9AA1A7",
+    darkText: "#0f172a",
+    darkSolid: "#9AA1A7",
   },
   HIGH: {
-    bg: "#ea580c",
-    text: "#fff7ed",
-    solid: "#c2410c",
-    darkBg: "#c2410c",
-    darkText: "#ffedd5",
-    darkSolid: "#fb923c",
+    bg: "#6A655F",
+    text: "#ffffff",
+    solid: "#6A655F",
+    darkBg: "#8B837A",
+    darkText: "#ffffff",
+    darkSolid: "#8B837A",
   },
   CRITICAL: {
-    bg: "#dc2626",
-    text: "#fef2f2",
-    solid: "#b91c1c",
-    darkBg: "#b91c1c",
-    darkText: "#fecaca",
-    darkSolid: "#f87171",
+    bg: "#333A40",
+    text: "#ffffff",
+    solid: "#333A40",
+    darkBg: "#4B545C",
+    darkText: "#f8fafc",
+    darkSolid: "#4B545C",
   },
 };
 
@@ -326,17 +334,10 @@ function HeatMapCell({
       )}
       style={
         empty
-          ? dark
-            ? {
-                background: EMPTY_CELL.darkBg,
-                border: `1px solid ${EMPTY_CELL.darkBorder}`,
-                color: EMPTY_CELL.darkText,
-              }
-            : {
-                background: EMPTY_CELL.bg,
-                border: `1px solid ${EMPTY_CELL.border}`,
-                color: EMPTY_CELL.text,
-              }
+          ? {
+              background: dark ? EMPTY_CELL.darkBg : EMPTY_CELL.bg,
+              border: `1.5px solid ${dark ? EMPTY_CELL.darkBorder : EMPTY_CELL.border}`,
+            }
           : { background: dark ? c.darkBg : c.bg, color: dark ? c.darkText : c.text }
       }
     >
@@ -472,7 +473,8 @@ function BubbleView({
           width={size - pad}
           height={size - pad}
           fill={dark ? "#1e293b" : "transparent"}
-          stroke={dark ? "#334155" : "transparent"}
+          stroke={EMPTY_CELL.border}
+          strokeWidth={1}
         />
         {[1, 2, 3, 4, 5].map((n) => (
           <g key={n}>
@@ -529,7 +531,9 @@ function BubbleView({
             const p = pos(likelihood, impact);
             const score = likelihood * impact;
             const band = getRiskLevel(score);
-            const solid = dark ? BAND_COLOR[band].darkSolid : BAND_COLOR[band].solid;
+            const palette = BAND_COLOR[band];
+            const solid = dark ? palette.darkSolid : palette.solid;
+            const label = dark ? palette.darkText : palette.text;
             const r = 9 + (count / scale) * 26;
             const tipPayload = { x: p.x, y: p.y - r, count, score, band, likelihood, impact };
             return (
@@ -551,17 +555,8 @@ function BubbleView({
                   if (hoverCapable) setTip(null);
                 }}
               >
-                <circle
-                  cx={p.x}
-                  cy={p.y}
-                  r={r}
-                  fill={solid}
-                  fillOpacity={dark ? 0.68 : 0.82}
-                  stroke={solid}
-                  strokeOpacity={dark ? 0.82 : 1}
-                  strokeWidth={2}
-                />
-                <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff">
+                <circle cx={p.x} cy={p.y} r={r} fill={solid} stroke={solid} strokeWidth={2} />
+                <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="12" fontWeight="800" fill={label}>
                   {count}
                 </text>
               </g>
@@ -651,7 +646,7 @@ function DensityView({
               <stop
                 offset="0%"
                 stopColor={dark ? BAND_COLOR[c.band].darkSolid : BAND_COLOR[c.band].solid}
-                stopOpacity={dark ? 0.62 : 0.85}
+                stopOpacity={dark ? 0.72 : 0.88}
               />
               <stop
                 offset="100%"
@@ -667,8 +662,10 @@ function DensityView({
           width={size - pad}
           height={size - pad}
           fill={dark ? "#1e293b" : "#fafbfd"}
+          stroke={EMPTY_CELL.border}
+          strokeWidth={1}
         />
-        <g style={{ mixBlendMode: dark ? "normal" : "multiply" }}>
+        <g style={{ mixBlendMode: "normal" }}>
           {cells.map((c) => (
             <circle
               key={`glow-${c.likelihood}-${c.impact}`}
@@ -679,7 +676,7 @@ function DensityView({
             />
           ))}
         </g>
-        <g stroke={dark ? "#334155" : "#ffffff"} strokeWidth={dark ? 1 : 2} opacity={0.9}>
+        <g stroke={EMPTY_CELL.border} strokeWidth={1} opacity={0.85}>
           {[0, 1, 2, 3, 4, 5].map((n) => (
             <line key={`gx${n}`} x1={pad + n * step} y1={0} x2={pad + n * step} y2={size - pad} />
           ))}
@@ -996,6 +993,7 @@ export default function RiskRegisterContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<RiskRow>("/api/risks", RISKS_FILTER_SCHEMA, {
     defaultSortKey: "riskScore",
     defaultSortDir: "desc",
@@ -1021,9 +1019,18 @@ export default function RiskRegisterContent() {
     },
   });
   const [allRisks, setAllRisks] = useState<RiskRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     return loadJsonEffect<RiskRow[]>("/api/risks", setAllRisks, { label: "risks" });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "risks-auth",
+    });
   }, []);
 
   const categories = useMemo(() => [...new Set(allRisks.map((r) => r.category))].sort(), [allRisks]);
@@ -1057,9 +1064,29 @@ export default function RiskRegisterContent() {
     <div>
       <TopBar
         pageKey="risks"
-        trailing={<PageDocumentation pageKey="risks" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Risk
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="risks" />
+          </div>
+        }
         title="Risk"
         subtitle={`${risks.length} risk${risks.length === 1 ? "" : "s"} across all releases`}
+      />
+      <RiskFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<RiskRow[]>("/api/risks", { label: "risks-post-create-refresh" }).then((result) => {
+            if (result.ok) setAllRisks(result.data);
+          });
+        }}
+        categoryOptions={categories}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

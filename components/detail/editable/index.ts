@@ -1,4 +1,6 @@
 export { EditableDetailShell, type EntitySelectOption } from "./EditableDetailShell";
+export { DetailEditModal } from "./DetailEditModal";
+export { EditSuccessDialog } from "./EditSuccessDialog";
 export { DetailSection, EmptyHint, TintedCallout, type SectionTone } from "./DetailSection";
 export {
   LockedIdField,

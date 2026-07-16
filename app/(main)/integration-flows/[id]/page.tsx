@@ -52,6 +52,15 @@ type FlowDraft = {
   businessPurpose: string;
 };
 
+const FLOW_FIELD_LABELS: Partial<Record<keyof FlowDraft, string>> = {
+  sourceSystem: "Source System",
+  targetSystem: "Target System",
+  integrationType: "Integration Type",
+  frequency: "Frequency",
+  dataElements: "Data Elements",
+  businessPurpose: "Business Purpose",
+};
+
 function typeTone(integrationType: string): ChipTone {
   const t = integrationType.toLowerCase();
   if (t.includes("real") || t.includes("sync") || t.includes("api")) return "info";
@@ -139,6 +148,7 @@ export default function IntegrationFlowDetailPage({
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -155,18 +165,18 @@ export default function IntegrationFlowDetailPage({
     if (!row || !edit.draft) return;
     edit.setSaving(true);
     edit.setError(null);
-    const d = edit.draft;
+    const draft = edit.draft;
     // flowCode is immutable — never include it in the PATCH body.
     const res = await safeFetchJson(`/api/integration-flows/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sourceSystem: d.sourceSystem.trim(),
-        targetSystem: d.targetSystem.trim(),
-        integrationType: d.integrationType.trim(),
-        frequency: d.frequency.trim(),
-        dataElements: d.dataElements.trim(),
-        businessPurpose: d.businessPurpose.trim(),
+        sourceSystem: draft.sourceSystem.trim(),
+        targetSystem: draft.targetSystem.trim(),
+        integrationType: draft.integrationType.trim(),
+        frequency: draft.frequency.trim(),
+        dataElements: draft.dataElements.trim(),
+        businessPurpose: draft.businessPurpose.trim(),
       }),
       label: "integration-flow-patch",
       rejectHttpErrors: false,
@@ -176,8 +186,7 @@ export default function IntegrationFlowDetailPage({
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(FLOW_FIELD_LABELS);
     await load();
   };
 
@@ -233,7 +242,7 @@ export default function IntegrationFlowDetailPage({
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -241,6 +250,61 @@ export default function IntegrationFlowDetailPage({
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Integration ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Source System"
+              value={d.sourceSystem}
+              editing
+              onChange={(n) => edit.setField("sourceSystem", n)}
+              placeholder="Source system…"
+            />
+            <EditableField
+              label="Target System"
+              value={d.targetSystem}
+              editing
+              onChange={(n) => edit.setField("targetSystem", n)}
+              placeholder="Target system…"
+            />
+            <EditableField
+              label="Integration Type"
+              value={d.integrationType}
+              editing
+              onChange={(n) => edit.setField("integrationType", n)}
+              placeholder="e.g. API, Batch…"
+            />
+            <EditableField
+              label="Frequency"
+              value={d.frequency}
+              editing
+              onChange={(n) => edit.setField("frequency", n)}
+              placeholder="e.g. Real-time, Daily…"
+            />
+            <EditableField
+              label="Data Elements"
+              value={d.dataElements}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("dataElements", n)}
+              placeholder="Key data elements…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Business Purpose"
+              value={d.businessPurpose}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("businessPurpose", n)}
+              placeholder="Why this integration matters…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href="/integration-flows" className={taBtnSecondary + " text-sm !py-2"}>
@@ -258,8 +322,6 @@ export default function IntegrationFlowDetailPage({
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: ArrowLeftRight,
@@ -307,25 +369,12 @@ export default function IntegrationFlowDetailPage({
       >
         <EditableFieldGrid cols={3}>
           <LockedIdField label="Integration ID" value={row.flowCode} />
-          <EditableField
-            label="Source System"
-            value={v.sourceSystem}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("sourceSystem", n)}
-            placeholder="Source system…"
-          />
-          <EditableField
-            label="Target System"
-            value={v.targetSystem}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("targetSystem", n)}
-            placeholder="Target system…"
-          />
+          <EditableField label="Source System" value={v.sourceSystem} editing={false} />
+          <EditableField label="Target System" value={v.targetSystem} editing={false} />
           <EditableField
             label="Integration Type"
             value={v.integrationType}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("integrationType", n)}
+            editing={false}
             display={
               v.integrationType.trim() ? (
                 <StatusChip label={v.integrationType} tone={typeTone(v.integrationType)} />
@@ -333,15 +382,8 @@ export default function IntegrationFlowDetailPage({
                 "—"
               )
             }
-            placeholder="e.g. API, Batch…"
           />
-          <EditableField
-            label="Frequency"
-            value={v.frequency}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("frequency", n)}
-            placeholder="e.g. Real-time, Daily…"
-          />
+          <EditableField label="Frequency" value={v.frequency} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -351,20 +393,9 @@ export default function IntegrationFlowDetailPage({
         title="Data exchanged"
         description="Which data elements move across this path and matter for release impact."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Data Elements"
-            value={v.dataElements}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("dataElements", n)}
-            placeholder="Key data elements…"
-          />
-        ) : (
-          <TintedCallout tone="violet">
-            {v.dataElements.trim() ? v.dataElements : "No data elements recorded."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="violet">
+          {v.dataElements.trim() ? v.dataElements : "No data elements recorded."}
+        </TintedCallout>
       </DetailSection>
 
       <DetailSection
@@ -373,20 +404,9 @@ export default function IntegrationFlowDetailPage({
         title="Notes"
         description="Business purpose — why this integration exists and what fails without it."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Business Purpose"
-            value={v.businessPurpose}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("businessPurpose", n)}
-            placeholder="Why this integration matters…"
-          />
-        ) : (
-          <TintedCallout tone="amber">
-            {v.businessPurpose.trim() ? v.businessPurpose : "No business purpose recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="amber">
+          {v.businessPurpose.trim() ? v.businessPurpose : "No business purpose recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

@@ -1,0 +1,82 @@
+[
+  {
+    "pathCode": "PATH-001",
+    "name": "Order-to-Cash",
+    "upstreamSystems": "Salesforce → SAP",
+    "downstreamSystems": "SAP → Logistics → Finance",
+    "coordinationRequirement": "Mandatory joint testing",
+    "blackoutWindows": "Month-end, Quarter-end",
+    "releaseManagerNotes": "Revenue impacting - CFO approval required",
+    "sourceOrder": 1
+  },
+  {
+    "pathCode": "PATH-002",
+    "name": "Procure-to-Pay",
+    "upstreamSystems": "SAP → Coupa → Vendors",
+    "downstreamSystems": "AP → Treasury → Banking",
+    "coordinationRequirement": "Finance sign-off required",
+    "blackoutWindows": "Month-end close (Days 1-5)",
+    "releaseManagerNotes": "Payment processing critical",
+    "sourceOrder": 2
+  },
+  {
+    "pathCode": "PATH-003",
+    "name": "Hire-to-Retire",
+    "upstreamSystems": "Workday → Okta → All Apps",
+    "downstreamSystems": "Payroll → Finance → Tax",
+    "coordinationRequirement": "HR + IT + Security coord",
+    "blackoutWindows": "Payroll windows",
+    "releaseManagerNotes": "Employee data sensitive",
+    "sourceOrder": 3
+  },
+  {
+    "pathCode": "PATH-004",
+    "name": "Record-to-Report",
+    "upstreamSystems": "All Source Systems → SAP",
+    "downstreamSystems": "SAP → Cognos → Reporting",
+    "coordinationRequirement": "Finance freeze periods",
+    "blackoutWindows": "Close periods",
+    "releaseManagerNotes": "SOX compliance required",
+    "sourceOrder": 4
+  },
+  {
+    "pathCode": "PATH-005",
+    "name": "Plan-to-Produce",
+    "upstreamSystems": "SAP → MES → WMS",
+    "downstreamSystems": "Production → Inventory → Ship",
+    "coordinationRequirement": "Manufacturing + Logistics",
+    "blackoutWindows": "Production schedules",
+    "releaseManagerNotes": "Supply chain disruption risk",
+    "sourceOrder": 5
+  },
+  {
+    "pathCode": "PATH-006",
+    "name": "Security Operations",
+    "upstreamSystems": "All Systems → SIEM",
+    "downstreamSystems": "SIEM → SOC → Incident",
+    "coordinationRequirement": "Security team approval",
+    "blackoutWindows": "Never (24/7 ops)",
+    "releaseManagerNotes": "Cannot have monitoring gaps",
+    "sourceOrder": 6
+  },
+  {
+    "pathCode": "PATH-007",
+    "name": "Identity Lifecycle",
+    "upstreamSystems": "Workday → Okta → Apps",
+    "downstreamSystems": "Access → Audit → Compliance",
+    "coordinationRequirement": "HR + IT + Security",
+    "blackoutWindows": "Audit periods",
+    "releaseManagerNotes": "Access control critical",
+    "sourceOrder": 7
+  },
+  {
+    "pathCode": "PATH-008",
+    "name": "Contract Lifecycle",
+    "upstreamSystems": "Legal → DocuSign → SAP",
+    "downstreamSystems": "Procurement → Vendors",
+    "coordinationRequirement": "Legal + Procurement",
+    "blackoutWindows": "Contract renewals",
+    "releaseManagerNotes": "Legal/financial obligations",
+    "sourceOrder": 8
+  }
+]

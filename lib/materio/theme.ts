@@ -174,7 +174,7 @@ function componentOverrides(
  */
 export function createMaterioTheme(
   mode: ActiveThemeMode,
-  colorTheme: ColorThemeId | ColorThemeDefinition = "sky",
+  colorTheme: ColorThemeId | ColorThemeDefinition = "graphite",
 ): Theme {
   const muiMode = mode === "dark" ? "dark" : "light";
   const resolvedColorTheme =

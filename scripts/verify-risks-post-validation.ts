@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { createRiskSchema } from "../lib/validation/risk";
 
 const base = {
-  riskCode: "RSK-TEST",
   releaseId: "rel1",
+  applicationId: "app1",
   category: "Schedule",
   description: "Test risk",
 };
@@ -23,6 +23,11 @@ assert.equal(
   createRiskSchema.safeParse({ ...base, likelihood: 3, impact: 3, riskScore: 999 }).success,
   false,
   "client riskScore rejected (strict)"
+);
+assert.equal(
+  createRiskSchema.safeParse({ ...base, likelihood: 3, impact: 3, riskCode: "RSK-HACK" }).success,
+  false,
+  "client riskCode rejected"
 );
 assert.equal(
   createRiskSchema.safeParse({ ...base, likelihood: 3, impact: 3, extra: "nope" }).success,

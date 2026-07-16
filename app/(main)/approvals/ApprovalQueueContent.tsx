@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { ClipboardCheck, Clock, CheckCircle2, XCircle, AlertCircle, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { APPROVAL_SORT_PRESETS } from "@/lib/table-sort-presets";
@@ -14,7 +14,7 @@ import {
   APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS,
   APPROVALS_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
@@ -22,6 +22,9 @@ import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { APPROVALS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { ApprovalCreateModal } from "@/components/approvals/ApprovalCreateModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type ApprovalRow = {
   id: string;
@@ -58,6 +61,7 @@ export default function ApprovalQueueContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<ApprovalRow>("/api/approvals", APPROVALS_FILTER_SCHEMA, {
     defaultSortKey: "submittedDate",
     defaultSortDir: "desc",
@@ -79,16 +83,19 @@ export default function ApprovalQueueContent() {
     },
   });
   const [allApprovals, setAllApprovals] = useState<ApprovalRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const approvalsRes = await safeFetchJson<typeof allApprovals>("/api/approvals", {
-        signal: ac.signal,
-        label: "approvals",
-      });
+      const [approvalsRes, meRes] = await Promise.all([
+        safeFetchJson<typeof allApprovals>("/api/approvals", { signal: ac.signal, label: "approvals" }),
+        safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal: ac.signal, label: "auth-me" }),
+      ]);
       if (ac.signal.aborted) return;
       if (approvalsRes.ok) setAllApprovals(approvalsRes.data);
+      if (meRes.ok) setUser(meRes.data.user);
     })();
     return () => ac.abort();
   }, []);
@@ -117,8 +124,28 @@ export default function ApprovalQueueContent() {
     <div>
       <TopBar
         pageKey="approvals"
-        trailing={<PageDocumentation pageKey="approvals" />}
+        trailing={
+          <div className="flex items-center gap-2">
+            {sessionCanEdit(user) ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Approval
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="approvals" />
+          </div>
+        }
         title="Approval Queue" subtitle={`${approvals.length} approval${approvals.length === 1 ? "" : "s"} across all releases`} />
+      <ApprovalCreateModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<ApprovalRow[]>("/api/approvals", { label: "approvals-refresh" }).then((result) => {
+            if (result.ok) setAllApprovals(result.data);
+          });
+        }}
+        approvalTypes={types}
+      />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("decision") && (

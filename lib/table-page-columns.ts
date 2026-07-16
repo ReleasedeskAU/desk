@@ -371,6 +371,29 @@ export const INTEGRATION_FLOW_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = INTEGRATION
   (k) => !(INTEGRATION_FLOW_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
 );
 
+/** User-facing shared-environment columns; sourceOrder remains internal ordering metadata. */
+export const SHARED_ENVIRONMENT_COLUMNS: ColumnDef[] = [
+  { key: "environmentCode", label: "Environment Code" },
+  { key: "environmentType", label: "Environment Type" },
+  { key: "sharedBy", label: "Shared By" },
+  { key: "capacity", label: "Capacity" },
+  { key: "bookingRequirement", label: "Booking Requirement" },
+  { key: "conflictRisk", label: "Conflict Risk" },
+  { key: "actions", label: "Actions" },
+];
+
+export const SHARED_ENVIRONMENT_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "environmentCode",
+  "environmentType",
+  "sharedBy",
+  "capacity",
+  "bookingRequirement",
+  "conflictRisk",
+  "actions",
+] as const;
+
+export const SHARED_ENVIRONMENT_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = [];
+
 export const DEPARTMENT_COLUMNS: ColumnDef[] = [
   { key: "name", label: "Department" },
   { key: "head", label: "Head" },
@@ -604,6 +627,7 @@ export const TABLE_PAGE_KEYS = [
   "risk-factors",
   "reference-data",
   "calendar-table",
+  "system-mapping-shared-environments",
 ] as const;
 
 /**
@@ -1139,6 +1163,18 @@ export const INTEGRATION_FLOW_DEFAULT_HIDDEN_FILTER_KEYS: string[] = INTEGRATION
         "businessPurposeQ",
       ].includes(k)
   );
+
+/** Shared Environments filters map one-to-one to every user-facing data column. */
+export const SHARED_ENVIRONMENT_FILTER_FIELDS: FilterFieldDef[] = [
+  { key: "environmentCodeQ", label: "Environment Code" },
+  { key: "environmentType", label: "Environment Type" },
+  { key: "sharedByQ", label: "Shared By" },
+  { key: "capacityQ", label: "Capacity" },
+  { key: "bookingRequirementQ", label: "Booking Requirement" },
+  { key: "conflictRisk", label: "Conflict Risk" },
+];
+
+export const SHARED_ENVIRONMENT_DEFAULT_HIDDEN_FILTER_KEYS: string[] = [];
 
 /**
  * Applications (master data) — own schema only.

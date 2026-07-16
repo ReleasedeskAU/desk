@@ -21,13 +21,17 @@ import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { BLOCKER_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { cn, formatDate } from "@/lib/utils";
-import { Ban } from "lucide-react";
+import { Ban, Plus } from "lucide-react";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { BLOCKERS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { BlockerFormModal } from "@/components/releases/BlockerFormModal";
+import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
+import type { SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type BlockerRow = {
   id: string;
@@ -196,6 +200,7 @@ export default function BlockersContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<BlockerRow>("/api/blockers", BLOCKERS_FILTER_SCHEMA, {
     defaultSortKey: "blockerCode",
     defaultSortDir: "asc",
@@ -224,17 +229,22 @@ export default function BlockersContent() {
 
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [apps, setApps] = useState<{ id: string; name: string; departmentId: string }[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const [deptRes, appsRes] = await Promise.all([
+      const [deptRes, appsRes, meRes] = await Promise.all([
         safeFetchJson<{ id: string; name: string }[]>("/api/departments", { signal: ac.signal, label: "departments" }),
         safeFetchJson<{ id: string; name: string; departmentId: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
+        safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal: ac.signal, label: "auth-me" }),
       ]);
       if (ac.signal.aborted) return;
       if (deptRes.ok) setDepartments(deptRes.data);
       if (appsRes.ok) setApps(appsRes.data);
+      if (meRes.ok) setUser(meRes.data.user);
     })();
     return () => ac.abort();
   }, []);
@@ -263,13 +273,29 @@ export default function BlockersContent() {
     <div>
       <TopBar
         pageKey="blockers"
-        trailing={<PageDocumentation pageKey="blockers" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> New Blocker
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="blockers" />
+          </div>
+        }
         title="Blockers"
         subtitle={
           blockers.length > 0
             ? `${blockers.length} blocker${blockers.length === 1 ? "" : "s"}${openCount > 0 ? ` · ${openCount} open or in progress` : ""}`
             : "No blockers recorded"
         }
+      />
+
+      <BlockerFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => refetch()}
+        raisedByDefault={user?.name ?? ""}
       />
 
       {!tablePending && (

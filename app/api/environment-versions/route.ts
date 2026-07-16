@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
-import { buildVersionMatrix, findEnvByStage } from "@/lib/db-environment-desk";
+import { buildVersionMatrix } from "@/lib/db-environment-desk";
 import { prisma } from "@/lib/prisma";
+import { zodErrorResponse } from "@/lib/api-errors";
+import { createEnvironmentVersionSchema } from "@/lib/validation/environment-version";
+import { createEnvironmentVersionRow } from "@/lib/org-compat";
 
 export async function GET() {
   const { error } = await requireRole("readonly");
@@ -15,45 +18,51 @@ export async function GET() {
   return NextResponse.json({ matrix: buildVersionMatrix(apps, versions), apps });
 }
 
+/** Creates an editor-authorized version for a verified application/environment pair. */
 export async function POST(req: Request) {
   const { user, error } = await requireRole("editor");
   if (error) return error;
 
-  const { applicationName, fromStage, toStage } = (await req.json()) as {
-    applicationName: string;
-    fromStage: "dev" | "test" | "prod";
-    toStage: "dev" | "test" | "prod";
-  };
+  const parsed = createEnvironmentVersionSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const body = parsed.data;
 
-  const app = await prisma.application.findFirst({
-    where: { name: applicationName },
-    include: { environments: true, department: true },
+  const environment = await prisma.environment.findUnique({
+    where: { id: body.environmentId },
+    include: { application: { include: { department: true } } },
   });
-  if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
-
-  const sourceEnv = findEnvByStage(app, fromStage);
-  const targetEnv = findEnvByStage(app, toStage);
-  if (!sourceEnv || !targetEnv) {
-    return NextResponse.json({ error: "Environment stage not found" }, { status: 400 });
+  if (!environment || environment.applicationId !== body.applicationId) {
+    return NextResponse.json(
+      { error: "Environment was not found for the selected application" },
+      { status: 404 }
+    );
   }
 
-  const sourceVersion = await prisma.environmentVersion.findUnique({
-    where: { applicationId_environmentId: { applicationId: app.id, environmentId: sourceEnv.id } },
-  });
-  if (!sourceVersion) {
-    return NextResponse.json({ error: "No version on source environment" }, { status: 400 });
-  }
-
-  const row = await prisma.environmentVersion.upsert({
-    where: { applicationId_environmentId: { applicationId: app.id, environmentId: targetEnv.id } },
-    create: {
-      applicationId: app.id,
-      environmentId: targetEnv.id,
-      version: sourceVersion.version,
-      updatedBy: user!.name,
+  const existing = await prisma.environmentVersion.findUnique({
+    where: {
+      applicationId_environmentId: {
+        applicationId: body.applicationId,
+        environmentId: body.environmentId,
+      },
     },
-    update: { version: sourceVersion.version, updatedBy: user!.name },
+  });
+  if (existing) {
+    return NextResponse.json(
+      { error: "A version already exists for this application and environment" },
+      { status: 409 }
+    );
+  }
+
+  const row = await createEnvironmentVersionRow({
+    applicationId: body.applicationId,
+    environmentId: body.environmentId,
+    version: body.version,
+    buildNumber: body.buildNumber ?? null,
+    deployDate: body.deployDate ? new Date(body.deployDate) : null,
+    status: body.status ?? null,
+    notes: body.notes ?? null,
+    updatedBy: user!.name,
   });
 
-  return NextResponse.json(row);
+  return NextResponse.json(row, { status: 201 });
 }

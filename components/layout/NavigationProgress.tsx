@@ -11,6 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 type NavigationProgressContextValue = {
   start: () => void;
@@ -27,6 +28,26 @@ export function useNavigationProgress() {
 function hrefPath(href: ComponentProps<typeof Link>["href"]): string {
   if (typeof href === "string") return href.split("?")[0];
   return href.pathname ?? "";
+}
+
+/**
+ * Button / nav chrome should not get hyperlink underline styling.
+ * @param className - Classes passed to ProgressLink.
+ * @returns True when the link should render as a text hyperlink.
+ */
+function isTextHyperlink(className?: string): boolean {
+  if (!className) return true;
+  if (/\bno-underline\b|\brd-chrome\b|\bmenu-item/.test(className)) return false;
+  // taBtnPrimary / taBtnSecondary (and similar chips)
+  if (/shadow-theme-sm/.test(className) && /rounded-lg|rounded-xl/.test(className)) return false;
+  if (/justify-center/.test(className) && /border|bg-brand-500|bg-white/.test(className)) return false;
+  // Layout wrappers (sidebar logo, icon rows) without text-link cues
+  const looksLikeTextLink =
+    /text-brand|hover:underline|\bunderline\b|font-mono|font-medium text-|font-semibold text-|font-bold text-|font-black text-/.test(
+      className
+    );
+  if (!looksLikeTextLink && /(?:^|\s)flex(?:\s|$)/.test(className)) return false;
+  return true;
 }
 
 export function NavigationProgressProvider({ children }: { children: React.ReactNode }) {
@@ -91,13 +112,18 @@ export function NavigationProgressProvider({ children }: { children: React.React
 
 type ProgressLinkProps = ComponentProps<typeof Link>;
 
-export function ProgressLink({ href, onClick, ...props }: ProgressLinkProps) {
+/**
+ * Next.js Link that starts the top navigation progress bar.
+ * Text links get `.rd-link` so they stay recognizable under every color theme.
+ */
+export function ProgressLink({ href, onClick, className, ...props }: ProgressLinkProps) {
   const pathname = usePathname();
   const { start } = useNavigationProgress();
 
   return (
     <Link
       href={href}
+      className={cn(isTextHyperlink(className) && "rd-link", className)}
       onClick={(e) => {
         onClick?.(e);
         if (e.defaultPrevented) return;

@@ -20,6 +20,20 @@ function newId(): string {
   return `c${t}${r}`.slice(0, 25);
 }
 
+/**
+ * Runs one shared create strategy across v1 (no Organization FK) and live v2.
+ * Entity helpers provide only their typed Prisma create and raw org-aware insert.
+ */
+async function createWithOrgCompatibility<T>(
+  createStandard: () => Promise<T>,
+  createForOrganization?: (organizationId: string) => Promise<T>
+): Promise<T> {
+  const organizationId = await getDefaultOrganizationId();
+  return organizationId && createForOrganization
+    ? createForOrganization(organizationId)
+    : createStandard();
+}
+
 export async function createDepartmentRow(name: string, head: string) {
   const orgId = await getDefaultOrganizationId();
   if (!orgId) {
@@ -200,4 +214,300 @@ export async function createEnvBookingRow(data: CreateEnvBookingInput) {
     where: { id },
     include,
   });
+}
+
+export type CreateRiskInput = {
+  riskCode: string;
+  releaseId: string;
+  applicationName?: string | null;
+  departmentName?: string | null;
+  category: string;
+  description: string;
+  likelihood: number;
+  impact: number;
+  affectedArea?: string | null;
+  mitigationStrategy?: string | null;
+  riskOwnerId?: string | null;
+  status: string;
+  notes?: string | null;
+  sourceOrder?: number | null;
+};
+
+/** Creates a Risk while satisfying the live v2 Organization FK when present. */
+export async function createRiskRow(data: CreateRiskInput) {
+  const include = {
+    release: { select: { id: true, releaseCode: true, name: true } },
+    riskOwner: { select: { id: true, userId: true, name: true } },
+  } as const;
+  return createWithOrgCompatibility(
+    () => prisma.risk.create({
+      data: { ...data, riskScore: data.likelihood * data.impact },
+      include,
+    }),
+    async (orgId) => {
+      const id = newId();
+      const now = new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "Risk" (
+          id, "organizationId", "riskCode", "releaseId", "applicationName",
+          "departmentName", category, description, likelihood, impact, "riskScore",
+          "affectedArea", "mitigationStrategy", "riskOwnerId", status, notes,
+          "sourceOrder", "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${orgId}, ${data.riskCode}, ${data.releaseId}, ${data.applicationName ?? null},
+          ${data.departmentName ?? null}, ${data.category}, ${data.description},
+          ${data.likelihood}, ${data.impact}, ${data.likelihood * data.impact},
+          ${data.affectedArea ?? null}, ${data.mitigationStrategy ?? null},
+          ${data.riskOwnerId ?? null}, ${data.status}, ${data.notes ?? null},
+          ${data.sourceOrder ?? null}, ${now}, ${now}
+        )
+      `;
+      return prisma.risk.findUniqueOrThrow({ where: { id }, include });
+    }
+  );
+}
+
+export type CreateDriftInput = {
+  driftCode: string;
+  releaseId: string;
+  applicationId: string;
+  departmentName?: string | null;
+  environmentName: string;
+  driftType: string;
+  driftCategory?: string | null;
+  detectedDate: Date;
+  severity: string;
+  description: string;
+  impactOnRelease?: string | null;
+  remediationAction?: string | null;
+  status: string;
+  etaToFix?: Date | null;
+  sourceOrder?: number | null;
+};
+
+/** Creates a Drift while satisfying the live v2 Organization FK when present. */
+export async function createDriftRow(data: CreateDriftInput) {
+  const include = {
+    release: { select: { id: true, releaseCode: true, name: true } },
+    application: { select: { id: true, name: true } },
+  } as const;
+  return createWithOrgCompatibility(
+    () => prisma.drift.create({ data, include }),
+    async (orgId) => {
+      const id = newId();
+      const now = new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "Drift" (
+          id, "organizationId", "driftCode", "releaseId", "applicationId",
+          "departmentName", "environmentName", "driftType", "driftCategory",
+          "detectedDate", severity, description, "impactOnRelease",
+          "remediationAction", status, "etaToFix", "sourceOrder", "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${orgId}, ${data.driftCode}, ${data.releaseId}, ${data.applicationId},
+          ${data.departmentName ?? null}, ${data.environmentName}, ${data.driftType},
+          ${data.driftCategory ?? null}, ${data.detectedDate}, ${data.severity},
+          ${data.description}, ${data.impactOnRelease ?? null},
+          ${data.remediationAction ?? null}, ${data.status}, ${data.etaToFix ?? null},
+          ${data.sourceOrder ?? null}, ${now}, ${now}
+        )
+      `;
+      return prisma.drift.findUniqueOrThrow({ where: { id }, include });
+    }
+  );
+}
+
+export type CreateApprovalInput = {
+  approvalCode: string;
+  releaseId: string;
+  applicationName?: string | null;
+  departmentName?: string | null;
+  approvalType: string;
+  approverId: string;
+  submittedDate: Date;
+  decisionDate?: Date | null;
+  decision: string;
+  comments?: string | null;
+  cabMeetingId?: string | null;
+  sourceOrder?: number | null;
+};
+
+/** Creates an Approval while satisfying the live v2 Organization FK when present. */
+export async function createApprovalRow(data: CreateApprovalInput) {
+  const include = {
+    release: { select: { id: true, releaseCode: true, name: true } },
+    approver: { select: { id: true, userId: true, name: true } },
+  } as const;
+  return createWithOrgCompatibility(
+    () => prisma.approval.create({ data, include }),
+    async (orgId) => {
+      const id = newId();
+      const now = new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "Approval" (
+          id, "organizationId", "approvalCode", "releaseId", "applicationName",
+          "departmentName", "approvalType", "approverId", "submittedDate",
+          "decisionDate", decision, comments, "cabMeetingId", "sourceOrder",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${orgId}, ${data.approvalCode}, ${data.releaseId},
+          ${data.applicationName ?? null}, ${data.departmentName ?? null},
+          ${data.approvalType}, ${data.approverId}, ${data.submittedDate},
+          ${data.decisionDate ?? null}, ${data.decision}, ${data.comments ?? null},
+          ${data.cabMeetingId ?? null}, ${data.sourceOrder ?? null}, ${now}, ${now}
+        )
+      `;
+      return prisma.approval.findUniqueOrThrow({ where: { id }, include });
+    }
+  );
+}
+
+export type CreateLeaveInput = {
+  leaveCode: string;
+  userId: string;
+  leaveStart: Date;
+  leaveEnd: Date;
+  leaveType: string;
+  days: number;
+  riskImpact?: string | null;
+  riskScore: number;
+  releaseIds?: string[];
+  sourceOrder?: number | null;
+};
+
+/** Creates Leave and affected-release links with live v2 Organization compatibility. */
+export async function createLeaveRow(data: CreateLeaveInput) {
+  const include = {
+    user: { select: { id: true, userId: true, name: true } },
+    affectedReleases: {
+      include: { release: { select: { id: true, releaseCode: true, name: true } } },
+    },
+  } as const;
+  const { releaseIds, ...leaveData } = data;
+  return createWithOrgCompatibility(
+    () =>
+      prisma.leaveRecord.create({
+        data: {
+          ...leaveData,
+          affectedReleases: releaseIds?.length
+            ? { create: releaseIds.map((releaseId) => ({ releaseId })) }
+            : undefined,
+        },
+        include,
+      }),
+    async (orgId) => {
+      const id = newId();
+      const now = new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "LeaveRecord" (
+          id, "organizationId", "leaveCode", "userId", "leaveStart", "leaveEnd",
+          "leaveType", days, "riskImpact", "riskScore", "sourceOrder",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${orgId}, ${data.leaveCode}, ${data.userId}, ${data.leaveStart},
+          ${data.leaveEnd}, ${data.leaveType}, ${data.days}, ${data.riskImpact ?? null},
+          ${data.riskScore}, ${data.sourceOrder ?? null}, ${now}, ${now}
+        )
+      `;
+      if (releaseIds?.length) {
+        await prisma.leaveRecordRelease.createMany({
+          data: releaseIds.map((releaseId) => ({ leaveRecordId: id, releaseId })),
+        });
+      }
+      return prisma.leaveRecord.findUniqueOrThrow({ where: { id }, include });
+    }
+  );
+}
+
+export type CreateEnvironmentVersionInput = {
+  applicationId: string;
+  environmentId: string;
+  version: string;
+  buildNumber?: string | null;
+  deployDate?: Date | null;
+  updatedBy?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  sourceOrder?: number | null;
+};
+
+/**
+ * Creates an EnvironmentVersion through the same compatibility primitive.
+ * Live v2 currently has no Organization column for this table, so standard
+ * Prisma create is intentionally used in both schema generations.
+ */
+export async function createEnvironmentVersionRow(data: CreateEnvironmentVersionInput) {
+  const include = {
+    environment: true,
+    application: { include: { department: true } },
+  } as const;
+  return createWithOrgCompatibility(() =>
+    prisma.environmentVersion.create({ data, include })
+  );
+}
+
+export type CreateReleaseInput = {
+  releaseCode: string;
+  name: string;
+  programProject?: string | null;
+  owner: string;
+  status: string;
+  releaseDate: Date;
+  priority: string;
+  impact: string;
+  departmentId: string;
+  notes?: string | null;
+  dependencies?: string | null;
+  releaseSize?: string | null;
+  cabDate?: Date | null;
+  startDate?: Date | null;
+  testEnvRequired?: string | null;
+  uatEnvRequired?: string | null;
+  conflictFlag?: boolean;
+  conflictId?: string | null;
+  readinessPercent?: number | null;
+  blockers?: string | null;
+  vendorMaintenance?: string | null;
+  changeFreeze?: string | null;
+  regulatory?: string | null;
+  approvalStatus?: string | null;
+  rollbackPlan?: string | null;
+  goLiveChecklistPercent?: number | null;
+  deploymentWindow?: string | null;
+  releaseOwnerId?: string | null;
+};
+
+/** Creates a Release in both local v1 and organization-aware live v2 schemas. */
+export async function createReleaseRow(data: CreateReleaseInput) {
+  return createWithOrgCompatibility(
+    () => prisma.release.create({ data }),
+    async (orgId) => {
+      const id = newId();
+      const now = new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "Release" (
+          id, "organizationId", "releaseCode", name, "programProject", owner,
+          status, "releaseDate", priority, impact, "departmentId", notes,
+          dependencies, "releaseSize", "cabDate", "startDate", "testEnvRequired",
+          "uatEnvRequired", "conflictFlag", "conflictId", "readinessPercent",
+          blockers, "vendorMaintenance", "changeFreeze", regulatory,
+          "approvalStatus", "rollbackPlan", "goLiveChecklistPercent",
+          "deploymentWindow", "releaseOwnerId", "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${orgId}, ${data.releaseCode}, ${data.name}, ${data.programProject ?? null},
+          ${data.owner}, ${data.status}, ${data.releaseDate}, ${data.priority},
+          ${data.impact}, ${data.departmentId}, ${data.notes ?? null},
+          ${data.dependencies ?? null}, ${data.releaseSize ?? null}, ${data.cabDate ?? null},
+          ${data.startDate ?? null}, ${data.testEnvRequired ?? null},
+          ${data.uatEnvRequired ?? null}, ${data.conflictFlag ?? false},
+          ${data.conflictId ?? null}, ${data.readinessPercent ?? null},
+          ${data.blockers ?? null}, ${data.vendorMaintenance ?? null},
+          ${data.changeFreeze ?? null}, ${data.regulatory ?? null},
+          ${data.approvalStatus ?? null}, ${data.rollbackPlan ?? null},
+          ${data.goLiveChecklistPercent ?? null}, ${data.deploymentWindow ?? null},
+          ${data.releaseOwnerId ?? null}, ${now}, ${now}
+        )
+      `;
+      return prisma.release.findUniqueOrThrow({ where: { id } });
+    }
+  );
 }

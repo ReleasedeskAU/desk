@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { GitCompareArrows } from "lucide-react";
+import { GitCompareArrows, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
@@ -23,6 +23,9 @@ import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { DRIFTS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { DriftFormModal } from "@/components/drifts/DriftFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type ReferenceDataRow = { id: string; category: string; value: string; sortOrder: number; active: boolean };
 
@@ -63,6 +66,7 @@ export default function DriftDashboardContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<DriftRow>("/api/drifts", DRIFTS_FILTER_SCHEMA, {
     defaultSortKey: "detected",
     defaultSortDir: "desc",
@@ -87,19 +91,24 @@ export default function DriftDashboardContent() {
   const [driftTypes, setDriftTypes] = useState<ReferenceDataRow[]>([]);
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
   const [allDrifts, setAllDrifts] = useState<DriftRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const [typesRes, appsRes, driftsRes] = await Promise.all([
+      const [typesRes, appsRes, driftsRes, meRes] = await Promise.all([
         safeFetchJson<ReferenceDataRow[]>("/api/reference-data?category=drift_type", { signal: ac.signal, label: "drift-types" }),
         safeFetchJson<{ id: string; name: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
         safeFetchJson<DriftRow[]>("/api/drifts", { signal: ac.signal, label: "drifts" }),
+        safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal: ac.signal, label: "drifts-auth" }),
       ]);
       if (ac.signal.aborted) return;
       if (typesRes.ok) setDriftTypes(typesRes.data);
       if (appsRes.ok) setApps(appsRes.data);
       if (driftsRes.ok) setAllDrifts(driftsRes.data);
+      if (meRes.ok) setUser(meRes.data.user);
     })();
     return () => ac.abort();
   }, []);
@@ -136,9 +145,29 @@ export default function DriftDashboardContent() {
     <div>
       <TopBar
         pageKey="drifts"
-        trailing={<PageDocumentation pageKey="drifts" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Drift
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="drifts" />
+          </div>
+        }
         title="Drift Dashboard"
         subtitle={`${drifts.length} drift${drifts.length === 1 ? "" : "s"} detected across environments`}
+      />
+      <DriftFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<DriftRow[]>("/api/drifts", { label: "drifts-post-create-refresh" }).then((result) => {
+            if (result.ok) setAllDrifts(result.data);
+          });
+        }}
+        categoryOptions={categories}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

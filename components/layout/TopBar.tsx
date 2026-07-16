@@ -79,7 +79,7 @@ export function TopBar({
                 <button
                   type="button"
                   onClick={requestPageDocumentationOpen}
-                  className="shrink-0 font-semibold text-brand-600 underline-offset-2 hover:underline dark:text-brand-400"
+                  className="rd-link shrink-0 font-semibold"
                 >
                   Know more
                 </button>

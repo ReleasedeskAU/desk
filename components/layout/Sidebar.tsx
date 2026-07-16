@@ -179,7 +179,7 @@ export function Sidebar() {
         >
           <SentinelLogo
             variant="icon"
-            className={cn(isWide && "h-12 w-12 rounded-md")}
+            className={cn(isWide && "h-14 w-14 rounded-md")}
             priority
           />
         </ProgressLink>

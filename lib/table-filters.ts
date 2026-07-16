@@ -17,6 +17,7 @@ export type FilterValues = Record<string, string>;
 
 export function valuesFromSearchParams(sp: URLSearchParams, schema: FilterSchema): FilterValues {
   const values: FilterValues = {};
+  if (!Array.isArray(schema)) return values;
   for (const field of schema) {
     values[field.key] = sp.get(field.param) ?? "";
   }
@@ -34,6 +35,7 @@ export function valuesToSearchParams(
   base?: URLSearchParams
 ): URLSearchParams {
   const params = new URLSearchParams(base?.toString() ?? "");
+  if (!Array.isArray(schema)) return params;
   for (const field of schema) {
     params.delete(field.param);
     const v = values[field.key]?.trim();
@@ -262,6 +264,16 @@ export const INTEGRATION_FLOWS_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "flowCodeQ", param: "flowCode" },
 ]);
 
+/** Server-supported filters for the System Mapping shared-environment inventory. */
+export const SHARED_ENVIRONMENTS_FILTER_SCHEMA: FilterSchema = withTableSort([
+  { key: "environmentCodeQ", param: "environmentCodeQ" },
+  { key: "environmentType", param: "environmentType" },
+  { key: "sharedByQ", param: "sharedByQ" },
+  { key: "capacityQ", param: "capacityQ" },
+  { key: "bookingRequirementQ", param: "bookingRequirementQ" },
+  { key: "conflictRisk", param: "conflictRisk" },
+]);
+
 export const RISKS_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "status", param: "status" },
   { key: "category", param: "category" },
@@ -376,7 +388,3 @@ export const REFERENCE_DATA_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "sortOrderMin", param: "sortMin" },
   { key: "sortOrderMax", param: "sortMax" },
 ]);
-
-export const SYSTEM_MAPPING_FILTER_SCHEMA: FilterSchema = [
-  { key: "groupId", param: "group" },
-];

@@ -73,6 +73,22 @@ type DriftDraft = {
   etaToFix: string;
 };
 
+const DRIFT_FIELD_LABELS: Partial<Record<keyof DriftDraft, string>> = {
+  releaseId: "Release",
+  applicationId: "Application",
+  departmentName: "Department",
+  environmentName: "Environment",
+  driftType: "Drift Type",
+  driftCategory: "Drift Category",
+  detectedDate: "Detected Date",
+  severity: "Severity",
+  description: "Description",
+  impactOnRelease: "Impact on Release",
+  remediationAction: "Remediation Action",
+  status: "Status",
+  etaToFix: "ETA to Fix",
+};
+
 function toDateInput(iso: string | null) {
   if (!iso) return "";
   return iso.slice(0, 10);
@@ -184,6 +200,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -266,8 +283,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(DRIFT_FIELD_LABELS);
     await load();
   };
 
@@ -314,7 +330,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -322,6 +338,115 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Drift ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Severity"
+              value={d.severity}
+              editing
+              kind="select"
+              options={severityOptions}
+              onChange={(n) => edit.setField("severity", n)}
+            />
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={statusOptions}
+              onChange={(n) => edit.setField("status", n)}
+            />
+            <EditableField
+              label="Detected Date"
+              value={d.detectedDate}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("detectedDate", n)}
+            />
+            <EditableField
+              label="ETA to Fix"
+              value={d.etaToFix}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("etaToFix", n)}
+            />
+            <EditableField
+              label="Release"
+              value={d.releaseId}
+              editing
+              kind="select"
+              options={releaseOptions}
+              onChange={(n) => edit.setField("releaseId", n)}
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationId}
+              editing
+              kind="select"
+              options={applicationOptions}
+              onChange={(n) => edit.setField("applicationId", n)}
+            />
+            <EditableField
+              label="Department"
+              value={d.departmentName}
+              editing
+              onChange={(n) => edit.setField("departmentName", n)}
+              placeholder="Department…"
+            />
+            <EditableField
+              label="Environment"
+              value={d.environmentName}
+              editing
+              mono
+              onChange={(n) => edit.setField("environmentName", n)}
+            />
+            <EditableField
+              label="Drift Type"
+              value={d.driftType}
+              editing
+              onChange={(n) => edit.setField("driftType", n)}
+            />
+            <EditableField
+              label="Drift Category"
+              value={d.driftCategory}
+              editing
+              onChange={(n) => edit.setField("driftCategory", n)}
+              placeholder="Category…"
+            />
+            <EditableField
+              label="Description"
+              value={d.description}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("description", n)}
+              placeholder="What drifted…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Impact on Release"
+              value={d.impactOnRelease}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("impactOnRelease", n)}
+              placeholder="Impact on go-live…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Remediation Action"
+              value={d.remediationAction}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("remediationAction", n)}
+              placeholder="How this drift will be fixed…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink
@@ -342,8 +467,6 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: AlertTriangle,
@@ -386,19 +509,13 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Severity"
             value={v.severity}
-            editing={edit.editing}
-            kind="select"
-            options={severityOptions}
-            onChange={(n) => edit.setField("severity", n)}
+            editing={false}
             display={<StatusChip label={v.severity} tone={severityTone(v.severity)} />}
           />
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={statusOptions}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
           />
         </EditableFieldGrid>
@@ -444,17 +561,13 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
             <EditableField
               label="Detected Date"
               value={v.detectedDate}
-              editing={edit.editing}
-              kind="date"
-              onChange={(n) => edit.setField("detectedDate", n)}
+              editing={false}
               display={v.detectedDate ? formatDate(v.detectedDate) : "—"}
             />
             <EditableField
               label="ETA to Fix"
               value={v.etaToFix}
-              editing={edit.editing}
-              kind="date"
-              onChange={(n) => edit.setField("etaToFix", n)}
+              editing={false}
               display={v.etaToFix ? formatDate(v.etaToFix) : "—"}
             />
           </EditableFieldGrid>
@@ -471,10 +584,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Release"
             value={v.releaseId}
-            editing={edit.editing}
-            kind="select"
-            options={releaseOptions}
-            onChange={(n) => edit.setField("releaseId", n)}
+            editing={false}
             display={
               <ProgressLink
                 href={`/releases/${v.releaseId || row.release.id}`}
@@ -497,19 +607,10 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Application"
             value={v.applicationId}
-            editing={edit.editing}
-            kind="select"
-            options={applicationOptions}
-            onChange={(n) => edit.setField("applicationId", n)}
+            editing={false}
             display={selectedApp?.name ?? row.application.name}
           />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("departmentName", n)}
-            placeholder="Department…"
-          />
+          <EditableField label="Department" value={v.departmentName} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -523,23 +624,11 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
           <EditableField
             label="Environment"
             value={v.environmentName}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("environmentName", n)}
           />
-          <EditableField
-            label="Drift Type"
-            value={v.driftType}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("driftType", n)}
-          />
-          <EditableField
-            label="Drift Category"
-            value={v.driftCategory}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("driftCategory", n)}
-            placeholder="Category…"
-          />
+          <EditableField label="Drift Type" value={v.driftType} editing={false} />
+          <EditableField label="Drift Category" value={v.driftCategory} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -549,45 +638,24 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         title="Description & impact"
         description="What diverged from baseline and how it affects the release window."
       >
-        {edit.editing ? (
-          <div className="space-y-4">
-            <EditableField
-              label="Description"
-              value={v.description}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("description", n)}
-              placeholder="What drifted…"
-            />
-            <EditableField
-              label="Impact on Release"
-              value={v.impactOnRelease}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("impactOnRelease", n)}
-              placeholder="Impact on go-live…"
-            />
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Description
+            </p>
+            <TintedCallout tone="amber">
+              {v.description.trim() || "No description recorded."}
+            </TintedCallout>
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Description
-              </p>
-              <TintedCallout tone="amber">
-                {v.description.trim() || "No description recorded."}
-              </TintedCallout>
-            </div>
-            <div>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Impact on Release
-              </p>
-              <TintedCallout tone="rose">
-                {v.impactOnRelease.trim() || "No release impact recorded."}
-              </TintedCallout>
-            </div>
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Impact on Release
+            </p>
+            <TintedCallout tone="rose">
+              {v.impactOnRelease.trim() || "No release impact recorded."}
+            </TintedCallout>
           </div>
-        )}
+        </div>
       </DetailSection>
 
       <DetailSection
@@ -596,20 +664,9 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         title="Remediation"
         description="The action plan to restore the environment to the intended baseline."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Remediation Action"
-            value={v.remediationAction}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("remediationAction", n)}
-            placeholder="How this drift will be fixed…"
-          />
-        ) : (
-          <TintedCallout tone="emerald">
-            {v.remediationAction.trim() || "No remediation action recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="emerald">
+          {v.remediationAction.trim() || "No remediation action recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );

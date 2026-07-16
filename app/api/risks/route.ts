@@ -4,6 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { riskWhere, sp } from "@/lib/list-api-filters";
 import { createRiskSchema } from "@/lib/validation/risk";
 import { zodErrorResponse } from "@/lib/api-errors";
+import { createRiskRow } from "@/lib/org-compat";
+
+async function nextRiskCode(): Promise<string> {
+  const rows = await prisma.risk.findMany({ select: { riskCode: true } });
+  const next = rows.reduce((max, row) => {
+    const match = row.riskCode.match(/^RSK-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+  return `RSK-${String(next).padStart(3, "0")}`;
+}
 
 export async function GET(req: Request) {
   const { error } = await requireRole("readonly");
@@ -38,26 +48,51 @@ export async function POST(req: Request) {
 
   const body = parsed.data;
   const { likelihood, impact } = body;
-  const row = await prisma.risk.create({
-    data: {
-      riskCode: body.riskCode,
-      releaseId: body.releaseId,
-      category: body.category,
-      description: body.description,
-      likelihood,
-      impact,
-      // Always server-computed — never trust a client-supplied riskScore.
-      riskScore: likelihood * impact,
-      affectedArea: body.affectedArea ?? null,
-      mitigationStrategy: body.mitigationStrategy ?? null,
-      riskOwnerId: body.riskOwnerId ?? null,
-      status: body.status ?? "Open",
-      notes: body.notes ?? null,
-    },
-    include: {
-      release: { select: { id: true, releaseCode: true, name: true } },
-      riskOwner: { select: { id: true, userId: true, name: true } },
-    },
+  const [release, application, owner, maxOrder] = await Promise.all([
+    prisma.release.findUnique({
+      where: { id: body.releaseId },
+      select: {
+        id: true,
+        department: { select: { id: true, name: true } },
+        applications: { where: { applicationId: body.applicationId }, select: { applicationId: true } },
+      },
+    }),
+    prisma.application.findUnique({
+      where: { id: body.applicationId },
+      select: { id: true, name: true, department: { select: { id: true, name: true } } },
+    }),
+    body.riskOwnerId
+      ? prisma.user.findUnique({ where: { id: body.riskOwnerId }, select: { id: true } })
+      : Promise.resolve(null),
+    prisma.risk.aggregate({ _max: { sourceOrder: true } }),
+  ]);
+  if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+  if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+  if (!release.applications.length) {
+    return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
+  }
+  if (application.department.id !== release.department.id) {
+    return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
+  }
+  if (body.riskOwnerId && !owner) {
+    return NextResponse.json({ error: "Risk owner not found" }, { status: 400 });
+  }
+
+  const row = await createRiskRow({
+    riskCode: await nextRiskCode(),
+    releaseId: body.releaseId,
+    applicationName: application.name,
+    departmentName: application.department.name,
+    category: body.category,
+    description: body.description,
+    likelihood,
+    impact,
+    affectedArea: body.affectedArea ?? null,
+    mitigationStrategy: body.mitigationStrategy ?? null,
+    riskOwnerId: body.riskOwnerId ?? null,
+    status: body.status ?? "Open",
+    notes: body.notes ?? null,
+    sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });
   return NextResponse.json(row, { status: 201 });
 }

@@ -5,7 +5,7 @@ import "./globals.css";
 
 const COLOR_THEME_PREPAINT_SCRIPT = `(() => {
   const themes = ["sky", "indigo", "emerald", "violet", "graphite", "amber"];
-  let theme = "sky";
+  let theme = "graphite";
   let mode = "light";
   try {
     const cached = localStorage.getItem("sentinel-color-theme");
@@ -13,7 +13,7 @@ const COLOR_THEME_PREPAINT_SCRIPT = `(() => {
     const cachedMode = localStorage.getItem("sentinel-theme-mode");
     if (cachedMode === "dark" || cachedMode === "semi-dark") mode = "dark";
   } catch {
-    theme = "sky";
+    theme = "graphite";
     mode = "light";
   }
   const root = document.documentElement;
@@ -48,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
   return (
-    <html lang="en" data-color-theme="sky" suppressHydrationWarning>
+    <html lang="en" data-color-theme="graphite" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: COLOR_THEME_PREPAINT_SCRIPT }} />
       </head>

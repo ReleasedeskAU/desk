@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
+import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -21,6 +23,16 @@ export type DependencyFormValues = {
   notes: string;
 };
 
+type CreatedSummary = {
+  id: string;
+  depCode: string;
+  releaseCode: string;
+  dependsOnCode: string;
+  dependencyType: string;
+  status: string;
+  impactIfBlocked: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -37,8 +49,20 @@ function coerceEnum<T extends string>(value: string | undefined, allowed: readon
   return (allowed as readonly string[]).includes(value ?? "") ? (value as T) : fallback;
 }
 
+function emptyForm(): DependencyFormValues {
+  return {
+    releaseId: "",
+    dependsOnReleaseId: "",
+    dependencyType: "Hard",
+    status: "Clear",
+    impactIfBlocked: "Release Delay",
+    notes: "",
+  };
+}
+
 /**
  * Modal to create or edit a ReleaseDependency between two releases.
+ * After a successful create, shows a confirmation summary before closing.
  */
 export function DependencyFormModal({
   open,
@@ -67,11 +91,16 @@ export function DependencyFormModal({
   const [loadingReleases, setLoadingReleases] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedSummary | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setCreated(null);
+      return;
+    }
     setForm(defaults);
     setError(null);
+    setCreated(null);
     setLoadingReleases(true);
     const ac = new AbortController();
     void (async () => {
@@ -118,7 +147,7 @@ export function DependencyFormModal({
       notes: form.notes.trim() ? form.notes.trim() : null,
     };
 
-    const result = await safeFetchJson(
+    const result = await safeFetchJson<CreatedSummary & { error?: string }>(
       isEdit ? `/api/dependencies/${editId}` : "/api/dependencies",
       {
         method: isEdit ? "PATCH" : "POST",
@@ -140,7 +169,23 @@ export function DependencyFormModal({
       setError(msg);
       return;
     }
+
     onSaved();
+
+    // Create gets an explicit confirmation; edit closes after refresh.
+    if (!isEdit && result.data) {
+      setCreated({
+        id: result.data.id,
+        depCode: result.data.depCode || "—",
+        releaseCode: result.data.releaseCode || "—",
+        dependsOnCode: result.data.dependsOnCode || "—",
+        dependencyType: result.data.dependencyType || form.dependencyType,
+        status: result.data.status || form.status,
+        impactIfBlocked: result.data.impactIfBlocked || form.impactIfBlocked,
+      });
+      return;
+    }
+
     onClose();
   };
 
@@ -149,6 +194,66 @@ export function DependencyFormModal({
       {r.releaseCode} — {r.name}
     </option>
   ));
+
+  if (created) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div
+          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dependency-created-title"
+        >
+          <div className="mb-4 flex items-start gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+              <CheckCircle2 className="h-5 w-5" aria-hidden />
+            </span>
+            <div>
+              <h2 id="dependency-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+                Dependency created
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
+                Your dependency was saved successfully.
+              </p>
+            </div>
+          </div>
+
+          <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
+            <SummaryRow label="Dep ID" value={created.depCode} mono />
+            <SummaryRow label="Release" value={created.releaseCode} mono />
+            <SummaryRow label="Depends on" value={created.dependsOnCode} mono />
+            <SummaryRow label="Type" value={created.dependencyType} />
+            <SummaryRow label="Status" value={created.status} />
+            <SummaryRow label="Impact if blocked" value={created.impactIfBlocked} />
+          </dl>
+
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className={taBtnSecondary}
+              onClick={() => {
+                setCreated(null);
+                setForm(emptyForm());
+                setError(null);
+              }}
+            >
+              Create another
+            </button>
+            <ProgressLink
+              href={`/dependencies/${created.id}`}
+              className={cn(taBtnSecondary, "inline-flex items-center")}
+            >
+              View dependency
+            </ProgressLink>
+            <button type="button" className={taBtnPrimary} onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -264,6 +369,25 @@ export function DependencyFormModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-gray-500 dark:text-white/55">{label}</dt>
+      <dd className={cn("text-right font-medium text-gray-900 dark:text-white", mono && "font-mono text-xs")}>
+        {value}
+      </dd>
     </div>
   );
 }

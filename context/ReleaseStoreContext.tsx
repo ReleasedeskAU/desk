@@ -54,6 +54,18 @@ interface ReleaseStoreContextValue {
 
 const ReleaseStoreContext = createContext<ReleaseStoreContextValue | null>(null);
 
+async function fetchLiveState(): Promise<ReleaseStoreState | null> {
+  try {
+    const res = await fetch("/api/live-state", { cache: "no-store" });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text.trim()) return null;
+    return JSON.parse(text) as ReleaseStoreState;
+  } catch {
+    return null;
+  }
+}
+
 async function postJson(url: string, body?: object) {
   const res = await fetch(url, {
     method: "POST",
@@ -67,19 +79,34 @@ export function ReleaseStoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ReleaseStoreState>(() => emptyReleaseStore());
 
   const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/live-state");
-      if (res.ok) setState(await res.json());
-    } catch {
-      // keep prior state on network errors
-    }
+    const next = await fetchLiveState();
+    if (next) setState(next);
   }, []);
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
+    let cancelled = false;
+    let inFlight = false;
+
+    const tick = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const next = await fetchLiveState();
+        if (!cancelled && next) setState(next);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void tick();
+    const id = setInterval(() => {
+      void tick();
+    }, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   const afterMutation = useCallback(
     async (fn: () => Promise<void>) => {

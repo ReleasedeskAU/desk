@@ -1,0 +1,110 @@
+[
+  {
+    "environmentCode": "FIN-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "Finance, Legal, CRM",
+    "capacity": "Limited (3 concurrent)",
+    "bookingRequirement": "Yes - 2 weeks advance",
+    "conflictRisk": "HIGH",
+    "sourceOrder": 1
+  },
+  {
+    "environmentCode": "FIN-TEST-02",
+    "environmentType": "Test",
+    "sharedBy": "Finance",
+    "capacity": "Standard",
+    "bookingRequirement": "Yes - 1 week advance",
+    "conflictRisk": "MEDIUM",
+    "sourceOrder": 2
+  },
+  {
+    "environmentCode": "FIN-UAT-01",
+    "environmentType": "UAT",
+    "sharedBy": "Finance, Legal, Manufacturing",
+    "capacity": "Limited (2 concurrent)",
+    "bookingRequirement": "Yes - 3 weeks advance",
+    "conflictRisk": "HIGH",
+    "sourceOrder": 3
+  },
+  {
+    "environmentCode": "IT-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "IT, Security, All Depts",
+    "capacity": "Shared Pool",
+    "bookingRequirement": "Yes - 1 week advance",
+    "conflictRisk": "HIGH",
+    "sourceOrder": 4
+  },
+  {
+    "environmentCode": "IT-UAT-01",
+    "environmentType": "UAT",
+    "sharedBy": "IT, Security",
+    "capacity": "Limited",
+    "bookingRequirement": "Yes - 2 weeks advance",
+    "conflictRisk": "HIGH",
+    "sourceOrder": 5
+  },
+  {
+    "environmentCode": "CRM-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "CRM, Sales Ops",
+    "capacity": "Standard",
+    "bookingRequirement": "Recommended",
+    "conflictRisk": "MEDIUM",
+    "sourceOrder": 6
+  },
+  {
+    "environmentCode": "CRM-UAT-01",
+    "environmentType": "UAT",
+    "sharedBy": "CRM, Marketing",
+    "capacity": "Standard",
+    "bookingRequirement": "Yes - 1 week advance",
+    "conflictRisk": "MEDIUM",
+    "sourceOrder": 7
+  },
+  {
+    "environmentCode": "MAN-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "Manufacturing, Logistics",
+    "capacity": "Limited",
+    "bookingRequirement": "Yes - 2 weeks advance",
+    "conflictRisk": "HIGH",
+    "sourceOrder": 8
+  },
+  {
+    "environmentCode": "LOG-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "Logistics, Manufacturing",
+    "capacity": "Standard",
+    "bookingRequirement": "Recommended",
+    "conflictRisk": "MEDIUM",
+    "sourceOrder": 9
+  },
+  {
+    "environmentCode": "SEC-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "Security, IT",
+    "capacity": "Restricted",
+    "bookingRequirement": "Yes - 2 weeks advance",
+    "conflictRisk": "MEDIUM",
+    "sourceOrder": 10
+  },
+  {
+    "environmentCode": "HR-TEST-01",
+    "environmentType": "Test",
+    "sharedBy": "HR, Payroll",
+    "capacity": "Standard",
+    "bookingRequirement": "Yes - 1 week advance",
+    "conflictRisk": "LOW",
+    "sourceOrder": 11
+  },
+  {
+    "environmentCode": "INTEG-01",
+    "environmentType": "Integration",
+    "sharedBy": "ALL DEPARTMENTS",
+    "capacity": "Critical Shared",
+    "bookingRequirement": "Mandatory - 4 weeks",
+    "conflictRisk": "CRITICAL",
+    "sourceOrder": 12
+  }
+]

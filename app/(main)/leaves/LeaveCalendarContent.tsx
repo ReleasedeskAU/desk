@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarOff } from "lucide-react";
+import { CalendarOff, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { LEAVE_SORT_PRESETS } from "@/lib/table-sort-presets";
@@ -14,14 +14,17 @@ import {
   LEAVE_DEFAULT_HIDDEN_FILTER_KEYS,
   LEAVE_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
-import { loadJsonEffect } from "@/lib/safe-fetch";
+import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { LEAVES_FILTER_SCHEMA } from "@/lib/table-filters";
+import { LeaveCreateModal } from "@/components/leaves/LeaveCreateModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type LeaveRow = {
   id: string;
@@ -50,6 +53,7 @@ export default function LeaveCalendarContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<LeaveRow>("/api/leaves", LEAVES_FILTER_SCHEMA, {
     defaultSortKey: "leaveStart",
     defaultSortDir: "asc",
@@ -69,9 +73,15 @@ export default function LeaveCalendarContent() {
     },
   });
   const [allLeaves, setAllLeaves] = useState<LeaveRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     return loadJsonEffect<LeaveRow[]>("/api/leaves", setAllLeaves, { label: "leaves" });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), { label: "auth-me" });
   }, []);
 
   const leaveTypes = useMemo(() => [...new Set(allLeaves.map((l) => l.leaveType))].sort(), [allLeaves]);
@@ -100,9 +110,29 @@ export default function LeaveCalendarContent() {
     <div>
       <TopBar
         pageKey="leaves"
-        trailing={<PageDocumentation pageKey="leaves" />}
+        trailing={
+          <div className="flex items-center gap-2">
+            {sessionCanEdit(user) ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Leave
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="leaves" />
+          </div>
+        }
         title="Leave & Resource Availability"
         subtitle={`${leaves.length} leave record${leaves.length === 1 ? "" : "s"}${highRiskCount > 0 ? ` · ${highRiskCount} high-risk` : ""}`}
+      />
+      <LeaveCreateModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<LeaveRow[]>("/api/leaves", { label: "leaves-refresh" }).then((result) => {
+            if (result.ok) setAllLeaves(result.data);
+          });
+        }}
+        leaveTypes={leaveTypes}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

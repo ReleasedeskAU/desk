@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, RefreshCw } from "lucide-react";
 import { SearchableMultiSelect, SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialog";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
+import { diffDraftChanges, type FieldChange } from "@/lib/detail-edit-diff";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 
@@ -36,6 +38,26 @@ type Option = { value: string; label: string };
 type AppOption = Option & { departmentId: string };
 type EnvOption = Option & { applicationId: string };
 type UserOption = Option & { department: string };
+
+const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
+  name: "Name",
+  programProject: "Program / Project",
+  owner: "Owner",
+  status: "Status",
+  releaseDate: "End date",
+  priority: "Priority",
+  impact: "Impact",
+  departmentId: "Department",
+  applicationIds: "Applications",
+  dependsOnReleaseIds: "Depends on",
+  notes: "Notes",
+  releaseSize: "Release size",
+  cabDate: "CAB date",
+  startDate: "Start date",
+  testEnvRequired: "Test env",
+  uatEnvRequired: "UAT env",
+  releaseOwnerId: "Release owner",
+};
 
 type CreatedSummary = {
   id: string;
@@ -122,6 +144,8 @@ export function ReleaseFormModal({
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof ReleaseFormData, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedSummary | null>(null);
+  const [editChanges, setEditChanges] = useState<FieldChange[] | null>(null);
+  const editBaseline = useRef<ReleaseFormData | null>(null);
   const isEdit = Boolean(initial?.id);
 
   useEffect(() => {
@@ -162,6 +186,7 @@ export function ReleaseFormModal({
   useEffect(() => {
     if (!open) return;
     setCreated(null);
+    setEditChanges(null);
     setFieldErrors({});
     setFormError(null);
     const next: ReleaseFormData = {
@@ -187,6 +212,7 @@ export function ReleaseFormModal({
     };
     if (initial?.id) next.id = initial.id;
     setForm(next);
+    editBaseline.current = initial?.id ? { ...next } : null;
   }, [open, initial, existingReleaseCodes]);
 
   const departmentName = useMemo(
@@ -350,7 +376,26 @@ export function ReleaseFormModal({
 
       onSaved();
       if (isEdit) {
-        onClose();
+        const before = editBaseline.current;
+        const afterForDiff: ReleaseFormData = {
+          ...form,
+          applicationIds: form.applicationIds,
+          dependsOnReleaseIds: form.dependsOnReleaseIds,
+        };
+        // Compare display-friendly snapshots for multi-selects.
+        const beforeSnap = {
+          ...(before ?? form),
+          applicationIds: (before?.applicationIds ?? []).join(", "),
+          dependsOnReleaseIds: (before?.dependsOnReleaseIds ?? []).join(", "),
+        } as unknown as Record<string, unknown>;
+        const afterSnap = {
+          ...afterForDiff,
+          applicationIds: form.applicationIds.join(", "),
+          dependsOnReleaseIds: form.dependsOnReleaseIds.join(", "),
+        } as unknown as Record<string, unknown>;
+        setEditChanges(
+          diffDraftChanges(beforeSnap, afterSnap, RELEASE_EDIT_LABELS as Partial<Record<string, string>>)
+        );
         return;
       }
 
@@ -374,6 +419,18 @@ export function ReleaseFormModal({
       setSaving(false);
     }
   };
+
+  if (editChanges) {
+    return (
+      <EditSuccessDialog
+        open
+        entityLabel="Release"
+        entityCode={form.releaseCode}
+        changes={editChanges}
+        onDone={onClose}
+      />
+    );
+  }
 
   if (created) {
     return (
@@ -425,7 +482,7 @@ export function ReleaseFormModal({
               View release
             </ProgressLink>
             <button type="button" className={taBtnPrimary} onClick={onClose}>
-              Done
+              Close
             </button>
           </div>
         </div>
@@ -463,13 +520,12 @@ export function ReleaseFormModal({
               <input
                 className={cn(
                   taInput,
-                  "font-mono text-sm",
-                  !isEdit && "bg-gray-50",
+                  "font-mono text-sm bg-gray-50",
                   fieldErrors.releaseCode && "border-rose-400"
                 )}
                 value={form.releaseCode}
                 onChange={(e) => set("releaseCode", e.target.value.toUpperCase())}
-                readOnly={!isEdit}
+                readOnly
                 placeholder="Auto-generated unique ID"
               />
               {!isEdit && (

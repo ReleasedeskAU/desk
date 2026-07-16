@@ -6,7 +6,7 @@ import type { ActiveThemeMode as ThemeMode } from "@/lib/materio/theme";
 
 const MODE_STORAGE_KEY = "sentinel-theme-mode";
 const COLOR_STORAGE_KEY = "sentinel-color-theme";
-const DEFAULT_COLOR_THEME: ColorThemeId = "sky";
+const DEFAULT_COLOR_THEME: ColorThemeId = "graphite";
 
 type ThemeModeContextValue = {
   mode: ThemeMode;

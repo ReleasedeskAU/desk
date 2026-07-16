@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { releaseListOrderBy, releaseListWhere, sp } from "@/lib/list-api-filters";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
+import { createReleaseRow } from "@/lib/org-compat";
 
 function optionalString(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
@@ -57,8 +58,7 @@ export async function POST(req: Request) {
 
   const releaseDate = body.releaseDate ? new Date(body.releaseDate) : new Date();
 
-  const row = await prisma.release.create({
-    data: {
+  const created = await createReleaseRow({
       releaseCode,
       name: String(body.name ?? ""),
       programProject: normalizeProgramProject(body.programProject ?? "") ?? "N/A",
@@ -87,16 +87,28 @@ export async function POST(req: Request) {
       goLiveChecklistPercent: optionalFloat(body.goLiveChecklistPercent) ?? null,
       deploymentWindow: optionalString(body.deploymentWindow) ?? null,
       releaseOwnerId: optionalString(body.releaseOwnerId) ?? null,
-      applications: body.applicationIds?.length
-        ? { create: body.applicationIds.map((id: string) => ({ applicationId: id })) }
-        : undefined,
-      dependsOn: body.dependsOnReleaseIds?.length
-        ? { create: body.dependsOnReleaseIds.map((dependsOnReleaseId: string) => ({ dependsOnReleaseId })) }
-        : undefined,
-      stakeholders: body.stakeholderIds?.length
-        ? { create: body.stakeholderIds.map((userId: string) => ({ userId })) }
-        : undefined,
-    },
+  });
+
+  await Promise.all([
+    body.applicationIds?.length
+      ? prisma.releaseApplication.createMany({
+          data: body.applicationIds.map((applicationId: string) => ({ releaseId: created.id, applicationId })),
+        })
+      : Promise.resolve(),
+    body.dependsOnReleaseIds?.length
+      ? prisma.releaseDependency.createMany({
+          data: body.dependsOnReleaseIds.map((dependsOnReleaseId: string) => ({ releaseId: created.id, dependsOnReleaseId })),
+        })
+      : Promise.resolve(),
+    body.stakeholderIds?.length
+      ? prisma.releaseStakeholder.createMany({
+          data: body.stakeholderIds.map((userId: string) => ({ releaseId: created.id, userId })),
+        })
+      : Promise.resolve(),
+  ]);
+
+  const row = await prisma.release.findUniqueOrThrow({
+    where: { id: created.id },
     include: {
       department: true,
       applications: { include: { application: true } },

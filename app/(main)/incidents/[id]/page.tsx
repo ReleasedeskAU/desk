@@ -68,6 +68,19 @@ type IncidentDraft = {
   environmentName: string;
 };
 
+const INCIDENT_FIELD_LABELS: Partial<Record<keyof IncidentDraft, string>> = {
+  timestamp: "Created",
+  applicationId: "Application",
+  departmentName: "Department",
+  severity: "Severity",
+  title: "Title",
+  status: "Status",
+  impact: "Impact",
+  assignedTo: "Assigned To",
+  relatedReleaseCode: "Related Release",
+  environmentName: "Environment",
+};
+
 const SEVERITY_OPTIONS = ["P1", "P2", "P3"].map((v) => ({ value: v, label: v }));
 
 const STATUS_OPTIONS = ["Active", "Investigating", "Mitigated", "Resolved", "Closed"].map(
@@ -208,6 +221,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -290,8 +304,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(INCIDENT_FIELD_LABELS);
     await load();
   };
 
@@ -338,7 +351,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -346,6 +359,91 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Incident ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Severity"
+              value={d.severity}
+              editing
+              kind="select"
+              options={severityOptions}
+              onChange={(n) => edit.setField("severity", n)}
+            />
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={statusOptions}
+              onChange={(n) => edit.setField("status", n)}
+            />
+            <EditableField
+              label="Impact"
+              value={d.impact}
+              editing
+              onChange={(n) => edit.setField("impact", n)}
+              placeholder="e.g. High…"
+            />
+            <EditableField
+              label="Title"
+              value={d.title}
+              editing
+              onChange={(n) => edit.setField("title", n)}
+              placeholder="Incident title…"
+            />
+            <EditableField
+              label="Created"
+              value={d.timestamp}
+              editing
+              kind="date"
+              onChange={(n) => edit.setField("timestamp", n)}
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationId}
+              editing
+              kind="select"
+              options={applicationOptions}
+              onChange={(n) => edit.setField("applicationId", n)}
+            />
+            <EditableField
+              label="Department"
+              value={d.departmentName}
+              editing
+              onChange={(n) => edit.setField("departmentName", n)}
+              placeholder="Department…"
+            />
+            <EditableField
+              label="Environment"
+              value={d.environmentName}
+              editing
+              mono
+              onChange={(n) => edit.setField("environmentName", n)}
+              placeholder="e.g. Prod…"
+            />
+            <EditableField
+              label="Related Release"
+              value={d.relatedReleaseCode}
+              editing
+              kind="select"
+              options={releaseCodeOptions}
+              onChange={(n) => edit.setField("relatedReleaseCode", n)}
+              mono
+            />
+            <EditableField
+              label="Assigned To"
+              value={d.assignedTo}
+              editing
+              onChange={(n) => edit.setField("assignedTo", n)}
+              placeholder="Owner name…"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           {row.relatedRelease && (
@@ -368,8 +466,6 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
-      {edit.error && <TintedCallout tone="rose">{edit.error}</TintedCallout>}
-
       <HeroStatusRow
         hero={{
           icon: ShieldAlert,
@@ -411,36 +507,22 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Severity"
             value={v.severity}
-            editing={edit.editing}
-            kind="select"
-            options={severityOptions}
-            onChange={(n) => edit.setField("severity", n)}
+            editing={false}
             display={<StatusChip label={v.severity} tone={severityTone(v.severity)} />}
           />
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={statusOptions}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
           />
           <EditableField
             label="Impact"
             value={v.impact}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("impact", n)}
+            editing={false}
             display={<StatusChip label={v.impact} tone={impactTone(v.impact)} />}
-            placeholder="e.g. High…"
           />
-          <EditableField
-            label="Title"
-            value={v.title}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("title", n)}
-            placeholder="Incident title…"
-          />
+          <EditableField label="Title" value={v.title} editing={false} />
         </EditableFieldGrid>
       </DetailSection>
 
@@ -478,9 +560,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             <EditableField
               label="Created"
               value={v.timestamp}
-              editing={edit.editing}
-              kind="date"
-              onChange={(n) => edit.setField("timestamp", n)}
+              editing={false}
               display={v.timestamp ? formatDate(v.timestamp) : "—"}
             />
           </EditableFieldGrid>
@@ -497,26 +577,15 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Application"
             value={v.applicationId}
-            editing={edit.editing}
-            kind="select"
-            options={applicationOptions}
-            onChange={(n) => edit.setField("applicationId", n)}
+            editing={false}
             display={appName}
           />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("departmentName", n)}
-            placeholder="Department…"
-          />
+          <EditableField label="Department" value={v.departmentName} editing={false} />
           <EditableField
             label="Environment"
             value={v.environmentName}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("environmentName", n)}
-            placeholder="e.g. Prod…"
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -555,10 +624,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Related Release"
             value={v.relatedReleaseCode}
-            editing={edit.editing}
-            kind="select"
-            options={releaseCodeOptions}
-            onChange={(n) => edit.setField("relatedReleaseCode", n)}
+            editing={false}
             mono
             display={
               row.relatedRelease && row.relatedRelease.releaseCode === relatedCode ? (
@@ -585,15 +651,9 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
         description="Who owns clearing this incident before related releases can proceed."
       >
         <EditableFieldGrid>
-          <EditableField
-            label="Assigned To"
-            value={v.assignedTo}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("assignedTo", n)}
-            placeholder="Owner name…"
-          />
+          <EditableField label="Assigned To" value={v.assignedTo} editing={false} />
         </EditableFieldGrid>
-        {!edit.editing && !v.assignedTo.trim() && (
+        {!v.assignedTo.trim() && (
           <div className="mt-3">
             <TintedCallout tone="amber">No owner assigned yet.</TintedCallout>
           </div>

@@ -63,6 +63,19 @@ type ConflictDraft = {
   notes: string;
 };
 
+const CONFLICT_FIELD_LABELS: Partial<Record<keyof ConflictDraft, string>> = {
+  status: "Status",
+  priority: "Priority",
+  assignedTo: "Assigned To",
+  release1Code: "Release 1",
+  release2Code: "Release 2",
+  application: "Applications",
+  department: "Departments",
+  conflictingEnvironment: "Conflicting Env",
+  environmentConflictType: "Conflict Type",
+  notes: "Notes",
+};
+
 const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"].map((v) => ({
   value: v,
   label: v,
@@ -150,6 +163,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
+  const d = edit.draft;
 
   const selectOptions = useMemo(
     () =>
@@ -175,8 +189,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
       edit.setError("Couldn’t save changes. Try again.");
       return;
     }
-    edit.discard();
-    edit.setSaveMessage("Saved");
+    edit.completeSaveSuccess(CONFLICT_FIELD_LABELS);
     await load();
   };
 
@@ -219,7 +232,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
       canEdit={canEdit}
       saving={edit.saving}
       deleting={edit.deleting}
-      saveMessage={edit.saveMessage}
+      editError={edit.error}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}
@@ -227,6 +240,88 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
       onDeleteOpen={() => edit.setDeleteOpen(true)}
       onDeleteCancel={() => edit.setDeleteOpen(false)}
       onDeleteConfirm={remove}
+      lockedIdLabel="Conflict ID"
+      successChanges={edit.successChanges}
+      onSuccessDismiss={edit.dismissSuccess}
+      editForm={
+        d ? (
+          <EditableFieldGrid cols={2}>
+            <EditableField
+              label="Status"
+              value={d.status}
+              editing
+              kind="select"
+              options={STATUS_OPTIONS}
+              onChange={(n) => edit.setField("status", n)}
+              display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
+            />
+            <EditableField
+              label="Priority"
+              value={d.priority}
+              editing
+              kind="select"
+              options={PRIORITY_OPTIONS}
+              onChange={(n) => edit.setField("priority", n)}
+              display={<StatusChip label={d.priority} tone={priorityTone(d.priority)} />}
+            />
+            <EditableField
+              label="Assigned To"
+              value={d.assignedTo}
+              editing
+              onChange={(n) => edit.setField("assignedTo", n)}
+              placeholder="Owner name…"
+            />
+            <EditableField
+              label="Release 1"
+              value={d.release1Code}
+              editing
+              mono
+              onChange={(n) => edit.setField("release1Code", n)}
+            />
+            <EditableField
+              label="Release 2"
+              value={d.release2Code}
+              editing
+              mono
+              onChange={(n) => edit.setField("release2Code", n)}
+            />
+            <EditableField
+              label="Applications"
+              value={d.application}
+              editing
+              onChange={(n) => edit.setField("application", n)}
+            />
+            <EditableField
+              label="Departments"
+              value={d.department}
+              editing
+              onChange={(n) => edit.setField("department", n)}
+            />
+            <EditableField
+              label="Conflicting Env"
+              value={d.conflictingEnvironment}
+              editing
+              mono
+              onChange={(n) => edit.setField("conflictingEnvironment", n)}
+            />
+            <EditableField
+              label="Conflict Type"
+              value={d.environmentConflictType}
+              editing
+              onChange={(n) => edit.setField("environmentConflictType", n)}
+            />
+            <EditableField
+              label="Notes"
+              value={d.notes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("notes", n)}
+              placeholder="Resolution notes…"
+              className="sm:col-span-2"
+            />
+          </EditableFieldGrid>
+        ) : null
+      }
       relatedLinks={
         <>
           <ProgressLink href="/calendar" className={taBtnSecondary + " text-sm !py-2"}>
@@ -256,10 +351,6 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
-      {edit.error && (
-        <TintedCallout tone="rose">{edit.error}</TintedCallout>
-      )}
-
       <HeroStatusRow
         hero={{
           icon: ShieldAlert,
@@ -306,27 +397,19 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Status"
             value={v.status}
-            editing={edit.editing}
-            kind="select"
-            options={STATUS_OPTIONS}
-            onChange={(n) => edit.setField("status", n)}
+            editing={false}
             display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
           />
           <EditableField
             label="Priority"
             value={v.priority}
-            editing={edit.editing}
-            kind="select"
-            options={PRIORITY_OPTIONS}
-            onChange={(n) => edit.setField("priority", n)}
+            editing={false}
             display={<StatusChip label={v.priority} tone={priorityTone(v.priority)} />}
           />
           <EditableField
             label="Assigned To"
             value={v.assignedTo}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("assignedTo", n)}
-            placeholder="Owner name…"
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -341,9 +424,8 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Release 1"
             value={v.release1Code}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("release1Code", n)}
             display={
               row.release1 ? (
                 <ProgressLink
@@ -366,9 +448,8 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Release 2"
             value={v.release2Code}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("release2Code", n)}
             display={
               row.release2 ? (
                 <ProgressLink
@@ -391,14 +472,12 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Applications"
             value={v.application}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("application", n)}
+            editing={false}
           />
           <EditableField
             label="Departments"
             value={v.department}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("department", n)}
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -413,15 +492,13 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
           <EditableField
             label="Conflicting Env"
             value={v.conflictingEnvironment}
-            editing={edit.editing}
+            editing={false}
             mono
-            onChange={(n) => edit.setField("conflictingEnvironment", n)}
           />
           <EditableField
             label="Conflict Type"
             value={v.environmentConflictType}
-            editing={edit.editing}
-            onChange={(n) => edit.setField("environmentConflictType", n)}
+            editing={false}
           />
         </EditableFieldGrid>
       </DetailSection>
@@ -432,20 +509,9 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
         title="Notes & resolution"
         description="Context for CAB, owners, and how this conflict should be cleared."
       >
-        {edit.editing ? (
-          <EditableField
-            label="Notes"
-            value={v.notes}
-            editing
-            kind="textarea"
-            onChange={(n) => edit.setField("notes", n)}
-            placeholder="Resolution notes…"
-          />
-        ) : (
-          <TintedCallout tone="rose">
-            {v.notes.trim() ? v.notes : "No resolution notes recorded yet."}
-          </TintedCallout>
-        )}
+        <TintedCallout tone="rose">
+          {v.notes.trim() ? v.notes : "No resolution notes recorded yet."}
+        </TintedCallout>
       </DetailSection>
     </EditableDetailShell>
   );
