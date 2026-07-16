@@ -1,17 +1,21 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, LayoutGrid, GanttChartSquare, Table2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutGrid, GanttChartSquare, Plus, Table2 } from "lucide-react";
 import { MonthGridCalendar } from "@/components/calendar/MonthGridCalendar";
 import { ReleaseTimelineView } from "@/components/calendar/ReleaseTimelineView";
 import { CalendarTableView } from "@/components/calendar/CalendarTableView";
 import { CalendarStatusLegend } from "@/components/calendar/CalendarStatusLegend";
+import { CalendarEventCreateModal } from "@/components/calendar/CalendarEventCreateModal";
 import { ReleaseFiltersBar } from "@/components/releases/ReleaseFiltersBar";
 import { FilterSelect } from "@/components/filters/TableFilterControls";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { TopBar } from "@/components/layout/TopBar";
 import { useFilterPreferences } from "@/hooks/useFilterPreferences";
 import { useReleaseFilters } from "@/context/ReleaseFiltersContext";
+import { loadJsonEffect } from "@/lib/safe-fetch";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 import {
   CALENDAR_DEFAULT_HIDDEN_FILTER_KEYS,
   CALENDAR_FILTER_FIELDS,
@@ -57,6 +61,7 @@ export default function CalendarPage() {
     setPeriod,
     setAnchor,
     setFilter,
+    refreshLookups,
   } = useReleaseFilters();
 
   const { filterPicker, isFilterVisible } = useFilterPreferences("calendar", CALENDAR_FILTER_FIELDS, {
@@ -74,9 +79,18 @@ export default function CalendarPage() {
 
   const [display, setDisplay] = useState<CalendarDisplay>("calendar");
   const [mounted, setMounted] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "calendar-auth",
+    });
   }, []);
 
   const { start: periodStart, end: periodEnd } = useMemo(
@@ -270,6 +284,20 @@ export default function CalendarPage() {
               </div>
             }
           />
+
+          {canEdit && (
+            <div className="mb-3 flex justify-end">
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+              >
+                <Plus className="mr-1 inline h-4 w-4" />
+                Add Calendar Entry
+              </button>
+            </div>
+          )}
+
           <CalendarStatusLegend className="mb-3" />
 
           <div className="mb-1 flex items-center justify-center gap-2 sm:gap-4">
@@ -331,6 +359,13 @@ export default function CalendarPage() {
           )}
         </div>
       </section>
+
+      <CalendarEventCreateModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => refreshLookups()}
+        eventTypes={eventTypeOptions}
+      />
     </div>
   );
 }

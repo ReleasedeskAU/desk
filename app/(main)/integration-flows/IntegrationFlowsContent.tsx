@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Share2 } from "lucide-react";
+import { Plus, Share2 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
@@ -17,10 +17,14 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
-import { safeFetchJson } from "@/lib/safe-fetch";
+import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { INTEGRATION_FLOWS_FILTER_SCHEMA } from "@/lib/table-filters";
+import { IntegrationFlowFormModal } from "@/components/integration-flows/IntegrationFlowFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
+import { cn } from "@/lib/utils";
 
 type IntegrationFlowRow = {
   id: string;
@@ -45,6 +49,7 @@ export default function IntegrationFlowsContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<IntegrationFlowRow>("/api/integration-flows", INTEGRATION_FLOWS_FILTER_SCHEMA, {
     defaultSortKey: "flowCode",
     defaultSortDir: "asc",
@@ -60,18 +65,18 @@ export default function IntegrationFlowsContent() {
   });
 
   const [allRows, setAllRows] = useState<IntegrationFlowRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
-    const ac = new AbortController();
-    void (async () => {
-      const res = await safeFetchJson<IntegrationFlowRow[]>("/api/integration-flows", {
-        signal: ac.signal,
-        label: "integration-flows",
-      });
-      if (ac.signal.aborted) return;
-      if (res.ok) setAllRows(res.data);
-    })();
-    return () => ac.abort();
+    return loadJsonEffect<IntegrationFlowRow[]>("/api/integration-flows", setAllRows, { label: "integration-flows" });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "integration-flows-auth",
+    });
   }, []);
 
   const integrationTypes = useMemo(
@@ -100,9 +105,32 @@ export default function IntegrationFlowsContent() {
     <div>
       <TopBar
         pageKey="integration-flows"
-        trailing={<PageDocumentation pageKey="integration-flows" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> New Integration Flow
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="integration-flows" />
+          </div>
+        }
         title="Key Integration Flows"
         subtitle={`${rows.length} integration flow${rows.length === 1 ? "" : "s"}`}
+      />
+      <IntegrationFlowFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<IntegrationFlowRow[]>("/api/integration-flows", {
+            label: "integration-flows-post-create-refresh",
+          }).then((result) => {
+            if (result.ok) setAllRows(result.data);
+          });
+        }}
+        integrationTypeOptions={integrationTypes}
+        frequencyOptions={frequencies}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

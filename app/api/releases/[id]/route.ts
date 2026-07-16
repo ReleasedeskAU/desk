@@ -111,14 +111,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (body.dependsOnReleaseIds) {
-    await prisma.releaseDependency.deleteMany({ where: { releaseId: realId } });
-    if (body.dependsOnReleaseIds.length) {
-      await prisma.releaseDependency.createMany({
-        data: body.dependsOnReleaseIds.map((dependsOnReleaseId: string) => ({
-          releaseId: realId,
-          dependsOnReleaseId,
-        })),
+    const dependsOnReleaseIds = body.dependsOnReleaseIds as string[];
+    // Preserve tracked dependencies (DEP-*) — only sync lightweight release-form links.
+    await prisma.releaseDependency.deleteMany({
+      where: {
+        releaseId: realId,
+        dependencyCode: null,
+        ...(dependsOnReleaseIds.length
+          ? { dependsOnReleaseId: { notIn: dependsOnReleaseIds } }
+          : {}),
+      },
+    });
+    for (const dependsOnReleaseId of dependsOnReleaseIds) {
+      const existing = await prisma.releaseDependency.findUnique({
+        where: {
+          releaseId_dependsOnReleaseId: { releaseId: realId, dependsOnReleaseId },
+        },
+        select: { id: true },
       });
+      if (!existing) {
+        await prisma.releaseDependency.create({
+          data: { releaseId: realId, dependsOnReleaseId },
+        });
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell } from "lucide-react";
+import { Bell, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
@@ -19,10 +19,13 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
-import { safeFetchJson } from "@/lib/safe-fetch";
+import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { MONITORING_ALERTS_FILTER_SCHEMA } from "@/lib/table-filters";
+import { MonitoringAlertFormModal } from "@/components/monitoring-alerts/MonitoringAlertFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type AlertRow = {
   id: string;
@@ -58,6 +61,7 @@ export default function MonitoringAlertsContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<AlertRow>("/api/monitoring-alerts", MONITORING_ALERTS_FILTER_SCHEMA, {
     defaultSortKey: "timestamp",
     defaultSortDir: "desc",
@@ -78,19 +82,22 @@ export default function MonitoringAlertsContent() {
   });
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
   const [allAlerts, setAllAlerts] = useState<AlertRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
-    const ac = new AbortController();
-    void (async () => {
-      const [appsRes, alertsRes] = await Promise.all([
-        safeFetchJson<{ id: string; name: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
-        safeFetchJson<AlertRow[]>("/api/monitoring-alerts", { signal: ac.signal, label: "monitoring-alerts" }),
-      ]);
-      if (ac.signal.aborted) return;
-      if (appsRes.ok) setApps(appsRes.data);
-      if (alertsRes.ok) setAllAlerts(alertsRes.data);
-    })();
-    return () => ac.abort();
+    return loadJsonEffect<{ id: string; name: string }[]>("/api/applications", setApps, { label: "applications" });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<AlertRow[]>("/api/monitoring-alerts", setAllAlerts, { label: "monitoring-alerts" });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "monitoring-alerts-auth",
+    });
   }, []);
 
   const severities = useMemo(() => [...new Set(allAlerts.map((a) => a.severity))].sort(), [allAlerts]);
@@ -119,8 +126,32 @@ export default function MonitoringAlertsContent() {
     <div>
       <TopBar
         pageKey="monitoring-alerts"
-        trailing={<PageDocumentation pageKey="monitoring-alerts" />}
-        title="Monitoring Alerts" subtitle={`${alerts.length} alert${alerts.length === 1 ? "" : "s"} across all applications`} />
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> New Monitoring Alert
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="monitoring-alerts" />
+          </div>
+        }
+        title="Monitoring Alerts"
+        subtitle={`${alerts.length} alert${alerts.length === 1 ? "" : "s"} across all applications`}
+      />
+      <MonitoringAlertFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<AlertRow[]>("/api/monitoring-alerts", {
+            label: "monitoring-alerts-post-create-refresh",
+          }).then((result) => {
+            if (result.ok) setAllAlerts(result.data);
+          });
+        }}
+        alertTypeOptions={alertTypes}
+      />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("severity") && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { HeartPulse } from "lucide-react";
+import { HeartPulse, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
@@ -21,6 +21,9 @@ import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { APPLICATION_STATUS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { ApplicationStatusFormModal } from "@/components/application-status/ApplicationStatusFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type StatusRow = {
   id: string;
@@ -51,6 +54,7 @@ export default function ApplicationStatusContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<StatusRow>("/api/application-status", APPLICATION_STATUS_FILTER_SCHEMA, {
     defaultSortKey: "application",
     defaultSortDir: "asc",
@@ -66,17 +70,22 @@ export default function ApplicationStatusContent() {
   });
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
   const [allRows, setAllRows] = useState<StatusRow[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const [appsRes, rowsRes] = await Promise.all([
+      const [appsRes, rowsRes, meRes] = await Promise.all([
         safeFetchJson<{ id: string; name: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
         safeFetchJson<StatusRow[]>("/api/application-status", { signal: ac.signal, label: "application-status" }),
+        safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal: ac.signal, label: "application-status-auth" }),
       ]);
       if (ac.signal.aborted) return;
       if (appsRes.ok) setApps(appsRes.data);
       if (rowsRes.ok) setAllRows(rowsRes.data);
+      if (meRes.ok) setUser(meRes.data.user);
     })();
     return () => ac.abort();
   }, []);
@@ -105,8 +114,27 @@ export default function ApplicationStatusContent() {
     <div>
       <TopBar
         pageKey="application-status"
-        trailing={<PageDocumentation pageKey="application-status" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Record Status
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="application-status" />
+          </div>
+        }
         title="Application Status" subtitle={`${rows.length} application × environment record${rows.length === 1 ? "" : "s"} — current state snapshot`} />
+      <ApplicationStatusFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<StatusRow[]>("/api/application-status", { label: "application-status-post-record-refresh" }).then((result) => {
+            if (result.ok) setAllRows(result.data);
+          });
+        }}
+      />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("status") && (

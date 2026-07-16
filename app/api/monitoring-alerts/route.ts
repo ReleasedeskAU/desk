@@ -2,16 +2,65 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { monitoringAlertWhere, sp } from "@/lib/list-api-filters";
+import { zodErrorResponse } from "@/lib/api-errors";
+import { createMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
 
-/** Read-only for this pass — seeded monitoring data, no create/edit UI yet. */
+const alertInclude = { application: { select: { id: true, name: true } } } as const;
+
+async function nextAlertCode(): Promise<string> {
+  const rows = await prisma.monitoringAlert.findMany({ select: { alertCode: true } });
+  const next = rows.reduce((max, row) => {
+    const match = row.alertCode.match(/^ALT-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+  return `ALT-${String(next).padStart(3, "0")}`;
+}
+
 export async function GET(req: Request) {
   const { error } = await requireRole("readonly");
   if (error) return error;
 
   const data = await prisma.monitoringAlert.findMany({
     where: monitoringAlertWhere(sp(req)),
-    include: { application: { select: { id: true, name: true } } },
+    include: alertInclude,
     orderBy: { sourceOrder: "asc" },
   });
   return NextResponse.json(data);
+}
+
+export async function POST(req: Request) {
+  const { error } = await requireRole("editor");
+  if (error) return error;
+
+  const parsed = createMonitoringAlertSchema.safeParse(await req.json());
+  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const body = parsed.data;
+
+  const [application, maxOrder] = await Promise.all([
+    prisma.application.findUnique({ where: { id: body.applicationId }, select: { id: true } }),
+    prisma.monitoringAlert.aggregate({ _max: { sourceOrder: true } }),
+  ]);
+  if (!application) {
+    return NextResponse.json({ error: "Application not found" }, { status: 400 });
+  }
+
+  const row = await prisma.monitoringAlert.create({
+    data: {
+      alertCode: await nextAlertCode(),
+      timestamp: new Date(body.timestamp),
+      applicationId: body.applicationId,
+      departmentName: body.departmentName ?? null,
+      alertType: body.alertType,
+      severity: body.severity,
+      metric: body.metric,
+      threshold: body.threshold ?? null,
+      currentValue: body.currentValue ?? null,
+      status: body.status,
+      assignedTo: body.assignedTo ?? null,
+      environmentName: body.environmentName,
+      sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
+    },
+    include: alertInclude,
+  });
+  return NextResponse.json(row, { status: 201 });
 }

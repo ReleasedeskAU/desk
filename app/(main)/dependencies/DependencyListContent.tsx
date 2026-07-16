@@ -80,9 +80,13 @@ function renderDepCell(d: DepRow, key: DepColumnKey) {
     case "depCode":
       return (
         <td key={key} className={`${tableCell} font-mono text-xs whitespace-nowrap`}>
-          <ProgressLink href={`/dependencies/${d.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
-            {d.depCode}
-          </ProgressLink>
+          {d.depCode ? (
+            <ProgressLink href={`/dependencies/${d.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+              {d.depCode}
+            </ProgressLink>
+          ) : (
+            <span className="text-gray-400 dark:text-white/40">—</span>
+          )}
         </td>
       );
     case "releaseCode":
@@ -104,15 +108,19 @@ function renderDepCell(d: DepRow, key: DepColumnKey) {
     case "dependencyType":
       return (
         <td key={key} className={`${tableCell} whitespace-nowrap`}>
-          <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", TYPE_CLASSES[d.dependencyType] ?? "")}>
-            {d.dependencyType}
-          </span>
+          {d.dependencyType ? (
+            <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", TYPE_CLASSES[d.dependencyType] ?? "")}>
+              {d.dependencyType}
+            </span>
+          ) : (
+            <span className="text-gray-400 dark:text-white/40">—</span>
+          )}
         </td>
       );
     case "status":
       return (
         <td key={key} className={`${tableCell} whitespace-nowrap`}>
-          <StatusBadge status={d.status} />
+          {d.status ? <StatusBadge status={d.status} /> : <span className="text-gray-400 dark:text-white/40">—</span>}
         </td>
       );
     case "impactIfBlocked":

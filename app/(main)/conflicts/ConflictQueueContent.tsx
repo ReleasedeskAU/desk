@@ -16,13 +16,16 @@ import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { CONFLICT_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
-import { AlertOctagon } from "lucide-react";
+import { AlertOctagon, Plus } from "lucide-react";
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { CONFLICTS_FILTER_SCHEMA } from "@/lib/table-filters";
-import { safeFetchJson } from "@/lib/safe-fetch";
+import { loadJsonEffect } from "@/lib/safe-fetch";
+import { ConflictFormModal } from "@/components/conflicts/ConflictFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type ConflictRow = {
   id: string;
@@ -132,6 +135,7 @@ export default function ConflictQueueContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<ConflictRow>("/api/conflicts", CONFLICTS_FILTER_SCHEMA, {
     defaultSortKey: "conflictCode",
     defaultSortDir: "asc",
@@ -151,19 +155,24 @@ export default function ConflictQueueContent() {
   });
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [apps, setApps] = useState<{ id: string; name: string; departmentId: string }[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
-    const ac = new AbortController();
-    void (async () => {
-      const [deptRes, appsRes] = await Promise.all([
-        safeFetchJson<{ id: string; name: string }[]>("/api/departments", { signal: ac.signal, label: "departments" }),
-        safeFetchJson<{ id: string; name: string; departmentId: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
-      ]);
-      if (ac.signal.aborted) return;
-      if (deptRes.ok) setDepartments(deptRes.data);
-      if (appsRes.ok) setApps(appsRes.data);
-    })();
-    return () => ac.abort();
+    return loadJsonEffect<{ id: string; name: string }[]>("/api/departments", setDepartments, { label: "departments" });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ id: string; name: string; departmentId: string }[]>("/api/applications", setApps, {
+      label: "applications",
+    });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
+      label: "conflicts-auth",
+    });
   }, []);
 
   const appOptions = useMemo(
@@ -195,13 +204,28 @@ export default function ConflictQueueContent() {
     <div>
       <TopBar
         pageKey="conflicts"
-        trailing={<PageDocumentation pageKey="conflicts" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> New Conflict
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="conflicts" />
+          </div>
+        }
         title="Conflict Resolution Queue"
         subtitle={
           conflicts.length > 0
             ? `${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"}${openCount > 0 ? ` · ${openCount} open or escalated` : ""}`
             : "No active conflicts detected"
         }
+      />
+      <ConflictFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={refetch}
+        conflictTypeOptions={conflictTypes}
       />
 
       {!tablePending && (

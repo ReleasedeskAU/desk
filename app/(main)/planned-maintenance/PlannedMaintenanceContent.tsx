@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
@@ -11,7 +11,7 @@ import {
   PLANNED_MAINTENANCE_DEFAULT_HIDDEN_FILTER_KEYS,
   PLANNED_MAINTENANCE_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { MAINTENANCE_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow } from "@/components/ui/data-table";
@@ -23,6 +23,9 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { PLANNED_MAINTENANCE_FILTER_SCHEMA } from "@/lib/table-filters";
+import { PlannedMaintenanceFormModal } from "@/components/planned-maintenance/PlannedMaintenanceFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type MaintenanceRow = {
   id: string;
@@ -52,6 +55,7 @@ export default function PlannedMaintenanceContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<MaintenanceRow>("/api/planned-maintenance", PLANNED_MAINTENANCE_FILTER_SCHEMA, {
     defaultSortKey: "scheduledDate",
     defaultSortDir: "asc",
@@ -72,17 +76,22 @@ export default function PlannedMaintenanceContent() {
   });
   const [allRows, setAllRows] = useState<MaintenanceRow[]>([]);
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const [rowsRes, appsRes] = await Promise.all([
+      const [rowsRes, appsRes, meRes] = await Promise.all([
         safeFetchJson<typeof allRows>("/api/planned-maintenance", { signal: ac.signal, label: "planned-maintenance" }),
         safeFetchJson<{ id: string; name: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
+        safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal: ac.signal, label: "planned-maintenance-auth" }),
       ]);
       if (ac.signal.aborted) return;
       if (rowsRes.ok) setAllRows(rowsRes.data);
       if (appsRes.ok) setApps(appsRes.data);
+      if (meRes.ok) setUser(meRes.data.user);
     })();
     return () => ac.abort();
   }, []);
@@ -109,8 +118,27 @@ export default function PlannedMaintenanceContent() {
     <div>
       <TopBar
         pageKey="planned-maintenance"
-        trailing={<PageDocumentation pageKey="planned-maintenance" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add Maintenance
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="planned-maintenance" />
+          </div>
+        }
         title="Planned Maintenance" subtitle={`${rows.length} maintenance window${rows.length === 1 ? "" : "s"} scheduled`} />
+      <PlannedMaintenanceFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          refetch();
+          void safeFetchJson<MaintenanceRow[]>("/api/planned-maintenance", { label: "planned-maintenance-post-create-refresh" }).then((result) => {
+            if (result.ok) setAllRows(result.data);
+          });
+        }}
+      />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("type") && (

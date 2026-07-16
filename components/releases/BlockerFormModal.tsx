@@ -295,8 +295,8 @@ export function BlockerFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl dark:bg-[var(--card)]">
-        <div className="mb-4">
+      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-[var(--card)]">
+        <div className="shrink-0 border-b border-gray-200 px-5 py-4 dark:border-[var(--border)]">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Blocker</h2>
           <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
             {scoped
@@ -305,7 +305,7 @@ export function BlockerFormModal({
           </p>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
+        <form id="blocker-create-form" onSubmit={submit} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
           {!scoped && (
             <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
               Release <span className="text-rose-500">*</span>
@@ -460,20 +460,21 @@ export function BlockerFormModal({
           </label>
 
           {error && <p className="text-sm text-error-600 dark:text-rose-400">{error}</p>}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className={taBtnPrimary}
-              disabled={saving || (!scoped && (loadingReleases || !form.releaseId))}
-            >
-              {saving ? "Saving…" : "Create blocker"}
-            </button>
-          </div>
         </form>
+
+        <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="blocker-create-form"
+            className={taBtnPrimary}
+            disabled={saving || (!scoped && (loadingReleases || !form.releaseId))}
+          >
+            {saving ? "Saving…" : "Create blocker"}
+          </button>
+        </div>
       </div>
     </div>
   );

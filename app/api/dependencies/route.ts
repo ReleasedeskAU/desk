@@ -49,7 +49,10 @@ export async function GET(req: Request) {
 
   const params = sp(req);
 
+  // Only full dependency records belong on the Dependencies desk — release-form
+  // "depends on" links are lightweight stubs without DEP codes or status metadata.
   const dependencies = await prisma.releaseDependency.findMany({
+    where: { dependencyCode: { not: null } },
     include: {
       release: { select: { id: true, releaseCode: true, name: true } },
       dependsOnRelease: { select: { id: true, releaseCode: true, name: true } },

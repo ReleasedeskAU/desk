@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertOctagon } from "lucide-react";
+import { AlertOctagon, Plus } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
@@ -22,7 +22,10 @@ import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { INCIDENTS_FILTER_SCHEMA } from "@/lib/table-filters";
-import { loadJsonEffect } from "@/lib/safe-fetch";
+import { safeFetchJson } from "@/lib/safe-fetch";
+import { IncidentFormModal } from "@/components/incidents/IncidentFormModal";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { taBtnPrimary } from "@/lib/styles";
 
 type IncidentRow = {
   id: string;
@@ -58,6 +61,7 @@ export default function IncidentsContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<IncidentRow>("/api/incidents", INCIDENTS_FILTER_SCHEMA, {
     defaultSortKey: "timestamp",
     defaultSortDir: "desc",
@@ -76,6 +80,9 @@ export default function IncidentsContent() {
     },
   });
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const canEdit = sessionCanEdit(user);
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "incidents",
@@ -89,7 +96,17 @@ export default function IncidentsContent() {
   );
 
   useEffect(() => {
-    return loadJsonEffect<{ id: string; name: string }[]>("/api/applications", setApps, { label: "applications" });
+    const ac = new AbortController();
+    void (async () => {
+      const [appsRes, meRes] = await Promise.all([
+        safeFetchJson<{ id: string; name: string }[]>("/api/applications", { signal: ac.signal, label: "applications" }),
+        safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal: ac.signal, label: "incidents-auth" }),
+      ]);
+      if (ac.signal.aborted) return;
+      if (appsRes.ok) setApps(appsRes.data);
+      if (meRes.ok) setUser(meRes.data.user);
+    })();
+    return () => ac.abort();
   }, []);
 
   const severities = useMemo(() => [...new Set(incidents.map((i) => i.severity))].sort(), [incidents]);
@@ -107,9 +124,23 @@ export default function IncidentsContent() {
     <div>
       <TopBar
         pageKey="incidents"
-        trailing={<PageDocumentation pageKey="incidents" />}
+        trailing={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Incident
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="incidents" />
+          </div>
+        }
         title="Incidents"
         subtitle={`${incidents.length} incident${incidents.length === 1 ? "" : "s"} across all applications`}
+      />
+      <IncidentFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => refetch()}
       />
 
       {!tablePending && (

@@ -1,6 +1,28 @@
 import { z } from "zod";
 
 const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).optional();
+const dateTimeInput = z.string().trim().min(1).max(40);
+
+/**
+ * POST /api/incidents body. Rejects unknown fields and never accepts a client-provided incidentCode.
+ * Application and related-release existence are checked by the API.
+ */
+export const createIncidentSchema = z
+  .object({
+    timestamp: dateTimeInput,
+    applicationId: z.string().trim().min(1).max(64),
+    severity: z.string().trim().min(1).max(40),
+    title: z.string().trim().min(1).max(500),
+    status: z.string().trim().min(1).max(80),
+    impact: z.string().trim().min(1).max(200),
+    environmentName: z.string().trim().min(1).max(200),
+    departmentName: optionalNullableString,
+    assignedTo: optionalNullableString,
+    relatedReleaseCode: optionalNullableString,
+  })
+  .strict();
+
+export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;
 
 /**
  * PATCH /api/incidents/[id] — allowlisted fields only.

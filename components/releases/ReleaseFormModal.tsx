@@ -37,7 +37,7 @@ export type ReleaseFormData = {
 type Option = { value: string; label: string };
 type AppOption = Option & { departmentId: string };
 type EnvOption = Option & { applicationId: string };
-type UserOption = Option & { department: string };
+type UserOption = Option;
 
 const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
   name: "Name",
@@ -93,7 +93,7 @@ const EMPTY_FORM: ReleaseFormData = {
   programProject: "",
   owner: "",
   status: "Planned",
-  releaseDate: new Date().toISOString().slice(0, 10),
+  releaseDate: "",
   priority: "P3 - Medium",
   impact: "Medium",
   departmentId: "",
@@ -150,14 +150,13 @@ export function ReleaseFormModal({
 
   useEffect(() => {
     if (!open) return;
-    return loadJsonEffect<{ id: string; userId: string; name: string; department: string }[]>(
+    return loadJsonEffect<{ id: string; userId: string; name: string }[]>(
       "/api/users",
       (rows) =>
         setUsers(
           rows.map((u) => ({
             value: u.id,
             label: `${u.userId} — ${u.name}`,
-            department: (u.department ?? "").trim(),
           }))
         ),
       { label: "release-form-users" }
@@ -183,10 +182,20 @@ export function ReleaseFormModal({
     );
   }, [open, environments.length]);
 
+  // Clear success screens only when the modal fully closes — not when parent
+  // refreshes list/detail data after save (that was wiping the confirmation instantly).
   useEffect(() => {
-    if (!open) return;
+    if (open) return;
     setCreated(null);
     setEditChanges(null);
+    setFieldErrors({});
+    setFormError(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Keep create/edit confirmation visible while parent reloads after onSaved().
+    if (created || editChanges) return;
     setFieldErrors({});
     setFormError(null);
     const next: ReleaseFormData = {
@@ -196,7 +205,7 @@ export function ReleaseFormModal({
       programProject: initial?.programProject ?? "",
       owner: initial?.owner ?? "",
       status: initial?.status ?? "Planned",
-      releaseDate: dateInput(initial?.releaseDate) || new Date().toISOString().slice(0, 10),
+      releaseDate: dateInput(initial?.releaseDate),
       priority: initial?.priority ?? "P3 - Medium",
       impact: initial?.impact ?? "Medium",
       departmentId: initial?.departmentId ?? "",
@@ -213,7 +222,7 @@ export function ReleaseFormModal({
     if (initial?.id) next.id = initial.id;
     setForm(next);
     editBaseline.current = initial?.id ? { ...next } : null;
-  }, [open, initial, existingReleaseCodes]);
+  }, [open, initial, existingReleaseCodes, created, editChanges]);
 
   const departmentName = useMemo(
     () => departments.find((d) => d.value === form.departmentId)?.label ?? "",
@@ -225,17 +234,11 @@ export function ReleaseFormModal({
     return applications.filter((a) => a.departmentId === form.departmentId);
   }, [applications, form.departmentId]);
 
-  const filteredUsers = useMemo(() => {
-    if (!form.departmentId || !departmentName) return [];
-    const dept = departmentName.toLowerCase();
-    const matched = users.filter((u) => u.department.toLowerCase() === dept);
-    // Keep currently selected owner visible even if department metadata is missing/mismatched.
-    if (form.releaseOwnerId && !matched.some((u) => u.value === form.releaseOwnerId)) {
-      const selected = users.find((u) => u.value === form.releaseOwnerId);
-      if (selected) return [selected, ...matched];
-    }
-    return matched;
-  }, [users, form.departmentId, departmentName, form.releaseOwnerId]);
+  /** Owners are global — do not filter by selected department. */
+  const ownerOptions = useMemo(
+    () => [...users].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
+    [users]
+  );
 
   const envSource = environments.length > 0 ? environments : loadedEnvs;
   const appIdsInDept = useMemo(() => new Set(filteredApps.map((a) => a.value)), [filteredApps]);
@@ -291,8 +294,7 @@ export function ReleaseFormModal({
     setForm((f) => ({
       ...f,
       departmentId,
-      // Reset dependent fields when department changes
-      releaseOwnerId: "",
+      // Apps and envs are department-scoped; owner is not.
       applicationIds: [],
       testEnvRequired: "",
       uatEnvRequired: "",
@@ -300,7 +302,6 @@ export function ReleaseFormModal({
     setFieldErrors((prev) => {
       const next = { ...prev };
       delete next.departmentId;
-      delete next.releaseOwnerId;
       delete next.applicationIds;
       return next;
     });
@@ -468,12 +469,8 @@ export function ReleaseFormModal({
               type="button"
               className={taBtnSecondary}
               onClick={() => {
+                // Clearing created re-runs form init with the refreshed release-code list.
                 setCreated(null);
-                setForm({
-                  ...EMPTY_FORM,
-                  releaseCode: generateReleaseId([...existingReleaseCodes, created.releaseCode]),
-                  releaseDate: new Date().toISOString().slice(0, 10),
-                });
               }}
             >
               Create another
@@ -501,7 +498,7 @@ export function ReleaseFormModal({
         </h2>
         <p className="text-xs text-gray-500 mb-4">
           Fields marked <span className="text-rose-500">*</span> are required. Choosing a department
-          filters owners and applications for that department.
+          filters applications and environments for that department.
         </p>
 
         {formError && (
@@ -583,21 +580,13 @@ export function ReleaseFormModal({
               <SearchableSelect
                 value={form.releaseOwnerId}
                 onChange={(v) => set("releaseOwnerId", v)}
-                options={filteredUsers}
-                placeholder={
-                  form.departmentId ? "Select owner…" : "Select department first…"
-                }
+                options={ownerOptions}
+                placeholder="Select owner…"
                 searchPlaceholder="Search users…"
-                disabled={!form.departmentId}
                 className={fieldErrors.releaseOwnerId ? "[&_button]:border-rose-400" : undefined}
               />
             </div>
             <FieldError message={fieldErrors.releaseOwnerId} />
-            {form.departmentId && filteredUsers.length === 0 && (
-              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
-                No users found for {departmentName}.
-              </p>
-            )}
           </div>
 
           <div className="sm:col-span-2">
