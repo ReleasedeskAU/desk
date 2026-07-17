@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import {
   AreaChart,
@@ -138,6 +139,7 @@ function useChartTheme() {
 
 export default function CommandDashboardContent() {
   const router = useRouter();
+  const { isLoaded, userId } = useAuth();
   const chartTheme = useChartTheme();
   const [period, setPeriod] = useState<DashboardPeriod>("month");
   const [data, setData] = useState<DashboardPayload | null>(null);
@@ -148,18 +150,45 @@ export default function CommandDashboardContent() {
   const onNavigate = (href: string) => router.push(href);
 
   useEffect(() => {
+    // Avoid firing before Clerk session is ready — that returns 401 and the UI
+    // sticks on "Failed to load dashboard" even though other APIs later succeed.
+    if (!isLoaded) return;
+    if (!userId) {
+      setLoading(false);
+      setError("Sign in required");
+      return;
+    }
+
     let cancelled = false;
+    const ac = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(`/api/dashboard?period=${period}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Failed to load dashboard"))))
-      .then((d) => !cancelled && setData(d))
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load dashboard"))
-      .finally(() => !cancelled && setLoading(false));
+
+    (async () => {
+      try {
+        const r = await fetch(`/api/dashboard?period=${period}`, {
+          signal: ac.signal,
+          credentials: "same-origin",
+        });
+        if (!r.ok) {
+          const body = (await r.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `Failed to load dashboard (${r.status})`);
+        }
+        const d = (await r.json()) as DashboardPayload;
+        if (!cancelled) setData(d);
+      } catch (e) {
+        if (cancelled || ac.signal.aborted) return;
+        setError(e instanceof Error ? e.message : "Failed to load dashboard");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
     return () => {
       cancelled = true;
+      ac.abort();
     };
-  }, [refreshKey, period]);
+  }, [refreshKey, period, isLoaded, userId]);
 
   const incidentTrendChart = useMemo(
     () => (data?.incidentTrend ?? []).map((d) => ({ d: d.date, v: d.count })),

@@ -70,11 +70,18 @@ export async function GET(req: Request) {
   if (error) return error;
 
   try {
-    return await getDashboard(req);
+    const payload = await getDashboard(req);
+    return payload;
   } catch (err) {
-    console.error("[api/dashboard]", err instanceof Error ? err.message : err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[api/dashboard]", message);
     return NextResponse.json(
-      { error: "Failed to load dashboard" },
+      {
+        error:
+          process.env.NODE_ENV === "production"
+            ? "Failed to load dashboard"
+            : `Failed to load dashboard: ${message}`,
+      },
       { status: 500 }
     );
   }
