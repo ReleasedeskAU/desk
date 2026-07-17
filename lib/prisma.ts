@@ -1,9 +1,54 @@
 import { PrismaClient } from "@releasedesk/database";
 
-// Neon pooled DATABASE_URL works for queries; Prisma schema still requires DIRECT_URL.
-// Vercel often only has DATABASE_URL — fall back so the whole API does not 500 at import.
-if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
-  process.env.DIRECT_URL = process.env.DATABASE_URL;
+/**
+ * Normalize Neon/Postgres URLs for Vercel serverless:
+ * - pooler hosts get pgbouncer=true (Prisma transaction mode)
+ * - short connection_limit avoids exhausting Neon's pool across lambdas
+ * - connect_timeout gives cold compute time to accept TCP
+ */
+function withServerlessParams(raw: string): string {
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase();
+    if (host.includes("pooler") || host.includes("pgbouncer")) {
+      if (!u.searchParams.has("pgbouncer")) u.searchParams.set("pgbouncer", "true");
+    }
+    if (!u.searchParams.has("connection_limit")) {
+      u.searchParams.set("connection_limit", "1");
+    }
+    if (!u.searchParams.has("connect_timeout")) {
+      u.searchParams.set("connect_timeout", "20");
+    }
+    // channel_binding=require breaks some serverless TLS stacks with Neon.
+    if (u.searchParams.get("channel_binding") === "require") {
+      u.searchParams.delete("channel_binding");
+    }
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+function resolveDatabaseUrl(): string | undefined {
+  const raw = process.env.DATABASE_URL?.trim();
+  if (!raw) return undefined;
+  return withServerlessParams(raw);
+}
+
+function resolveDirectUrl(): string | undefined {
+  const raw = (process.env.DIRECT_URL || process.env.DATABASE_URL)?.trim();
+  if (!raw) return undefined;
+  return withServerlessParams(raw);
+}
+
+// Prisma schema requires DIRECT_URL at client init — Vercel often only has DATABASE_URL.
+const resolvedDbUrl = resolveDatabaseUrl();
+const resolvedDirectUrl = resolveDirectUrl();
+if (!process.env.DIRECT_URL && resolvedDirectUrl) {
+  process.env.DIRECT_URL = resolvedDirectUrl;
+}
+if (resolvedDbUrl) {
+  process.env.DATABASE_URL = resolvedDbUrl;
 }
 
 const globalForPrisma = globalThis as unknown as {
@@ -13,7 +58,9 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
+  const url = resolveDatabaseUrl();
   return new PrismaClient({
+    ...(url ? { datasources: { db: { url } } } : {}),
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 }
@@ -53,12 +100,21 @@ function errMessage(err: unknown): string {
   return String((err as { message?: string }).message ?? "");
 }
 
+function errCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  return (err as { code?: string }).code;
+}
+
 function isEngineNotConnected(err: unknown): boolean {
   const msg = errMessage(err).toLowerCase();
   return msg.includes("engine is not yet connected") || msg.includes("not yet connected");
 }
 
-function isRetryableDbError(err: unknown): boolean {
+/**
+ * Whether an error is a transient Neon/pooler/network failure worth retrying.
+ * @param err - Unknown thrown value from Prisma or the runtime.
+ */
+export function isRetryableDbError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { code?: string; message?: string; name?: string };
   if (e.code && RETRYABLE_CODES.has(e.code)) return true;
@@ -70,7 +126,10 @@ function isRetryableDbError(err: unknown): boolean {
     msg.includes("timed out") ||
     msg.includes("connection reset") ||
     msg.includes("server closed the connection") ||
-    msg.includes("connection terminated")
+    msg.includes("connection terminated") ||
+    msg.includes("server has closed the connection") ||
+    msg.includes("error connecting to database") ||
+    msg.includes("connection refused")
   );
 }
 
@@ -109,14 +168,14 @@ async function resetPrismaClient(): Promise<void> {
 
 /**
  * Run a Prisma operation with retries for Neon cold-starts / transient pooler failures.
- * Default: 4 attempts, exponential backoff starting at 500ms.
+ * Default: 5 attempts, exponential backoff starting at 700ms (Neon resume can take >10s).
  */
 export async function withDbRetry<T>(
   op: () => Promise<T>,
   opts?: { attempts?: number; baseDelayMs?: number; label?: string }
 ): Promise<T> {
-  const attempts = opts?.attempts ?? 4;
-  const baseDelayMs = opts?.baseDelayMs ?? 500;
+  const attempts = opts?.attempts ?? 5;
+  const baseDelayMs = opts?.baseDelayMs ?? 700;
   let lastErr: unknown;
 
   for (let i = 0; i < attempts; i++) {
@@ -125,18 +184,16 @@ export async function withDbRetry<T>(
     } catch (err) {
       lastErr = err;
       if (!isRetryableDbError(err) || i === attempts - 1) throw err;
-      const delay = baseDelayMs * 2 ** i;
+      const delay = Math.min(baseDelayMs * 2 ** i, 8000);
       const label = opts?.label ? ` (${opts.label})` : "";
       const msg = errMessage(err).slice(0, 160);
       console.warn(`[db] retry ${i + 1}/${attempts - 1} after ${delay}ms${label}:`, msg);
 
       try {
         if (isEngineNotConnected(err)) {
-          // Stuck engine under Turbopack — recreate the whole client, don't $connect the corpse.
           await sleep(Math.min(delay, 1500));
           await resetPrismaClient();
         } else {
-          // Network/pooler blip — brief pause; avoid $disconnect (kills in-flight siblings).
           await sleep(delay);
           try {
             await getClient().$connect();
@@ -153,13 +210,42 @@ export async function withDbRetry<T>(
   throw lastErr;
 }
 
-/** Best-effort wake ping — single-flight so parallel routes don't thrash the engine. */
+/** Safe (non-secret) snapshot of whether DB env vars are present for diagnostics. */
+export function getDbEnvPresence(): {
+  hasDatabaseUrl: boolean;
+  hasDirectUrl: boolean;
+  databaseHost: string | null;
+} {
+  const raw = process.env.DATABASE_URL?.trim() ?? "";
+  let databaseHost: string | null = null;
+  try {
+    if (raw) databaseHost = new URL(raw).hostname;
+  } catch {
+    databaseHost = "(unparseable)";
+  }
+  return {
+    hasDatabaseUrl: Boolean(raw),
+    hasDirectUrl: Boolean(process.env.DIRECT_URL?.trim()),
+    databaseHost,
+  };
+}
+
+/**
+ * Best-effort wake ping — single-flight so parallel routes don't thrash the engine.
+ * Returns false only after retries fail; callers should still attempt work via withDbRetry.
+ */
 export async function ensureDbAwake(): Promise<boolean> {
   if (globalForPrisma.prismaWakeLock) {
     return globalForPrisma.prismaWakeLock;
   }
 
   globalForPrisma.prismaWakeLock = (async () => {
+    const presence = getDbEnvPresence();
+    if (!presence.hasDatabaseUrl) {
+      console.error("[db] wake failed: DATABASE_URL is not set in this environment");
+      return false;
+    }
+
     try {
       await withDbRetry(
         async () => {
@@ -167,14 +253,18 @@ export async function ensureDbAwake(): Promise<boolean> {
           await getClient().$queryRawUnsafe("SELECT 1");
         },
         {
-          attempts: 5,
-          baseDelayMs: 800,
+          attempts: 6,
+          baseDelayMs: 1000,
           label: "wake",
         }
       );
       return true;
     } catch (err) {
-      console.warn("[db] wake failed:", errMessage(err).slice(0, 200));
+      console.warn("[db] wake failed:", {
+        ...presence,
+        code: errCode(err) ?? null,
+        message: errMessage(err).slice(0, 200),
+      });
       return false;
     } finally {
       globalForPrisma.prismaWakeLock = undefined;
@@ -182,4 +272,46 @@ export async function ensureDbAwake(): Promise<boolean> {
   })();
 
   return globalForPrisma.prismaWakeLock;
+}
+
+/**
+ * Probe DB connectivity for health endpoints.
+ * @returns Latency and error metadata — never includes connection strings.
+ */
+export async function probeDatabase(): Promise<{
+  ok: boolean;
+  latencyMs: number;
+  code?: string;
+  message?: string;
+  env: ReturnType<typeof getDbEnvPresence>;
+}> {
+  const env = getDbEnvPresence();
+  const started = Date.now();
+  if (!env.hasDatabaseUrl) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      code: "MISSING_DATABASE_URL",
+      message: "DATABASE_URL is not set",
+      env,
+    };
+  }
+  try {
+    await withDbRetry(
+      async () => {
+        await getClient().$connect();
+        await getClient().$queryRawUnsafe("SELECT 1");
+      },
+      { attempts: 4, baseDelayMs: 800, label: "probe" }
+    );
+    return { ok: true, latencyMs: Date.now() - started, env };
+  } catch (err) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - started,
+      code: errCode(err) ?? "DB_ERROR",
+      message: errMessage(err).slice(0, 200),
+      env,
+    };
+  }
 }

@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { Suspense } from "react";
 import { TablePageSuspenseFallback } from "@/components/ui/TableSkeleton";
 import { buildDashboardPayload, type DashboardPayload } from "@/lib/dashboard-payload";
-import { ensureDbAwake } from "@/lib/prisma";
+import { ensureDbAwake, isRetryableDbError, withDbRetry } from "@/lib/prisma";
 import { parseDashboardPeriod, type DashboardPeriod } from "@/lib/dashboard-period";
 import CommandDashboardContent from "./CommandDashboardContent";
 
@@ -27,13 +27,20 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   if (userId) {
     try {
       await ensureDbAwake();
-      initialData = await buildDashboardPayload(period);
+      initialData = await withDbRetry(() => buildDashboardPayload(period), {
+        label: "dashboard-page",
+        attempts: 5,
+        baseDelayMs: 800,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[dashboard/page]", message);
+      const transient = isRetryableDbError(err);
       initialError =
         process.env.NODE_ENV === "production"
-          ? "Failed to load dashboard"
+          ? transient
+            ? "Database temporarily unavailable"
+            : "Failed to load dashboard"
           : `Failed to load dashboard: ${message}`;
     }
   } else {

@@ -12,7 +12,10 @@ import {
   releaseListWhere,
   sp,
 } from "@/lib/list-api-filters";
-import { ensureDbAwake, prisma, withDbRetry } from "@/lib/prisma";
+import { ensureDbAwake, isRetryableDbError, prisma, withDbRetry } from "@/lib/prisma";
+
+/** Neon cold starts on Vercel can exceed the default 10s hobby limit. */
+export const maxDuration = 60;
 
 /** One request, sequential DB queries — avoids Neon pool exhaustion from 6 parallel API routes. */
 export async function GET(req: Request) {
@@ -22,14 +25,8 @@ export async function GET(req: Request) {
   try {
     const params = sp(req);
 
-    // Wake Neon compute before the multi-query fan-out (cold start → P1001 otherwise).
-    const awake = await ensureDbAwake();
-    if (!awake) {
-      return NextResponse.json(
-        { error: "Database temporarily unavailable. Retrying shortly." },
-        { status: 503, headers: { "Retry-After": "3" } }
-      );
-    }
+    // Best-effort wake — do not hard-fail; withDbRetry still handles cold starts.
+    await ensureDbAwake();
 
     const departments = await withDbRetry(
       () =>
@@ -114,13 +111,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     console.error("release-lookups failed:", err);
-    const msg = err instanceof Error ? err.message : "";
-    const transient =
-      msg.toLowerCase().includes("can't reach database") ||
-      msg.toLowerCase().includes("timed out") ||
-      msg.toLowerCase().includes("not yet connected") ||
-      msg.toLowerCase().includes("engine is not yet connected") ||
-      (err as { code?: string })?.code === "P1001";
+    const transient = isRetryableDbError(err);
     return NextResponse.json(
       { error: transient ? "Database temporarily unavailable" : "Failed to load release lookups" },
       { status: transient ? 503 : 500, headers: transient ? { "Retry-After": "3" } : undefined }
