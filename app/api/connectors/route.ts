@@ -58,26 +58,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Connector type is not available yet" }, { status: 400 });
   }
 
-  const encrypted = encryptCredentials(body.credentials);
   const config = buildConfig(body.type, body.config);
   if (!config) {
     return NextResponse.json({ error: "Select at least one data type to sync" }, { status: 400 });
   }
 
-  // Live Neon requires organizationId on Connector — use org-compat helper.
-  const row = await createConnectorRow({
-    name: body.name.trim(),
-    type: body.type,
-    authType: body.authType ?? typeDef.authType,
-    baseUrl: body.baseUrl ?? null,
-    credentials: encrypted,
-    config,
-    pollInterval: body.pollInterval ?? typeDef.defaultPollInterval,
-    enabled: body.enabled ?? true,
-    createdBy: user?.name ?? null,
-    status: "PENDING",
-  });
+  try {
+    // Missing CONNECTOR_ENCRYPTION_KEY throws here — return JSON, never empty 500.
+    const encrypted = encryptCredentials(body.credentials);
+    // Live Neon requires organizationId on Connector — use org-compat helper.
+    const row = await createConnectorRow({
+      name: body.name.trim(),
+      type: body.type,
+      authType: body.authType ?? typeDef.authType,
+      baseUrl: body.baseUrl ?? null,
+      credentials: encrypted,
+      config,
+      pollInterval: body.pollInterval ?? typeDef.defaultPollInterval,
+      enabled: body.enabled ?? true,
+      createdBy: user?.name ?? null,
+      status: "PENDING",
+    });
 
-  const { credentials: _c, ...safe } = row;
-  return NextResponse.json(safe, { status: 201 });
+    const { credentials: _c, ...safe } = row;
+    return NextResponse.json(safe, { status: 201 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create connector";
+    const status =
+      message.includes("CONNECTOR_ENCRYPTION_KEY") || message.includes("32 bytes")
+        ? 503
+        : 500;
+    return NextResponse.json(
+      {
+        error:
+          process.env.NODE_ENV === "production"
+            ? "Failed to create connector"
+            : message,
+      },
+      { status }
+    );
+  }
 }
