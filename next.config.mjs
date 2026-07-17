@@ -12,8 +12,11 @@ const nextConfig = {
   // listing it in both arrays fatals; listing only as external causes MODULE_NOT_FOUND.
   serverExternalPackages: ["@prisma/client"],
   transpilePackages: ["@releasedesk/database"],
+  // Standalone Sentinel repo on Vercel: root is this app. Local monorepo can override via env.
   turbopack: {
-    root: path.resolve(__dirname, ".."),
+    root: process.env.TURBOPACK_ROOT
+      ? path.resolve(process.env.TURBOPACK_ROOT)
+      : __dirname,
   },
   experimental: {
     optimizePackageImports: [

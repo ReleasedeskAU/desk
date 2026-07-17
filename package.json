@@ -8,14 +8,15 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "db:push": "npm run db:push -w @releasedesk/database",
+    "db:push": "npm run db:push --prefix ./vendor/releasedesk-database",
     "db:seed": "tsx prisma/seed.ts",
-    "db:setup": "npm run db:push -w @releasedesk/database && tsx prisma/seed.ts",
-    "db:generate": "npm run generate -w @releasedesk/database",
-    "postinstall": "npm run generate -w @releasedesk/database"
+    "db:setup": "npm run db:push && tsx prisma/seed.ts",
+    "db:generate": "npm run generate --prefix ./vendor/releasedesk-database",
+    "postinstall": "npm run db:generate",
+    "sync:vendor-db": "node scripts/sync-vendor-database.mjs"
   },
   "prisma": {
-    "schema": "../packages/database/prisma/schema.prisma",
+    "schema": "vendor/releasedesk-database/prisma/schema.prisma",
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
@@ -26,7 +27,7 @@
     "@mui/icons-material": "^9.1.1",
     "@mui/material": "^9.1.2",
     "@mui/material-nextjs": "^9.1.1",
-    "@releasedesk/database": "*",
+    "@releasedesk/database": "file:./vendor/releasedesk-database",
     "@prisma/client": "^6.19.3",
     "@upstash/redis": "^1.38.0",
     "csv-parse": "^5.6.0",
@@ -52,5 +53,8 @@
     "tailwindcss": "^3.4.1",
     "tsx": "^4.22.4",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
