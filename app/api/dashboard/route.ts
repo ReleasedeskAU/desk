@@ -69,6 +69,18 @@ export async function GET(req: Request) {
   const { error } = await requireRole("readonly");
   if (error) return error;
 
+  try {
+    return await getDashboard(req);
+  } catch (err) {
+    console.error("[api/dashboard]", err instanceof Error ? err.message : err);
+    return NextResponse.json(
+      { error: "Failed to load dashboard" },
+      { status: 500 }
+    );
+  }
+}
+
+async function getDashboard(req: Request) {
   const url = new URL(req.url);
   const period = parseDashboardPeriod(url.searchParams.get("period"));
   const now = new Date();

@@ -1,5 +1,11 @@
 import { PrismaClient } from "@releasedesk/database";
 
+// Neon pooled DATABASE_URL works for queries; Prisma schema still requires DIRECT_URL.
+// Vercel often only has DATABASE_URL — fall back so the whole API does not 500 at import.
+if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
+  process.env.DIRECT_URL = process.env.DATABASE_URL;
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
   prismaResetLock: Promise<void> | undefined;
