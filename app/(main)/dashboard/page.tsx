@@ -7,7 +7,8 @@ import { parseDashboardPeriod, type DashboardPeriod } from "@/lib/dashboard-peri
 import CommandDashboardContent from "./CommandDashboardContent";
 
 type PageProps = {
-  searchParams?: Promise<{ period?: string }> | { period?: string };
+  // Next.js 16+ passes searchParams as a Promise (required by generated PageProps).
+  searchParams?: Promise<{ period?: string }>;
 };
 
 /**
@@ -15,7 +16,7 @@ type PageProps = {
  * client fetch that races Clerk session readiness under Turbopack.
  */
 export default async function DashboardPage({ searchParams }: PageProps) {
-  const params = await Promise.resolve(searchParams ?? {});
+  const params = (await searchParams) ?? {};
   // Match prior client default (month) when the URL has no period query.
   const period: DashboardPeriod = parseDashboardPeriod(params.period ?? "month");
 
