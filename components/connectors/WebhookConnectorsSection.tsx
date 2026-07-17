@@ -90,8 +90,8 @@ export function WebhookConnectorsSection() {
         <div>
           <h2 className="text-xl font-bold text-[#111827] tracking-tight">Webhook Connectors</h2>
           <p className="mt-1 text-[14px] text-gray-500 font-medium leading-relaxed max-w-[640px]">
-            Receive signed Jira events on the connector engine. Processing runs on the existing
-            scheduler (no Redis queue). Secrets are shown once at create time.
+            Receive signed Jira events on the connector engine. Events are applied to WorkItems
+            immediately on delivery (scheduler is backup only). Secrets are shown once at create time.
           </p>
         </div>
         <button

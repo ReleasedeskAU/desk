@@ -107,6 +107,14 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
     void load();
   }, [load, refreshKey]);
 
+  // Near-real-time demo UX: poll while this section is mounted (webhook writes land in seconds).
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void load();
+    }, 5_000);
+    return () => window.clearInterval(id);
+  }, [load]);
+
   const jiraConnectors = useMemo(
     () => (payload?.connectors ?? []).filter((c) => c.type === "jira"),
     [payload?.connectors]
@@ -123,8 +131,8 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
         <div>
           <h2 className="text-xl font-bold text-[#111827] tracking-tight">Synced Work Items</h2>
           <p className="mt-1 text-[14px] text-gray-500 font-medium leading-relaxed max-w-[720px]">
-            Full dataset pulled by system connectors (Jira sync / webhooks). Use this table in demos to
-            show what landed in Release Desk after Sync Now.
+            Full dataset from Jira sync and webhooks. New Jira issues apply within seconds via webhook,
+            and this table auto-refreshes every 5s for demos.
           </p>
         </div>
         <button
