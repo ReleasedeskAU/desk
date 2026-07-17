@@ -27,6 +27,7 @@ import {
 } from "@/lib/connectorDataTypes";
 import type { ConnectorPublic } from "@/lib/connectors/public";
 import { WebhookConnectorsSection } from "@/components/connectors/WebhookConnectorsSection";
+import { SyncedWorkItemsSection } from "@/components/connectors/SyncedWorkItemsSection";
 
 type SyncLog = {
   id: string;
@@ -82,6 +83,8 @@ export default function ConnectorsPageContent() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [errorDetail, setErrorDetail] = useState<{ name: string; message: string } | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  /** Bumps after Sync Now so the Synced Work Items demo table reloads. */
+  const [workItemsRefreshKey, setWorkItemsRefreshKey] = useState(0);
 
   const loadConnectors = useCallback(async () => {
     setLoading(true);
@@ -135,6 +138,7 @@ export default function ConnectorsPageContent() {
         return;
       }
       await loadConnectors();
+      setWorkItemsRefreshKey((k) => k + 1);
     } finally {
       setActionId(null);
     }
@@ -296,6 +300,8 @@ export default function ConnectorsPageContent() {
       )}
 
       <WebhookConnectorsSection />
+
+      <SyncedWorkItemsSection refreshKey={workItemsRefreshKey} />
 
       {wizardOpen && (
         <ConnectorWizard
