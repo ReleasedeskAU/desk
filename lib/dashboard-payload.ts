@@ -651,10 +651,10 @@ export async function buildDashboardPayload(periodParam: string | null) {
 
   const changeFreeze = {
     types: [
-      { name: "Quarter-End", value: freezeQuarter, href: "/releases?freeze=Quarter-End+Freeze" },
-      { name: "Year-End", value: freezeYear, href: "/releases?freeze=Year-End+Freeze" },
-      { name: "Audit", value: freezeAudit, href: "/releases?freeze=Audit+Freeze" },
-      { name: "Holiday", value: freezeHoliday, href: "/releases?freeze=Holiday+Freeze" },
+      { name: "Quarter-End", value: freezeQuarter, color: "#6366f1", href: "/releases?freeze=Quarter-End+Freeze" },
+      { name: "Year-End", value: freezeYear, color: "#8b5cf6", href: "/releases?freeze=Year-End+Freeze" },
+      { name: "Audit", value: freezeAudit, color: "#f59e0b", href: "/releases?freeze=Audit+Freeze" },
+      { name: "Holiday", value: freezeHoliday, color: "#0ea5e9", href: "/releases?freeze=Holiday+Freeze" },
     ],
     totalFrozenReleases,
   };
@@ -729,3 +729,6 @@ export async function buildDashboardPayload(periodParam: string | null) {
     health,
   };
 }
+
+/** JSON-serializable Command Dashboard payload returned by {@link buildDashboardPayload}. */
+export type DashboardPayload = Awaited<ReturnType<typeof buildDashboardPayload>>;

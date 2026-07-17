@@ -40,66 +40,7 @@ import {
 } from "@/components/dashboard/DashboardVisualSections";
 import { useThemeMode } from "@/context/ThemeModeContext";
 import { DASHBOARD_PERIOD_OPTIONS, dashboardSectionTitle, type DashboardPeriod } from "@/lib/dashboard-period";
-
-type DashboardPayload = {
-  period: DashboardPeriod;
-  generatedAt: string;
-  briefing: string;
-  summary: {
-    totalReleases: number;
-    activeIncidents: number;
-    activeAlerts: number;
-    appsDownProd: number;
-  };
-  pipelineDetail: {
-    total: number;
-    byStatus: ChartDatum[];
-    byPriority: ChartDatum[];
-  };
-  conflictsRisks: {
-    activeConflicts: number;
-    riskDistribution: ChartDatum[];
-  };
-  envBookings: { conflicts: number; activeBookings: number };
-  dependencies: { blocked: number; total: number };
-  cabApprovals: { cabMeetingsNext7: number; pendingApprovals: number };
-  resourceAvailability: { leaveToday: number; leaveNext7Days: number };
-  alertsDetail: {
-    critical: number;
-    warning: number;
-    info: number;
-    acknowledged: number;
-    resolved24h: number;
-    total: number;
-  };
-  incidentsDetail: {
-    p1: number;
-    p2: number;
-    p3: number;
-    investigating: number;
-    resolved24h: number;
-    total: number;
-  };
-  availability: {
-    counts: ChartDatum[];
-    percentHealthy: number;
-    prod: { healthy: number; total: number };
-    total: number;
-  };
-  incidentTrend: { date: string; count: number }[];
-  releaseTrend: { week: string; count: number }[];
-  maintenanceChart: ChartDatum[];
-  maintenanceTotal: number;
-  changeFreeze: { types: ChartDatum[]; totalFrozenReleases: number };
-  quickStats: {
-    releasesThisWeek: number;
-    releasesThisMonth: number;
-    rollbackReady: number;
-    rollbackAtRisk: number;
-    avgGoLiveChecklistPct: number;
-  };
-  health: { label: string; status: string; value: number; metricLabel: string; href: string }[];
-};
+import type { DashboardPayload } from "@/lib/dashboard-payload";
 
 const INCIDENT_TREND_LABEL: Record<DashboardPeriod, string> = {
   today: "Today by 6-hour blocks",

@@ -15,7 +15,14 @@ import { ChevronRight, Snowflake, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SectionInfo } from "@/components/dashboard/SectionInfo";
 
-export type ChartDatum = { name: string; value: number; color: string; href?: string };
+export type ChartDatum = { name: string; value: number; color?: string; href?: string };
+
+/** Fallback fill when a chart datum omits color (keeps build/UI resilient). */
+export const CHART_FALLBACK_COLOR = "#94a3b8";
+
+function datumColor(d: ChartDatum): string {
+  return d.color ?? CHART_FALLBACK_COLOR;
+}
 
 export type ChartTheme = {
   tick: string;
@@ -116,7 +123,7 @@ export function ChartLegend({
             e.href && "hover:bg-slate-50 dark:hover:bg-white/5"
           )}
         >
-          <span className="h-2 w-2 rounded-full" style={{ background: e.color }} />
+          <span className="h-2 w-2 rounded-full" style={{ background: datumColor(e) }} />
           <span className="text-[12px] text-slate-500 dark:text-white/55">{e.name}</span>
           <span className="text-[12px] font-bold tabular-nums text-slate-800 dark:text-white">{e.value}</span>
         </button>
@@ -166,7 +173,7 @@ export function DonutVisual({
             className="cursor-pointer"
           >
             {pieData.map((e, i) => (
-              <Cell key={i} fill={e.color} />
+              <Cell key={i} fill={datumColor(e)} />
             ))}
           </Pie>
           <Tooltip contentStyle={chartTheme.tooltip} />
@@ -211,7 +218,7 @@ export function VerticalBarVisual({
             className="cursor-pointer"
           >
             {data.map((e, i) => (
-              <Cell key={i} fill={e.color} />
+              <Cell key={i} fill={datumColor(e)} />
             ))}
           </Bar>
         </BarChart>

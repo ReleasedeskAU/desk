@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { Suspense } from "react";
 import { TablePageSuspenseFallback } from "@/components/ui/TableSkeleton";
-import { buildDashboardPayload } from "@/lib/dashboard-payload";
+import { buildDashboardPayload, type DashboardPayload } from "@/lib/dashboard-payload";
 import { ensureDbAwake } from "@/lib/prisma";
 import { parseDashboardPeriod, type DashboardPeriod } from "@/lib/dashboard-period";
 import CommandDashboardContent from "./CommandDashboardContent";
@@ -21,7 +21,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const period: DashboardPeriod = parseDashboardPeriod(params.period ?? "month");
 
   const { userId } = await auth();
-  let initialData: Awaited<ReturnType<typeof buildDashboardPayload>> | null = null;
+  let initialData: DashboardPayload | null = null;
   let initialError: string | null = null;
 
   if (userId) {
