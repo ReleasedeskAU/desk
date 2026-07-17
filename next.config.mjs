@@ -1,7 +1,30 @@
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Turbopack module root.
+ * - Vercel / standalone Sentinel clone: this app directory.
+ * - Local monorepo: parent workspace so hoisted deps (e.g. zod) resolve.
+ * - Override anytime with TURBOPACK_ROOT.
+ */
+function resolveTurbopackRoot() {
+  if (process.env.TURBOPACK_ROOT) {
+    return path.resolve(process.env.TURBOPACK_ROOT);
+  }
+  const parentDir = path.resolve(__dirname, "..");
+  const parentPkgPath = path.join(parentDir, "package.json");
+  if (!existsSync(parentPkgPath)) return __dirname;
+  try {
+    const parentPkg = JSON.parse(readFileSync(parentPkgPath, "utf8"));
+    if (Array.isArray(parentPkg.workspaces)) return parentDir;
+  } catch {
+    // Fall through to app root when parent package.json is unreadable.
+  }
+  return __dirname;
+}
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -12,11 +35,8 @@ const nextConfig = {
   // listing it in both arrays fatals; listing only as external causes MODULE_NOT_FOUND.
   serverExternalPackages: ["@prisma/client"],
   transpilePackages: ["@releasedesk/database"],
-  // Standalone Sentinel repo on Vercel: root is this app. Local monorepo can override via env.
   turbopack: {
-    root: process.env.TURBOPACK_ROOT
-      ? path.resolve(process.env.TURBOPACK_ROOT)
-      : __dirname,
+    root: resolveTurbopackRoot(),
   },
   experimental: {
     optimizePackageImports: [

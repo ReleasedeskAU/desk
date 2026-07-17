@@ -137,21 +137,50 @@ function useChartTheme() {
   );
 }
 
-export default function CommandDashboardContent() {
+type CommandDashboardContentProps = {
+  /** Server-prefetched period (avoids client/auth race on first paint). */
+  initialPeriod?: DashboardPeriod;
+  /** Server-prefetched payload; when set, first paint skips the client fetch. */
+  initialData?: DashboardPayload | null;
+  /** Server-side load error message, if any. */
+  initialError?: string | null;
+};
+
+/**
+ * Command Dashboard client view.
+ * Prefers `initialData` from the server; refetches on period change / Retry.
+ */
+export default function CommandDashboardContent({
+  initialPeriod = "month",
+  initialData = null,
+  initialError = null,
+}: CommandDashboardContentProps) {
   const router = useRouter();
   const { isLoaded, userId } = useAuth();
   const chartTheme = useChartTheme();
-  const [period, setPeriod] = useState<DashboardPeriod>("month");
-  const [data, setData] = useState<DashboardPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState<DashboardPeriod>(initialPeriod);
+  const [data, setData] = useState<DashboardPayload | null>(initialData);
+  const [loading, setLoading] = useState(!initialData && !initialError);
+  const [error, setError] = useState<string | null>(initialError);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const onNavigate = (href: string) => router.push(href);
 
   useEffect(() => {
-    // Avoid firing before Clerk session is ready — that returns 401 and the UI
-    // sticks on "Failed to load dashboard" even though other APIs later succeed.
+    // Server already hydrated this period — skip client fetch until Retry / period change.
+    if (
+      refreshKey === 0 &&
+      period === initialPeriod &&
+      initialData &&
+      !initialError
+    ) {
+      setData(initialData);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    // Wait for Clerk — early 401s leave the UI stuck on error.
     if (!isLoaded) return;
     if (!userId) {
       setLoading(false);
@@ -160,35 +189,43 @@ export default function CommandDashboardContent() {
     }
 
     let cancelled = false;
-    const ac = new AbortController();
     setLoading(true);
     setError(null);
 
-    (async () => {
+    async function load(attempt: number): Promise<void> {
       try {
+        // No AbortController — React Strict Mode aborts can leave a false error state.
         const r = await fetch(`/api/dashboard?period=${period}`, {
-          signal: ac.signal,
           credentials: "same-origin",
+          cache: "no-store",
         });
         if (!r.ok) {
+          if (r.status === 401 && attempt < 1) {
+            await new Promise((resolve) => window.setTimeout(resolve, 600));
+            if (!cancelled) return load(attempt + 1);
+            return;
+          }
           const body = (await r.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `Failed to load dashboard (${r.status})`);
         }
         const d = (await r.json()) as DashboardPayload;
-        if (!cancelled) setData(d);
+        if (!cancelled) {
+          setData(d);
+          setError(null);
+        }
       } catch (e) {
-        if (cancelled || ac.signal.aborted) return;
+        if (cancelled) return;
         setError(e instanceof Error ? e.message : "Failed to load dashboard");
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    }
 
+    void load(0);
     return () => {
       cancelled = true;
-      ac.abort();
     };
-  }, [refreshKey, period, isLoaded, userId]);
+  }, [refreshKey, period, isLoaded, userId, initialPeriod, initialData, initialError]);
 
   const incidentTrendChart = useMemo(
     () => (data?.incidentTrend ?? []).map((d) => ({ d: d.date, v: d.count })),
