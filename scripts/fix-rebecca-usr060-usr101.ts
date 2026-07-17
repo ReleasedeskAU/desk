@@ -3,7 +3,7 @@
  * insert USR-101 with placeholder email.
  * Run: npx tsx scripts/fix-rebecca-usr060-usr101.ts
  */
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 
 const prisma = new PrismaClient();
 

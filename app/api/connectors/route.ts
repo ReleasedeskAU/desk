@@ -5,6 +5,7 @@ import { stripCredentialsList } from "@/lib/connectors/public";
 import { encryptCredentials } from "@/lib/connectorCrypto";
 import { getConnectorTypeDef } from "@/lib/connectors/types";
 import { normalizeDataTypes } from "@/lib/connectorDataTypes";
+import { createConnectorRow } from "@/lib/org-compat";
 
 function buildConfig(type: string, config: Record<string, unknown> | undefined) {
   const typeDef = getConnectorTypeDef(type);
@@ -63,19 +64,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Select at least one data type to sync" }, { status: 400 });
   }
 
-  const row = await prisma.connector.create({
-    data: {
-      name: body.name.trim(),
-      type: body.type,
-      authType: body.authType ?? typeDef.authType,
-      baseUrl: body.baseUrl ?? null,
-      credentials: encrypted,
-      config,
-      pollInterval: body.pollInterval ?? typeDef.defaultPollInterval,
-      enabled: body.enabled ?? true,
-      createdBy: user?.name ?? null,
-      status: "PENDING",
-    },
+  // Live Neon requires organizationId on Connector — use org-compat helper.
+  const row = await createConnectorRow({
+    name: body.name.trim(),
+    type: body.type,
+    authType: body.authType ?? typeDef.authType,
+    baseUrl: body.baseUrl ?? null,
+    credentials: encrypted,
+    config,
+    pollInterval: body.pollInterval ?? typeDef.defaultPollInterval,
+    enabled: body.enabled ?? true,
+    createdBy: user?.name ?? null,
+    status: "PENDING",
   });
 
   const { credentials: _c, ...safe } = row;

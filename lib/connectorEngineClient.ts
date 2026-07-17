@@ -61,3 +61,74 @@ export async function syncConnectorById(id: string): Promise<{
     method: "POST",
   });
 }
+
+export type WebhookConnectorPublic = {
+  id: string;
+  name: string;
+  provider: string;
+  baseUrl: string | null;
+  events: string[];
+  active: boolean;
+  endpointToken: string;
+  endpointUrl: string;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type CreatedWebhookConnector = WebhookConnectorPublic & {
+  /** Plaintext secret — returned once on create; never persist in Sentinel. */
+  secret: string;
+};
+
+export type WebhookEventRow = {
+  id: string;
+  status: string;
+  errorMessage: string | null;
+  retryCount: number;
+  receivedAt: string | Date;
+  processedAt: string | Date | null;
+  payloadPreview: string;
+};
+
+/** Creates a webhook connector via connector-engine (secret encrypted server-side). */
+export async function createWebhookConnector(input: {
+  provider: "jira" | "github";
+  name: string;
+  baseUrl?: string | null;
+  events: string[];
+  active?: boolean;
+}): Promise<CreatedWebhookConnector> {
+  return engineFetch("/internal/webhooks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listWebhookConnectors(): Promise<WebhookConnectorPublic[]> {
+  return engineFetch("/internal/webhooks", { method: "GET" });
+}
+
+export async function patchWebhookConnector(
+  id: string,
+  input: { name?: string; active?: boolean; events?: string[]; baseUrl?: string | null }
+): Promise<WebhookConnectorPublic> {
+  return engineFetch(`/internal/webhooks/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listWebhookEvents(connectorId: string): Promise<WebhookEventRow[]> {
+  return engineFetch(`/internal/webhooks/${encodeURIComponent(connectorId)}/events`, {
+    method: "GET",
+  });
+}
+
+export async function replayWebhookEvent(eventId: string): Promise<{
+  ok: boolean;
+  event?: { id: string; status: string; errorMessage: string | null };
+}> {
+  return engineFetch(`/internal/webhooks/events/${encodeURIComponent(eventId)}/replay`, {
+    method: "POST",
+  });
+}

@@ -1,4 +1,4 @@
-import type { Connector } from "@prisma/client";
+import type { Connector } from "@releasedesk/database";
 
 export type ConnectorPublic = Omit<Connector, "credentials">;
 

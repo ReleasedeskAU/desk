@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@releasedesk/database";
 
 const PRIMARY = "\u25cf"; // ●
 const SECONDARY = "\u25cb"; // ○

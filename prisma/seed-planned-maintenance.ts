@@ -15,7 +15,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 import { APPLICATION_NAME_ALIASES } from "./seed-data/app-name-aliases";
 
 const prisma = new PrismaClient();

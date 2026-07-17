@@ -8,12 +8,14 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "db:push": "prisma db push",
+    "db:push": "npm run db:push -w @releasedesk/database",
     "db:seed": "tsx prisma/seed.ts",
-    "db:setup": "prisma db push && tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "db:setup": "npm run db:push -w @releasedesk/database && tsx prisma/seed.ts",
+    "db:generate": "npm run generate -w @releasedesk/database",
+    "postinstall": "npm run generate -w @releasedesk/database"
   },
   "prisma": {
+    "schema": "../packages/database/prisma/schema.prisma",
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
@@ -24,6 +26,7 @@
     "@mui/icons-material": "^9.1.1",
     "@mui/material": "^9.1.2",
     "@mui/material-nextjs": "^9.1.1",
+    "@releasedesk/database": "*",
     "@prisma/client": "^6.19.3",
     "@upstash/redis": "^1.38.0",
     "csv-parse": "^5.6.0",

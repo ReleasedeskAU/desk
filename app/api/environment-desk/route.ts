@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@releasedesk/database";
 import { requireRole } from "@/lib/auth/api";
 import { buildBookings, buildTimeline, buildVersionMatrix } from "@/lib/db-environment-desk";
 import { prisma } from "@/lib/prisma";

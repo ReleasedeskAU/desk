@@ -7,7 +7,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 import { APPLICATION_NAME_ALIASES } from "../prisma/seed-data/app-name-aliases";
 import { seedSystemMapping } from "../lib/seed-system-mapping";
 

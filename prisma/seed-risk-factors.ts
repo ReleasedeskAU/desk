@@ -13,7 +13,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 import { RISK_FACTOR_DEFS } from "../lib/risk-scoring/factors";
 
 const prisma = new PrismaClient();

@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 
 /** Prints one Conflict / Leave / Blocker id for local screenshot navigation. */
 async function main() {

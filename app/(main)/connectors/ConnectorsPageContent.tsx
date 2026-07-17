@@ -26,6 +26,7 @@ import {
   defaultDataTypesForType,
 } from "@/lib/connectorDataTypes";
 import type { ConnectorPublic } from "@/lib/connectors/public";
+import { WebhookConnectorsSection } from "@/components/connectors/WebhookConnectorsSection";
 
 type SyncLog = {
   id: string;
@@ -293,6 +294,8 @@ export default function ConnectorsPageContent() {
         </table>
       </div>
       )}
+
+      <WebhookConnectorsSection />
 
       {wizardOpen && (
         <ConnectorWizard

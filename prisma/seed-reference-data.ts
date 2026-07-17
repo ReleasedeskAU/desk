@@ -9,7 +9,7 @@
  * Integration, Security (sortOrder 1-5) — the fixed 5-value set the Drift
  * model's driftType field must be restricted to.
  */
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 
 const prisma = new PrismaClient();
 

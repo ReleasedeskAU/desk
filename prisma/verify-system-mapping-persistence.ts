@@ -2,7 +2,7 @@
  * Verifies live System Mapping persistence with temporary records and restores all changes.
  * Run: npx tsx prisma/verify-system-mapping-persistence.ts
  */
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 import { rebuildCanonicalMappingEdges } from "../lib/system-mapping-canonical";
 
 const prisma = new PrismaClient();

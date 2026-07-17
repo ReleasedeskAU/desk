@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@releasedesk/database";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";

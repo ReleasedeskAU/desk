@@ -189,12 +189,21 @@ export function MorningInboxView() {
                   { n: p1Count, l: "Open P1s", href: "/inbox?section=p1" },
                   { n: approvalsCount, l: "Pending approvals", href: "/inbox?section=approvals" },
                 ].map((x) => (
-                  <ProgressLink key={x.l} href={x.href} className="group text-left focus:outline-none">
-                    <div className="text-[32px] font-bold leading-none tabular-nums transition-transform duration-300 group-hover:scale-105 sm:text-[44px]">
+                  <ProgressLink
+                    key={x.l}
+                    href={x.href}
+                    className="group no-underline text-left focus:outline-none"
+                  >
+                    <div className="text-[32px] font-bold leading-none tabular-nums text-white transition-transform duration-300 group-hover:scale-105 sm:text-[44px]">
                       {loading ? "—" : x.n}
                     </div>
                     <div className="mt-1 flex items-center gap-1 text-[12px] font-medium text-white/70 group-hover:text-white sm:text-[13px]">
-                      {x.l} <ArrowUpRight size={14} className="opacity-70 transition-opacity group-hover:opacity-100" aria-hidden />
+                      {x.l}{" "}
+                      <ArrowUpRight
+                        size={14}
+                        className="opacity-70 transition-opacity group-hover:opacity-100"
+                        aria-hidden
+                      />
                     </div>
                   </ProgressLink>
                 ))}

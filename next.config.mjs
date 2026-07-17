@@ -1,8 +1,20 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Allow HMR when opening the app via LAN IP (e.g. http://10.138.194.41:3000)
   allowedDevOrigins: ["10.138.194.41", "localhost", "127.0.0.1"],
+  // Keep Prisma's generated engine external. The workspace wrapper must be
+  // transpiled (not external) so Turbopack can resolve the monorepo package —
+  // listing it in both arrays fatals; listing only as external causes MODULE_NOT_FOUND.
   serverExternalPackages: ["@prisma/client"],
+  transpilePackages: ["@releasedesk/database"],
+  turbopack: {
+    root: path.resolve(__dirname, ".."),
+  },
   experimental: {
     optimizePackageImports: [
       "@mui/material",

@@ -511,3 +511,57 @@ export async function createReleaseRow(data: CreateReleaseInput) {
     }
   );
 }
+
+export type CreateConnectorInput = {
+  name: string;
+  type: string;
+  authType: string;
+  baseUrl?: string | null;
+  credentials: string;
+  config?: object | null;
+  pollInterval?: number;
+  enabled?: boolean;
+  createdBy?: string | null;
+  status?: string;
+};
+
+/**
+ * Create Connector. Live Neon requires organizationId which is absent from the
+ * v1 Prisma schema — insert via raw SQL when an Organization row exists.
+ */
+export async function createConnectorRow(data: CreateConnectorInput) {
+  return createWithOrgCompatibility(
+    () =>
+      prisma.connector.create({
+        data: {
+          name: data.name,
+          type: data.type,
+          authType: data.authType,
+          baseUrl: data.baseUrl ?? null,
+          credentials: data.credentials,
+          config: data.config ?? undefined,
+          pollInterval: data.pollInterval ?? 15,
+          enabled: data.enabled ?? true,
+          createdBy: data.createdBy ?? null,
+          status: data.status ?? "PENDING",
+        },
+      }),
+    async (orgId) => {
+      const id = newId();
+      const now = new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "Connector" (
+          id, name, type, "authType", "baseUrl", credentials, config,
+          "pollInterval", status, enabled, "createdBy", "organizationId",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${data.name}, ${data.type}, ${data.authType}, ${data.baseUrl ?? null},
+          ${data.credentials}, ${JSON.stringify(data.config ?? null)}::jsonb,
+          ${data.pollInterval ?? 15}, ${data.status ?? "PENDING"}, ${data.enabled ?? true},
+          ${data.createdBy ?? null}, ${orgId}, ${now}, ${now}
+        )
+      `;
+      return prisma.connector.findUniqueOrThrow({ where: { id } });
+    }
+  );
+}

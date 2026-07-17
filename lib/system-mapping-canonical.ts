@@ -1,4 +1,4 @@
-import type { Prisma, SystemMatrixRow } from "@prisma/client";
+import type { Prisma, SystemMatrixRow } from "@releasedesk/database";
 import { SYSTEM_MAPPING_DEPARTMENTS } from "@/lib/validation/system-mapping";
 
 export const CANONICAL_MAPPING_GROUP_NAME = "Enterprise Default Setup";

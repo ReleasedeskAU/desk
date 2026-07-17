@@ -9,7 +9,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@releasedesk/database";
 
 const prisma = new PrismaClient();
 
