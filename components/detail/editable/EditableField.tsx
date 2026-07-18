@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { CheckCircle2, Clock, Lock } from "lucide-react";
-import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { HoverExplain, InfoTooltip } from "@/components/ui/InfoTooltip";
 import { cn } from "@/lib/utils";
 
 type LockedIdFieldProps = {
@@ -153,15 +153,24 @@ export function EditableFieldGrid({ cols = 2, children }: EditableFieldGridProps
 type SignoffChipProps = {
   label: string;
   done: boolean;
+  /** Hover/tap explanation — what this sign-off means for go-live. */
+  hint?: string;
 };
 
-/** Boolean / done-vs-pending chip with icon (matches reference SignoffChip). */
-export function SignoffChip({ label, done }: SignoffChipProps) {
-  return (
+/**
+ * Boolean / done-vs-pending chip with icon.
+ * Optional `hint` wraps the chip so hover explains the gate.
+ *
+ * @param props - Label, done state, optional explanation.
+ * @returns Sign-off status chip.
+ */
+export function SignoffChip({ label, done, hint }: SignoffChipProps) {
+  const chip = (
     <div
       className={cn(
-        "flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-150",
-        done ? "bg-emerald-50 dark:bg-emerald-500/15" : "bg-slate-50 dark:bg-white/5"
+        "flex w-full items-center justify-between rounded-xl px-3 py-2.5 transition-colors duration-150",
+        done ? "bg-emerald-50 dark:bg-emerald-500/15" : "bg-slate-50 dark:bg-white/5",
+        hint && "hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/15"
       )}
     >
       <span className="text-[12px] font-medium text-slate-600 dark:text-white/70">{label}</span>
@@ -175,5 +184,13 @@ export function SignoffChip({ label, done }: SignoffChipProps) {
         {done ? "Done" : "Pending"}
       </span>
     </div>
+  );
+
+  if (!hint) return chip;
+
+  return (
+    <HoverExplain text={hint} label={`About ${label}`} className="w-full">
+      {chip}
+    </HoverExplain>
   );
 }

@@ -1,48 +1,68 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
 import { cn } from "@/lib/utils";
 
-type InfoTooltipProps = {
-  text: string;
-  className?: string;
-  /** Accessible name for the trigger button. */
-  label?: string;
-  /** Optional custom trigger; defaults to CircleHelp icon. */
-  children?: React.ReactNode;
-  /** Preferred placement of the tip relative to the trigger. */
-  placement?: "top" | "bottom";
-};
-
 type TipCoords = { top: number; left: number; placement: "top" | "bottom" };
 
+type SharedTipProps = {
+  text: string;
+  open: boolean;
+  tipId: string;
+  tipRef: React.RefObject<HTMLDivElement | null>;
+  coords: TipCoords | null;
+};
+
 /**
- * Shared info tip: hover-to-show on fine pointers, tap-to-toggle on touch.
- * Escape / outside click dismisses the open tip.
- * Tip is portaled to document.body so overflow-hidden cards/tiles cannot clip it.
+ * Solid opaque tooltip panel portaled to document.body.
+ *
+ * @param props - Tip text, open state, and position coords.
+ * @returns Portal node or null.
  */
-export function InfoTooltip({
-  text,
-  className,
-  label = "More information",
-  children,
-  placement = "top",
-}: InfoTooltipProps) {
-  const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState<TipCoords | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const hoverCapable = useHoverCapable();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const tipRef = useRef<HTMLDivElement>(null);
-  const tipId = useId();
+function TipPortal({ text, open, tipId, tipRef, coords }: SharedTipProps) {
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      ref={tipRef}
+      id={tipId}
+      role="tooltip"
+      className={cn(
+        // Solid opaque panel — do not use --card (it is semi-transparent in light mode).
+        "pointer-events-none fixed z-[200] w-max max-w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-xs leading-snug text-slate-700 shadow-[0_12px_28px_-8px_rgba(15,23,42,0.35)] dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_12px_28px_-8px_rgba(0,0,0,0.65)]",
+        coords?.placement === "bottom" ? "" : "-translate-y-full",
+        !coords && "invisible"
+      )}
+      style={coords ? { top: coords.top, left: coords.left } : { top: 0, left: 0 }}
+    >
+      {text}
+    </div>,
+    document.body
+  );
+}
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+/**
+ * Position + dismiss helpers shared by icon and wrap tip triggers.
+ *
+ * @param open - Whether the tip is visible.
+ * @param placement - Preferred side.
+ * @param text - Tip content (reposition when it changes).
+ * @param rootRef - Trigger element.
+ * @param tipRef - Tip panel element.
+ * @param setCoords - Coord setter.
+ * @param setOpen - Open-state setter.
+ */
+function useTipPositioning(
+  open: boolean,
+  placement: "top" | "bottom",
+  text: string,
+  rootRef: React.RefObject<HTMLElement | null>,
+  tipRef: React.RefObject<HTMLDivElement | null>,
+  setCoords: (c: TipCoords | null) => void,
+  setOpen: (v: boolean) => void
+) {
   useLayoutEffect(() => {
     if (!open || !rootRef.current) {
       setCoords(null);
@@ -71,14 +91,11 @@ export function InfoTooltip({
       const halfW = tipW / 2 || 140;
       left = Math.min(window.innerWidth - pad - halfW, Math.max(pad + halfW, left));
 
-      const top =
-        nextPlacement === "top" ? rect.top - gap : rect.bottom + gap;
-
+      const top = nextPlacement === "top" ? rect.top - gap : rect.bottom + gap;
       setCoords({ top, left, placement: nextPlacement });
     };
 
     update();
-    // Second pass after tip mounts so we have real dimensions for flip/clamp.
     const raf = requestAnimationFrame(update);
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
@@ -87,7 +104,7 @@ export function InfoTooltip({
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
     };
-  }, [open, placement, text]);
+  }, [open, placement, text, rootRef, tipRef, setCoords]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,31 +122,48 @@ export function InfoTooltip({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, rootRef, tipRef, setOpen]);
+}
 
-  const tip =
-    open && mounted
-      ? createPortal(
-          <div
-            ref={tipRef}
-            id={tipId}
-            role="tooltip"
-            className={cn(
-              "pointer-events-none fixed z-[200] w-max max-w-[min(280px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-gray-200 bg-[var(--card)] px-4 py-3 text-left text-xs leading-snug text-[var(--foreground)] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.25)] dark:border-[var(--border)]",
-              coords?.placement === "bottom" ? "" : "-translate-y-full",
-              !coords && "invisible"
-            )}
-            style={
-              coords
-                ? { top: coords.top, left: coords.left }
-                : { top: 0, left: 0 }
-            }
-          >
-            {text}
-          </div>,
-          document.body
-        )
-      : null;
+type InfoTooltipProps = {
+  text: string;
+  className?: string;
+  /** Accessible name for the trigger button. */
+  label?: string;
+  /** Optional custom trigger; defaults to CircleHelp icon. */
+  children?: ReactNode;
+  /** Preferred placement of the tip relative to the trigger. */
+  placement?: "top" | "bottom";
+};
+
+/**
+ * Shared info tip: hover-to-show on fine pointers, tap-to-toggle on touch.
+ * Escape / outside click dismisses the open tip.
+ * Tip is portaled to document.body so overflow-hidden cards/tiles cannot clip it.
+ *
+ * @param props - Tip text, optional custom trigger, and placement.
+ * @returns "?" icon button (or custom children) with portaled tip.
+ */
+export function InfoTooltip({
+  text,
+  className,
+  label = "More information",
+  children,
+  placement = "top",
+}: InfoTooltipProps) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<TipCoords | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const hoverCapable = useHoverCapable();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const tipId = useId();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useTipPositioning(open, placement, text, rootRef, tipRef, setCoords, setOpen);
 
   return (
     <div
@@ -163,7 +197,98 @@ export function InfoTooltip({
       >
         {children ?? <CircleHelp size={14} strokeWidth={2} />}
       </button>
-      {tip}
+      {mounted ? (
+        <TipPortal text={text} open={open} tipId={tipId} tipRef={tipRef} coords={coords} />
+      ) : null}
     </div>
+  );
+}
+
+type HoverExplainProps = {
+  /** Plain-English explanation shown on hover / tap. */
+  text: string;
+  /** Accessible name for the wrapped control. */
+  label?: string;
+  children: ReactNode;
+  className?: string;
+  placement?: "top" | "bottom";
+};
+
+/**
+ * Wrap any UI (metric chip, field label, hero KPI) so hover/tap explains what it means.
+ * Use this for self-explanatory surfaces — users should not have to guess.
+ *
+ * @param props - Explanation text and the content to wrap.
+ * @returns Wrapper that shows a solid tip on hover (desktop) or tap (touch).
+ * @sideEffects Portals a tip to document.body while open.
+ */
+export function HoverExplain({
+  text,
+  label = "More information",
+  children,
+  className,
+  placement = "top",
+}: HoverExplainProps) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<TipCoords | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const hoverCapable = useHoverCapable();
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const tipId = useId();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useTipPositioning(open, placement, text, rootRef, tipRef, setCoords, setOpen);
+
+  return (
+    <span
+      ref={rootRef}
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      aria-expanded={open}
+      aria-describedby={open ? tipId : undefined}
+      title={hoverCapable ? undefined : text}
+      className={cn(
+        "relative inline-flex min-w-0 max-w-full cursor-help rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
+        className
+      )}
+      onMouseEnter={() => {
+        if (hoverCapable) setOpen(true);
+      }}
+      onMouseLeave={() => {
+        if (hoverCapable) setOpen(false);
+      }}
+      onClick={(e) => {
+        // Safe inside dashboard tile <a> — span (not <button>) so markup stays valid.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!hoverCapable) setOpen((v) => !v);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }
+      }}
+      onFocus={() => {
+        if (hoverCapable) setOpen(true);
+      }}
+      onBlur={(e) => {
+        if (!hoverCapable) return;
+        if (!rootRef.current?.contains(e.relatedTarget as Node)) {
+          setOpen(false);
+        }
+      }}
+    >
+      {children}
+      {mounted ? (
+        <TipPortal text={text} open={open} tipId={tipId} tipRef={tipRef} coords={coords} />
+      ) : null}
+    </span>
   );
 }

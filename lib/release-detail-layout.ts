@@ -44,3 +44,26 @@ export function shouldDefaultOpenBlockersTile(
   const normalized = (status ?? "").toLowerCase();
   return Boolean(conflictFlag) || normalized.includes("block") || normalized.includes("risk");
 }
+
+/**
+ * Open a collapsible `<details>` section when the URL hash targets its id.
+ * Used so dashboard tile links expand deep-dive content on click.
+ *
+ * @param hash - location.hash including leading `#`, or empty.
+ * @param root - Document root to query (injectable for tests).
+ * @returns True when a matching details element was opened.
+ */
+export function openDetailsFromHash(
+  hash: string,
+  root: ParentNode = typeof document !== "undefined" ? document : (null as unknown as ParentNode)
+): boolean {
+  if (!hash || hash === "#" || !root) return false;
+  const id = hash.startsWith("#") ? hash.slice(1) : hash;
+  // Only allow simple DOM ids from our own anchors (no CSS.escape needed in Node tests).
+  if (!id || !/^[A-Za-z][\w:-]*$/.test(id)) return false;
+  const el = root.querySelector(`#${id}`);
+  // HTMLDetailsElement in the browser; duck-type for unit tests without DOM globals.
+  if (!el || typeof (el as HTMLDetailsElement).open !== "boolean") return false;
+  (el as HTMLDetailsElement).open = true;
+  return true;
+}

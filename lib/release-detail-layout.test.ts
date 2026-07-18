@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  openDetailsFromHash,
   pickHeadlineReadiness,
   pickUrgentNextAction,
   shouldDefaultOpenBlockersTile,
@@ -50,5 +51,21 @@ describe("shouldDefaultOpenBlockersTile", () => {
   it("stays collapsed for calm releases without conflicts", () => {
     assert.equal(shouldDefaultOpenBlockersTile("Planned", false), false);
     assert.equal(shouldDefaultOpenBlockersTile("In Progress", false), false);
+  });
+});
+
+describe("openDetailsFromHash", () => {
+  it("opens a matching details element and ignores missing targets", () => {
+    const target = { open: false };
+    const root = {
+      querySelector(selector: string) {
+        return selector === "#blockers" ? (target as HTMLDetailsElement) : null;
+      },
+    } as unknown as ParentNode;
+
+    assert.equal(openDetailsFromHash("#blockers", root), true);
+    assert.equal(target.open, true);
+    assert.equal(openDetailsFromHash("#missing", root), false);
+    assert.equal(openDetailsFromHash("", root), false);
   });
 });

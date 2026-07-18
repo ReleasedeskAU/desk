@@ -13,9 +13,6 @@ export type BookingFormData = {
   releaseId: string;
   fromDate: string;
   toDate: string;
-  uatEnvCode: string;
-  uatStart: string;
-  uatEnd: string;
   purpose: string;
 };
 
@@ -46,10 +43,6 @@ type CreatedBooking = {
   testStart?: string | null;
   testEnd?: string | null;
   testDays?: number | null;
-  uatEnvCode?: string | null;
-  uatStart?: string | null;
-  uatEnd?: string | null;
-  uatDays?: number | null;
   application?: { name?: string; department?: { name?: string } };
   release?: { releaseCode?: string } | null;
 };
@@ -64,10 +57,6 @@ type BookingDetails = {
   testStart: string;
   testEnd: string;
   testDays: string;
-  uatEnv: string;
-  uatStart: string;
-  uatEnd: string;
-  uatDays: string;
   notes: string;
 };
 
@@ -83,9 +72,6 @@ const EMPTY: BookingFormData = {
   releaseId: "",
   fromDate: today(),
   toDate: today(),
-  uatEnvCode: "",
-  uatStart: "",
-  uatEnd: "",
   purpose: "",
 };
 
@@ -161,19 +147,7 @@ export function BookingFormModal({
     [environments, form.applicationId],
   );
 
-  const uatEnvOptions = useMemo(
-    () => envOptions.map((e) => ({ value: e.label, label: e.label })),
-    [envOptions],
-  );
-
-  const releaseOptions = useMemo(() => {
-    if (!form.applicationId) return releases;
-    const linked = releases.filter((r) => r.applicationIds?.includes(form.applicationId));
-    return linked.length ? linked : releases;
-  }, [releases, form.applicationId]);
-
   const testDays = spanDays(form.fromDate, form.toDate);
-  const uatDays = spanDays(form.uatStart, form.uatEnd);
 
   const buildAttemptedDetails = (): BookingDetails => ({
     application: labelFor(applications, form.applicationId),
@@ -183,10 +157,6 @@ export function BookingFormModal({
     testStart: form.fromDate,
     testEnd: form.toDate,
     testDays: testDays != null ? String(testDays) : "—",
-    uatEnv: form.uatEnvCode || "—",
-    uatStart: form.uatStart || "—",
-    uatEnd: form.uatEnd || "—",
-    uatDays: uatDays != null ? String(uatDays) : "—",
     notes: form.purpose.trim() || "End-to-end test window",
   });
 
@@ -213,10 +183,6 @@ export function BookingFormModal({
       setError("Test End must be on or after Test Start.");
       return;
     }
-    if (form.uatStart && form.uatEnd && form.uatEnd < form.uatStart) {
-      setError("UAT End must be on or after UAT Start.");
-      return;
-    }
 
     const attempted = buildAttemptedDetails();
     setSaving(true);
@@ -232,9 +198,6 @@ export function BookingFormModal({
           fromDate: form.fromDate,
           toDate: form.toDate,
           purpose: form.purpose || undefined,
-          uatEnvCode: form.uatEnvCode || undefined,
-          uatStart: form.uatStart || undefined,
-          uatEnd: form.uatEnd || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -282,10 +245,6 @@ export function BookingFormModal({
           testEnd: created?.testEnd?.slice(0, 10) || attempted.testEnd,
           testDays:
             created?.testDays != null ? String(created.testDays) : attempted.testDays,
-          uatEnv: created?.uatEnvCode || attempted.uatEnv,
-          uatStart: created?.uatStart?.slice(0, 10) || attempted.uatStart,
-          uatEnd: created?.uatEnd?.slice(0, 10) || attempted.uatEnd,
-          uatDays: created?.uatDays != null ? String(created.uatDays) : attempted.uatDays,
           notes: created?.purpose || attempted.notes,
         },
       });
@@ -346,14 +305,6 @@ export function BookingFormModal({
             <DetailRow label="Test Start" value={result.details.testStart} />
             <DetailRow label="Test End" value={result.details.testEnd} />
             <DetailRow label="Test Days" value={result.details.testDays} />
-            {(result.details.uatEnv !== "—" || result.details.uatStart !== "—") && (
-              <>
-                <DetailRow label="UAT Env" value={result.details.uatEnv} />
-                <DetailRow label="UAT Start" value={result.details.uatStart} />
-                <DetailRow label="UAT End" value={result.details.uatEnd} />
-                <DetailRow label="UAT Days" value={result.details.uatDays} />
-              </>
-            )}
             <DetailRow label="Notes" value={result.details.notes} />
           </dl>
 
@@ -432,8 +383,6 @@ export function BookingFormModal({
                     ...f,
                     applicationId: v,
                     environmentId: "",
-                    releaseId: "",
-                    uatEnvCode: "",
                   }))
                 }
                 options={applications}
@@ -466,10 +415,9 @@ export function BookingFormModal({
               <SearchableSelect
                 value={form.releaseId}
                 onChange={(v) => setForm((f) => ({ ...f, releaseId: v }))}
-                options={releaseOptions}
-                placeholder={form.applicationId ? "Select release…" : "Select application first…"}
+                options={releases}
+                placeholder="Select release…"
                 searchPlaceholder="Search releases…"
-                disabled={!form.applicationId}
               />
             </div>
           </div>
@@ -492,40 +440,6 @@ export function BookingFormModal({
               className={taInput}
               value={form.toDate}
               onChange={(e) => setForm((f) => ({ ...f, toDate: e.target.value }))}
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="text-xs font-medium text-gray-500">UAT Env (optional)</label>
-            <div className="mt-1">
-              <SearchableSelect
-                value={form.uatEnvCode}
-                onChange={(v) => setForm((f) => ({ ...f, uatEnvCode: v }))}
-                options={uatEnvOptions}
-                placeholder={form.applicationId ? "No UAT env" : "Select application first…"}
-                searchPlaceholder="Search environments…"
-                disabled={!form.applicationId}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500">UAT Start</label>
-            <input
-              type="date"
-              className={taInput}
-              value={form.uatStart}
-              onChange={(e) => setForm((f) => ({ ...f, uatStart: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500">
-              UAT End{uatDays != null ? ` · ${uatDays} day${uatDays === 1 ? "" : "s"}` : ""}
-            </label>
-            <input
-              type="date"
-              className={taInput}
-              value={form.uatEnd}
-              onChange={(e) => setForm((f) => ({ ...f, uatEnd: e.target.value }))}
             />
           </div>
 

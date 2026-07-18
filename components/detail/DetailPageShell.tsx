@@ -6,13 +6,40 @@ import { useNavHistoryLabel } from "@/context/NavigationHistoryContext";
 import type { PageDocKey } from "@/lib/page-documentation";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { HoverExplain } from "@/components/ui/InfoTooltip";
 import { ArrowLeft } from "lucide-react";
 
-export function DetailField({ label, value }: { label: string; value: ReactNode }) {
+/**
+ * Label + value pair for detail grids. Optional `hint` adds hover/tap explanation
+ * (dotted underline on the label) so users do not have to guess field meaning.
+ *
+ * @param props - Label, value, and optional plain-English hint.
+ * @returns Definition-list field.
+ */
+export function DetailField({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: ReactNode;
+  /** Hover/tap explanation for non-technical users. */
+  hint?: string;
+}) {
   return (
     <div>
-      <dt className="text-xs text-gray-400 dark:text-white/45">{label}</dt>
-      <dd className="font-medium text-gray-800 dark:text-white break-words">{value ?? "—"}</dd>
+      <dt className="text-xs text-gray-400 dark:text-white/45">
+        {hint ? (
+          <HoverExplain text={hint} label={`About ${label}`}>
+            <span className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2 dark:decoration-white/30">
+              {label}
+            </span>
+          </HoverExplain>
+        ) : (
+          label
+        )}
+      </dt>
+      <dd className="break-words font-medium text-gray-800 dark:text-white">{value ?? "—"}</dd>
     </div>
   );
 }
@@ -28,8 +55,8 @@ export function DetailFieldGrid({
     <dl
       className={
         cols === 3
-          ? "grid sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm"
-          : "grid sm:grid-cols-2 gap-3 text-sm"
+          ? "grid gap-x-4 gap-y-2.5 text-sm sm:grid-cols-2 lg:grid-cols-3"
+          : "grid gap-x-4 gap-y-2.5 text-sm sm:grid-cols-2"
       }
     >
       {children}
@@ -42,9 +69,11 @@ type DetailPageShellProps = {
   entityCode: string;
   title: string;
   subtitle?: string;
+  /** Extra classes for the page title (e.g. larger release name). */
+  titleClassName?: string;
   backHref?: string;
   backLabel?: string;
-  /** Hide the back link row (e.g. Release Command Center). */
+  /** Hide the back link row (e.g. release detail command center). */
   hideBack?: boolean;
   /** Center slot on the title row (e.g. Select Release dropdown). */
   headerCenter?: ReactNode;
@@ -59,6 +88,7 @@ export function DetailPageShell({
   entityCode,
   title,
   subtitle,
+  titleClassName,
   backHref,
   backLabel,
   hideBack = false,
@@ -73,10 +103,11 @@ export function DetailPageShell({
   const showBack = !hideBack && Boolean(backHref && backLabel);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <TopBar
         title={title}
         subtitle={subtitle}
+        titleClassName={titleClassName}
         highlight
         pageKey={pageKey}
         center={headerCenter}

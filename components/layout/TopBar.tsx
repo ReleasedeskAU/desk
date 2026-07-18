@@ -27,6 +27,8 @@ interface TopBarProps {
   center?: React.ReactNode;
   trailing?: React.ReactNode;
   className?: string;
+  /** Extra classes for the h1 title (e.g. larger release name). */
+  titleClassName?: string;
 }
 
 /**
@@ -49,6 +51,7 @@ export function TopBar({
   center,
   trailing,
   className,
+  titleClassName,
 }: TopBarProps) {
   const { requestPageDocumentationOpen } = usePageDocumentationTrigger();
   const docSummary = pageKey ? getPageDocumentation(pageKey)?.summary : undefined;
@@ -68,6 +71,7 @@ export function TopBar({
             className={cn(
               "text-xl font-bold tracking-tight text-gray-900 sm:text-2xl dark:text-white",
               highlight && "text-brand-700 dark:text-brand-300",
+              titleClassName,
             )}
           >
             {title}

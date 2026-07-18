@@ -135,16 +135,7 @@ function ReleasePreview() {
 
   return (
     <PreviewChrome title="Release Command Center" code="REL-0001" name="Kyriba UI Tweak v4.5">
-      <ReleaseSummaryBar
-        releaseCode="REL-0001"
-        name="Kyriba UI Tweak v4.5"
-        status="Blocked"
-        releaseHealth="No-Go"
-        headlineReadiness={50}
-        slipRisk={60}
-        envConflict
-        urgentAction={mockCommand.nextActions[0]}
-      />
+      <ReleaseSummaryBar headlineReadiness={50} slipRisk={60} envConflict />
 
       <div className="rounded-2xl border border-violet-200/70 border-l-[4px] border-l-violet-500 bg-gradient-to-r from-violet-50/80 via-white to-white px-4 py-3 shadow-sm dark:border-violet-500/30 dark:from-violet-500/10 dark:via-[var(--card)] dark:to-[var(--card)]">
         <div className="mb-2 flex items-center gap-2">
@@ -164,52 +155,84 @@ function ReleasePreview() {
           icon={Rocket}
           tone="violet"
           title="Readiness & Lifecycle"
+          subtitle="How far along this release is, and its chance of shipping on time. (Readiness % is shown above.)"
+          detail="Tracks progress from planning through to go-live. 'Current stage' is where the release sits in that journey. 'Chance of shipping on time' is a live prediction from readiness, blockers, and time remaining — different from 'Team's estimate', which is the readiness % your team typed in manually."
           href="section-readiness"
-          hero={{ value: "50%", label: "Computed readiness (live)" }}
+          hero={{
+            value: "40%",
+            label: "Chance of shipping on time",
+            hint: "Live prediction of whether this release will hit its planned go-live date.",
+          }}
           metrics={[
-            { label: "Stored", value: "75%" },
-            { label: "Stage", value: "Preparing" },
-            { label: "Ship", value: "40%" },
-            { label: "Slip", value: "60%" },
+            { label: "Current stage", value: "Preparing", hint: "Where this release sits in the journey." },
+            { label: "Live readiness", value: "50%", hint: "Computed readiness from live signals." },
+            { label: "Team's estimate", value: "75%", hint: "Manual readiness % entered by the team." },
+            { label: "Prep checklist", value: "79%", hint: "Go-live checklist completion." },
+            { label: "Slip risk", value: "60%", hint: "Chance this release finishes late." },
+            { label: "Time left", value: "4 days", hint: "Days until planned go-live." },
           ]}
         />
         <ReleaseDashboardTile
           icon={AlertTriangle}
           tone="rose"
           title="Blockers & Conflicts"
+          subtitle="Issues that could stop or delay this release, including any environment double-booking."
+          detail="Lists anything actively stopping or delaying this release — open issues, environment double-bookings, or change freeze windows. Resolve these before recording a Go decision."
           href="blockers"
-          hero={{ value: "1", label: "Open blocker" }}
+          hero={{
+            value: "1",
+            label: "Open issue blocking this release",
+            hint: "Count of open blocker tickets.",
+          }}
           metrics={[
-            { label: "Severity", value: "High" },
-            { label: "Env conflict", value: "Yes" },
-            { label: "Freeze", value: "Quarter-End" },
-            { label: "Conflict ID", value: "CNF-0001" },
+            { label: "How serious", value: "High", hint: "Highest open blocker severity." },
+            { label: "Env conflict", value: "Yes — clash detected", hint: "Environment double-booking flag." },
+            { label: "Conflict reference", value: "CNF-0001", hint: "Conflict ticket ID." },
+            { label: "Conflicts with", value: "REL-0003", hint: "Other release in the clash." },
+            { label: "Conflict type", value: "Same Test/UAT env", hint: "Kind of scheduling clash." },
+            { label: "Change freeze", value: "Quarter-End", hint: "Restricted change window." },
           ]}
         />
         <ReleaseDashboardTile
           icon={Server}
           tone="sky"
           title="Environments & Bookings"
+          subtitle="The test/UAT environments this release needs, and whether another team has already booked them."
+          detail="Shows which Test and UAT environments this release needs, who booked them, and for which dates. Overlapping bookings with another release are flagged as a conflict."
           href="section-environments"
-          hero={{ value: "2", label: "Linked bookings" }}
+          hero={{
+            value: "2",
+            label: "Environment bookings on file",
+            hint: "Linked environment booking count.",
+          }}
           metrics={[
-            { label: "TEST", value: "FIN-TEST-01" },
-            { label: "UAT", value: "FIN-UAT-01" },
-            { label: "Conflict", value: "Yes" },
-            { label: "Owners", value: "Priya" },
+            { label: "Test environment", value: "FIN-TEST-01", hint: "Required Test env." },
+            { label: "UAT environment", value: "FIN-UAT-01", hint: "Required UAT env." },
+            { label: "Booked by", value: "Priya", hint: "Who reserved the booking." },
+            { label: "Team", value: "Finance QA", hint: "Team owning the booking." },
+            { label: "Booking window", value: "17 Jul → 19 Jul", hint: "Booking date range." },
+            { label: "Purpose", value: "UAT regression", hint: "Why the env was booked." },
           ]}
         />
         <ReleaseDashboardTile
           icon={CheckCircle2}
           tone="emerald"
           title="Key Dates & Approvals"
+          subtitle="The review date, go-live date, and required sign-offs before this release can ship."
+          detail="Shows the CAB review date, the planned go-live date, and the deployment window, plus the 5 required sign-offs that should be complete before a Go decision."
           href="section-dates"
-          hero={{ value: "1/5", label: "Sign-offs complete" }}
+          hero={{
+            value: "1/5",
+            label: "Required sign-offs approved",
+            hint: "How many of 5 required gates are done.",
+          }}
           metrics={[
-            { label: "CAB", value: "18 Jul" },
-            { label: "End", value: "22 Jul" },
-            { label: "Window", value: "Sat night" },
-            { label: "Approval", value: "Pending" },
+            { label: "Review date (CAB)", value: "18 Jul", hint: "Change Advisory Board review date." },
+            { label: "Start date", value: "14 Jul", hint: "Release start date." },
+            { label: "Go-live date", value: "22 Jul", hint: "Planned production date." },
+            { label: "Deployment window", value: "Sat night", hint: "Agreed deploy slot." },
+            { label: "Approval status", value: "Pending", hint: "Overall approval state." },
+            { label: "Rollback plan", value: "On file", hint: "Undo plan if go-live fails." },
           ]}
         />
       </div>

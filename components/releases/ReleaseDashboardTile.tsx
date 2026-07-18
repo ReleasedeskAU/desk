@@ -2,6 +2,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight } from "lucide-react";
+import { HoverExplain, InfoTooltip } from "@/components/ui/InfoTooltip";
 import { cn } from "@/lib/utils";
 import type { SectionTone } from "@/components/detail/editable";
 
@@ -32,18 +33,33 @@ const HERO_TONE: Record<SectionTone, string> = {
   amber: "text-amber-600 dark:text-amber-400",
 };
 
+const METRIC_TONE: Record<SectionTone, string> = {
+  indigo: "bg-indigo-50/70 dark:bg-indigo-500/10",
+  rose: "bg-rose-50/70 dark:bg-rose-500/10",
+  emerald: "bg-emerald-50/70 dark:bg-emerald-500/10",
+  sky: "bg-sky-50/70 dark:bg-sky-500/10",
+  violet: "bg-violet-50/70 dark:bg-violet-500/10",
+  amber: "bg-amber-50/70 dark:bg-amber-500/10",
+};
+
 export type TileMetric = {
   label: string;
   value: string;
+  /** Plain-English explanation shown when the user hovers / taps this chip. */
+  hint: string;
 };
 
 export type ReleaseDashboardTileProps = {
   icon: LucideIcon;
   title: string;
   tone?: SectionTone;
+  /** One plain-English line explaining what this tile means — no jargon, no prior context assumed. */
+  subtitle: string;
+  /** Longer explanation shown in the "?" tooltip — what the numbers mean and how to act on them. */
+  detail: string;
   /** Large KPI on the tile face. */
-  hero: { value: string; label: string };
-  /** Secondary scannable signals (2–4). */
+  hero: { value: string; label: string; hint: string };
+  /** Secondary scannable signals (shown in a full-width grid). */
   metrics: TileMetric[];
   /** Section id to scroll to (without #). */
   href: string;
@@ -51,28 +67,32 @@ export type ReleaseDashboardTileProps = {
 };
 
 /**
- * Stat tile for the release command center. Click jumps to an always-open
- * detail section further down the page (not an accordion).
+ * Dashboard KPI tile. Uses the full card width for hero + metric grid so
+ * current release data is readable without truncation. Hover any chip for
+ * a plain-English explanation. Click jumps to the matching deep-dive section.
  *
- * @param props - Tile chrome, KPI metrics, and deep-dive anchor.
+ * @param props - Tile chrome, KPI metrics with hints, and deep-dive anchor.
  * @returns Anchor-styled dashboard tile.
  */
 export function ReleaseDashboardTile({
   icon: Icon,
   title,
   tone = "indigo",
+  subtitle,
+  detail,
   hero,
   metrics,
   href,
   className,
 }: ReleaseDashboardTileProps) {
   const target = href.startsWith("#") ? href : `#${href}`;
+  const visibleMetrics = metrics.slice(0, 8);
 
   return (
     <a
       href={target}
       className={cn(
-        "flex h-full flex-col rounded-[22px] border border-slate-100/80 border-l-[4px] bg-white px-5 py-4 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-20px_rgba(112,144,176,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border-[var(--border)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)]",
+        "flex h-full flex-col rounded-[22px] border border-slate-100/80 border-l-[4px] bg-white px-5 py-4 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] transition-shadow duration-150 hover:shadow-[0_20px_44px_-20px_rgba(112,144,176,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border-[var(--border)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)]",
         ACCENT_BORDER[tone],
         className
       )}
@@ -88,39 +108,70 @@ export function ReleaseDashboardTile({
             <Icon size={16} aria-hidden />
           </span>
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/45">
-              {title}
+            <div className="flex items-center gap-1">
+              <p className="truncate text-[13px] font-bold text-slate-800 dark:text-white">{title}</p>
+              <span
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              >
+                <InfoTooltip text={detail} label={`About ${title}`} />
+              </span>
+            </div>
+            <p className="text-[11px] font-medium text-indigo-600 dark:text-indigo-300">
+              Hover chips for help · click for full section ↓
             </p>
-            <p className="text-[11px] text-slate-400 dark:text-white/40">Jump to section</p>
           </div>
         </div>
         <ArrowDownRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 dark:text-white/45" aria-hidden />
       </div>
 
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <div>
+      <p className="mt-2 text-[12px] leading-snug text-slate-500 dark:text-white/55">{subtitle}</p>
+
+      <HoverExplain
+        text={hero.hint}
+        label={`About ${hero.label}`}
+        className="mt-3 w-full"
+        placement="bottom"
+      >
+        <div className="w-full rounded-2xl bg-slate-50/90 px-4 py-3 transition-colors hover:bg-slate-100/90 dark:bg-white/[0.04] dark:hover:bg-white/[0.07]">
           <p
             className={cn(
-              "text-[2rem] font-extrabold leading-none tracking-tight tabular-nums",
+              "text-[2.15rem] font-extrabold leading-none tracking-tight tabular-nums",
               HERO_TONE[tone]
             )}
           >
             {hero.value}
           </p>
-          <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-white/55">{hero.label}</p>
+          <p className="mt-1.5 text-[12px] font-semibold text-slate-600 dark:text-white/70">{hero.label}</p>
         </div>
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-3 gap-y-2 text-right sm:max-w-[220px]">
-          {metrics.slice(0, 4).map((metric) => (
-            <div key={metric.label} className="min-w-0">
-              <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/40">
+      </HoverExplain>
+
+      <div className="mt-3 grid flex-1 grid-cols-2 gap-2">
+        {visibleMetrics.map((metric) => (
+          <HoverExplain
+            key={metric.label}
+            text={metric.hint}
+            label={`About ${metric.label}`}
+            className="min-w-0 w-full"
+            placement="top"
+          >
+            <div
+              className={cn(
+                "min-w-0 w-full rounded-xl px-2.5 py-2 transition-shadow hover:shadow-sm hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/15",
+                METRIC_TONE[tone]
+              )}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/45">
                 {metric.label}
               </p>
-              <p className="truncate text-[12.5px] font-bold text-slate-700 dark:text-white/80">
+              <p className="mt-0.5 break-words text-[13px] font-bold leading-snug text-slate-800 dark:text-white/85">
                 {metric.value}
               </p>
             </div>
-          ))}
-        </div>
+          </HoverExplain>
+        ))}
       </div>
     </a>
   );

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentBadge } from "@/components/badges/AgentBadge";
 import { AICardSkeleton } from "@/components/ui/AISkeleton";
 import { AdvancedCard } from "@/components/ui/advanced-card";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { callAgent } from "@/lib/agent-client";
 import type { DbRiskAgentContext } from "@/lib/db-ai-context";
 import { blockersToRiskFlags } from "@/lib/db-ai-context";
@@ -27,6 +28,9 @@ const FLAG_STYLES = {
     badge: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-white/65",
   },
 } as const;
+
+const AI_INSIGHTS_HELP =
+  "AI-generated risk flags for this release, ranked by severity (High/Medium/Low). The Risk Agent looks at readiness, open blockers, environment conflicts, and linked work items to surface what's most likely to cause a delay. 'Re-run analysis' regenerates these flags with the latest data — use it after resolving a blocker or updating readiness.";
 
 type DbAIRiskPanelProps = {
   releaseId: string;
@@ -136,6 +140,7 @@ export function DbAIRiskPanel({
               <p className="text-[11px] text-slate-400 dark:text-white/45">Top signals · Risk Agent</p>
             </div>
             <AgentBadge agent="Risk Agent" />
+            <InfoTooltip label="About AI Insights" text={AI_INSIGHTS_HELP} />
           </div>
           <button
             type="button"
@@ -212,7 +217,12 @@ export function DbAIRiskPanel({
       title="AI risk analysis"
       icon={ShieldAlert}
       variant="ai"
-      action={<AgentBadge agent="Risk Agent" />}
+      action={
+        <div className="flex items-center gap-1.5">
+          <AgentBadge agent="Risk Agent" />
+          <InfoTooltip label="About AI Insights" text={AI_INSIGHTS_HELP} />
+        </div>
+      }
     >
       <p className="mb-3 text-xs text-gray-500 dark:text-white/60">
         Live analysis from readiness, blockers, slip impact, Jira items, and env bookings for{" "}

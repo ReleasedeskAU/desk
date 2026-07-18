@@ -1,6 +1,6 @@
 "use client";
 
-import { useTheme } from "@mui/material/styles";
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,8 @@ export type CrmStatCardProps = {
   trendDirection?: "up" | "down" | "neutral";
   icon: LucideIcon;
   color?: "primary" | "success" | "warning" | "error" | "info" | "neutral";
+  /** Optional help control rendered next to the title (keeps the metric icon free). */
+  help?: ReactNode;
 };
 
 const BORDER_MAP = {
@@ -32,35 +34,61 @@ const ICON_COLOR_MAP = {
   neutral: "text-gray-900 dark:text-white",
 };
 
-const TREND_MAP = {
-  up: "text-emerald-600",
-  down: "text-emerald-600", // In screenshot, "down" for blocked is green because less blocked is good! Wait, if it's dynamic... let's just use emerald for down since it's a reduction in blocked.
-  neutral: "text-gray-600",
-};
-
-export function CrmStatCard({ title, value, trendText, trendDirection = "neutral", icon: Icon, color = "primary" }: CrmStatCardProps) {
+/**
+ * Compact executive KPI card used on /executive and release detail headline tiles.
+ *
+ * @param props - Title, value, optional trend line, metric icon, and optional help control.
+ * @returns Styled KPI card.
+ */
+export function CrmStatCard({
+  title,
+  value,
+  trendText,
+  trendDirection = "neutral",
+  icon: Icon,
+  color = "primary",
+  help,
+}: CrmStatCardProps) {
   return (
-    <div className={cn(
-      "flex flex-col justify-between rounded-xl border border-gray-200 dark:border-[var(--border)] border-l-[4px] bg-white dark:bg-[var(--card)] p-5 shadow-sm transition-shadow hover:shadow-md h-full min-h-[140px]", 
-      BORDER_MAP[color] || BORDER_MAP.primary
-    )}>
-      <div className="flex items-start justify-between w-full">
-        <span className="text-[10px] font-bold tracking-widest text-gray-500 dark:text-white/65 uppercase">{title}</span>
-        <Icon className={cn("h-[18px] w-[18px]", ICON_COLOR_MAP[color] || ICON_COLOR_MAP.primary)} strokeWidth={2} />
+    <div
+      className={cn(
+        "flex h-full min-h-[140px] flex-col justify-between rounded-xl border border-l-[4px] border-gray-200 bg-white p-5 shadow-sm transition-shadow duration-150 hover:shadow-md dark:border-[var(--border)] dark:bg-[var(--card)]",
+        BORDER_MAP[color] || BORDER_MAP.primary
+      )}
+    >
+      <div className="flex w-full items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-white/65">
+            {title}
+          </span>
+          {help}
+        </div>
+        <Icon
+          className={cn("h-[18px] w-[18px] shrink-0", ICON_COLOR_MAP[color] || ICON_COLOR_MAP.primary)}
+          strokeWidth={2}
+          aria-hidden
+        />
       </div>
-      
+
       <div className="mt-4">
-        <h4 className="text-4xl font-extrabold text-gray-900 dark:text-white tracking-tight">{value}</h4>
-        
+        <h4 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-white">{value}</h4>
+
         {trendText && (
-          <div className={cn(
-            "flex items-center gap-1.5 mt-2.5 text-[11px] font-bold tracking-wide", 
-            trendDirection === "up" ? (color === "warning" ? "text-error-600" : "text-emerald-600") : 
-            trendDirection === "down" ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-white/65"
-          )}>
-            {trendDirection === "up" && <TrendingUp className="w-3.5 h-3.5" strokeWidth={3} />}
-            {trendDirection === "down" && <TrendingDown className="w-3.5 h-3.5" strokeWidth={3} />}
-            {trendDirection === "neutral" && <Minus className="w-3.5 h-3.5" strokeWidth={3} />}
+          <div
+            className={cn(
+              "mt-2.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide",
+              trendDirection === "up"
+                ? color === "warning"
+                  ? "text-error-600"
+                  : "text-emerald-600"
+                : trendDirection === "down"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-gray-500 dark:text-white/65"
+            )}
+          >
+            {trendDirection === "up" && <TrendingUp className="h-3.5 w-3.5" strokeWidth={3} />}
+            {trendDirection === "down" && <TrendingDown className="h-3.5 w-3.5" strokeWidth={3} />}
+            {trendDirection === "neutral" && <Minus className="h-3.5 w-3.5" strokeWidth={3} />}
             <span>{trendText}</span>
           </div>
         )}

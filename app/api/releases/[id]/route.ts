@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import {
+  auditActorName,
+  summarizeIdListChange,
+  summarizeReleaseFieldEdits,
+} from "@/lib/release-audit";
 import { normalizeProgramProject } from "@/lib/release-id";
 
 const releaseInclude = {
@@ -11,7 +16,7 @@ const releaseInclude = {
   dependsOn: { include: { dependsOnRelease: true } },
   dependedBy: { include: { release: true } },
   bookings: { include: { application: true, environment: true } },
-  auditEvents: { orderBy: { createdAt: "desc" as const }, take: 50 },
+  auditEvents: { orderBy: { createdAt: "desc" as const }, take: 100 },
 };
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -99,9 +104,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (v !== undefined) data[key] = v;
   }
 
+  // Collect audit fragments before mutating so "before" state is accurate.
+  const auditParts: string[] = [];
+  const fieldDetail = summarizeReleaseFieldEdits(
+    existing as unknown as Record<string, unknown>,
+    data
+  );
+  if (fieldDetail) auditParts.push(fieldDetail);
+
   await prisma.release.update({ where: { id: realId }, data });
 
   if (body.applicationIds) {
+    const beforeApps = await prisma.releaseApplication.findMany({
+      where: { releaseId: realId },
+      select: { applicationId: true },
+    });
+    const appChange = summarizeIdListChange(
+      "Applications",
+      beforeApps.map((a) => a.applicationId),
+      body.applicationIds as string[]
+    );
+    if (appChange) auditParts.push(appChange);
+
     await prisma.releaseApplication.deleteMany({ where: { releaseId: realId } });
     if (body.applicationIds.length) {
       await prisma.releaseApplication.createMany({
@@ -112,6 +136,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   if (body.dependsOnReleaseIds) {
     const dependsOnReleaseIds = body.dependsOnReleaseIds as string[];
+    const beforeDeps = await prisma.releaseDependency.findMany({
+      where: { releaseId: realId, dependencyCode: null },
+      select: { dependsOnReleaseId: true },
+    });
+    const depChange = summarizeIdListChange(
+      "Depends On",
+      beforeDeps.map((d) => d.dependsOnReleaseId),
+      dependsOnReleaseIds
+    );
+    if (depChange) auditParts.push(depChange);
+
     // Preserve tracked dependencies (DEP-*) — only sync lightweight release-form links.
     await prisma.releaseDependency.deleteMany({
       where: {
@@ -123,13 +158,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       },
     });
     for (const dependsOnReleaseId of dependsOnReleaseIds) {
-      const existing = await prisma.releaseDependency.findUnique({
+      const existingDep = await prisma.releaseDependency.findUnique({
         where: {
           releaseId_dependsOnReleaseId: { releaseId: realId, dependsOnReleaseId },
         },
         select: { id: true },
       });
-      if (!existing) {
+      if (!existingDep) {
         await prisma.releaseDependency.create({
           data: { releaseId: realId, dependsOnReleaseId },
         });
@@ -138,6 +173,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (body.stakeholderIds) {
+    const beforeStakeholders = await prisma.releaseStakeholder.findMany({
+      where: { releaseId: realId },
+      select: { userId: true },
+    });
+    const stakeholderChange = summarizeIdListChange(
+      "Stakeholders",
+      beforeStakeholders.map((s) => s.userId),
+      body.stakeholderIds as string[]
+    );
+    if (stakeholderChange) auditParts.push(stakeholderChange);
+
     await prisma.releaseStakeholder.deleteMany({ where: { releaseId: realId } });
     if (body.stakeholderIds.length) {
       await prisma.releaseStakeholder.createMany({
@@ -146,13 +192,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  if (body.status && body.status !== existing.status) {
+  // Every edit is recorded with who made it — status-only patches keep a clearer action label.
+  if (auditParts.length) {
+    const statusOnly =
+      Object.keys(data).length === 1 &&
+      data.status !== undefined &&
+      String(data.status) !== existing.status &&
+      !body.applicationIds &&
+      !body.dependsOnReleaseIds &&
+      !body.stakeholderIds;
+
     await prisma.releaseAuditEvent.create({
       data: {
         releaseId: realId,
-        action: "status_change",
-        actor: user!.name,
-        detail: `Status changed to ${body.status}`,
+        action: statusOnly ? "status_change" : "edit",
+        actor: auditActorName(user!),
+        detail: statusOnly
+          ? `Status changed to ${String(data.status)}`
+          : auditParts.join(" · "),
       },
     });
   }

@@ -31,7 +31,11 @@ import { formatDate, formatDateTime, cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/auth/roles";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
-import { pickHeadlineReadiness, pickUrgentNextAction } from "@/lib/release-detail-layout";
+import {
+  openDetailsFromHash,
+  pickHeadlineReadiness,
+  pickUrgentNextAction,
+} from "@/lib/release-detail-layout";
 import {
   AlertTriangle,
   Calendar,
@@ -325,6 +329,14 @@ export function DbReleaseDetail({ id }: { id: string }) {
     onReadinessChange: setComputedReadiness,
   });
 
+  // Tile / next-action hash links expand the matching collapsible deep-dive.
+  useEffect(() => {
+    const sync = () => openDetailsFromHash(window.location.hash);
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, [release?.id]);
+
   const releaseOptions = useMemo(
     () =>
       [...lookups.releases].sort((a, b) => a.releaseCode.localeCompare(b.releaseCode, undefined, { numeric: true })),
@@ -406,14 +418,19 @@ export function DbReleaseDetail({ id }: { id: string }) {
   ].filter(signalDone).length;
   const shipPct = commandData?.prediction?.shipProbability;
   const slipPct = commandData?.prediction?.delayRisk;
+  const daysToRelease = Math.ceil((new Date(release.releaseDate).getTime() - Date.now()) / 86400000);
+  const daysToReleaseLabel =
+    daysToRelease > 0 ? `${daysToRelease} day${daysToRelease === 1 ? "" : "s"}` : daysToRelease === 0 ? "Today" : "Overdue";
 
+  // Compact "switch release" control — lives with page actions, not competing
+  // with the page title for visual weight (see feedback: title is the identity).
   const releaseSwitcher = (
-    <label className="flex min-w-0 flex-col items-center text-sm text-gray-700 dark:text-white/80">
-      <span className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-        Select Release
+    <label className="flex min-w-0 items-center gap-1.5 text-sm text-gray-700 dark:text-white/80">
+      <span className="hidden text-[11px] font-semibold text-slate-400 dark:text-white/45 sm:inline">
+        Switch release
       </span>
       <select
-        className={cn(taInput, "w-full min-w-0 max-w-full rounded-xl font-mono text-sm sm:w-auto sm:min-w-[220px]")}
+        className={cn(taInput, "min-w-0 max-w-[140px] rounded-xl py-1.5 font-mono text-xs sm:max-w-[160px]")}
         value={release.id}
         onChange={(e) => {
           if (e.target.value && e.target.value !== release.id) {
@@ -431,143 +448,56 @@ export function DbReleaseDetail({ id }: { id: string }) {
           ))
         )}
       </select>
-      <p className="mt-1 text-[11px] text-slate-400 dark:text-white/45" suppressHydrationWarning>
-        Updated{" "}
-        <span suppressHydrationWarning>
-          {lastRefresh ? formatDateTime(lastRefresh.toISOString()) : "—"}
-        </span>
-      </p>
     </label>
   );
 
   return (
     <DetailPageShell
       entityCode={release.releaseCode}
-      title="Release Command Center"
-      subtitle={`${release.releaseCode} — ${release.name}`}
+      title={`${release.releaseCode} — ${release.name}`}
+      titleClassName="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl dark:text-white"
+      subtitle={`Last updated ${lastRefresh ? formatDateTime(lastRefresh.toISOString()) : "—"}`}
       hideBack
-      headerCenter={releaseSwitcher}
       actions={
-        canEdit ? (
-          <>
-            <button
-              type="button"
-              onClick={() => setDeleteOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97] dark:shadow-indigo-900/40"
-            >
-              <Pencil className="h-4 w-4" aria-hidden />
-              Edit Release
-            </button>
-          </>
-        ) : undefined
+        <>
+          {releaseSwitcher}
+          {canEdit ? (
+            <>
+              <span className="mx-1 hidden h-6 w-px bg-slate-200 dark:bg-white/10 sm:inline-block" aria-hidden />
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97] dark:shadow-indigo-900/40"
+              >
+                <Pencil className="h-4 w-4" aria-hidden />
+                Edit Release
+              </button>
+            </>
+          ) : null}
+        </>
       }
     >
-      {/* 1. Top summary bar — 6 scan signals */}
+      {/* Executive-style KPI tiles: Readiness / Slip / Env conflict */}
       <ReleaseSummaryBar
-        releaseCode={release.releaseCode}
-        name={release.name}
-        status={release.status}
-        releaseHealth={release.releaseHealth}
         headlineReadiness={headlineReadiness}
         slipRisk={slipPct ?? null}
         envConflict={Boolean(release.conflictFlag)}
-        urgentAction={urgentAction}
       />
 
-      {/* 2. AI Insights — always visible, compact, above the fold */}
       <DbAIRiskPanel
         releaseId={id}
         compact
         recommendedNextStep={urgentAction?.label ?? null}
       />
 
-      {/* 3. Four primary dashboard tiles — jump links to sections below */}
-      <div>
-        <p className="mb-2 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-          Command tiles · click to deep-dive
-        </p>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ReleaseDashboardTile
-            icon={Rocket}
-            tone="violet"
-            title="Readiness & Lifecycle"
-            href="section-readiness"
-            hero={{ value: `${headlineReadiness}%`, label: "Computed readiness (live)" }}
-            metrics={[
-              {
-                label: "Stored",
-                value: release.readinessPercent == null ? "—" : `${Math.round(release.readinessPercent)}%`,
-              },
-              { label: "Stage", value: activeStage },
-              { label: "Ship", value: shipPct == null ? "—" : `${shipPct}%` },
-              { label: "Slip", value: slipPct == null ? "—" : `${slipPct}%` },
-            ]}
-          />
-
-          <ReleaseDashboardTile
-            icon={AlertTriangle}
-            tone="rose"
-            title="Blockers & Conflicts"
-            href="blockers"
-            hero={{
-              value: String(blockerCount),
-              label: blockerCount === 1 ? "Open blocker" : "Open blockers",
-            }}
-            metrics={[
-              { label: "Severity", value: topBlockerSeverity ?? "—" },
-              { label: "Env conflict", value: release.conflictFlag ? "Yes" : "No" },
-              { label: "Freeze", value: release.changeFreeze ?? "—" },
-              { label: "Conflict ID", value: release.conflictId ?? "—" },
-            ]}
-          />
-
-          <ReleaseDashboardTile
-            icon={Server}
-            tone="sky"
-            title="Environments & Bookings"
-            href="section-environments"
-            hero={{
-              value: String(release.bookings.length),
-              label: release.bookings.length === 1 ? "Linked booking" : "Linked bookings",
-            }}
-            metrics={[
-              { label: "TEST", value: release.testEnvRequired ?? "—" },
-              { label: "UAT", value: release.uatEnvRequired ?? "—" },
-              { label: "Conflict", value: release.conflictFlag ? "Yes" : "No" },
-              {
-                label: "Owners",
-                value:
-                  [...new Set(release.bookings.map((b) => b.bookedBy).filter(Boolean))].slice(0, 2).join(", ") ||
-                  "—",
-              },
-            ]}
-          />
-
-          <ReleaseDashboardTile
-            icon={CheckCircle2}
-            tone="emerald"
-            title="Key Dates & Approvals"
-            href="section-dates"
-            hero={{ value: `${signoffsDone}/5`, label: "Sign-offs complete" }}
-            metrics={[
-              { label: "CAB", value: release.cabDate ? formatDate(release.cabDate) : "—" },
-              { label: "End", value: formatDate(release.releaseDate) },
-              { label: "Window", value: release.deploymentWindow ?? "—" },
-              { label: "Approval", value: release.approvalStatus ?? "—" },
-            ]}
-          />
-        </div>
-      </div>
-
-      {/* Compact action strip */}
       <ReleaseActionStrip
         status={release.status}
         decision={release.decision}
@@ -576,14 +506,218 @@ export function DbReleaseDetail({ id }: { id: string }) {
         onRecordDecision={recordDecision}
       />
 
-      {/* Primary deep-dive sections — always open, targeted by command tiles */}
+      {/* Dashboard tiles — logical flow: ready → risks → envs → dates */}
+      <div>
+        <p className="mb-2 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          Dashboard · click a tile for the full section
+        </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <ReleaseDashboardTile
+            icon={Rocket}
+            tone="violet"
+            title="Readiness & Lifecycle"
+            subtitle="Where this release is in its journey, and how likely it is to ship on the planned date."
+            detail="Tracks progress from planning through to go-live. 'Current stage' is where the release sits in that journey. 'Chance of shipping on time' is a live prediction from readiness, blockers, and time remaining — different from 'Team's estimate', which is the readiness % your team typed in manually. Click through for the full breakdown."
+            href="section-readiness"
+            hero={{
+              value: shipPct == null ? "—" : `${shipPct}%`,
+              label: "Chance of shipping on time",
+              hint: "Live prediction of whether this release will hit its planned go-live date. It falls when readiness is low, blockers are open, or the date is close. Different from the readiness % above.",
+            }}
+            metrics={[
+              {
+                label: "Current stage",
+                value: activeStage,
+                hint: "Where this release sits in the journey from Planning → Deployment. The active stage is the one the team should focus on right now.",
+              },
+              {
+                label: "Live readiness",
+                value: `${headlineReadiness}%`,
+                hint: "Computed readiness from checklist items, sign-offs, and open blockers in Release Desk. 100% means every tracked prep step is done.",
+              },
+              {
+                label: "Team's estimate",
+                value: release.readinessPercent == null ? "—" : `${Math.round(release.readinessPercent)}%`,
+                hint: "The readiness % your team typed in manually (planning estimate). It can differ from Live readiness, which is calculated from live signals.",
+              },
+              {
+                label: "Prep checklist",
+                value:
+                  release.goLiveChecklistPercent == null ? "—" : `${Math.round(release.goLiveChecklistPercent)}%`,
+                hint: "How much of the go-live checklist is complete — the practical prep work that must finish before deployment.",
+              },
+              {
+                label: "Slip risk",
+                value: slipPct == null ? "—" : `${Math.round(slipPct)}%`,
+                hint: "Chance this release finishes late. Rises with open blockers, Blocked/At Risk status, or a near go-live date with low readiness. Above 40% should be reviewed.",
+              },
+              {
+                label: "Time left",
+                value: daysToReleaseLabel,
+                hint: "Calendar days remaining until the planned go-live date. 'Overdue' means that date has already passed.",
+              },
+            ]}
+          />
+
+          <ReleaseDashboardTile
+            icon={AlertTriangle}
+            tone="rose"
+            title="Blockers & Conflicts"
+            subtitle="Open issues, environment clashes, and freeze windows that can stop this release."
+            detail="Lists anything actively stopping or delaying this release — open issues (blockers), environment double-bookings, or change freeze windows that restrict when you can deploy. Resolve these before recording a Go decision. Click through to see, add, or close individual blockers."
+            href="blockers"
+            hero={{
+              value: String(blockerCount),
+              label: blockerCount === 1 ? "Open issue blocking this release" : "Open issues blocking this release",
+              hint: "Count of open blocker tickets still stopping or delaying this release. Resolve these before recording a Go decision.",
+            }}
+            metrics={[
+              {
+                label: "How serious",
+                value: topBlockerSeverity ?? "—",
+                hint: "Highest severity among open blockers (Critical / High / Medium / Low). Critical and High usually need immediate attention.",
+              },
+              {
+                label: "Env conflict",
+                value: release.conflictFlag ? "Yes — clash detected" : "No clash",
+                hint: "Whether the Test or UAT environment this release needs is already booked by another release for overlapping dates.",
+              },
+              {
+                label: "Conflict reference",
+                value: release.conflictId ?? "—",
+                hint: "Conflict ticket ID (e.g. CNF-0001) linking to the full conflict record. Use it to open the conflict detail page.",
+              },
+              {
+                label: "Conflicts with",
+                value: release.conflictingRelease ?? "—",
+                hint: "The other release(s) sharing the same environment window. Coordinate or reschedule one of them to clear the clash.",
+              },
+              {
+                label: "Conflict type",
+                value: release.conflictType ?? "—",
+                hint: "What kind of clash this is — commonly the same Test/UAT environment required in the same dates.",
+              },
+              {
+                label: "Change freeze",
+                value: release.changeFreeze ?? "—",
+                hint: "A period when production changes are restricted (e.g. quarter-end). Deployments during a freeze usually need extra approval.",
+              },
+            ]}
+          />
+
+          <ReleaseDashboardTile
+            icon={Server}
+            tone="sky"
+            title="Environments & Bookings"
+            subtitle="Which Test/UAT environments are needed, who booked them, and for which dates."
+            detail="Shows which Test and UAT environments this release needs, who booked them, and for which dates. If another release has booked the same environment for overlapping dates, a conflict is flagged here and in the 'Env conflict' KPI above."
+            href="section-environments"
+            hero={{
+              value: String(release.bookings.length),
+              label: release.bookings.length === 1 ? "Environment booking on file" : "Environment bookings on file",
+              hint: "How many environment bookings are linked to this release. Each booking reserves a Test/UAT (or similar) environment for a date range.",
+            }}
+            metrics={[
+              {
+                label: "Test environment",
+                value: release.testEnvRequired ?? "—",
+                hint: "The Test environment this release needs for QA. Must be free (or shared by agreement) during the test window.",
+              },
+              {
+                label: "UAT environment",
+                value: release.uatEnvRequired ?? "—",
+                hint: "The User Acceptance Testing environment business users will use to sign off before go-live.",
+              },
+              {
+                label: "Booked by",
+                value:
+                  [...new Set(release.bookings.map((b) => b.bookedBy).filter(Boolean))].slice(0, 2).join(", ") ||
+                  "—",
+                hint: "Who reserved the environment booking(s). Contact them if you need to adjust dates or share the slot.",
+              },
+              {
+                label: "Team",
+                value:
+                  [...new Set(release.bookings.map((b) => b.team).filter(Boolean))].slice(0, 2).join(", ") || "—",
+                hint: "Team that owns the booking — useful when you need to escalate a scheduling clash.",
+              },
+              {
+                label: "Booking window",
+                value: release.bookings[0]
+                  ? `${formatDate(release.bookings[0].fromDate)} → ${formatDate(release.bookings[0].toDate)}`
+                  : "—",
+                hint: "Start and end dates of the first linked booking. Overlap with another release on the same env causes an env conflict.",
+              },
+              {
+                label: "Purpose",
+                value: release.bookings[0]?.purpose?.trim() || "—",
+                hint: "Why the environment was booked (e.g. UAT regression, performance testing).",
+              },
+            ]}
+          />
+
+          <ReleaseDashboardTile
+            icon={CheckCircle2}
+            tone="emerald"
+            title="Key Dates & Approvals"
+            subtitle="CAB review, go-live date, deployment window, and required sign-offs."
+            detail="Shows the Change Advisory Board (CAB) review date, the planned go-live date, and the deployment window. Also tracks the 5 required sign-offs — Dev, Test, UAT, Security, and Dress rehearsal — which should normally all be complete before recording a Go decision."
+            href="section-dates"
+            hero={{
+              value: `${signoffsDone}/5`,
+              label: "Required sign-offs approved",
+              hint: "How many of the 5 required gates are done: Dev, Test, UAT, Security, and Dress rehearsal. Aim for 5/5 before recording Go.",
+            }}
+            metrics={[
+              {
+                label: "Review date (CAB)",
+                value: release.cabDate ? formatDate(release.cabDate) : "—",
+                hint: "Change Advisory Board review date — when the release is formally reviewed for approval to proceed.",
+              },
+              {
+                label: "Start date",
+                value: release.startDate ? formatDate(release.startDate) : "—",
+                hint: "When work on this release officially started (or is planned to start).",
+              },
+              {
+                label: "Go-live date",
+                value: formatDate(release.releaseDate),
+                hint: "The planned production go-live date. Slip risk and Time left are measured against this date.",
+              },
+              {
+                label: "Deployment window",
+                value: release.deploymentWindow ?? "—",
+                hint: "The agreed time slot for deploying to production (e.g. Saturday night maintenance window).",
+              },
+              {
+                label: "Approval status",
+                value: release.approvalStatus ?? "—",
+                hint: "Overall approval state for this release (e.g. Pending, Approved). Separate from the five individual sign-offs.",
+              },
+              {
+                label: "Rollback plan",
+                value: release.rollbackPlan ?? "—",
+                hint: "Whether a plan exists to undo the deployment if something goes wrong after go-live.",
+              },
+            ]}
+          />
+        </div>
+      </div>
+
+      {/* Deep dives — open by default so current data is readable immediately */}
       <div className="space-y-3">
+        <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          Details · open by default · collapse any section you do not need
+        </p>
         <DetailSection
           id="section-readiness"
           icon={Rocket}
           tone="violet"
           title="Readiness & Lifecycle"
           description="Live readiness score, stage progress, and ship/slip outlook"
+          detail="Full breakdown of how ready this release is to ship: the live readiness score, which lifecycle stage it's currently in, and the model's ship-on-time vs. slip-risk prediction. Use this when you need the 'why' behind the numbers shown in the tile and KPI cards above."
+          collapsible
+          defaultOpen
         >
           {commandData ? (
             <ReadinessLifecycleContent
@@ -602,31 +736,58 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="rose"
           title="Blockers & Conflicts"
           description="Open blockers, environment conflicts, and freeze constraints"
+          detail="Everything currently blocking or threatening this release: open blocker tickets and their severity, whether the required test/UAT environment conflicts with another release's booking, and any change-freeze window that restricts deployment dates. Add or resolve blockers directly from this section."
+          collapsible
+          defaultOpen
         >
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusChip
               label={release.conflictFlag ? "⚠ Conflict detected" : "No environment conflict"}
               tone={release.conflictFlag ? "bad" : "good"}
             />
             {release.changeFreeze && <StatusChip label={release.changeFreeze} tone="warn" />}
+            {release.vendorMaintenance && (
+              <StatusChip label={`Vendor: ${release.vendorMaintenance}`} tone="warn" />
+            )}
           </div>
           <DetailFieldGrid cols={3}>
-            <DetailField label="Conflict Flag" value={conflictFlagDisplay} />
-            <DetailField label="Conflict ID" value={<ConflictCodeLinks raw={release.conflictId} />} />
+            <DetailField
+              label="Conflict Flag"
+              hint="Yes means another release has booked the same Test/UAT environment for overlapping dates."
+              value={conflictFlagDisplay}
+            />
+            <DetailField
+              label="Conflict ID"
+              hint="Link to the conflict record (e.g. CNF-0001). Open it for resolution details."
+              value={<ConflictCodeLinks raw={release.conflictId} />}
+            />
             <DetailField
               label="Conflicting Release"
+              hint="The other release involved in the environment clash."
               value={<ReleaseCodeLinks raw={release.conflictingRelease} releases={lookups.releases} />}
             />
-            <DetailField label="Conflict Type" value={dash(release.conflictType)} />
-            <DetailField label="Change Freeze" value={dash(release.changeFreeze)} />
-            <DetailField label="Vendor Maintenance" value={dash(release.vendorMaintenance)} />
+            <DetailField
+              label="Conflict Type"
+              hint="What kind of scheduling clash this is (usually same Test/UAT environment)."
+              value={dash(release.conflictType)}
+            />
+            <DetailField
+              label="Change Freeze"
+              hint="Period when production changes are restricted — deployments may need extra approval."
+              value={dash(release.changeFreeze)}
+            />
+            <DetailField
+              label="Vendor Maintenance"
+              hint="Vendor-side maintenance windows that could affect testing or go-live."
+              value={dash(release.vendorMaintenance)}
+            />
           </DetailFieldGrid>
           {release.conflictNotes && (
-            <div className="mt-4">
+            <div className="mt-3">
               <TintedCallout tone="rose">{release.conflictNotes}</TintedCallout>
             </div>
           )}
-          <div className="mt-5 border-t border-gray-100 pt-4 dark:border-[var(--border)]">
+          <div className="mt-3 border-t border-gray-100 pt-3 dark:border-[var(--border)]">
             <DbBlockerList
               embedded
               releaseCode={release.releaseCode}
@@ -647,12 +808,24 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="sky"
           title="Environments & Bookings"
           description="Required environments and linked booking windows"
+          detail="The specific Test and UAT environments this release depends on, whether they're currently double-booked by another release, and the full list of linked environment bookings with their dates and the teams who reserved them."
+          collapsible
+          defaultOpen
         >
           <DetailFieldGrid cols={3}>
-            <DetailField label="Test Env Required" value={dash(release.testEnvRequired)} />
-            <DetailField label="UAT Env Required" value={dash(release.uatEnvRequired)} />
+            <DetailField
+              label="Test Env Required"
+              hint="Test environment name needed for QA before UAT and go-live."
+              value={dash(release.testEnvRequired)}
+            />
+            <DetailField
+              label="UAT Env Required"
+              hint="UAT environment business users will use to accept the change."
+              value={dash(release.uatEnvRequired)}
+            />
             <DetailField
               label="Env Conflicts"
+              hint="Whether those environments overlap with another release's booking."
               value={
                 <span
                   className={cn(
@@ -705,6 +878,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="emerald"
           title="Key Dates & Approvals"
           description="CAB and go-live timeline plus sign-off and approval status"
+          detail="The full release timeline — CAB review date, start date, go-live date, and deployment window — alongside every individual sign-off (Dev, Test, UAT, Security, Dress rehearsal), the overall approval status, and the rollback plan on file."
+          collapsible
+          defaultOpen
         >
           <div className="space-y-5">
             <div>
@@ -798,6 +974,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
               <DetailFieldGrid cols={2}>
                 <DetailField
                   label="Approval Status"
+                  hint="Overall approval state for the release — separate from the five individual sign-off gates below."
                   value={
                     <StatusChip
                       label={String(dash(release.approvalStatus))}
@@ -807,6 +984,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
                 />
                 <DetailField
                   label="Rollback Plan"
+                  hint="Whether a plan exists to undo the deployment if go-live fails."
                   value={
                     <StatusChip
                       label={String(dash(release.rollbackPlan))}
@@ -816,11 +994,31 @@ export function DbReleaseDetail({ id }: { id: string }) {
                 />
               </DetailFieldGrid>
               <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                <SignoffChip label="Dev sign-off" done={signalDone(release.devSignoff)} />
-                <SignoffChip label="Test sign-off" done={signalDone(release.testSignoff)} />
-                <SignoffChip label="UAT sign-off" done={signalDone(release.uatSignoff)} />
-                <SignoffChip label="Security clearance" done={signalDone(release.securityClearance)} />
-                <SignoffChip label="Dress rehearsal" done={signalDone(release.dressRehearsal)} />
+                <SignoffChip
+                  label="Dev sign-off"
+                  done={signalDone(release.devSignoff)}
+                  hint="Development team confirms build quality and code readiness for release."
+                />
+                <SignoffChip
+                  label="Test sign-off"
+                  done={signalDone(release.testSignoff)}
+                  hint="QA confirms testing is complete and no open P1 defects remain."
+                />
+                <SignoffChip
+                  label="UAT sign-off"
+                  done={signalDone(release.uatSignoff)}
+                  hint="Business / UAT users accept the change in the UAT environment."
+                />
+                <SignoffChip
+                  label="Security clearance"
+                  done={signalDone(release.securityClearance)}
+                  hint="Security / InfoSec has cleared the release for production deployment."
+                />
+                <SignoffChip
+                  label="Dress rehearsal"
+                  done={signalDone(release.dressRehearsal)}
+                  hint="A practice run of the deployment (or dry-run) has been completed successfully."
+                />
                 <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
                   <ScoreBar
                     value={release.goLiveChecklistPercent ?? 0}
@@ -845,21 +1043,65 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="indigo"
           title="Release Information"
           description={`${release.priority} · ${release.impact} · ${release.department.name} · ${appNames}`}
+          detail="Core identifying details for this release — its ID, name, priority, business impact, owning department, and which applications it touches. Priority and Impact are usually set by the requesting team and are used to route urgent releases through Release Desk faster."
+          collapsible
+          defaultOpen
         >
           <DetailFieldGrid cols={3}>
-            <DetailField label="Release ID" value={<span className="font-mono">{release.releaseCode}</span>} />
-            <DetailField label="Priority" value={dash(release.priority)} />
-            <DetailField label="Impact" value={dash(release.impact)} />
-            <DetailField label="Release Name" value={dash(release.name)} />
-            <DetailField label={"\u00A0"} value={"\u00A0"} />
-            <DetailField label="Size" value={dash(release.releaseSize)} />
-            <DetailField label="Department" value={dash(release.department.name)} />
-            <DetailField label="Application" value={appNames} />
-            <DetailField label="Owner" value={dash(ownerDisplay)} />
-            <DetailField label="External Dependencies" value={dash(release.externalDependencies)} />
-            <DetailField label={"\u00A0"} value={"\u00A0"} />
+            <DetailField
+              label="Release ID"
+              hint="Permanent code for this release (e.g. REL-0001). Used in links, bookings, and blockers."
+              value={<span className="font-mono">{release.releaseCode}</span>}
+            />
+            <DetailField label="Release Name" hint="Short human title for this release." value={dash(release.name)} />
+            <DetailField
+              label="Size"
+              hint="Relative size of the change (e.g. Small / Medium / Large) — helps CAB prioritize review."
+              value={dash(release.releaseSize)}
+            />
+            <DetailField
+              label="Priority"
+              hint="How urgently this release should be processed (e.g. P1–P4)."
+              value={dash(release.priority)}
+            />
+            <DetailField
+              label="Impact"
+              hint="Business impact if this release succeeds or is delayed (e.g. Low / Medium / High)."
+              value={dash(release.impact)}
+            />
+            <DetailField
+              label="Program / Project"
+              hint="Program or project this release belongs to, for grouping related work."
+              value={dash(release.programProject)}
+            />
+            <DetailField
+              label="Department"
+              hint="Owning department accountable for this release."
+              value={dash(release.department.name)}
+            />
+            <DetailField
+              label="Application"
+              hint="Application(s) this release changes."
+              value={appNames}
+            />
+            <DetailField
+              label="Owner"
+              hint="Person accountable for driving this release to go-live."
+              value={dash(ownerDisplay)}
+            />
+            <DetailField
+              label="External Dependencies"
+              hint="Outside teams, vendors, or systems this release depends on."
+              value={dash(release.externalDependencies)}
+            />
+            <DetailField
+              label="Release Health"
+              hint="Overall health signal (e.g. Go / No-Go / Caution) summarizing readiness and risk."
+              value={dash(release.releaseHealth)}
+            />
             <DetailField
               label="Depends On"
+              hint="Other releases that must finish (or be available) before this one can proceed."
               value={
                 release.dependsOn.length ? (
                   <span className="inline-flex flex-wrap gap-2">
@@ -886,11 +1128,26 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="amber"
           title="Communications & Training"
           description={`Hypercare: ${release.hypercarePlan ?? "—"} · Comms: ${release.commsPlan ?? "—"} · Training: ${release.trainingStatus ?? "—"}`}
+          detail="How end users and support teams will be looked after around go-live. Hypercare Plan describes extra support coverage right after release; Comms Plan describes what will be communicated and to whom; Training Status shows whether affected teams have been trained on any changes."
+          collapsible
+          defaultOpen
         >
           <DetailFieldGrid cols={3}>
-            <DetailField label="Hypercare Plan" value={dash(release.hypercarePlan)} />
-            <DetailField label="Comms Plan" value={dash(release.commsPlan)} />
-            <DetailField label="Training Status" value={dash(release.trainingStatus)} />
+            <DetailField
+              label="Hypercare Plan"
+              hint="Extra support coverage planned right after go-live to catch issues quickly."
+              value={dash(release.hypercarePlan)}
+            />
+            <DetailField
+              label="Comms Plan"
+              hint="What will be communicated, to whom, and when around this release."
+              value={dash(release.commsPlan)}
+            />
+            <DetailField
+              label="Training Status"
+              hint="Whether affected teams have been trained on the changes."
+              value={dash(release.trainingStatus)}
+            />
           </DetailFieldGrid>
         </DetailSection>
 
@@ -899,11 +1156,26 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="indigo"
           title="Stakeholders & Contacts"
           description={`Owner ${ownerDisplay} · Stakeholders ${stakeholderIds === "—" ? "none" : stakeholderIds} · Regulatory ${release.regulatory ?? "—"}`}
+          detail="Who owns this release and who else needs to be kept in the loop, including any regulatory contact if this release touches a regulated system or process."
+          collapsible
+          defaultOpen
         >
           <DetailFieldGrid cols={3}>
-            <DetailField label="Release Owner" value={dash(ownerDisplay)} />
-            <DetailField label="Stakeholder IDs" value={<span className="font-mono text-xs">{stakeholderIds}</span>} />
-            <DetailField label="Regulatory" value={dash(release.regulatory)} />
+            <DetailField
+              label="Release Owner"
+              hint="Primary person accountable for this release."
+              value={dash(ownerDisplay)}
+            />
+            <DetailField
+              label="Stakeholder IDs"
+              hint="People who must stay informed or approve aspects of this release."
+              value={<span className="font-mono text-xs">{stakeholderIds}</span>}
+            />
+            <DetailField
+              label="Regulatory"
+              hint="Regulatory or compliance contact / requirement if this release touches regulated systems."
+              value={dash(release.regulatory)}
+            />
           </DetailFieldGrid>
         </DetailSection>
 
@@ -912,6 +1184,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="amber"
           title="Release Notes"
           description={release.notes ? "Notes on file" : "No additional release notes recorded"}
+          detail="Free-text notes from the release owner — context, decisions, or caveats about this release that don't fit into a structured field elsewhere on this page."
+          collapsible
+          defaultOpen
         >
           {release.notes ? (
             <TintedCallout tone="amber">{release.notes}</TintedCallout>
@@ -925,6 +1200,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="violet"
           title="Stakeholder Comms"
           description="Comms Agent draft generation for stakeholder updates"
+          detail="Generates a draft status update for stakeholders using AI, based on this release's current status, blockers, and readiness. Treat it as a starting point — review and edit before sending it out."
+          collapsible
+          defaultOpen
         >
           <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} />
         </DetailSection>
@@ -935,6 +1213,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="sky"
           title="Release Drift"
           description="Planned vs current delivery state"
+          detail="Compares what was originally planned for this release (dates, scope) against what has actually happened since. Use it to spot scope creep or schedule slippage early, before it becomes a blocker."
+          collapsible
+          defaultOpen
         >
           <DbReleaseDriftList releaseId={id} embedded />
         </DetailSection>
@@ -944,6 +1225,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="indigo"
           title="Linked Work Items"
           description="Jira / synced delivery work linked to this release"
+          detail="Jira (or other connected delivery tool) tickets linked to this release, synced automatically from your connected tools. Use this to see the underlying engineering work behind this release."
+          collapsible
+          defaultOpen
         >
           <DbLinkedWorkItems releaseId={id} />
         </DetailSection>
@@ -952,7 +1236,10 @@ export function DbReleaseDetail({ id }: { id: string }) {
           icon={History}
           tone="violet"
           title="Audit Trail"
-          description={`${release.auditEvents.length} event${release.auditEvents.length === 1 ? "" : "s"} · decisions, status changes, and notes`}
+          description={`${release.auditEvents.length} event${release.auditEvents.length === 1 ? "" : "s"} · every edit, decision, status change, and note with who made it`}
+          detail="A timestamped history of every edit, status change, Go/No-Go decision, and note on this release — each entry shows who made the change. Useful for compliance reviews and understanding how a past decision was reached."
+          collapsible
+          defaultOpen
         >
           <div className="space-y-3">
             {canEdit && (
@@ -969,28 +1256,38 @@ export function DbReleaseDetail({ id }: { id: string }) {
               </div>
             )}
             {release.auditEvents.length ? (
-              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+              <div className="max-h-[28rem] space-y-1.5 overflow-y-auto pr-1">
                 {release.auditEvents.map((event) => (
-                  <div key={event.id} className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm dark:bg-white/5">
-                    <span className="text-[10.5px] text-slate-400 dark:text-white/45">
-                      {formatDateTime(event.createdAt)} · {event.actor}
-                    </span>
-                    <p className="text-slate-700 dark:text-white/75">
-                      <span className="font-semibold capitalize">{event.action.replace("_", " ")}</span>
-                      {event.detail ? ` — ${event.detail}` : ""}
+                  <div
+                    key={event.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-white/5"
+                  >
+                    <p className="min-w-0 text-slate-700 dark:text-white/80">
+                      <span className="font-semibold capitalize text-slate-800 dark:text-white">
+                        {event.action.replace(/_/g, " ")}
+                      </span>
+                      {event.detail ? (
+                        <span className="text-slate-600 dark:text-white/65"> — {event.detail}</span>
+                      ) : null}
                     </p>
+                    <span className="shrink-0 text-right text-[10.5px] font-semibold text-indigo-600 dark:text-indigo-300">
+                      {event.actor}
+                    </span>
+                    <span className="col-span-2 text-[10.5px] text-slate-400 dark:text-white/40">
+                      {formatDateTime(event.createdAt)}
+                    </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <EmptyHint>No audit events have been recorded for this release.</EmptyHint>
+              <EmptyHint>No audit events have been recorded for this release yet.</EmptyHint>
             )}
           </div>
         </DetailSection>
       </div>
 
       <p className="text-center text-[11px] text-slate-400 dark:text-white/40">
-        Release Detail v3.0 · Dashboard-first · Scan → Click → Act
+        Release Detail v3.2 · Full dashboard · Edits logged in Audit Trail
       </p>
 
       <ReleaseFormModal

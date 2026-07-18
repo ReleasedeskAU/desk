@@ -1,17 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaPlugin } from "@prisma/nextjs-monorepo-workaround-plugin";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 /**
- * Turbopack module root.
+ * Turbopack / file-tracing root.
  * - Vercel / standalone Sentinel clone: this app directory.
  * - Local monorepo: parent workspace so hoisted deps (e.g. zod) resolve.
  * - Override anytime with TURBOPACK_ROOT.
  */
-function resolveTurbopackRoot() {
+function resolveWorkspaceRoot() {
   if (process.env.TURBOPACK_ROOT) {
     return path.resolve(process.env.TURBOPACK_ROOT);
   }
@@ -26,6 +28,26 @@ function resolveTurbopackRoot() {
   }
   return __dirname;
 }
+
+/**
+ * Absolute package dir for Turbopack resolveAlias when deps are hoisted
+ * outside Sentinel/node_modules (npm workspaces).
+ *
+ * @param {string} name - Package name (e.g. "zod").
+ * @returns {string | undefined} Absolute path to the package directory.
+ */
+function resolveHoistedPackageDir(name) {
+  try {
+    return path.dirname(require.resolve(`${name}/package.json`));
+  } catch {
+    const hoisted = path.resolve(__dirname, "..", "node_modules", name);
+    if (existsSync(path.join(hoisted, "package.json"))) return hoisted;
+    return undefined;
+  }
+}
+
+const workspaceRoot = resolveWorkspaceRoot();
+const zodPackageDir = resolveHoistedPackageDir("zod");
 
 /**
  * Prisma files that must be present on Vercel (Linux) serverless functions.
@@ -56,8 +78,8 @@ const PRISMA_TRACE_EXCLUDES = [
 const nextConfig = {
   // Allow HMR when opening the app via LAN IP (e.g. http://10.138.194.41:3000)
   allowedDevOrigins: ["10.138.194.41", "localhost", "127.0.0.1"],
-  // Keep file traces inside this app (avoids symlink escapes via file: deps).
-  outputFileTracingRoot: __dirname,
+  // Standalone/Vercel: app dir. Local monorepo: workspace root (hoisted node_modules).
+  outputFileTracingRoot: workspaceRoot,
   // Keep Prisma engines outside the webpack bundle so .node binaries are not stripped.
   // Vendor package is file:-linked; externalize both the wrapper and @prisma/client.
   serverExternalPackages: ["@prisma/client", "@releasedesk/database", "prisma"],
@@ -70,9 +92,24 @@ const nextConfig = {
     "*": PRISMA_TRACE_EXCLUDES,
   },
   turbopack: {
-    root: resolveTurbopackRoot(),
+    root: workspaceRoot,
+    // npm workspaces hoist zod to the monorepo root; alias so Turbopack always finds it.
+    ...(zodPackageDir
+      ? {
+          resolveAlias: {
+            zod: path.relative(workspaceRoot, zodPackageDir).replace(/\\/g, "/") || ".",
+          },
+        }
+      : {}),
   },
   webpack: (config, { isServer }) => {
+    if (zodPackageDir) {
+      config.resolve = config.resolve ?? {};
+      config.resolve.alias = {
+        ...(config.resolve.alias ?? {}),
+        zod: zodPackageDir,
+      };
+    }
     // Ensures libquery_engine-rhel-openssl-3.0.x.so.node is copied next to server bundles.
     if (isServer) {
       config.plugins = [...(config.plugins ?? []), new PrismaPlugin()];
