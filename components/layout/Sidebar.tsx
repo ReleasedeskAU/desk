@@ -167,19 +167,18 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          "relative flex shrink-0 items-center border-b border-[var(--border)] px-3 py-3",
-          isWide ? "justify-center" : "flex-col gap-3 lg:px-3"
+          "relative flex shrink-0 items-center border-b border-[var(--border)] px-3",
+          isWide ? "justify-between gap-2 py-3 pr-14" : "flex-col gap-3 py-3 lg:px-3"
         )}
       >
         <ProgressLink
           href="/dashboard"
-          className={cn("flex min-w-0 items-center", !isWide && "lg:justify-center")}
+          className={cn("flex min-w-0 items-center", isWide ? "flex-1" : "lg:justify-center")}
           onClick={handleNavClick}
           aria-label="Release Desk home"
         >
           <SentinelLogo
-            variant="icon"
-            className={cn(isWide && "h-14 w-14 rounded-md")}
+            variant={isWide ? "full" : "icon"}
             priority
           />
         </ProgressLink>
@@ -190,7 +189,7 @@ export function Sidebar() {
           className={cn(
             "materio-sidebar-toggle flex shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--card)] text-gray-500 dark:text-white/70 transition-all hover:bg-brand-50 dark:hover:bg-white/10 hover:text-brand-600 shadow-sm",
             "h-8 w-8",
-            isWide && "absolute right-3"
+            isWide && "absolute right-3 top-1/2 -translate-y-1/2"
           )}
           aria-label={
             isMobileOpen

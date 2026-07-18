@@ -92,6 +92,7 @@ export function NavigationProgressProvider({ children }: { children: React.React
 
   return (
     <NavigationProgressContext.Provider value={{ start }}>
+      {/* suppressHydrationWarning: width/opacity animate after mount and must not fight SSR. */}
       <div
         className="fixed top-0 left-0 right-0 z-[9999] h-1 pointer-events-none"
         role="progressbar"
@@ -99,10 +100,12 @@ export function NavigationProgressProvider({ children }: { children: React.React
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(width)}
+        suppressHydrationWarning
       >
         <div
           className="h-full bg-brand-500 shadow-[0_0_10px_rgba(70,95,255,0.45)] transition-[width,opacity] duration-300 ease-out"
           style={{ width: `${width}%`, opacity: visible ? 1 : 0 }}
+          suppressHydrationWarning
         />
       </div>
       {children}

@@ -23,6 +23,8 @@ interface TopBarProps {
   positioning?: string;
   highlight?: boolean;
   badge?: React.ReactNode;
+  /** Optional center slot (e.g. entity switcher) between title and actions. */
+  center?: React.ReactNode;
   trailing?: React.ReactNode;
   className?: string;
 }
@@ -44,6 +46,7 @@ export function TopBar({
   positioning,
   highlight = false,
   badge,
+  center,
   trailing,
   className,
 }: TopBarProps) {
@@ -54,7 +57,12 @@ export function TopBar({
 
   return (
     <header className={cn("relative mb-4 md:mb-5", className)}>
-      <div className="relative flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div
+        className={cn(
+          "relative flex flex-wrap items-center gap-x-4 gap-y-3",
+          center ? "lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center" : "justify-between"
+        )}
+      >
         <div className="min-w-0 flex-1">
           <h1
             className={cn(
@@ -91,7 +99,13 @@ export function TopBar({
             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{positioning}</p>
           )}
         </div>
-        <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2 pt-0.5">
+        {center ? <div className="flex w-full justify-center lg:w-auto">{center}</div> : null}
+        <div
+          className={cn(
+            "flex max-w-full shrink-0 flex-wrap items-center gap-2 pt-0.5",
+            center ? "justify-end lg:justify-self-end" : "justify-end"
+          )}
+        >
           {trailing}
           {badge}
         </div>

@@ -22,6 +22,7 @@ import {
   Server,
   ShieldAlert,
   SlidersHorizontal,
+  Sparkles,
   User,
   Users,
   Wrench,
@@ -46,6 +47,14 @@ import {
 import { GlanceStrip, MockupSection } from "@/components/detail/MockupDetailChrome";
 import { ReadinessGauge } from "@/components/gauges/ReadinessGauge";
 import { ReleaseLifecycleStrip } from "@/components/releases/ReleaseLifecycleStrip";
+import { ReleaseCommandPanel } from "@/components/releases/ReleaseCommandPanel";
+import { ReleaseDashboardTile } from "@/components/releases/ReleaseDashboardTile";
+import { ReleaseSummaryBar } from "@/components/releases/ReleaseSummaryBar";
+import { ReleaseActionStrip } from "@/components/releases/ReleaseActionStrip";
+import {
+  ReadinessLifecycleContent,
+  type CommandCenterData,
+} from "@/components/releases/DbReleaseCommandCenter";
 import { ThemeModeProvider, useThemeMode } from "@/context/ThemeModeContext";
 import { cn } from "@/lib/utils";
 
@@ -98,181 +107,164 @@ function PreviewChrome({
 }
 
 function ReleasePreview() {
+  const mockCommand: CommandCenterData = {
+    readiness: 50,
+    stages: [
+      { id: "planning", label: "Planning", status: "complete", detail: "P4 · low priority" },
+      { id: "scheduling", label: "Scheduling", status: "complete", detail: "2 bookings linked" },
+      { id: "testing", label: "Testing", status: "complete", detail: "Apps scoped · test ready" },
+      { id: "preparing", label: "Preparing", status: "blocked", detail: "1 blocker open" },
+      { id: "managing", label: "Managing", status: "active", detail: "No-Go" },
+      { id: "deployment", label: "Deployment", status: "pending", detail: "Ready to deploy" },
+    ],
+    nextActions: [
+      {
+        label: "Review blockers",
+        href: "#blockers",
+        detail: "BLK-0001: Shared UAT env with REL-0001",
+      },
+      { label: "Record Go / No-Go", href: "#go-nogo", detail: "Target in 3 day(s)" },
+    ],
+    prediction: {
+      shipProbability: 40,
+      delayRisk: 60,
+      nudge: "60% slip risk — resolve FIN-TEST-01 environment collision before CAB",
+      severity: "high",
+    },
+    p1Issues: [],
+  };
+
   return (
-    <PreviewChrome title="Release Detail" code="REL-0001" name="Kyriba UI Tweak v4.5">
-      <div className="rounded-[22px] bg-white px-5 py-4 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)]">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Select release</p>
-            <p className="mt-1 font-mono text-[13px] font-bold text-slate-700 dark:text-white/75">REL-0001</p>
-          </div>
-          <p className="text-[11px] text-slate-400">Last refresh: 14 Jul 2026, 12:46 pm</p>
+    <PreviewChrome title="Release Command Center" code="REL-0001" name="Kyriba UI Tweak v4.5">
+      <ReleaseSummaryBar
+        releaseCode="REL-0001"
+        name="Kyriba UI Tweak v4.5"
+        status="Blocked"
+        releaseHealth="No-Go"
+        headlineReadiness={50}
+        slipRisk={60}
+        envConflict
+        urgentAction={mockCommand.nextActions[0]}
+      />
+
+      <div className="rounded-2xl border border-violet-200/70 border-l-[4px] border-l-violet-500 bg-gradient-to-r from-violet-50/80 via-white to-white px-4 py-3 shadow-sm dark:border-violet-500/30 dark:from-violet-500/10 dark:via-[var(--card)] dark:to-[var(--card)]">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300">
+            <Sparkles size={15} aria-hidden />
+          </span>
+          <p className="text-[13px] font-bold text-slate-800 dark:text-white">AI Insights</p>
+        </div>
+        <div className="grid gap-2 lg:grid-cols-2">
+          <TintedCallout tone="rose">High Severity Blocker Present · BLK-0001 blocking go-live</TintedCallout>
+          <TintedCallout tone="amber">Recommended: Review blockers</TintedCallout>
         </div>
       </div>
 
-      <HeroStatusRow
-        hero={{ icon: ShieldAlert, label: "Release Health", value: "No-Go", tone: "rose" }}
-        secondary={{ icon: Zap, label: "Status", value: "Blocked" }}
-        metric={{
-          icon: CheckCircle2,
-          label: "Operational Readiness",
-          percent: 60,
-          caption: "computed from live operational signals",
-          tone: "amber",
-        }}
-      />
-
-      <TintedCallout tone="rose">
-        Predictive nudge: environment conflict with REL-0003 is the primary ship-risk driver. Resolve the booking
-        collision before CAB.
-      </TintedCallout>
-
-      <DetailSection
-        icon={Rocket}
-        tone="violet"
-        title="Release lifecycle"
-        description="A live view of progress from planning and scheduling through deployment."
-      >
-        <ReleaseLifecycleStrip
-          embedded
-          stages={[
-            { id: "planning", label: "Planning", status: "complete", detail: "P4 · low priority" },
-            { id: "scheduling", label: "Scheduling", status: "complete", detail: "2 bookings linked" },
-            { id: "testing", label: "Testing", status: "complete", detail: "Apps scoped · test ready" },
-            { id: "preparing", label: "Preparing", status: "blocked", detail: "1 blocker open" },
-            { id: "managing", label: "Managing", status: "active", detail: "No-Go" },
-            { id: "deployment", label: "Deployment", status: "pending", detail: "Ready to deploy" },
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ReleaseDashboardTile
+          icon={Rocket}
+          tone="violet"
+          title="Readiness & Lifecycle"
+          hero={{ value: "50%", label: "Computed readiness (live)" }}
+          metrics={[
+            { label: "Stored", value: "75%" },
+            { label: "Stage", value: "Preparing" },
+            { label: "Ship", value: "40%" },
+            { label: "Slip", value: "60%" },
           ]}
-        />
-      </DetailSection>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <DetailSection
-          icon={Gauge}
-          tone="emerald"
-          title="Readiness signals"
-          description="Computed readiness alongside stored planning and checklist progress."
         >
-          <div className="grid items-center gap-5 sm:grid-cols-[150px_1fr]">
-            <div className="flex flex-col items-center">
-              <ReadinessGauge value={60} size={140} />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Computed live</span>
-            </div>
-            <div className="space-y-4">
-              <ScoreBar value={75} asPercent label="Stored readiness" />
+          <ReadinessLifecycleContent data={mockCommand} storedReadiness={75} checklistPercent={79} />
+        </ReleaseDashboardTile>
+
+        <ReleaseDashboardTile
+          icon={AlertTriangle}
+          tone="rose"
+          title="Blockers & Conflicts"
+          hero={{ value: "1", label: "Open blocker" }}
+          metrics={[
+            { label: "Severity", value: "High" },
+            { label: "Env conflict", value: "Yes" },
+            { label: "Freeze", value: "Quarter-End" },
+            { label: "Conflict ID", value: "CNF-0001" },
+          ]}
+        >
+          <TintedCallout tone="rose">
+            Resource conflict with REL-0003 — Same Test/UAT environment required. Active blocker BLK-0001.
+          </TintedCallout>
+        </ReleaseDashboardTile>
+
+        <ReleaseDashboardTile
+          icon={Server}
+          tone="sky"
+          title="Environments & Bookings"
+          hero={{ value: "2", label: "Linked bookings" }}
+          metrics={[
+            { label: "TEST", value: "FIN-TEST-01" },
+            { label: "UAT", value: "FIN-UAT-01" },
+            { label: "Conflict", value: "Yes" },
+            { label: "Owners", value: "Priya" },
+          ]}
+        >
+          <EmptyHint>Expand on the live page for ENV-0081 / ENV-0001 booking rows.</EmptyHint>
+        </ReleaseDashboardTile>
+
+        <ReleaseDashboardTile
+          icon={CheckCircle2}
+          tone="emerald"
+          title="Key Dates & Approvals"
+          hero={{ value: "1/5", label: "Sign-offs complete" }}
+          metrics={[
+            { label: "CAB", value: "18 Jul" },
+            { label: "End", value: "22 Jul" },
+            { label: "Window", value: "Sat night" },
+            { label: "Approval", value: "Pending" },
+          ]}
+        >
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            <SignoffChip label="Dev sign-off" done />
+            <SignoffChip label="Test sign-off" done={false} />
+            <SignoffChip label="UAT sign-off" done={false} />
+            <SignoffChip label="Security clearance" done={false} />
+            <SignoffChip label="Dress rehearsal" done={false} />
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
               <ScoreBar value={79} asPercent label="Go-live checklist" />
             </div>
           </div>
-        </DetailSection>
-        <DetailSection
-          icon={ListChecks}
-          tone="amber"
-          title="Next best actions"
-          description="The highest-value steps to move this release safely toward deployment."
-        >
-          <div className="space-y-2">
-            <TintedCallout tone="amber">Resolve FIN-TEST-01 environment collision.</TintedCallout>
-            <TintedCallout tone="violet">Complete Test, UAT, and Security sign-offs.</TintedCallout>
-          </div>
-        </DetailSection>
+        </ReleaseDashboardTile>
       </div>
 
-      <DetailSection
-        icon={SlidersHorizontal}
-        tone="indigo"
-        title="Release controls"
-        description="Update operational status and record the deployment decision without leaving this page."
-      >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="flex flex-wrap gap-2">
-            <StatusChip label="Planned" tone="neutral" />
-            <StatusChip label="In Progress" tone="neutral" />
-            <StatusChip label="Blocked" tone="bad" />
-            <StatusChip label="At Risk" tone="warn" />
-            <StatusChip label="Complete" tone="neutral" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">
-              Record Go
-            </button>
-            <button type="button" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white">
-              Record No-Go
-            </button>
-          </div>
-        </div>
-      </DetailSection>
+      <ReleaseActionStrip
+        status="Blocked"
+        decision="No-Go — blocked"
+        canEdit
+        onPatchStatus={() => undefined}
+        onRecordDecision={() => undefined}
+      />
 
-      <DetailSection
-        icon={AlertTriangle}
-        tone="rose"
-        title="Blockers & conflicts"
-        description="Anything actively stopping the release, including environment collisions and live blockers."
-      >
-        <div className="mb-3 flex flex-wrap gap-2">
-          <StatusChip label="⚠ Conflict detected" tone="bad" />
-          <StatusChip label="Quarter-End Freeze" tone="warn" />
-        </div>
-        <TintedCallout tone="rose">
-          Resource conflict with REL-0003 — Same Test/UAT environment required.
-        </TintedCallout>
-      </DetailSection>
-
-      <DetailSection
-        icon={CheckCircle2}
-        tone="emerald"
-        title="Sign-offs & approvals"
-        description="Every formal gate that must clear before the deployment decision can safely move to Go."
-      >
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-          <SignoffChip label="Dev sign-off" done />
-          <SignoffChip label="Test sign-off" done={false} />
-          <SignoffChip label="UAT sign-off" done={false} />
-          <SignoffChip label="Security clearance" done={false} />
-          <SignoffChip label="Dress rehearsal" done={false} />
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-            <ScoreBar value={79} asPercent label="Go-live checklist" />
-          </div>
-        </div>
-      </DetailSection>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <DetailSection
-          icon={Megaphone}
-          tone="amber"
-          title="Communications & training"
-          description="Human readiness across hypercare, stakeholder messaging, and enablement."
-        >
-          <EditableFieldGrid>
-            <EditableField label="Hypercare Plan" value="Not Started" editing={false} />
-            <EditableField label="Comms Plan" value="Draft" editing={false} />
-          </EditableFieldGrid>
-        </DetailSection>
-        <DetailSection
-          icon={Users}
+      <div className="space-y-3">
+        <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          Details on demand
+        </p>
+        <ReleaseCommandPanel
+          icon={Package}
           tone="indigo"
-          title="Stakeholders & contacts"
-          description="Accountability, interested parties, and regulatory context."
+          title="Release Information"
+          summary="P4 · Low · Finance · Kyriba"
         >
-          <EditableFieldGrid>
-            <EditableField label="Release Owner" value="USR-061" editing={false} mono />
-            <EditableField label="Stakeholders" value="USR-073, USR-085, USR-097" editing={false} mono />
-          </EditableFieldGrid>
-        </DetailSection>
-      </div>
-
-      <DetailSection
-        icon={History}
-        tone="violet"
-        title="Audit trail"
-        description="Immutable operational history, decisions, status changes, and release notes."
-      >
-        <div className="space-y-2">
+          <EmptyHint>Full identity fields render on the live release page.</EmptyHint>
+        </ReleaseCommandPanel>
+        <ReleaseCommandPanel
+          icon={History}
+          tone="violet"
+          title="Audit Trail"
+          summary="1 event · decisions, status changes, and notes"
+        >
           <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm dark:bg-white/5">
             <span className="text-[10.5px] text-slate-400">14 Jul 2026, 12:40 pm · Release Manager</span>
             <p className="text-slate-700 dark:text-white/75">Decision — No-Go, environment conflict unresolved</p>
           </div>
-        </div>
-      </DetailSection>
+        </ReleaseCommandPanel>
+      </div>
     </PreviewChrome>
   );
 }

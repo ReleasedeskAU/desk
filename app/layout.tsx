@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Poppins, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
+import { RootClientProviders } from "@/components/providers/RootClientProviders";
 import "./globals.css";
 
 const COLOR_THEME_PREPAINT_SCRIPT = `(() => {
@@ -49,10 +51,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en" data-color-theme="graphite" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: COLOR_THEME_PREPAINT_SCRIPT }} />
-      </head>
       <body className={`${poppins.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+        <Script id="sentinel-color-theme-prepaint" strategy="beforeInteractive">
+          {COLOR_THEME_PREPAINT_SCRIPT}
+        </Script>
         <ClerkProvider
           {...(publishableKey ? { publishableKey } : {})}
           afterSignOutUrl="/sign-in"
@@ -61,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           signInForceRedirectUrl="/dashboard"
           signUpForceRedirectUrl="/dashboard"
         >
-          {children}
+          <RootClientProviders>{children}</RootClientProviders>
         </ClerkProvider>
       </body>
     </html>

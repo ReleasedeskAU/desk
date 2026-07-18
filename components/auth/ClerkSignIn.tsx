@@ -46,20 +46,21 @@ export function ClerkSignIn() {
   }
 
   if (loadFailed) {
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://sentinal1-phi.vercel.app";
+    // Keep SSR/client markup identical — never branch on `window` during render.
+    const originExample = "https://releasedesk.vercel.app";
     return (
       <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
         <p className="font-semibold">Clerk sign-in failed to load</p>
         <p className="mt-2 text-rose-900/90">
           <strong>On Vercel with test keys (`pk_test_…`):</strong> open Clerk Dashboard →{" "}
           <strong>Configure → Paths</strong> and confirm sign-in is <code className="rounded bg-rose-100 px-1">/sign-in</code>.
-          Then allow this site origin (e.g. <code className="rounded bg-rose-100 px-1">https://releasedesk.vercel.app</code>) once:
+          Then allow this site origin (e.g. <code className="rounded bg-rose-100 px-1">{originExample}</code>) once:
         </p>
         <pre className="mt-2 overflow-x-auto rounded bg-rose-100/80 p-2 text-[11px] text-rose-950">
 {`curl -X PATCH https://api.clerk.com/v1/instance \\
   -H "Authorization: Bearer YOUR_CLERK_SECRET_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"allowed_origins":["${origin}"]}'`}
+  -d '{"allowed_origins":["${originExample}"]}'`}
         </pre>
         <p className="mt-2 text-rose-900/90">
           <strong>For real production:</strong> click <strong>Go to prod</strong> in Clerk, use <code className="rounded bg-rose-100 px-1">pk_live_</code> keys,

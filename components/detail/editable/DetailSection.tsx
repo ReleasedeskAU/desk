@@ -43,6 +43,7 @@ export function DetailSection({
       id={id}
       className={cn(
         "rounded-[22px] bg-white p-6 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] transition-shadow duration-300 hover:shadow-[0_20px_44px_-20px_rgba(112,144,176,0.35)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)] dark:hover:shadow-[0_20px_44px_-20px_rgba(0,0,0,0.65)]",
+        id && "scroll-mt-24",
         className
       )}
     >

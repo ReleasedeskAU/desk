@@ -40,6 +40,8 @@ type Props = {
   onChanged?: () => void;
   /** When true, render list only (parent supplies section chrome). */
   embedded?: boolean;
+  /** Reports open blocker count for dashboard tile KPIs. */
+  onCountChange?: (count: number, topSeverity: string | null) => void;
 };
 
 export function DbBlockerList({
@@ -51,6 +53,7 @@ export function DbBlockerList({
   raisedByDefault = "",
   onChanged,
   embedded = false,
+  onCountChange,
 }: Props) {
   const [blockers, setBlockers] = useState<LiveBlocker[] | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -64,10 +67,22 @@ export function DbBlockerList({
   useEffect(() => {
     return loadJsonEffect<LiveBlocker[]>(
       `/api/blockers?release=${encodeURIComponent(releaseCode)}`,
-      setBlockers,
+      (rows) => {
+        setBlockers(rows);
+        const open = rows.filter(
+          (b) => !["resolved", "closed", "done", "mitigated", "cancelled", "canceled"].includes(b.status.toLowerCase())
+        );
+        const severityRank = ["Critical", "High", "Medium", "Low"];
+        const top =
+          open
+            .map((b) => b.severity)
+            .sort((a, b) => severityRank.indexOf(a) - severityRank.indexOf(b))[0] ?? null;
+        const notify = onCountChange;
+        if (notify) queueMicrotask(() => notify(open.length, top));
+      },
       { label: "release-live-blockers" }
     );
-  }, [releaseCode, reloadKey]);
+  }, [onCountChange, releaseCode, reloadKey]);
 
   const addButton = canEdit ? (
     <button

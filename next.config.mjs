@@ -53,6 +53,53 @@ const nextConfig = {
     // Ensures libquery_engine-rhel-openssl-3.0.x.so.node is copied next to server bundles.
     if (isServer) {
       config.plugins = [...(config.plugins ?? []), new PrismaPlugin()];
+
+      // Instrumentation + file:-linked Prisma can still be walked by Webpack.
+      // Keep Node builtins and the generated client external so `require('path')` resolves.
+      const nodeBuiltins = new Set([
+        "path",
+        "fs",
+        "os",
+        "crypto",
+        "stream",
+        "util",
+        "events",
+        "diagnostics_channel",
+        "async_hooks",
+        "module",
+        "url",
+        "buffer",
+        "net",
+        "tls",
+        "child_process",
+      ]);
+      const prismaExternals = new Set([
+        "@prisma/client",
+        "@releasedesk/database",
+        "prisma",
+      ]);
+
+      config.externals = [
+        ...(Array.isArray(config.externals)
+          ? config.externals
+          : config.externals
+            ? [config.externals]
+            : []),
+        ({ request }, callback) => {
+          if (!request) return callback();
+          if (nodeBuiltins.has(request) || request.startsWith("node:")) {
+            return callback(null, `commonjs ${request.replace(/^node:/, "")}`);
+          }
+          if (
+            prismaExternals.has(request) ||
+            request.includes("releasedesk-database/generated") ||
+            request.includes("@prisma/client")
+          ) {
+            return callback(null, `commonjs ${request}`);
+          }
+          return callback();
+        },
+      ];
     }
     return config;
   },

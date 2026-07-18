@@ -42,27 +42,35 @@ type DetailPageShellProps = {
   entityCode: string;
   title: string;
   subtitle?: string;
-  backHref: string;
-  backLabel: string;
+  backHref?: string;
+  backLabel?: string;
+  /** Hide the back link row (e.g. Release Command Center). */
+  hideBack?: boolean;
+  /** Center slot on the title row (e.g. Select Release dropdown). */
+  headerCenter?: ReactNode;
   pageKey?: PageDocKey;
   badges?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
 };
 
-/** Shared chrome for entity detail pages (header, badges, actions, back link). */
+/** Shared chrome for entity detail pages (header, badges, actions, optional back link). */
 export function DetailPageShell({
   entityCode,
   title,
   subtitle,
   backHref,
   backLabel,
+  hideBack = false,
+  headerCenter,
   pageKey,
   badges,
   actions,
   children,
 }: DetailPageShellProps) {
   useNavHistoryLabel(entityCode);
+
+  const showBack = !hideBack && Boolean(backHref && backLabel);
 
   return (
     <div className="space-y-6">
@@ -71,20 +79,29 @@ export function DetailPageShell({
         subtitle={subtitle}
         highlight
         pageKey={pageKey}
-        trailing={pageKey ? <PageDocumentation pageKey={pageKey} /> : undefined}
+        center={headerCenter}
+        trailing={
+          <>
+            {pageKey ? <PageDocumentation pageKey={pageKey} /> : null}
+            {actions}
+          </>
+        }
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <ProgressLink
-          href={backHref}
-          className="inline-flex items-center gap-1 text-sm text-brand-600 hover:underline dark:text-brand-400"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {backLabel}
-        </ProgressLink>
-        {badges}
-        {actions ? <div className="ml-auto flex flex-wrap gap-2">{actions}</div> : null}
-      </div>
+      {showBack || badges ? (
+        <div className="flex flex-wrap items-center gap-3">
+          {showBack ? (
+            <ProgressLink
+              href={backHref!}
+              className="inline-flex items-center gap-1 text-sm text-brand-600 hover:underline dark:text-brand-400"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {backLabel}
+            </ProgressLink>
+          ) : null}
+          {badges}
+        </div>
+      ) : null}
 
       {children}
     </div>

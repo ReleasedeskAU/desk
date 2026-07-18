@@ -132,6 +132,7 @@ export function loadJsonEffect<T>(
 ): () => void {
   const ac = new AbortController();
   const label = options?.label;
+  let settled = false;
 
   void (async () => {
     const result = await safeFetchJson<T>(url, {
@@ -140,18 +141,28 @@ export function loadJsonEffect<T>(
       label,
     });
 
+    // Abort / unmount: never touch React state (avoids "update before mount" races).
     if (ac.signal.aborted || (!result.ok && result.code === "aborted")) return;
 
-    if (result.ok) {
-      onData(result.data);
-    } else if (options?.onError) {
-      options.onError(result.error, result.code);
-    }
-
-    options?.onFinally?.();
+    settled = true;
+    // Defer past the current commit so parent setState is never applied mid-render.
+    queueMicrotask(() => {
+      if (ac.signal.aborted) return;
+      if (result.ok) {
+        onData(result.data);
+      } else if (options?.onError) {
+        options.onError(result.error, result.code);
+      }
+      options?.onFinally?.();
+    });
   })();
 
-  return () => ac.abort();
+  return () => {
+    ac.abort();
+    // If the request already finished but the microtask has not run, onFinally
+    // must not fire against an unmounted tree — abort flag covers that.
+    void settled;
+  };
 }
 
 /** True when a SafeFetchResult should be ignored (unmount / navigation). */
