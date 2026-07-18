@@ -47,7 +47,6 @@ import {
 import { GlanceStrip, MockupSection } from "@/components/detail/MockupDetailChrome";
 import { ReadinessGauge } from "@/components/gauges/ReadinessGauge";
 import { ReleaseLifecycleStrip } from "@/components/releases/ReleaseLifecycleStrip";
-import { ReleaseCommandPanel } from "@/components/releases/ReleaseCommandPanel";
 import { ReleaseDashboardTile } from "@/components/releases/ReleaseDashboardTile";
 import { ReleaseSummaryBar } from "@/components/releases/ReleaseSummaryBar";
 import { ReleaseActionStrip } from "@/components/releases/ReleaseActionStrip";
@@ -165,6 +164,7 @@ function ReleasePreview() {
           icon={Rocket}
           tone="violet"
           title="Readiness & Lifecycle"
+          href="section-readiness"
           hero={{ value: "50%", label: "Computed readiness (live)" }}
           metrics={[
             { label: "Stored", value: "75%" },
@@ -172,14 +172,12 @@ function ReleasePreview() {
             { label: "Ship", value: "40%" },
             { label: "Slip", value: "60%" },
           ]}
-        >
-          <ReadinessLifecycleContent data={mockCommand} storedReadiness={75} checklistPercent={79} />
-        </ReleaseDashboardTile>
-
+        />
         <ReleaseDashboardTile
           icon={AlertTriangle}
           tone="rose"
           title="Blockers & Conflicts"
+          href="blockers"
           hero={{ value: "1", label: "Open blocker" }}
           metrics={[
             { label: "Severity", value: "High" },
@@ -187,16 +185,12 @@ function ReleasePreview() {
             { label: "Freeze", value: "Quarter-End" },
             { label: "Conflict ID", value: "CNF-0001" },
           ]}
-        >
-          <TintedCallout tone="rose">
-            Resource conflict with REL-0003 — Same Test/UAT environment required. Active blocker BLK-0001.
-          </TintedCallout>
-        </ReleaseDashboardTile>
-
+        />
         <ReleaseDashboardTile
           icon={Server}
           tone="sky"
           title="Environments & Bookings"
+          href="section-environments"
           hero={{ value: "2", label: "Linked bookings" }}
           metrics={[
             { label: "TEST", value: "FIN-TEST-01" },
@@ -204,14 +198,12 @@ function ReleasePreview() {
             { label: "Conflict", value: "Yes" },
             { label: "Owners", value: "Priya" },
           ]}
-        >
-          <EmptyHint>Expand on the live page for ENV-0081 / ENV-0001 booking rows.</EmptyHint>
-        </ReleaseDashboardTile>
-
+        />
         <ReleaseDashboardTile
           icon={CheckCircle2}
           tone="emerald"
           title="Key Dates & Approvals"
+          href="section-dates"
           hero={{ value: "1/5", label: "Sign-offs complete" }}
           metrics={[
             { label: "CAB", value: "18 Jul" },
@@ -219,6 +211,56 @@ function ReleasePreview() {
             { label: "Window", value: "Sat night" },
             { label: "Approval", value: "Pending" },
           ]}
+        />
+      </div>
+
+      <ReleaseActionStrip
+        status="Blocked"
+        decision="No-Go — blocked"
+        canEdit
+        onPatchStatus={() => undefined}
+        onRecordDecision={() => undefined}
+      />
+
+      <div className="space-y-4">
+        <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          Deep dive
+        </p>
+        <DetailSection
+          id="section-readiness"
+          icon={Rocket}
+          tone="violet"
+          title="Readiness & Lifecycle"
+          description="Computed readiness, lifecycle stage, and next best actions."
+        >
+          <ReadinessLifecycleContent data={mockCommand} storedReadiness={75} checklistPercent={79} />
+        </DetailSection>
+        <DetailSection
+          id="blockers"
+          icon={AlertTriangle}
+          tone="rose"
+          title="Blockers & Conflicts"
+          description="Environment collisions and live blocker rows."
+        >
+          <TintedCallout tone="rose">
+            Resource conflict with REL-0003 — Same Test/UAT environment required. Active blocker BLK-0001.
+          </TintedCallout>
+        </DetailSection>
+        <DetailSection
+          id="section-environments"
+          icon={Server}
+          tone="sky"
+          title="Environments & Bookings"
+          description="Required TEST/UAT environments and linked bookings."
+        >
+          <EmptyHint>Live page shows ENV-0081 / ENV-0001 booking rows.</EmptyHint>
+        </DetailSection>
+        <DetailSection
+          id="section-dates"
+          icon={CheckCircle2}
+          tone="emerald"
+          title="Key Dates & Approvals"
+          description="CAB timing and go-live sign-off gates."
         >
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             <SignoffChip label="Dev sign-off" done />
@@ -230,40 +272,32 @@ function ReleasePreview() {
               <ScoreBar value={79} asPercent label="Go-live checklist" />
             </div>
           </div>
-        </ReleaseDashboardTile>
+        </DetailSection>
       </div>
 
-      <ReleaseActionStrip
-        status="Blocked"
-        decision="No-Go — blocked"
-        canEdit
-        onPatchStatus={() => undefined}
-        onRecordDecision={() => undefined}
-      />
-
-      <div className="space-y-3">
+      <div className="space-y-4">
         <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-          Details on demand
+          More detail
         </p>
-        <ReleaseCommandPanel
+        <DetailSection
           icon={Package}
           tone="indigo"
           title="Release Information"
-          summary="P4 · Low · Finance · Kyriba"
+          description="P4 · Low · Finance · Kyriba"
         >
           <EmptyHint>Full identity fields render on the live release page.</EmptyHint>
-        </ReleaseCommandPanel>
-        <ReleaseCommandPanel
+        </DetailSection>
+        <DetailSection
           icon={History}
           tone="violet"
           title="Audit Trail"
-          summary="1 event · decisions, status changes, and notes"
+          description="1 event · decisions, status changes, and notes"
         >
           <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm dark:bg-white/5">
             <span className="text-[10.5px] text-slate-400">14 Jul 2026, 12:40 pm · Release Manager</span>
             <p className="text-slate-700 dark:text-white/75">Decision — No-Go, environment conflict unresolved</p>
           </div>
-        </ReleaseCommandPanel>
+        </DetailSection>
       </div>
     </PreviewChrome>
   );
