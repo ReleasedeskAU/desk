@@ -27,10 +27,32 @@ function resolveTurbopackRoot() {
   return __dirname;
 }
 
-/** Vendored Prisma client + query engines that must ship with every serverless function. */
-const PRISMA_ENGINE_TRACE_GLOBS = [
-  "./vendor/releasedesk-database/generated/client/**/*",
-  "./node_modules/@releasedesk/database/generated/client/**/*",
+/**
+ * Prisma files that must be present on Vercel (Linux) serverless functions.
+ * Intentionally narrow: do not glob the whole generated client — that also
+ * ships Windows/Darwin engines and WASM (~40MB+) into every function and can
+ * fail the "Deploying outputs" step with a generic Vercel error.
+ */
+const PRISMA_TRACE_INCLUDES = [
+  "./vendor/releasedesk-database/generated/client/**/*.js",
+  "./vendor/releasedesk-database/generated/client/**/*.mjs",
+  "./vendor/releasedesk-database/generated/client/**/*.json",
+  "./vendor/releasedesk-database/generated/client/**/*.prisma",
+  "./vendor/releasedesk-database/generated/client/libquery_engine-rhel-openssl-3.0.x.so.node",
+  "./node_modules/@releasedesk/database/generated/client/**/*.js",
+  "./node_modules/@releasedesk/database/generated/client/**/*.mjs",
+  "./node_modules/@releasedesk/database/generated/client/**/*.json",
+  "./node_modules/@releasedesk/database/generated/client/**/*.prisma",
+  "./node_modules/@releasedesk/database/generated/client/libquery_engine-rhel-openssl-3.0.x.so.node",
+];
+
+/** Platform engines / types that must never be packaged into Vercel functions. */
+const PRISMA_TRACE_EXCLUDES = [
+  "**/query_engine-windows.dll.node",
+  "**/libquery_engine-darwin*.node",
+  "**/libquery_engine-debian*.node",
+  "**/query_engine_bg.wasm",
+  "**/generated/client/**/*.d.ts",
 ];
 
 /** @type {import('next').NextConfig} */
@@ -40,11 +62,13 @@ const nextConfig = {
   // Keep Prisma engines outside the webpack bundle so .node binaries are not stripped.
   // Vendor package is file:-linked; externalize both the wrapper and @prisma/client.
   serverExternalPackages: ["@prisma/client", "@releasedesk/database", "prisma"],
-  // Copy query engines into the Vercel serverless trace (custom output path).
+  // Copy only the Linux query engine + JS client into API / RSC serverless traces.
   outputFileTracingIncludes: {
-    "/*": PRISMA_ENGINE_TRACE_GLOBS,
-    "/api/**/*": PRISMA_ENGINE_TRACE_GLOBS,
-    "/(main)/**/*": PRISMA_ENGINE_TRACE_GLOBS,
+    "/api/**/*": PRISMA_TRACE_INCLUDES,
+    "/(main)/**/*": PRISMA_TRACE_INCLUDES,
+  },
+  outputFileTracingExcludes: {
+    "*": PRISMA_TRACE_EXCLUDES,
   },
   turbopack: {
     root: resolveTurbopackRoot(),
