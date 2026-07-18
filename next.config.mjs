@@ -33,17 +33,14 @@ function resolveTurbopackRoot() {
  * ships Windows/Darwin engines and WASM (~40MB+) into every function and can
  * fail the "Deploying outputs" step with a generic Vercel error.
  */
+// Use the real vendor path only — node_modules/@releasedesk/database is a
+// file: symlink and Vercel rejects serverless packages that contain symlinks.
 const PRISMA_TRACE_INCLUDES = [
   "./vendor/releasedesk-database/generated/client/**/*.js",
   "./vendor/releasedesk-database/generated/client/**/*.mjs",
   "./vendor/releasedesk-database/generated/client/**/*.json",
   "./vendor/releasedesk-database/generated/client/**/*.prisma",
   "./vendor/releasedesk-database/generated/client/libquery_engine-rhel-openssl-3.0.x.so.node",
-  "./node_modules/@releasedesk/database/generated/client/**/*.js",
-  "./node_modules/@releasedesk/database/generated/client/**/*.mjs",
-  "./node_modules/@releasedesk/database/generated/client/**/*.json",
-  "./node_modules/@releasedesk/database/generated/client/**/*.prisma",
-  "./node_modules/@releasedesk/database/generated/client/libquery_engine-rhel-openssl-3.0.x.so.node",
 ];
 
 /** Platform engines / types that must never be packaged into Vercel functions. */
@@ -59,6 +56,8 @@ const PRISMA_TRACE_EXCLUDES = [
 const nextConfig = {
   // Allow HMR when opening the app via LAN IP (e.g. http://10.138.194.41:3000)
   allowedDevOrigins: ["10.138.194.41", "localhost", "127.0.0.1"],
+  // Keep file traces inside this app (avoids symlink escapes via file: deps).
+  outputFileTracingRoot: __dirname,
   // Keep Prisma engines outside the webpack bundle so .node binaries are not stripped.
   // Vendor package is file:-linked; externalize both the wrapper and @prisma/client.
   serverExternalPackages: ["@prisma/client", "@releasedesk/database", "prisma"],
