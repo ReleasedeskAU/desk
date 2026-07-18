@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
@@ -12,7 +21,8 @@ type SharedTipProps = {
   text: string;
   open: boolean;
   tipId: string;
-  tipRef: React.RefObject<HTMLDivElement | null>;
+  /** Accept both React 19 (`T | null`) and JSX LegacyRef shapes. */
+  tipRef: Ref<HTMLDivElement>;
   coords: TipCoords | null;
 };
 
@@ -58,8 +68,8 @@ function useTipPositioning(
   open: boolean,
   placement: "top" | "bottom",
   text: string,
-  rootRef: React.RefObject<HTMLElement | null>,
-  tipRef: React.RefObject<HTMLDivElement | null>,
+  rootRef: RefObject<HTMLElement | null>,
+  tipRef: RefObject<HTMLDivElement | null>,
   setCoords: (c: TipCoords | null) => void,
   setOpen: (v: boolean) => void
 ) {
