@@ -36,6 +36,7 @@ import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
+import { environmentSortRank } from "@/lib/booking-phase";
 import { BOOKING_FILTER_SCHEMA, SELECT_CLASS } from "@/lib/table-filters";
 import { periodTitle, shiftPeriodAnchor } from "@/lib/calendar-schedule";
 import { PERIOD_OPTIONS } from "@/lib/period-labels";
@@ -207,7 +208,9 @@ export default function BookingContent() {
   });
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [apps, setApps] = useState<{ id: string; name: string; departmentId: string }[]>([]);
-  const [envs, setEnvs] = useState<{ id: string; name: string; applicationId: string; application: { name: string } }[]>([]);
+  const [envs, setEnvs] = useState<
+    { id: string; name: string; type?: string; applicationId: string; application: { name: string } }[]
+  >([]);
   const [releases, setReleases] = useState<
     { id: string; releaseCode: string; name: string; applications?: { application: { id: string } }[] }[]
   >([]);
@@ -368,11 +371,17 @@ export default function BookingContent() {
           label: a.name,
           departmentId: a.departmentId,
         }))}
-        environments={envs.map((e) => ({
-          value: e.id,
-          label: e.name,
-          applicationId: e.applicationId,
-        }))}
+        environments={[...envs]
+          .map((e) => ({
+            value: e.id,
+            label: e.name,
+            type: e.type ?? e.name,
+            applicationId: e.applicationId,
+          }))
+          .sort((a, b) => {
+            const rank = environmentSortRank(a.label, a.type) - environmentSortRank(b.label, b.type);
+            return rank !== 0 ? rank : a.label.localeCompare(b.label);
+          })}
         releases={releases.map((r) => ({
           value: r.id,
           label: `${r.releaseCode} — ${r.name}`,

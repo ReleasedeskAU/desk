@@ -122,7 +122,7 @@ export function SharedEnvironments({ canEdit }: { canEdit: boolean }) {
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [reloadToken]);
 
   const refetch = () => setReloadToken((token) => token + 1);
 

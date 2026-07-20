@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { bookingPhaseLabels } from "@/lib/booking-phase";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -22,13 +23,17 @@ type Option = {
   departmentId?: string;
   applicationId?: string;
   applicationIds?: string[];
+  /** Catalog environment type (Test, UAT, Pre-prod, DR, …). */
+  type?: string;
 };
 
 type ConflictRow = {
+  bookingCode?: string | null;
   applicationName?: string;
+  releaseCode?: string | null;
   bookedBy?: string;
   team?: string;
-  environmentName?: string;
+  environmentName?: string | null;
   fromDate?: string;
   toDate?: string;
   purpose?: string | null;
@@ -53,10 +58,14 @@ type BookingDetails = {
   application: string;
   department: string;
   release: string;
-  testEnv: string;
-  testStart: string;
-  testEnd: string;
-  testDays: string;
+  envLabel: string;
+  startLabel: string;
+  endLabel: string;
+  daysLabel: string;
+  environment: string;
+  startDate: string;
+  endDate: string;
+  days: string;
   notes: string;
 };
 
@@ -98,6 +107,23 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Builds a precise required-field message for only the missing booking fields. */
+function missingRequiredMessage(
+  form: BookingFormData,
+  labels: { startField: string; endField: string },
+): string | null {
+  const missing: string[] = [];
+  if (!form.applicationId) missing.push("Application");
+  if (!form.environmentId) missing.push("Environment");
+  if (!form.releaseId) missing.push("Release ID");
+  if (!form.fromDate) missing.push(labels.startField);
+  if (!form.toDate) missing.push(labels.endField);
+  if (!missing.length) return null;
+  if (missing.length === 1) return `${missing[0]} is required.`;
+  if (missing.length === 2) return `${missing[0]} and ${missing[1]} are required.`;
+  return `${missing.slice(0, -1).join(", ")}, and ${missing[missing.length - 1]} are required.`;
+}
+
 export function BookingFormModal({
   open,
   departments,
@@ -119,6 +145,7 @@ export function BookingFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictRow[]>([]);
+  const [conflictPrompt, setConflictPrompt] = useState<string | null>(null);
   const [result, setResult] = useState<ResultState | null>(null);
 
   useEffect(() => {
@@ -126,6 +153,7 @@ export function BookingFormModal({
     setForm(EMPTY);
     setError(null);
     setConflicts([]);
+    setConflictPrompt(null);
     setResult(null);
   }, [open]);
 
@@ -147,16 +175,30 @@ export function BookingFormModal({
     [environments, form.applicationId],
   );
 
-  const testDays = spanDays(form.fromDate, form.toDate);
+  const selectedEnv = useMemo(
+    () => environments.find((e) => e.value === form.environmentId),
+    [environments, form.environmentId],
+  );
+
+  const phaseLabels = useMemo(
+    () => bookingPhaseLabels(selectedEnv?.label ?? "", selectedEnv?.type),
+    [selectedEnv?.label, selectedEnv?.type],
+  );
+
+  const windowDays = spanDays(form.fromDate, form.toDate);
 
   const buildAttemptedDetails = (): BookingDetails => ({
     application: labelFor(applications, form.applicationId),
     department: departmentLabel,
     release: labelFor(releases, form.releaseId),
-    testEnv: labelFor(environments, form.environmentId),
-    testStart: form.fromDate,
-    testEnd: form.toDate,
-    testDays: testDays != null ? String(testDays) : "—",
+    envLabel: phaseLabels.envField,
+    startLabel: phaseLabels.startField,
+    endLabel: phaseLabels.endField,
+    daysLabel: phaseLabels.daysField,
+    environment: labelFor(environments, form.environmentId),
+    startDate: form.fromDate,
+    endDate: form.toDate,
+    days: windowDays != null ? String(windowDays) : "—",
     notes: form.purpose.trim() || "End-to-end test window",
   });
 
@@ -171,16 +213,20 @@ export function BookingFormModal({
     }
   };
 
-  const saveWithConflicts = async () => {
+  const createBooking = async (confirmConflict = false) => {
     setError(null);
-    setConflicts([]);
+    if (!confirmConflict) {
+      setConflicts([]);
+      setConflictPrompt(null);
+    }
 
-    if (!form.applicationId || !form.environmentId || !form.releaseId || !form.fromDate || !form.toDate) {
-      setError("Application, Test Env, Release ID, Test Start, and Test End are required.");
+    const missingMessage = missingRequiredMessage(form, phaseLabels);
+    if (missingMessage) {
+      setError(missingMessage);
       return;
     }
     if (form.toDate < form.fromDate) {
-      setError("Test End must be on or after Test Start.");
+      setError(`${phaseLabels.endField} must be on or after ${phaseLabels.startField}.`);
       return;
     }
 
@@ -192,27 +238,38 @@ export function BookingFormModal({
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({
-          applicationIds: [form.applicationId],
+          applicationId: form.applicationId,
           environmentId: form.environmentId,
           releaseId: form.releaseId,
           fromDate: form.fromDate,
           toDate: form.toDate,
           purpose: form.purpose || undefined,
+          confirmConflict: confirmConflict || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         conflicts?: ConflictRow[];
+        requiresConfirmation?: boolean;
         bookings?: CreatedBooking[];
       };
+
+      if (res.status === 409 && data.requiresConfirmation) {
+        setConflicts(data.conflicts ?? []);
+        setConflictPrompt(
+          data.error ||
+            "This environment is already booked for overlapping dates. Create this booking anyway?",
+        );
+        setSaving(false);
+        return;
+      }
 
       if (res.status === 409) {
         const conflictRows = data.conflicts ?? [];
         setConflicts(conflictRows);
-        setError(data.error || "Not available — overlapping booking on this application.");
         setResult({
           ok: false,
-          message: data.error || "Booking failed — overlapping booking on this application.",
+          message: data.error || "Booking failed — environment conflict.",
           details: attempted,
           conflicts: conflictRows,
         });
@@ -228,6 +285,8 @@ export function BookingFormModal({
         return;
       }
 
+      setConflictPrompt(null);
+      setConflicts([]);
       const created = data.bookings?.[0];
       setResult({
         ok: true,
@@ -240,11 +299,15 @@ export function BookingFormModal({
             created?.application?.department?.name ||
             attempted.department,
           release: created?.release?.releaseCode || attempted.release,
-          testEnv: created?.testEnvCode || attempted.testEnv,
-          testStart: created?.testStart?.slice(0, 10) || attempted.testStart,
-          testEnd: created?.testEnd?.slice(0, 10) || attempted.testEnd,
-          testDays:
-            created?.testDays != null ? String(created.testDays) : attempted.testDays,
+          envLabel: attempted.envLabel,
+          startLabel: attempted.startLabel,
+          endLabel: attempted.endLabel,
+          daysLabel: attempted.daysLabel,
+          environment: created?.testEnvCode || attempted.environment,
+          startDate: created?.testStart?.slice(0, 10) || attempted.startDate,
+          endDate: created?.testEnd?.slice(0, 10) || attempted.endDate,
+          days:
+            created?.testDays != null ? String(created.testDays) : attempted.days,
           notes: created?.purpose || attempted.notes,
         },
       });
@@ -257,6 +320,71 @@ export function BookingFormModal({
       setSaving(false);
     }
   };
+
+  if (conflictPrompt) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div
+          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg max-h-[90vh] overflow-y-auto dark:bg-[var(--card)]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="booking-conflict-title"
+        >
+          <div className="mb-4 flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div>
+              <h2
+                id="booking-conflict-title"
+                className="text-lg font-semibold text-amber-900 dark:text-amber-200"
+              >
+                Environment conflict
+              </h2>
+              <p className="mt-1 text-sm text-gray-700 dark:text-white/70">{conflictPrompt}</p>
+            </div>
+          </div>
+
+          {conflicts.length > 0 && (
+            <ul className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+              {conflicts.map((c, i) => (
+                <li key={c.bookingCode ?? i}>
+                  <strong>{c.bookingCode ?? "Existing booking"}</strong>
+                  {c.environmentName ? ` · ${c.environmentName}` : ""}
+                  {c.applicationName ? ` · ${c.applicationName}` : ""}
+                  {c.releaseCode ? ` · ${c.releaseCode}` : ""}
+                  {c.bookedBy ? ` — booked by ${c.bookedBy}` : ""}
+                  {c.fromDate && c.toDate
+                    ? ` · ${String(c.fromDate).slice(0, 10)} → ${String(c.toDate).slice(0, 10)}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className={taBtnSecondary}
+              disabled={saving}
+              onClick={() => {
+                setConflictPrompt(null);
+                setConflicts([]);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={cn(taBtnPrimary, saving && "opacity-70")}
+              disabled={saving}
+              onClick={() => void createBooking(true)}
+            >
+              {saving ? "Creating…" : "Create anyway"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (result) {
     return (
@@ -301,10 +429,10 @@ export function BookingFormModal({
             <DetailRow label="Application" value={result.details.application} />
             <DetailRow label="Department" value={result.details.department} />
             <DetailRow label="Release ID" value={result.details.release} />
-            <DetailRow label="Test Env" value={result.details.testEnv} />
-            <DetailRow label="Test Start" value={result.details.testStart} />
-            <DetailRow label="Test End" value={result.details.testEnd} />
-            <DetailRow label="Test Days" value={result.details.testDays} />
+            <DetailRow label={result.details.envLabel} value={result.details.environment} />
+            <DetailRow label={result.details.startLabel} value={result.details.startDate} />
+            <DetailRow label={result.details.endLabel} value={result.details.endDate} />
+            <DetailRow label={result.details.daysLabel} value={result.details.days} />
             <DetailRow label="Notes" value={result.details.notes} />
           </dl>
 
@@ -346,6 +474,7 @@ export function BookingFormModal({
                   setForm(EMPTY);
                   setError(null);
                   setConflicts([]);
+                  setConflictPrompt(null);
                 }}
               >
                 Create another
@@ -368,8 +497,8 @@ export function BookingFormModal({
       >
         <h2 className="mb-1 text-lg font-semibold text-gray-800 dark:text-white">New booking</h2>
         <p className="mb-4 text-xs text-gray-500 dark:text-white/55">
-          Application, Test Env, Release, and Test dates are required. Department and Test Days are calculated.
-          Booking ID and Conflict Flag are set by the system.
+          One booking = one Application, one Environment, one Release. Date labels follow the selected
+          environment (Test / UAT / Pre-Prod / Dev / Prod / DR).
         </p>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -397,17 +526,25 @@ export function BookingFormModal({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-500">Test Env *</label>
+            <label className="text-xs font-medium text-gray-500">Environment *</label>
             <div className="mt-1">
               <SearchableSelect
                 value={form.environmentId}
                 onChange={(v) => setForm((f) => ({ ...f, environmentId: v }))}
                 options={envOptions}
-                placeholder={form.applicationId ? "Select test environment…" : "Select application first…"}
-                searchPlaceholder="Search environments…"
+                placeholder={form.applicationId ? "Select environment…" : "Select application first…"}
+                searchPlaceholder="Search Dev, Test, UAT, Pre-prod, Prod, DR…"
                 disabled={!form.applicationId}
               />
             </div>
+            {phaseLabels.hint && (
+              <p className="mt-1 text-[11px] text-gray-500 dark:text-white/50">{phaseLabels.hint}</p>
+            )}
+            {form.applicationId && envOptions.length === 0 && (
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+                No environments exist for this application in master data.
+              </p>
+            )}
           </div>
           <div>
             <label className="text-xs font-medium text-gray-500">Release ID *</label>
@@ -423,7 +560,7 @@ export function BookingFormModal({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-500">Test Start *</label>
+            <label className="text-xs font-medium text-gray-500">{phaseLabels.startField} *</label>
             <input
               type="date"
               className={taInput}
@@ -433,7 +570,8 @@ export function BookingFormModal({
           </div>
           <div>
             <label className="text-xs font-medium text-gray-500">
-              Test End *{testDays != null ? ` · ${testDays} day${testDays === 1 ? "" : "s"}` : ""}
+              {phaseLabels.endField} *
+              {windowDays != null ? ` · ${windowDays} day${windowDays === 1 ? "" : "s"}` : ""}
             </label>
             <input
               type="date"
@@ -481,7 +619,7 @@ export function BookingFormModal({
           <button
             type="button"
             className={cn(taBtnPrimary, saving && "opacity-70")}
-            onClick={saveWithConflicts}
+            onClick={() => void createBooking(false)}
             disabled={saving}
           >
             {saving ? "Creating…" : "Create booking"}

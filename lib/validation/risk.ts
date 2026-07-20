@@ -41,10 +41,12 @@ const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).
 /**
  * PATCH /api/risks/[id] — allowlisted fields only.
  * riskCode is immutable; riskScore is server-derived from likelihood × impact.
+ * Prefer applicationId (names are derived); legacy name fields remain for compatibility.
  */
 export const patchRiskSchema = z
   .object({
     releaseId: z.string().trim().min(1).max(64).optional(),
+    applicationId: z.string().trim().min(1).max(64).optional(),
     applicationName: optionalNullableString,
     departmentName: optionalNullableString,
     category: z.string().trim().min(1).max(120).optional(),

@@ -60,8 +60,16 @@ type BlockerDetail = {
 };
 
 type BlockerOption = { id: string; blockerCode: string };
+type ReleaseLookup = {
+  id: string;
+  releaseCode: string;
+  name: string;
+  departmentName: string;
+  applicationName: string;
+};
 
 type BlockerDraft = {
+  releaseId: string;
   releaseCode: string;
   releaseName: string;
   department: string;
@@ -83,6 +91,7 @@ type BlockerDraft = {
 };
 
 const BLOCKER_FIELD_LABELS: Partial<Record<keyof BlockerDraft, string>> = {
+  releaseId: "Release ID",
   releaseCode: "Release ID",
   releaseName: "Release Name",
   department: "Department",
@@ -102,6 +111,26 @@ const BLOCKER_FIELD_LABELS: Partial<Record<keyof BlockerDraft, string>> = {
   resolutionNotes: "Resolution Notes",
   impactOnRelease: "Impact on Release",
 };
+
+const BLOCKER_TYPE_OPTIONS = [
+  "Environment",
+  "Technical",
+  "Dependency",
+  "Resource",
+  "Business",
+  "Testing",
+  "Security",
+  "Infrastructure",
+  "Defect",
+  "Compliance",
+  "Documentation",
+  "External",
+].map((v) => ({ value: v, label: v }));
+
+const ESCALATION_OPTIONS = ["L1 - Team Lead", "L2 - Manager", "L3 - Director"].map((v) => ({
+  value: v,
+  label: v,
+}));
 
 function toDateInput(iso: string | null) {
   if (!iso) return "";
@@ -140,8 +169,12 @@ function resolutionPercent(status: string, daysOpen: number): number {
   return Math.max(8, 40 - Math.min(daysOpen, 30));
 }
 
-function toDraft(row: BlockerDetail): BlockerDraft {
+function toDraft(row: BlockerDetail, releases: ReleaseLookup[]): BlockerDraft {
+  const matched =
+    releases.find((r) => r.id === row.release?.id) ??
+    releases.find((r) => r.releaseCode === row.releaseCode);
   return {
+    releaseId: matched?.id ?? row.release?.id ?? "",
     releaseCode: row.releaseCode,
     releaseName: row.releaseName,
     department: row.department,
@@ -174,23 +207,44 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   const router = useRouter();
   const [row, setRow] = useState<BlockerDetail | null>(null);
   const [options, setOptions] = useState<BlockerOption[]>([]);
+  const [releases, setReleases] = useState<ReleaseLookup[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const [detail, list, me] = await Promise.all([
+    const [detail, list, releaseList, me] = await Promise.all([
       safeFetchJson<BlockerDetail>(`/api/blockers/${id}`, {
         signal,
         label: "blocker-detail",
         rejectHttpErrors: false,
       }),
       safeFetchJson<BlockerOption[]>("/api/blockers", { signal, label: "blockers-list" }),
+      safeFetchJson<
+        {
+          id: string;
+          releaseCode: string;
+          name: string;
+          department?: { name?: string } | null;
+          applications?: { application?: { name?: string } | null }[];
+        }[]
+      >("/api/releases", { signal, label: "releases-list" }),
       safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
     ]);
     if (signal?.aborted) return;
     setRow(detail.ok && detail.status < 300 ? detail.data : null);
     setOptions(list.ok ? list.data.map((b) => ({ id: b.id, blockerCode: b.blockerCode })) : []);
+    setReleases(
+      releaseList.ok
+        ? releaseList.data.map((r) => ({
+            id: r.id,
+            releaseCode: r.releaseCode,
+            name: r.name,
+            departmentName: r.department?.name ?? "",
+            applicationName: r.applications?.[0]?.application?.name ?? "",
+          }))
+        : [],
+    );
     if (me.ok) setUser(me.data.user);
     setLastRefresh(new Date());
     setLoading(false);
@@ -202,7 +256,7 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
     return () => ac.abort();
   }, [load]);
 
-  const source = useMemo(() => (row ? toDraft(row) : null), [row]);
+  const source = useMemo(() => (row ? toDraft(row, releases) : null), [row, releases]);
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
@@ -215,6 +269,20 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         .map((o) => ({ value: o.id, label: o.blockerCode })),
     [options]
   );
+
+  const releaseOptions = useMemo(() => {
+    const opts = [...releases]
+      .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode, undefined, { numeric: true }))
+      .map((r) => ({ value: r.id, label: `${r.releaseCode} — ${r.name}` }));
+    const releaseId = d?.releaseId || row?.release?.id;
+    if (releaseId && !opts.some((o) => o.value === releaseId)) {
+      opts.unshift({
+        value: releaseId,
+        label: row?.releaseCode ? `${row.releaseCode} — ${row.releaseName}` : releaseId,
+      });
+    }
+    return opts;
+  }, [releases, d?.releaseId, row?.release?.id, row?.releaseCode, row?.releaseName]);
 
   const severityOptions = useMemo(() => {
     const set = new Set(SEVERITY_OPTIONS.map((o) => o.value));
@@ -232,29 +300,65 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
     return STATUS_OPTIONS;
   }, [row?.status]);
 
+  const blockerTypeOptions = useMemo(() => {
+    const set = new Set(BLOCKER_TYPE_OPTIONS.map((o) => o.value));
+    if (row?.blockerType && !set.has(row.blockerType)) {
+      return [{ value: row.blockerType, label: row.blockerType }, ...BLOCKER_TYPE_OPTIONS];
+    }
+    return BLOCKER_TYPE_OPTIONS;
+  }, [row?.blockerType]);
+
+  const escalationOptions = useMemo(() => {
+    const set = new Set(ESCALATION_OPTIONS.map((o) => o.value));
+    if (row?.escalationLevel && !set.has(row.escalationLevel)) {
+      return [{ value: row.escalationLevel, label: row.escalationLevel }, ...ESCALATION_OPTIONS];
+    }
+    return ESCALATION_OPTIONS;
+  }, [row?.escalationLevel]);
+
   const save = async () => {
     if (!row || !edit.draft) return;
     edit.setSaving(true);
     edit.setError(null);
-    const d = edit.draft;
+    const draft = edit.draft;
+    if (!draft.releaseCode) {
+      edit.setSaving(false);
+      edit.setError("Release is required.");
+      return;
+    }
     const res = await safeFetchJson(`/api/blockers/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...d,
-        daysOpen: Number(d.daysOpen),
-        assignedTo: d.assignedTo || null,
-        rootCause: d.rootCause || null,
-        resolutionNotes: d.resolutionNotes || null,
-        targetResolutionDate: d.targetResolutionDate || null,
-        actualResolutionDate: d.actualResolutionDate || null,
+        releaseCode: draft.releaseCode,
+        releaseName: draft.releaseName,
+        department: draft.department,
+        application: draft.application,
+        blockerType: draft.blockerType,
+        blockerDescription: draft.blockerDescription,
+        severity: draft.severity,
+        raisedDate: draft.raisedDate,
+        raisedBy: draft.raisedBy,
+        assignedTo: draft.assignedTo || null,
+        status: draft.status,
+        targetResolutionDate: draft.targetResolutionDate || null,
+        actualResolutionDate: draft.actualResolutionDate || null,
+        daysOpen: Number(draft.daysOpen),
+        escalationLevel: draft.escalationLevel,
+        rootCause: draft.rootCause || null,
+        resolutionNotes: draft.resolutionNotes || null,
+        impactOnRelease: draft.impactOnRelease,
       }),
       label: "blocker-patch",
       rejectHttpErrors: false,
     });
     edit.setSaving(false);
     if (!res.ok || res.status >= 300) {
-      edit.setError("Couldn’t save changes. Try again.");
+      const message =
+        res.ok && res.data && typeof res.data === "object" && "error" in res.data
+          ? String((res.data as { error?: string }).error || "")
+          : "";
+      edit.setError(message || "Couldn’t save changes. Try again.");
       return;
     }
     edit.completeSaveSuccess(BLOCKER_FIELD_LABELS);
@@ -342,19 +446,39 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
               label="Category"
               value={d.blockerType}
               editing
+              kind="select"
+              options={blockerTypeOptions}
               onChange={(n) => edit.setField("blockerType", n)}
+            />
+            <EditableField
+              label="Release"
+              value={d.releaseId}
+              editing
+              kind="select"
+              options={releaseOptions}
+              onChange={(n) => {
+                const release = releases.find((r) => r.id === n);
+                edit.patchDraft({
+                  releaseId: n,
+                  releaseCode: release?.releaseCode ?? "",
+                  releaseName: release?.name ?? "",
+                  department: release?.departmentName ?? d.department,
+                  application: release?.applicationName || d.application,
+                });
+              }}
             />
             <EditableField
               label="Department"
               value={d.department}
-              editing
-              onChange={(n) => edit.setField("department", n)}
+              editing={false}
+              display={d.department || "—"}
             />
             <EditableField
               label="Application"
               value={d.application}
               editing
               onChange={(n) => edit.setField("application", n)}
+              placeholder="Application…"
             />
             <EditableField
               label="Description"
@@ -363,19 +487,6 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
               kind="textarea"
               onChange={(n) => edit.setField("blockerDescription", n)}
               className="sm:col-span-2"
-            />
-            <EditableField
-              label="Release ID"
-              value={d.releaseCode}
-              editing
-              mono
-              onChange={(n) => edit.setField("releaseCode", n)}
-            />
-            <EditableField
-              label="Release Name"
-              value={d.releaseName}
-              editing
-              onChange={(n) => edit.setField("releaseName", n)}
             />
             <EditableField
               label="Impact on Release"
@@ -400,6 +511,8 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
               label="Escalation Level"
               value={d.escalationLevel}
               editing
+              kind="select"
+              options={escalationOptions}
               onChange={(n) => edit.setField("escalationLevel", n)}
             />
             <EditableField

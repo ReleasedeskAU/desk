@@ -1,52 +1,78 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
-import { checkBookingAvailability } from "@/lib/booking";
-import { createEnvBookingRow } from "@/lib/org-compat";
+import {
+  checkBookingAvailability,
+  checkEnvironmentBookingConflicts,
+  nextEnvBookingCode,
+} from "@/lib/booking";
+import { buildPhaseDatePayload } from "@/lib/booking-phase";
+import { createEnvBookingRow, getDefaultOrganizationId } from "@/lib/org-compat";
 import { prisma } from "@/lib/prisma";
 import { bookingWhere, mapDbEnvBookingRow, sp } from "@/lib/list-api-filters";
 import { jsonError } from "@/lib/api-errors";
 
-/** Availability check only (readonly+). */
+/** Availability check only (readonly+). Prefer environmentId for env-conflict checks. */
 export async function POST(req: Request) {
   const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   const body = await req.json();
-  const applicationIds: string[] = body.applicationIds ?? [];
+  const applicationIds: string[] = body.applicationIds ?? (body.applicationId ? [body.applicationId] : []);
+  const environmentId: string | undefined = body.environmentId || undefined;
   const fromDate = new Date(body.fromDate);
   const toDate = new Date(body.toDate);
 
-  if (!applicationIds.length || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    return NextResponse.json({ error: "applicationIds, fromDate, and toDate are required" }, { status: 400 });
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return NextResponse.json({ error: "fromDate and toDate are required" }, { status: 400 });
+  }
+  if (!environmentId && !applicationIds.length) {
+    return NextResponse.json(
+      { error: "environmentId (preferred) or applicationIds are required" },
+      { status: 400 },
+    );
   }
 
-  const result = await checkBookingAvailability(applicationIds, fromDate, toDate);
+  const result = environmentId
+    ? await checkEnvironmentBookingConflicts({ environmentId, fromDate, toDate })
+    : await checkBookingAvailability(applicationIds, fromDate, toDate);
+
   return NextResponse.json({ ...result, checkedBy: user!.email });
 }
 
-/** Create booking(s) — editor/admin. Reuses checkBookingAvailability for conflicts. */
+/**
+ * Create one booking — Application → Environment → Release → Booking (1:1:1:1).
+ * Overlapping BOOKED bookings on the same environment return 409 unless confirmConflict is true.
+ */
 export async function PUT(req: Request) {
   const { user, error } = await requireRole("editor");
   if (error) return error;
 
   try {
     const body = await req.json();
-    const applicationIds: string[] = body.applicationIds ?? [];
+    // Enforce single application — reject multi-app create payloads.
+    const applicationId: string | undefined =
+      typeof body.applicationId === "string" && body.applicationId.trim()
+        ? body.applicationId.trim()
+        : Array.isArray(body.applicationIds) && body.applicationIds.length === 1
+          ? String(body.applicationIds[0])
+          : undefined;
+    if (Array.isArray(body.applicationIds) && body.applicationIds.length > 1) {
+      return NextResponse.json(
+        { error: "Each booking must cover exactly one application. Create separate bookings for additional apps." },
+        { status: 400 },
+      );
+    }
+
     const fromDate = new Date(body.fromDate);
     const toDate = new Date(body.toDate);
     const environmentId: string | undefined = body.environmentId || undefined;
     const releaseId: string | undefined = body.releaseId || undefined;
     const purpose: string | undefined = body.purpose || undefined;
     const teamOverride: string | undefined = body.team || undefined;
-    const uatEnvCode: string | undefined = body.uatEnvCode || undefined;
-    const uatStart = body.uatStart ? new Date(body.uatStart) : null;
-    const uatEnd = body.uatEnd ? new Date(body.uatEnd) : null;
-    const preProdEnvCode: string | undefined = body.preProdEnvCode || undefined;
-    const preProdStart = body.preProdStart ? new Date(body.preProdStart) : null;
-    const preProdEnd = body.preProdEnd ? new Date(body.preProdEnd) : null;
+    const confirmConflict = body.confirmConflict === true;
 
-    if (!applicationIds.length || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      return NextResponse.json({ error: "applicationIds, fromDate, and toDate are required" }, { status: 400 });
+    if (!applicationId || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return NextResponse.json({ error: "applicationId, fromDate, and toDate are required" }, { status: 400 });
     }
     if (!environmentId) {
       return NextResponse.json({ error: "environmentId is required" }, { status: 400 });
@@ -57,96 +83,84 @@ export async function PUT(req: Request) {
     if (toDate < fromDate) {
       return NextResponse.json({ error: "toDate must be on or after fromDate" }, { status: 400 });
     }
-    if (uatStart && Number.isNaN(uatStart.getTime())) {
-      return NextResponse.json({ error: "Invalid uatStart" }, { status: 400 });
+
+    // Parallelize independent Neon round-trips — sequential awaits were the 16s cost.
+    const [, release, app, bookingCode] = await Promise.all([
+      getDefaultOrganizationId(),
+      prisma.release.findUnique({
+        where: { id: releaseId },
+        select: { id: true, releaseCode: true },
+      }),
+      prisma.application.findUnique({
+        where: { id: applicationId },
+        include: { department: true, environments: true },
+      }),
+      nextEnvBookingCode(),
+    ]);
+
+    if (!release) {
+      return NextResponse.json({ error: "Release not found" }, { status: 400 });
     }
-    if (uatEnd && Number.isNaN(uatEnd.getTime())) {
-      return NextResponse.json({ error: "Invalid uatEnd" }, { status: 400 });
-    }
-    if (uatStart && uatEnd && uatEnd < uatStart) {
-      return NextResponse.json({ error: "uatEnd must be on or after uatStart" }, { status: 400 });
-    }
-    if (preProdStart && Number.isNaN(preProdStart.getTime())) {
-      return NextResponse.json({ error: "Invalid preProdStart" }, { status: 400 });
-    }
-    if (preProdEnd && Number.isNaN(preProdEnd.getTime())) {
-      return NextResponse.json({ error: "Invalid preProdEnd" }, { status: 400 });
-    }
-    if (preProdStart && preProdEnd && preProdEnd < preProdStart) {
-      return NextResponse.json({ error: "preProdEnd must be on or after preProdStart" }, { status: 400 });
+    if (!app) {
+      return NextResponse.json({ error: "Application not found" }, { status: 400 });
     }
 
-    const check = await checkBookingAvailability(applicationIds, fromDate, toDate);
-    if (!check.available) {
-      return NextResponse.json({ error: "Not available", conflicts: check.conflicts }, { status: 409 });
+    const env = app.environments.find((e) => e.id === environmentId);
+    if (!env) {
+      return NextResponse.json({ error: "Environment not found for application" }, { status: 400 });
     }
 
-    const apps = await prisma.application.findMany({
-      where: { id: { in: applicationIds } },
-      include: { department: true, environments: true },
+    const check = await checkEnvironmentBookingConflicts({
+      environmentId,
+      environment: {
+        id: env.id,
+        name: env.name,
+        type: env.type,
+        applicationId: app.id,
+      },
+      fromDate,
+      toDate,
     });
-
-    if (!apps.length) {
-      return NextResponse.json({ error: "No matching applications" }, { status: 400 });
-    }
-
-    const existingCodes = await prisma.envBooking.findMany({
-      where: { bookingCode: { not: null } },
-      select: { bookingCode: true },
-    });
-    let nextNum =
-      existingCodes
-        .map((r) => Number(String(r.bookingCode ?? "").replace(/^ENV-/i, "")))
-        .filter((n) => Number.isFinite(n))
-        .reduce((max, n) => Math.max(max, n), 0) + 1;
-
-    const dayMs = 24 * 60 * 60 * 1000;
-    const spanDays = (start: Date, end: Date) =>
-      Math.max(1, Math.round((end.getTime() - start.getTime()) / dayMs) + 1);
-    const testDays = spanDays(fromDate, toDate);
-    const uatDays = uatStart && uatEnd ? spanDays(uatStart, uatEnd) : null;
-    const preProdDays = preProdStart && preProdEnd ? spanDays(preProdStart, preProdEnd) : null;
-
-    const created = [];
-    for (const app of apps) {
-      const env = app.environments.find((e) => e.id === environmentId);
-      if (!env) {
-        return NextResponse.json({ error: "Environment not found for application" }, { status: 400 });
-      }
-      const bookingCode = `ENV-${String(nextNum++).padStart(4, "0")}`;
-      const team = teamOverride?.trim() || app.department.name;
-
-      created.push(
-        await createEnvBookingRow({
-          bookingCode,
-          applicationId: app.id,
-          environmentId: env.id,
-          bookedBy: user!.name,
-          team,
-          departmentName: app.department.name,
-          fromDate,
-          toDate,
-          purpose: purpose ?? "End-to-end test window",
-          releaseId,
-          status: "BOOKED",
-          conflictFlag: false,
-          testEnvCode: env.name,
-          testStart: fromDate,
-          testEnd: toDate,
-          testDays,
-          uatEnvCode: uatEnvCode ?? null,
-          uatStart,
-          uatEnd,
-          uatDays,
-          preProdEnvCode: preProdEnvCode ?? null,
-          preProdStart,
-          preProdEnd,
-          preProdDays,
-        }),
+    if (!check.available && !confirmConflict) {
+      const first = check.conflicts[0];
+      const when = first
+        ? `${String(first.fromDate).slice(0, 10)} → ${String(first.toDate).slice(0, 10)}`
+        : "overlapping dates";
+      const who = first
+        ? `${first.bookingCode ?? "an existing booking"} (${first.applicationName}${first.releaseCode ? ` / ${first.releaseCode}` : ""})`
+        : "another booking";
+      return NextResponse.json(
+        {
+          error: `Environment "${env.name}" is already booked for ${when} by ${who}. Create this booking anyway?`,
+          conflicts: check.conflicts,
+          requiresConfirmation: true,
+        },
+        { status: 409 },
       );
     }
 
-    return NextResponse.json({ bookings: created.map(mapDbEnvBookingRow) }, { status: 201 });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const days = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / dayMs) + 1);
+    const phaseDates = buildPhaseDatePayload(env.name, env.type, fromDate, toDate, days);
+    const team = teamOverride?.trim() || app.department.name;
+
+    const created = await createEnvBookingRow({
+      bookingCode,
+      applicationId: app.id,
+      environmentId: env.id,
+      bookedBy: user!.name,
+      team,
+      departmentName: app.department.name,
+      fromDate,
+      toDate,
+      purpose: purpose ?? "End-to-end test window",
+      releaseId,
+      status: "BOOKED",
+      conflictFlag: !check.available,
+      ...phaseDates,
+    });
+
+    return NextResponse.json({ bookings: [mapDbEnvBookingRow(created)] }, { status: 201 });
   } catch (err) {
     return jsonError(err, {
       publicMessage: "Create failed",

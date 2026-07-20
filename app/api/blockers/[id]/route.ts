@@ -102,6 +102,16 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
+  if (body.releaseCode !== undefined) {
+    const release = await prisma.release.findUnique({
+      where: { releaseCode: body.releaseCode },
+      select: { id: true },
+    });
+    if (!release) {
+      return NextResponse.json({ error: "Release not found" }, { status: 400 });
+    }
+  }
+
   const data: Record<string, unknown> = {};
   if (body.releaseCode !== undefined) data.releaseCode = body.releaseCode;
   if (body.releaseName !== undefined) data.releaseName = body.releaseName;

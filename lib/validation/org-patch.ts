@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-/** PATCH /api/departments/[id] — allowlisted fields only. */
+/**
+ * PATCH /api/departments/[id] — allowlisted fields only.
+ * Name is immutable: System Mapping matrix/edges key off exact department names.
+ */
 export const patchDepartmentSchema = z
   .object({
-    name: z.string().trim().min(1).max(200).optional(),
     head: z.string().trim().max(200).optional(),
   })
   .strict();

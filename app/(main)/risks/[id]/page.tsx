@@ -55,10 +55,19 @@ type RiskDetail = {
 };
 
 type RiskOption = { id: string; riskCode: string };
-type ReleaseOption = { id: string; releaseCode: string };
-type UserOption = { id: string; name: string };
+type DepartmentOption = { id: string; name: string };
+type ApplicationOption = { id: string; name: string; departmentId: string };
+type ReleaseOption = {
+  id: string;
+  releaseCode: string;
+  departmentId: string;
+  applications: { application: { id: string } }[];
+};
+type UserOption = { id: string; name: string; department?: string };
 
 type RiskDraft = {
+  departmentId: string;
+  applicationId: string;
   releaseId: string;
   applicationName: string;
   departmentName: string;
@@ -74,9 +83,9 @@ type RiskDraft = {
 };
 
 const RISK_FIELD_LABELS: Partial<Record<keyof RiskDraft, string>> = {
+  departmentId: "Department",
+  applicationId: "Application",
   releaseId: "Release",
-  applicationName: "Application",
-  departmentName: "Department",
   category: "Category",
   description: "Description",
   likelihood: "Likelihood",
@@ -136,8 +145,21 @@ function statusTone(status: string): ChipTone {
   return "neutral";
 }
 
-function toDraft(row: RiskDetail): RiskDraft {
+function toDraft(
+  row: RiskDetail,
+  departments: DepartmentOption[],
+  applications: ApplicationOption[],
+): RiskDraft {
+  const deptByName = departments.find((d) => d.name === row.departmentName);
+  const app =
+    applications.find(
+      (a) =>
+        a.name === row.applicationName &&
+        (!deptByName || a.departmentId === deptByName.id),
+    ) ?? applications.find((a) => a.name === row.applicationName);
   return {
+    departmentId: deptByName?.id ?? app?.departmentId ?? "",
+    applicationId: app?.id ?? "",
     releaseId: row.releaseId,
     applicationName: row.applicationName ?? "",
     departmentName: row.departmentName ?? "",
@@ -158,6 +180,8 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const [row, setRow] = useState<RiskDetail | null>(null);
   const [options, setOptions] = useState<RiskOption[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [applications, setApplications] = useState<ApplicationOption[]>([]);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -165,13 +189,15 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const [detail, list, releaseList, userList, me] = await Promise.all([
+    const [detail, list, deptList, appList, releaseList, userList, me] = await Promise.all([
       safeFetchJson<RiskDetail>(`/api/risks/${id}`, {
         signal,
         label: "risk-detail",
         rejectHttpErrors: false,
       }),
       safeFetchJson<RiskOption[]>("/api/risks", { signal, label: "risks-list" }),
+      safeFetchJson<DepartmentOption[]>("/api/departments", { signal, label: "departments-list" }),
+      safeFetchJson<ApplicationOption[]>("/api/applications", { signal, label: "applications-list" }),
       safeFetchJson<ReleaseOption[]>("/api/releases", { signal, label: "releases-list" }),
       safeFetchJson<UserOption[]>("/api/users", { signal, label: "users-list" }),
       safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
@@ -179,10 +205,27 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     if (signal?.aborted) return;
     setRow(detail.ok && detail.status < 300 ? detail.data : null);
     setOptions(list.ok ? list.data.map((r) => ({ id: r.id, riskCode: r.riskCode })) : []);
-    setReleases(
-      releaseList.ok ? releaseList.data.map((r) => ({ id: r.id, releaseCode: r.releaseCode })) : []
+    setDepartments(deptList.ok ? deptList.data.map((d) => ({ id: d.id, name: d.name })) : []);
+    setApplications(
+      appList.ok
+        ? appList.data.map((a) => ({ id: a.id, name: a.name, departmentId: a.departmentId }))
+        : [],
     );
-    setUsers(userList.ok ? userList.data.map((u) => ({ id: u.id, name: u.name })) : []);
+    setReleases(
+      releaseList.ok
+        ? releaseList.data.map((r) => ({
+            id: r.id,
+            releaseCode: r.releaseCode,
+            departmentId: r.departmentId,
+            applications: Array.isArray(r.applications) ? r.applications : [],
+          }))
+        : [],
+    );
+    setUsers(
+      userList.ok
+        ? userList.data.map((u) => ({ id: u.id, name: u.name, department: u.department }))
+        : [],
+    );
     if (me.ok) setUser(me.data.user);
     setLastRefresh(new Date());
     setLoading(false);
@@ -194,7 +237,10 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     return () => ac.abort();
   }, [load]);
 
-  const source = useMemo(() => (row ? toDraft(row) : null), [row]);
+  const source = useMemo(
+    () => (row ? toDraft(row, departments, applications) : null),
+    [row, departments, applications],
+  );
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
@@ -208,28 +254,71 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     [options]
   );
 
+  const departmentOptions = useMemo(
+    () =>
+      [...departments]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((d) => ({ value: d.id, label: d.name })),
+    [departments],
+  );
+
+  const filteredApplications = useMemo(() => {
+    const deptId = d?.departmentId ?? v?.departmentId ?? "";
+    return applications.filter((a) => a.departmentId === deptId);
+  }, [applications, d?.departmentId, v?.departmentId]);
+
+  const applicationOptions = useMemo(() => {
+    const opts = [...filteredApplications]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((a) => ({ value: a.id, label: a.name }));
+    const appId = d?.applicationId ?? v?.applicationId;
+    if (appId && !opts.some((o) => o.value === appId)) {
+      const current = applications.find((a) => a.id === appId);
+      if (current) opts.unshift({ value: current.id, label: current.name });
+    }
+    return opts;
+  }, [filteredApplications, applications, d?.applicationId, v?.applicationId]);
+
+  const filteredReleases = useMemo(() => {
+    const deptId = d?.departmentId ?? v?.departmentId ?? "";
+    const appId = d?.applicationId ?? v?.applicationId ?? "";
+    return releases.filter(
+      (r) =>
+        r.departmentId === deptId &&
+        r.applications.some((link) => link.application.id === appId),
+    );
+  }, [releases, d?.departmentId, d?.applicationId, v?.departmentId, v?.applicationId]);
+
   const releaseOptions = useMemo(() => {
-    const opts = [...releases]
+    const opts = [...filteredReleases]
       .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode, undefined, { numeric: true }))
       .map((r) => ({ value: r.id, label: r.releaseCode }));
-    if (row?.releaseId && !opts.some((o) => o.value === row.releaseId)) {
+    const releaseId = d?.releaseId ?? row?.releaseId;
+    if (releaseId && !opts.some((o) => o.value === releaseId)) {
+      const current = releases.find((r) => r.id === releaseId);
       opts.unshift({
-        value: row.releaseId,
-        label: row.release?.releaseCode ?? row.releaseId,
+        value: releaseId,
+        label: current?.releaseCode ?? row?.release?.releaseCode ?? releaseId,
       });
     }
     return opts;
-  }, [releases, row?.releaseId, row?.release?.releaseCode]);
+  }, [filteredReleases, releases, d?.releaseId, row?.releaseId, row?.release?.releaseCode]);
 
   const ownerOptions = useMemo(() => {
-    const opts = [...users]
+    const deptName = (
+      departments.find((dept) => dept.id === (d?.departmentId ?? v?.departmentId))?.name ?? ""
+    ).toLowerCase();
+    const scoped = deptName
+      ? users.filter((u) => (u.department ?? "").toLowerCase() === deptName)
+      : users;
+    const opts = [...scoped]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((u) => ({ value: u.id, label: u.name }));
     if (row?.riskOwner && !opts.some((o) => o.value === row.riskOwner!.id)) {
       opts.unshift({ value: row.riskOwner.id, label: row.riskOwner.name });
     }
     return [{ value: "", label: "— Unassigned —" }, ...opts];
-  }, [users, row?.riskOwner]);
+  }, [users, departments, d?.departmentId, v?.departmentId, row?.riskOwner]);
 
   const statusOptions = useMemo(() => {
     const set = new Set(STATUS_OPTIONS.map((o) => o.value));
@@ -244,18 +333,25 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     edit.setSaving(true);
     edit.setError(null);
     const draft = edit.draft;
+    if (!draft.departmentId || !draft.applicationId || !draft.releaseId) {
+      edit.setSaving(false);
+      edit.setError("Department, Application, and Release are required.");
+      return;
+    }
     const res = await safeFetchJson(`/api/risks/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...draft,
+        releaseId: draft.releaseId,
+        applicationId: draft.applicationId,
+        category: draft.category,
+        description: draft.description,
         likelihood: Number(draft.likelihood),
         impact: Number(draft.impact),
-        applicationName: draft.applicationName || null,
-        departmentName: draft.departmentName || null,
         affectedArea: draft.affectedArea || null,
         mitigationStrategy: draft.mitigationStrategy || null,
         riskOwnerId: draft.riskOwnerId || null,
+        status: draft.status,
         notes: draft.notes || null,
       }),
       label: "risk-patch",
@@ -263,7 +359,11 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     });
     edit.setSaving(false);
     if (!res.ok || res.status >= 300) {
-      edit.setError("Couldn’t save changes. Try again.");
+      const message =
+        res.ok && res.data && typeof res.data === "object" && "error" in res.data
+          ? String((res.data as { error?: string }).error || "")
+          : "";
+      edit.setError(message || "Couldn’t save changes. Try again.");
       return;
     }
     edit.completeSaveSuccess(RISK_FIELD_LABELS);
@@ -298,6 +398,8 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const openish = !/accept|closed|resolv/i.test(v.status);
   const leaveMatch = v.notes.match(/LV-\d+/i)?.[0];
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
+  const selectedApp = applications.find((a) => a.id === v.applicationId);
+  const selectedDept = departments.find((dept) => dept.id === v.departmentId);
   const selectedOwner = users.find((u) => u.id === v.riskOwnerId) ?? row.riskOwner;
 
   return (
@@ -362,26 +464,43 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
               onChange={(n) => edit.setField("impact", n)}
             />
             <EditableField
+              label="Department"
+              value={d.departmentId}
+              editing
+              kind="select"
+              options={departmentOptions}
+              onChange={(n) =>
+                edit.patchDraft({
+                  departmentId: n,
+                  applicationId: "",
+                  releaseId: "",
+                  riskOwnerId: "",
+                  departmentName: departments.find((dept) => dept.id === n)?.name ?? "",
+                  applicationName: "",
+                })
+              }
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationId}
+              editing
+              kind="select"
+              options={applicationOptions}
+              onChange={(n) =>
+                edit.patchDraft({
+                  applicationId: n,
+                  releaseId: "",
+                  applicationName: applications.find((a) => a.id === n)?.name ?? "",
+                })
+              }
+            />
+            <EditableField
               label="Release"
               value={d.releaseId}
               editing
               kind="select"
               options={releaseOptions}
               onChange={(n) => edit.setField("releaseId", n)}
-            />
-            <EditableField
-              label="Application"
-              value={d.applicationName}
-              editing
-              onChange={(n) => edit.setField("applicationName", n)}
-              placeholder="Application name…"
-            />
-            <EditableField
-              label="Department"
-              value={d.departmentName}
-              editing
-              onChange={(n) => edit.setField("departmentName", n)}
-              placeholder="Department…"
             />
             <EditableField
               label="Affected Area"
@@ -565,8 +684,18 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
               v.releaseId === row.releaseId ? formatDate(row.release.releaseDate) : "—"
             }
           />
-          <EditableField label="Application" value={v.applicationName} editing={false} />
-          <EditableField label="Department" value={v.departmentName} editing={false} />
+          <EditableField
+            label="Application"
+            value={v.applicationName}
+            editing={false}
+            display={selectedApp?.name ?? v.applicationName ?? "—"}
+          />
+          <EditableField
+            label="Department"
+            value={v.departmentName}
+            editing={false}
+            display={selectedDept?.name ?? v.departmentName ?? "—"}
+          />
           <EditableField label="Affected Area" value={v.affectedArea} editing={false} />
         </EditableFieldGrid>
       </DetailSection>

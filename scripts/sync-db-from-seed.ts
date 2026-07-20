@@ -336,8 +336,15 @@ async function main() {
     const fromDate = legDates.length ? new Date(Math.min(...legDates.map((d) => d.getTime()))) : prodDate;
     const toDt = legDates.length ? new Date(Math.max(...legDates.map((d) => d.getTime()))) : prodDate;
     const bookingCode = String(b["Booking ID"]);
+    const testEnvName = b["Test Env"] ? String(b["Test Env"]) : null;
+    const environmentId = testEnvName
+      ? envIdByAppEnv.get(`${applicationId}::${testEnvName}`) ??
+        envIdByAppEnv.get(`${applicationId}::${testEnvName.toUpperCase()}`) ??
+        null
+      : null;
     const data = {
       applicationId,
+      environmentId,
       bookedBy: "Unknown",
       team: String(b["Department"] ?? "Unknown"),
       departmentName: b["Department"] ? String(b["Department"]) : null,
@@ -349,7 +356,7 @@ async function main() {
       releaseSize: b["Release Size"] ? String(b["Release Size"]) : null,
       prodReleaseDate: toDate(b["Prod Release Date"]),
       cabDate: toDate(b["CAB Date"]),
-      testEnvCode: b["Test Env"] ? String(b["Test Env"]) : null,
+      testEnvCode: testEnvName,
       testStart: toDate(b["Test Start"]),
       testEnd: toDate(b["Test End"]),
       testDays: toInt(b["Test Days"]),

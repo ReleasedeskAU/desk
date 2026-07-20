@@ -16,6 +16,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Env Booking create now checks overlapping BOOKED windows on the same environment (not just application), returns a clear conflict prompt, and allows confirmed create-with-conflict (`confirmConflict` + `conflictFlag`). Multi-application create payloads are rejected (1:1:1:1). Conflict matching covers legacy seed rows (`environmentId` null) and seed env codes like `FIN-TEST-01` mapped to catalog names like `Test`.
+- New booking form date labels follow the selected environment phase (Test / UAT / Pre-Prod / Dev / Prod / DR); DR is labeled as Disaster Recovery; create writes the matching phase columns. Booking table defaults show Environment/Start/End plus UAT/Pre-Prod env columns.
+- Locked department rename (UI + PATCH): name is immutable so System Mapping matrix/edge projection stays consistent; only head is updatable.
+- Shared Environments filter option lists refresh after create/update/delete.
+- Risk, Blocker, and Drift detail edit forms now use the same select cascades / FK validation as create (applicationId for risks; release picker for blockers; dept→app→release→env for drifts).
 - Extracted canonical Prisma schema into workspace package `@releasedesk/database`; Sentinel and connector-engine now share one client (Neon retry logic remains in Sentinel `lib/prisma`).
 - Centralized organization-compatible create handling for Batch 2 entities and Releases so live v2 inserts always persist the required organization while local v1 remains supported.
 

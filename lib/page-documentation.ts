@@ -152,18 +152,20 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
     pageKey: "system-mapping",
     title: "System Mapping",
     summary:
-      "Plan releases across the system catalog, department relationship matrix, shared environments, and critical paths. Keep release-manager notes in view and run real date-range booking-conflict checks without leaving the workspace.",
+      "Plan releases across the system catalog, a readable Visual Map (one system at a time), department matrix, shared environments, and critical paths. Keep release-manager notes in view and run real date-range booking-conflict checks without leaving the workspace.",
     quickReference: [
       "Systems Hub records system ownership, integration reach, data flow, and exchanged data.",
+      "Visual Map: Knowledge-Graph-style canvas with Focus / All systems, legend filters, pan/zoom/minimap, and Expand for a full detail workspace.",
       "Department Matrix is an editable 8×8 view: Primary, Secondary, or None.",
       "Shared Environments supports server-side filters, sorting, and saved table preferences.",
       "Critical Paths capture coordinated upstream/downstream release sequences and blackout windows.",
-      "The persistent sidebar shows all six release-manager notes and real booking-conflict analysis.",
+      "The persistent sidebar shows all six release-manager notes and real booking-conflict analysis (hidden on Visual Map for width).",
     ],
     fullDocumentation: [
-      "System Mapping is organized into four operational tabs. Systems Hub and Critical Paths are database-backed catalogs with create, edit, and delete controls for editors. Department Matrix preserves the stored directional relationship for every pair of the eight supported departments; mirroring the reverse direction is enabled by default when editing.",
+      "System Mapping is organized into operational tabs. Systems Hub and Critical Paths are database-backed catalogs with create, edit, and delete controls for editors. Department Matrix preserves the stored directional relationship for every pair of the eight supported departments; mirroring the reverse direction is enabled by default when editing.",
+      "Visual Map collapses environment-level edges into system-to-system links and renders them like the Knowledge Graph: color-coded nodes, labeled feeds edges, Controls, and MiniMap. Focus mode lays out upstream → selected → downstream; All systems shows every application in a circular layout. Click a node to focus, click an edge for env pairs, or use Expand for a larger modal with the same controls and a full connection-info panel. Open via Visual Map or /system-mapping?tab=visual.",
       "Shared Environments follows the common Sentinel table pattern: URL-driven server filters, sortable headers, a sort summary, saved Manage Filters and Manage Columns preferences, sticky headings and identifier, and horizontal scrolling on small screens.",
-      "Release Manager Notes remain visible beside the active tab on desktop and appear expanded before the tab content on mobile. Booking conflicts call the existing real analysis endpoint for the chosen date range and report environment reservations that overlap mapped dependencies.",
+      "Release Manager Notes remain visible beside the active tab on desktop (except Visual Map) and appear expanded before the tab content on mobile. Booking conflicts call the existing real analysis endpoint for the chosen date range and report environment reservations that overlap mapped dependencies.",
     ],
   },
   environments: {

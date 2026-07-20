@@ -47,6 +47,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  const nextReleaseId = body.releaseId ?? existing.releaseId;
   if (body.releaseId !== undefined) {
     const release = await prisma.release.findUnique({ where: { id: body.releaseId }, select: { id: true } });
     if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
@@ -54,6 +55,35 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.riskOwnerId) {
     const owner = await prisma.user.findUnique({ where: { id: body.riskOwnerId }, select: { id: true } });
     if (!owner) return NextResponse.json({ error: "Risk owner not found" }, { status: 400 });
+  }
+
+  let resolvedApplicationName = body.applicationName;
+  let resolvedDepartmentName = body.departmentName;
+  if (body.applicationId !== undefined) {
+    const [release, application] = await Promise.all([
+      prisma.release.findUnique({
+        where: { id: nextReleaseId },
+        select: {
+          id: true,
+          department: { select: { id: true } },
+          applications: { where: { applicationId: body.applicationId }, select: { applicationId: true } },
+        },
+      }),
+      prisma.application.findUnique({
+        where: { id: body.applicationId },
+        select: { id: true, name: true, department: { select: { id: true, name: true } } },
+      }),
+    ]);
+    if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+    if (!release.applications.length) {
+      return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
+    }
+    if (application.department.id !== release.department.id) {
+      return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
+    }
+    resolvedApplicationName = application.name;
+    resolvedDepartmentName = application.department.name;
   }
 
   const likelihood = body.likelihood ?? existing.likelihood;
@@ -74,8 +104,8 @@ export async function PATCH(req: Request, { params }: Params) {
     notes?: string | null;
   } = {};
   if (body.releaseId !== undefined) data.releaseId = body.releaseId;
-  if (body.applicationName !== undefined) data.applicationName = body.applicationName;
-  if (body.departmentName !== undefined) data.departmentName = body.departmentName;
+  if (resolvedApplicationName !== undefined) data.applicationName = resolvedApplicationName;
+  if (resolvedDepartmentName !== undefined) data.departmentName = resolvedDepartmentName;
   if (body.category !== undefined) data.category = body.category;
   if (body.description !== undefined) data.description = body.description;
   if (body.likelihood !== undefined) data.likelihood = body.likelihood;

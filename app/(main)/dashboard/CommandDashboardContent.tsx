@@ -92,7 +92,7 @@ type CommandDashboardContentProps = {
  * Prefers `initialData` from the server; refetches on period change / Retry.
  */
 export default function CommandDashboardContent({
-  initialPeriod = "month",
+  initialPeriod = "all",
   initialData = null,
   initialError = null,
 }: CommandDashboardContentProps) {

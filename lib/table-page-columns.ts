@@ -572,10 +572,10 @@ export const BOOKING_COLUMNS: ColumnDef[] = [
   { key: "releaseSize", label: "Release Size" },
   { key: "prodReleaseDate", label: "Prod Release Date" },
   { key: "cabDate", label: "CAB Date" },
-  { key: "testEnvCode", label: "Test Env" },
-  { key: "testStart", label: "Test Start" },
-  { key: "testEnd", label: "Test End" },
-  { key: "testDays", label: "Test Days" },
+  { key: "testEnvCode", label: "Environment" },
+  { key: "testStart", label: "Start" },
+  { key: "testEnd", label: "End" },
+  { key: "testDays", label: "Days" },
   { key: "uatEnvCode", label: "UAT Env" },
   { key: "uatStart", label: "UAT Start" },
   { key: "uatEnd", label: "UAT End" },
@@ -589,14 +589,18 @@ export const BOOKING_COLUMNS: ColumnDef[] = [
   { key: "environmentConflictId", label: "Environment Conflict ID" },
 ];
 
-/** Core booking desk columns — env phase blocks stay hidden until enabled. */
+/** Core booking desk columns — primary env window + phase mirrors for UAT/Pre-Prod. */
 export const BOOKING_DEFAULT_VISIBLE_COLUMN_KEYS = [
   "bookingCode",
   "releaseId",
   "application",
   "department",
-  "releaseSize",
-  "prodReleaseDate",
+  "testEnvCode",
+  "testStart",
+  "testEnd",
+  "testDays",
+  "uatEnvCode",
+  "preProdEnvCode",
   "conflictFlag",
 ] as const;
 
@@ -1042,7 +1046,7 @@ export const BOOKING_FILTER_FIELDS: FilterFieldDef[] = [
   { key: "dependenciesQ", label: "Dependencies" },
   { key: "prodReleaseDateQ", label: "Prod Release Date" },
   { key: "cabDateQ", label: "CAB Date" },
-  { key: "testEnvCodeQ", label: "Test Env" },
+  { key: "testEnvCodeQ", label: "Environment" },
   { key: "testStartQ", label: "Test Start" },
   { key: "testEndQ", label: "Test End" },
   { key: "testDays", label: "Test Days" },

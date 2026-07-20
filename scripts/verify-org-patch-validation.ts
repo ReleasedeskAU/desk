@@ -8,11 +8,15 @@ import {
   patchEnvironmentSchema,
 } from "../lib/validation/org-patch";
 
-// Department — allow name/head only
-assert.equal(patchDepartmentSchema.safeParse({ name: "Finance" }).success, true);
+// Department — head only; name is immutable (System Mapping)
 assert.equal(patchDepartmentSchema.safeParse({ head: "Alex" }).success, true);
 assert.equal(
-  patchDepartmentSchema.safeParse({ name: "Finance", id: "hacked", createdAt: "x" }).success,
+  patchDepartmentSchema.safeParse({ name: "Finance" }).success,
+  false,
+  "department rejects name rename"
+);
+assert.equal(
+  patchDepartmentSchema.safeParse({ head: "Alex", id: "hacked", createdAt: "x" }).success,
   false,
   "department rejects id/createdAt mass-assignment"
 );

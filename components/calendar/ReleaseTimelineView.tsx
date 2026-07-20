@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { CalendarStatusLegend } from "@/components/calendar/CalendarStatusLegend";
+import { useSidebar } from "@/context/SidebarContext";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
 import {
   buildMonthAxisLabels,
@@ -488,6 +489,14 @@ function useScrollNav(depsKey: string | number) {
   return { scrollRef, canScrollLeft, canScrollRight, updateScrollState, scrollByPage };
 }
 
+/**
+ * Year Timeline Expand View — Calendar-style overlay that sits in the content
+ * column beside the sidebar (never covers the nav rail).
+ *
+ * @param props - Open state, close handler, and releases for the year track.
+ * @returns Dialog overlay; null when closed.
+ * @sideEffects Locks body scroll and listens for Escape while open.
+ */
 function TimelineExpandModal({
   open,
   onClose,
@@ -501,6 +510,7 @@ function TimelineExpandModal({
   periodStart: Date;
   periodEnd: Date;
 }) {
+  const { isMobileOpen } = useSidebar();
   const viewportRef = useRef<HTMLDivElement>(null);
   const { scrollRef, canScrollLeft, canScrollRight, updateScrollState, scrollByPage } = useScrollNav(
     open ? "open" : "closed",
@@ -645,14 +655,18 @@ function TimelineExpandModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-5"
+      className={cn(
+        "fixed inset-y-0 right-0 z-50 flex bg-black/55 p-3 backdrop-blur-sm sm:p-5",
+        // Match AppShell content margin — keep the sidebar rail fully visible
+        isMobileOpen ? "left-0" : "left-0 lg:left-[var(--sidebar-width)]"
+      )}
       role="dialog"
       aria-modal="true"
       aria-label="Expanded release timeline"
       onClick={onClose}
     >
       <div
-        className="flex h-[min(94vh,920px)] w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[var(--border)] dark:bg-[var(--card)]"
+        className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[var(--border)] dark:bg-[var(--card)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-[var(--border)] sm:px-5">

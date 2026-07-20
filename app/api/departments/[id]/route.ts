@@ -13,16 +13,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   const body = parsed.data;
-  if (body.name === undefined && body.head === undefined) {
+  if (body.head === undefined) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  // Name is locked — renaming would break System Mapping matrix/edge projection.
   const row = await prisma.department.update({
     where: { id },
-    data: {
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.head !== undefined ? { head: body.head } : {}),
-    },
+    data: { head: body.head },
   });
   return NextResponse.json(row);
 }

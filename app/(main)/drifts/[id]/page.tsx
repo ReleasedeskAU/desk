@@ -54,10 +54,19 @@ type DriftDetail = {
 };
 
 type DriftOption = { id: string; driftCode: string };
-type ReleaseOption = { id: string; releaseCode: string };
-type ApplicationOption = { id: string; name: string };
+type DepartmentOption = { id: string; name: string };
+type ApplicationOption = { id: string; name: string; departmentId: string };
+type EnvironmentOption = { id: string; name: string; applicationId: string };
+type ReleaseOption = {
+  id: string;
+  releaseCode: string;
+  departmentId: string;
+  applications: { application: { id: string } }[];
+};
+type ReferenceOption = { id: string; value: string; active?: boolean };
 
 type DriftDraft = {
+  departmentId: string;
   releaseId: string;
   applicationId: string;
   departmentName: string;
@@ -74,9 +83,9 @@ type DriftDraft = {
 };
 
 const DRIFT_FIELD_LABELS: Partial<Record<keyof DriftDraft, string>> = {
+  departmentId: "Department",
   releaseId: "Release",
   applicationId: "Application",
-  departmentName: "Department",
   environmentName: "Environment",
   driftType: "Drift Type",
   driftCategory: "Drift Category",
@@ -124,8 +133,17 @@ function heroToneFromSeverity(severity: string): "rose" | "amber" | "emerald" | 
   return "sky";
 }
 
-function toDraft(row: DriftDetail): DriftDraft {
+function toDraft(
+  row: DriftDetail,
+  departments: DepartmentOption[],
+  applications: ApplicationOption[],
+): DriftDraft {
+  const app = applications.find((a) => a.id === row.applicationId);
+  const dept =
+    departments.find((d) => d.name === row.departmentName) ??
+    departments.find((d) => d.id === app?.departmentId);
   return {
+    departmentId: dept?.id ?? app?.departmentId ?? "",
     releaseId: row.releaseId,
     applicationId: row.applicationId,
     departmentName: row.departmentName ?? "",
@@ -157,34 +175,66 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const [row, setRow] = useState<DriftDetail | null>(null);
   const [options, setOptions] = useState<DriftOption[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
   const [applications, setApplications] = useState<ApplicationOption[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [driftTypes, setDriftTypes] = useState<ReferenceOption[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const [detail, list, releaseList, appList, me] = await Promise.all([
+    const [detail, list, deptList, releaseList, appList, envList, typeList, me] = await Promise.all([
       safeFetchJson<DriftDetail>(`/api/drifts/${id}`, {
         signal,
         label: "drift-detail",
         rejectHttpErrors: false,
       }),
       safeFetchJson<DriftOption[]>("/api/drifts", { signal, label: "drifts-list" }),
+      safeFetchJson<DepartmentOption[]>("/api/departments", { signal, label: "departments-list" }),
       safeFetchJson<ReleaseOption[]>("/api/releases", { signal, label: "releases-list" }),
       safeFetchJson<ApplicationOption[]>("/api/applications", {
         signal,
         label: "applications-list",
+      }),
+      safeFetchJson<EnvironmentOption[]>("/api/environments", {
+        signal,
+        label: "environments-list",
+      }),
+      safeFetchJson<ReferenceOption[]>("/api/reference-data?category=drift_type", {
+        signal,
+        label: "drift-types",
       }),
       safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
     ]);
     if (signal?.aborted) return;
     setRow(detail.ok && detail.status < 300 ? detail.data : null);
     setOptions(list.ok ? list.data.map((d) => ({ id: d.id, driftCode: d.driftCode })) : []);
+    setDepartments(deptList.ok ? deptList.data.map((d) => ({ id: d.id, name: d.name })) : []);
     setReleases(
-      releaseList.ok ? releaseList.data.map((r) => ({ id: r.id, releaseCode: r.releaseCode })) : []
+      releaseList.ok
+        ? releaseList.data.map((r) => ({
+            id: r.id,
+            releaseCode: r.releaseCode,
+            departmentId: r.departmentId,
+            applications: Array.isArray(r.applications) ? r.applications : [],
+          }))
+        : [],
     );
-    setApplications(appList.ok ? appList.data.map((a) => ({ id: a.id, name: a.name })) : []);
+    setApplications(
+      appList.ok
+        ? appList.data.map((a) => ({ id: a.id, name: a.name, departmentId: a.departmentId }))
+        : [],
+    );
+    setEnvironments(
+      envList.ok
+        ? envList.data.map((e) => ({ id: e.id, name: e.name, applicationId: e.applicationId }))
+        : [],
+    );
+    setDriftTypes(
+      typeList.ok ? typeList.data.filter((item) => item.active !== false) : [],
+    );
     if (me.ok) setUser(me.data.user);
     setLastRefresh(new Date());
     setLoading(false);
@@ -196,7 +246,10 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     return () => ac.abort();
   }, [load]);
 
-  const source = useMemo(() => (row ? toDraft(row) : null), [row]);
+  const source = useMemo(
+    () => (row ? toDraft(row, departments, applications) : null),
+    [row, departments, applications],
+  );
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
@@ -210,31 +263,79 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     [options]
   );
 
-  const releaseOptions = useMemo(() => {
-    const opts = [...releases]
-      .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode, undefined, { numeric: true }))
-      .map((r) => ({ value: r.id, label: r.releaseCode }));
-    if (row?.releaseId && !opts.some((o) => o.value === row.releaseId)) {
-      opts.unshift({
-        value: row.releaseId,
-        label: row.release?.releaseCode ?? row.releaseId,
-      });
-    }
-    return opts;
-  }, [releases, row?.releaseId, row?.release?.releaseCode]);
+  const departmentOptions = useMemo(
+    () =>
+      [...departments]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((dept) => ({ value: dept.id, label: dept.name })),
+    [departments],
+  );
+
+  const filteredApplications = useMemo(() => {
+    const deptId = d?.departmentId ?? v?.departmentId ?? "";
+    return applications.filter((a) => a.departmentId === deptId);
+  }, [applications, d?.departmentId, v?.departmentId]);
 
   const applicationOptions = useMemo(() => {
-    const opts = [...applications]
+    const opts = [...filteredApplications]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((a) => ({ value: a.id, label: a.name }));
-    if (row?.applicationId && !opts.some((o) => o.value === row.applicationId)) {
+    const appId = d?.applicationId ?? row?.applicationId;
+    if (appId && !opts.some((o) => o.value === appId)) {
       opts.unshift({
-        value: row.applicationId,
-        label: row.application?.name ?? row.applicationId,
+        value: appId,
+        label: applications.find((a) => a.id === appId)?.name ?? row?.application?.name ?? appId,
       });
     }
     return opts;
-  }, [applications, row?.applicationId, row?.application?.name]);
+  }, [filteredApplications, applications, d?.applicationId, row?.applicationId, row?.application?.name]);
+
+  const filteredReleases = useMemo(() => {
+    const deptId = d?.departmentId ?? v?.departmentId ?? "";
+    const appId = d?.applicationId ?? v?.applicationId ?? "";
+    return releases.filter(
+      (r) =>
+        r.departmentId === deptId &&
+        r.applications.some((link) => link.application.id === appId),
+    );
+  }, [releases, d?.departmentId, d?.applicationId, v?.departmentId, v?.applicationId]);
+
+  const releaseOptions = useMemo(() => {
+    const opts = [...filteredReleases]
+      .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode, undefined, { numeric: true }))
+      .map((r) => ({ value: r.id, label: r.releaseCode }));
+    const releaseId = d?.releaseId ?? row?.releaseId;
+    if (releaseId && !opts.some((o) => o.value === releaseId)) {
+      opts.unshift({
+        value: releaseId,
+        label: releases.find((r) => r.id === releaseId)?.releaseCode ?? row?.release?.releaseCode ?? releaseId,
+      });
+    }
+    return opts;
+  }, [filteredReleases, releases, d?.releaseId, row?.releaseId, row?.release?.releaseCode]);
+
+  const environmentOptions = useMemo(() => {
+    const appId = d?.applicationId ?? v?.applicationId ?? "";
+    const opts = environments
+      .filter((e) => e.applicationId === appId)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((e) => ({ value: e.name, label: e.name }));
+    const envName = d?.environmentName ?? row?.environmentName;
+    if (envName && !opts.some((o) => o.value === envName)) {
+      opts.unshift({ value: envName, label: envName });
+    }
+    return opts;
+  }, [environments, d?.applicationId, d?.environmentName, v?.applicationId, row?.environmentName]);
+
+  const driftTypeOptions = useMemo(() => {
+    const opts = [...driftTypes]
+      .sort((a, b) => a.value.localeCompare(b.value))
+      .map((t) => ({ value: t.value, label: t.value }));
+    if (row?.driftType && !opts.some((o) => o.value === row.driftType)) {
+      opts.unshift({ value: row.driftType, label: row.driftType });
+    }
+    return opts;
+  }, [driftTypes, row?.driftType]);
 
   const severityOptions = useMemo(() => {
     const set = new Set(SEVERITY_OPTIONS.map((o) => o.value));
@@ -256,31 +357,39 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     if (!row || !edit.draft) return;
     edit.setSaving(true);
     edit.setError(null);
-    const d = edit.draft;
+    const draft = edit.draft;
+    if (!draft.departmentId || !draft.applicationId || !draft.releaseId || !draft.environmentName || !draft.driftType) {
+      edit.setSaving(false);
+      edit.setError("Department, Application, Release, Environment, and Drift type are required.");
+      return;
+    }
     const res = await safeFetchJson(`/api/drifts/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        releaseId: d.releaseId,
-        applicationId: d.applicationId,
-        departmentName: d.departmentName || null,
-        environmentName: d.environmentName,
-        driftType: d.driftType,
-        driftCategory: d.driftCategory || null,
-        detectedDate: d.detectedDate,
-        severity: d.severity,
-        description: d.description,
-        impactOnRelease: d.impactOnRelease || null,
-        remediationAction: d.remediationAction || null,
-        status: d.status,
-        etaToFix: d.etaToFix || null,
+        releaseId: draft.releaseId,
+        applicationId: draft.applicationId,
+        environmentName: draft.environmentName,
+        driftType: draft.driftType,
+        driftCategory: draft.driftCategory || null,
+        detectedDate: draft.detectedDate,
+        severity: draft.severity,
+        description: draft.description,
+        impactOnRelease: draft.impactOnRelease || null,
+        remediationAction: draft.remediationAction || null,
+        status: draft.status,
+        etaToFix: draft.etaToFix || null,
       }),
       label: "drift-patch",
       rejectHttpErrors: false,
     });
     edit.setSaving(false);
     if (!res.ok || res.status >= 300) {
-      edit.setError("Couldn’t save changes. Try again.");
+      const message =
+        res.ok && res.data && typeof res.data === "object" && "error" in res.data
+          ? String((res.data as { error?: string }).error || "")
+          : "";
+      edit.setError(message || "Couldn’t save changes. Try again.");
       return;
     }
     edit.completeSaveSuccess(DRIFT_FIELD_LABELS);
@@ -312,6 +421,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   const resolved = /resolv|closed|fixed/i.test(v.status);
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
   const selectedApp = applications.find((a) => a.id === v.applicationId);
+  const selectedDept = departments.find((dept) => dept.id === v.departmentId);
 
   return (
     <EditableDetailShell
@@ -375,6 +485,36 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
               onChange={(n) => edit.setField("etaToFix", n)}
             />
             <EditableField
+              label="Department"
+              value={d.departmentId}
+              editing
+              kind="select"
+              options={departmentOptions}
+              onChange={(n) =>
+                edit.patchDraft({
+                  departmentId: n,
+                  applicationId: "",
+                  releaseId: "",
+                  environmentName: "",
+                  departmentName: departments.find((dept) => dept.id === n)?.name ?? "",
+                })
+              }
+            />
+            <EditableField
+              label="Application"
+              value={d.applicationId}
+              editing
+              kind="select"
+              options={applicationOptions}
+              onChange={(n) =>
+                edit.patchDraft({
+                  applicationId: n,
+                  releaseId: "",
+                  environmentName: "",
+                })
+              }
+            />
+            <EditableField
               label="Release"
               value={d.releaseId}
               editing
@@ -383,31 +523,19 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
               onChange={(n) => edit.setField("releaseId", n)}
             />
             <EditableField
-              label="Application"
-              value={d.applicationId}
-              editing
-              kind="select"
-              options={applicationOptions}
-              onChange={(n) => edit.setField("applicationId", n)}
-            />
-            <EditableField
-              label="Department"
-              value={d.departmentName}
-              editing
-              onChange={(n) => edit.setField("departmentName", n)}
-              placeholder="Department…"
-            />
-            <EditableField
               label="Environment"
               value={d.environmentName}
               editing
-              mono
+              kind="select"
+              options={environmentOptions}
               onChange={(n) => edit.setField("environmentName", n)}
             />
             <EditableField
               label="Drift Type"
               value={d.driftType}
               editing
+              kind="select"
+              options={driftTypeOptions}
               onChange={(n) => edit.setField("driftType", n)}
             />
             <EditableField
@@ -610,7 +738,12 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
             editing={false}
             display={selectedApp?.name ?? row.application.name}
           />
-          <EditableField label="Department" value={v.departmentName} editing={false} />
+          <EditableField
+            label="Department"
+            value={v.departmentName}
+            editing={false}
+            display={selectedDept?.name ?? v.departmentName ?? "—"}
+          />
         </EditableFieldGrid>
       </DetailSection>
 

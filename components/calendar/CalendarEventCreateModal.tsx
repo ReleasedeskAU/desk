@@ -12,17 +12,27 @@ import {
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import {
-  CALENDAR_EVENT_TYPES,
-} from "@/lib/validation/calendar";
+import { CALENDAR_EVENT_TYPES } from "@/lib/validation/calendar";
 import { CALENDAR_SIZE_IMPACT_OPTIONS } from "@/lib/calendar-table";
 
 type ReleaseOption = {
   id: string;
   releaseCode: string;
   name: string;
-  applicationName?: string | null;
+  applicationIds: string[];
+  applicationNames: string[];
   departmentName?: string | null;
+};
+
+type ApplicationOption = {
+  id: string;
+  name: string;
+  departmentId: string;
+};
+
+type DepartmentOption = {
+  id: string;
+  name: string;
 };
 
 type CreatedEvent = {
@@ -37,12 +47,15 @@ type CreatedEvent = {
   release?: { releaseCode: string; status: string; name?: string } | null;
 };
 
+const ALL_DEPARTMENT = "ALL";
+
 const emptyForm = () => ({
   date: "",
   eventType: "CAB MEETING",
   title: "",
   releaseId: "",
-  applicationName: "",
+  applicationId: "",
+  departmentId: "",
   departmentName: "",
   sizeImpact: "",
   notes: "",
@@ -50,7 +63,7 @@ const emptyForm = () => ({
 
 /**
  * Creates a Release Calendar entry (date, type, title, optional release link).
- * Calls onCreated after a successful POST so the parent can refresh lookups.
+ * Application/Department are selectable; department auto-fills from application.
  */
 export function CalendarEventCreateModal({
   open,
@@ -65,6 +78,8 @@ export function CalendarEventCreateModal({
 }) {
   const [form, setForm] = useState(emptyForm);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  const [applications, setApplications] = useState<ApplicationOption[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -80,30 +95,54 @@ export function CalendarEventCreateModal({
     setLoading(true);
     const ac = new AbortController();
     void (async () => {
-      const result = await safeFetchJson<
-        {
-          id: string;
-          releaseCode: string;
-          name: string;
-          department?: { name: string } | null;
-          applications?: { application: { name: string } }[];
-        }[]
-      >("/api/releases", { signal: ac.signal, label: "calendar-create-releases" });
+      const [releaseResult, applicationResult, departmentResult] = await Promise.all([
+        safeFetchJson<
+          {
+            id: string;
+            releaseCode: string;
+            name: string;
+            department?: { name: string } | null;
+            applications?: { application: { id: string; name: string } }[];
+          }[]
+        >("/api/releases", { signal: ac.signal, label: "calendar-create-releases" }),
+        safeFetchJson<ApplicationOption[]>("/api/applications", {
+          signal: ac.signal,
+          label: "calendar-create-applications",
+        }),
+        safeFetchJson<DepartmentOption[]>("/api/departments", {
+          signal: ac.signal,
+          label: "calendar-create-departments",
+        }),
+      ]);
       if (ac.signal.aborted) return;
       setLoading(false);
-      if (!result.ok) {
-        setError("Could not load release lookup data.");
+      if (!releaseResult.ok || !applicationResult.ok || !departmentResult.ok) {
+        setError("Could not load lookup data.");
         return;
       }
+      setApplications(
+        applicationResult.data
+          .map((app) => ({
+            id: app.id,
+            name: app.name,
+            departmentId: app.departmentId,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setDepartments(
+        departmentResult.data
+          .map((dept) => ({ id: dept.id, name: dept.name }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
       setReleases(
-        result.data.map((release) => ({
+        releaseResult.data.map((release) => ({
           id: release.id,
           releaseCode: release.releaseCode,
           name: release.name,
-          applicationName:
-            release.applications?.map((item) => item.application.name).join(", ") || null,
+          applicationIds: release.applications?.map((item) => item.application.id) ?? [],
+          applicationNames: release.applications?.map((item) => item.application.name) ?? [],
           departmentName: release.department?.name ?? null,
-        }))
+        })),
       );
     })();
     return () => ac.abort();
@@ -111,7 +150,20 @@ export function CalendarEventCreateModal({
 
   const typeOptions = useMemo(
     () => [...new Set([...CALENDAR_EVENT_TYPES, ...eventTypes].filter(Boolean))].sort(),
-    [eventTypes]
+    [eventTypes],
+  );
+
+  const departmentOptions = useMemo(
+    () => [
+      { value: ALL_DEPARTMENT, label: "ALL (org-wide)" },
+      ...departments.map((dept) => ({ value: dept.id, label: dept.name })),
+    ],
+    [departments],
+  );
+
+  const applicationOptions = useMemo(
+    () => applications.map((app) => ({ value: app.id, label: app.name })),
+    [applications],
   );
 
   if (!open) return null;
@@ -125,16 +177,51 @@ export function CalendarEventCreateModal({
     });
   };
 
+  const departmentNameFor = (departmentId: string) => {
+    if (departmentId === ALL_DEPARTMENT) return ALL_DEPARTMENT;
+    return departments.find((dept) => dept.id === departmentId)?.name ?? "";
+  };
+
+  const onApplicationChange = (applicationId: string) => {
+    const app = applications.find((item) => item.id === applicationId);
+    const departmentId = app?.departmentId ?? "";
+    setForm((current) => ({
+      ...current,
+      applicationId,
+      departmentId,
+      departmentName: departmentNameFor(departmentId),
+    }));
+  };
+
+  const onDepartmentChange = (departmentId: string) => {
+    setForm((current) => ({
+      ...current,
+      departmentId,
+      departmentName: departmentNameFor(departmentId),
+    }));
+  };
+
   const onReleaseChange = (releaseId: string) => {
     const release = releases.find((item) => item.id === releaseId);
+    const firstAppId = release?.applicationIds[0] ?? "";
+    const app = applications.find((item) => item.id === firstAppId);
+    const departmentFromApp = app?.departmentId ?? "";
+    const departmentFromName = release?.departmentName
+      ? departments.find((dept) => dept.name === release.departmentName)?.id ?? ""
+      : "";
+    const departmentId = departmentFromApp || departmentFromName;
+
     setForm((current) => ({
       ...current,
       releaseId,
       title: current.title.trim() || (release ? release.name : current.title),
-      applicationName:
-        current.applicationName.trim() || (release?.applicationName ?? current.applicationName),
+      applicationId: current.applicationId || firstAppId,
+      departmentId: current.departmentId || departmentId,
       departmentName:
-        current.departmentName.trim() || (release?.departmentName ?? current.departmentName),
+        current.departmentName ||
+        departmentNameFor(departmentId) ||
+        release?.departmentName ||
+        "",
     }));
     setErrors((current) => {
       const next = { ...current };
@@ -156,6 +243,13 @@ export function CalendarEventCreateModal({
       return;
     }
 
+    const applicationName =
+      applications.find((app) => app.id === form.applicationId)?.name?.trim() || null;
+    const departmentName =
+      form.departmentId === ALL_DEPARTMENT
+        ? ALL_DEPARTMENT
+        : departmentNameFor(form.departmentId).trim() || form.departmentName.trim() || null;
+
     setSaving(true);
     setError(null);
     const result = await safeFetchJson<CreatedEvent & { error?: string }>("/api/calendar", {
@@ -166,8 +260,8 @@ export function CalendarEventCreateModal({
         eventType: form.eventType.trim(),
         title: form.title.trim(),
         releaseId: form.releaseId || null,
-        applicationName: form.applicationName.trim() || null,
-        departmentName: form.departmentName.trim() || null,
+        applicationName,
+        departmentName,
         sizeImpact: form.sizeImpact.trim() || null,
         notes: form.notes.trim() || null,
       }),
@@ -177,7 +271,7 @@ export function CalendarEventCreateModal({
     setSaving(false);
     if (!result.ok || result.status >= 300) {
       setError(
-        result.ok && result.data.error ? result.data.error : "Failed to create calendar entry"
+        result.ok && result.data.error ? result.data.error : "Failed to create calendar entry",
       );
       return;
     }
@@ -283,25 +377,34 @@ export function CalendarEventCreateModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Application
-            <input
-              type="text"
-              maxLength={200}
-              className={cn(taInput, "mt-1")}
-              value={form.applicationName}
-              onChange={(e) => set("applicationName", e.target.value)}
-              placeholder="Optional"
-            />
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.applicationId}
+                onChange={onApplicationChange}
+                options={applicationOptions}
+                placeholder={loading ? "Loading…" : "Optional — select application…"}
+                searchPlaceholder="Search applications…"
+                disabled={loading}
+                allowClear
+              />
+            </div>
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Department
-            <input
-              type="text"
-              maxLength={200}
-              className={cn(taInput, "mt-1")}
-              value={form.departmentName}
-              onChange={(e) => set("departmentName", e.target.value)}
-              placeholder='Optional — use "ALL" for org-wide'
-            />
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.departmentId}
+                onChange={onDepartmentChange}
+                options={departmentOptions}
+                placeholder={loading ? "Loading…" : "Optional — select department…"}
+                searchPlaceholder="Search departments…"
+                disabled={loading}
+                allowClear
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-gray-500 dark:text-white/50">
+              Auto-filled from Application. Choose ALL for org-wide.
+            </p>
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2">
             Size / impact

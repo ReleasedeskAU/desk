@@ -62,19 +62,49 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid etaToFix" }, { status: 400 });
   }
 
-  if (body.releaseId !== undefined) {
-    const release = await prisma.release.findUnique({ where: { id: body.releaseId }, select: { id: true } });
+  const nextReleaseId = body.releaseId ?? existing.releaseId;
+  const nextApplicationId = body.applicationId ?? existing.applicationId;
+  const nextEnvironmentName = body.environmentName ?? existing.environmentName;
+  let resolvedDepartmentName = body.departmentName;
+
+  if (body.releaseId !== undefined || body.applicationId !== undefined || body.environmentName !== undefined) {
+    const [release, application, environment] = await Promise.all([
+      prisma.release.findUnique({
+        where: { id: nextReleaseId },
+        select: {
+          id: true,
+          departmentId: true,
+          applications: { where: { applicationId: nextApplicationId }, select: { applicationId: true } },
+        },
+      }),
+      prisma.application.findUnique({
+        where: { id: nextApplicationId },
+        select: { id: true, department: { select: { id: true, name: true } } },
+      }),
+      prisma.environment.findUnique({
+        where: { applicationId_name: { applicationId: nextApplicationId, name: nextEnvironmentName } },
+        select: { id: true },
+      }),
+    ]);
     if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
-  }
-  if (body.applicationId !== undefined) {
-    const app = await prisma.application.findUnique({ where: { id: body.applicationId }, select: { id: true } });
-    if (!app) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+    if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+    if (!release.applications.length) {
+      return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
+    }
+    if (application.department.id !== release.departmentId) {
+      return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
+    }
+    if (!environment) {
+      return NextResponse.json({ error: "Environment not found for the selected application" }, { status: 400 });
+    }
+    // Department is derived from the application FK — not free-text.
+    resolvedDepartmentName = application.department.name;
   }
 
   const data: Record<string, unknown> = {};
   if (body.releaseId !== undefined) data.releaseId = body.releaseId;
   if (body.applicationId !== undefined) data.applicationId = body.applicationId;
-  if (body.departmentName !== undefined) data.departmentName = body.departmentName;
+  if (resolvedDepartmentName !== undefined) data.departmentName = resolvedDepartmentName;
   if (body.environmentName !== undefined) data.environmentName = body.environmentName;
   if (body.driftType !== undefined) data.driftType = body.driftType;
   if (body.driftCategory !== undefined) data.driftCategory = body.driftCategory;

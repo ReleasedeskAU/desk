@@ -44,6 +44,11 @@ export function useEditableDetail<T extends Record<string, unknown>>(source: T |
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
   }, []);
 
+  /** Apply several draft fields at once (e.g. department → application → release cascades). */
+  const patchDraft = useCallback((patch: Partial<T>) => {
+    setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   /**
    * Closes the edit modal and opens the success confirmation with a field diff.
    * @param labels - Human labels for draft keys included in the confirmation (omit primary IDs).
@@ -88,6 +93,7 @@ export function useEditableDetail<T extends Record<string, unknown>>(source: T |
     startEdit,
     discard,
     setField,
+    patchDraft,
     completeSaveSuccess,
     dismissSuccess,
   };

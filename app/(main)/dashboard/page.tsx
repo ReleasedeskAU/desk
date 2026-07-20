@@ -17,8 +17,8 @@ type PageProps = {
  */
 export default async function DashboardPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
-  // Match prior client default (month) when the URL has no period query.
-  const period: DashboardPeriod = parseDashboardPeriod(params.period ?? "month");
+  // Default to all-time portfolio view when the URL has no period query.
+  const period: DashboardPeriod = parseDashboardPeriod(params.period ?? "all");
 
   const { userId } = await auth();
   let initialData: DashboardPayload | null = null;

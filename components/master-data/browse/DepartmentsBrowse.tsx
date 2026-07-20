@@ -125,10 +125,11 @@ export function DepartmentsBrowse() {
     setFormError(null);
     try {
       if (editing) {
+        // Name is immutable (System Mapping keys off department names); only head is updatable.
         await apiJson(`/api/departments/${editing.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify({ head: form.head }),
         });
       } else {
         await apiJson("/api/departments", {
@@ -257,8 +258,20 @@ export function DepartmentsBrowse() {
       >
         {formError && <p className="text-[13px] text-red-600">{formError}</p>}
         <FormField label="Name" required>
-          <input className={inputClass} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input
+            className={inputClass}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            disabled={Boolean(editing)}
+            readOnly={Boolean(editing)}
+            title={editing ? "Department name cannot be changed" : undefined}
+          />
         </FormField>
+        {editing && (
+          <p className="text-[12px] text-gray-500">
+            Department name is locked so System Mapping relationships stay consistent.
+          </p>
+        )}
         <FormField label="Head">
           <input className={inputClass} value={form.head} onChange={(e) => setForm((f) => ({ ...f, head: e.target.value }))} />
         </FormField>
