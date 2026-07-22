@@ -43,6 +43,8 @@ model Application {
   incidents           Incident[]
   applicationStatuses ApplicationStatus[]
   plannedMaintenances PlannedMaintenance[]
+  /// Copilot Service nodes optionally linked for release↔graph traversal (P1-S2).
+  services            Service[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -840,6 +842,24 @@ model UserAppearancePreference {
   updatedAt   DateTime @updatedAt
 }
 
+/// Per-user risk scoring thresholds/labels (Simple + Weighted).
+/// Demo-stage: keyed by clerkUserId (same shape as UserAppearancePreference).
+/// Future org migration: swap clerkUserId → organizationId without redesigning fields.
+/// Does NOT store RiskFactor catalog rows — those remain on RiskFactor.
+/// DEFERRED (separate ticket): wire computeWeightedRiskScore on factor/input edits.
+model UserRiskEngineConfig {
+  id                  String   @id @default(cuid())
+  clerkUserId         String   @unique
+  likelihoodMax       Int      @default(5)
+  impactMax           Int      @default(5)
+  simpleBandLabels    Json // {"low","medium","high","critical"} display strings
+  simpleBandCutoffs   Json // {"low","medium","high"} inclusive upper bounds for Simple score
+  weightedBandLabels  Json // {"low","medium","high","critical","severe"}
+  weightedBandCutoffs Json // {"low","medium","high","critical"} exclusive upper bounds
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
 /// Inbound webhook connector (Jira, etc.). Secrets encrypted with connector-engine AES-256-GCM.
 model WebhookConnector {
   id             String         @id @default(cuid())
@@ -874,4 +894,76 @@ model WebhookEvent {
   @@index([organizationId, status])
   @@index([connectorId])
   @@index([status, receivedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Copilot Phase 1 (P1-S1) — graph / event foundation
+// organizationId is optional and unenforced (matches EnvBooking / SystemMappingGroup).
+// DeploymentBlocker ≠ Blocker; ReleaseEvent ≠ ReleaseAuditEvent / ReleaseHistoryEvent.
+// ---------------------------------------------------------------------------
+
+/// Graph node for Copilot dependency analysis (intentionally separate from Application).
+/// Optional applicationId bridges to Release via ReleaseApplication (P1-S2 Option 1) —
+/// not a 1:1 identity with Application; unlinked services simply omit release lookups.
+model Service {
+  id             String       @id @default(cuid())
+  organizationId String? // optional, unenforced — matches EnvBooking/SystemMappingGroup pattern
+  name           String
+  repoUrl        String?
+  ownerTeam      String?
+  criticality    String // LOW | MEDIUM | HIGH | CRITICAL — validated at application layer
+  applicationId  String? // optional bridge → Application → ReleaseApplication → Release
+  application    Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, name])
+  @@index([applicationId])
+}
+
+/// Directed edge between services. Self-edges rejected in service layer (not Prisma).
+model ServiceDependency {
+  id                String   @id @default(cuid())
+  organizationId    String? // optional, unenforced
+  sourceServiceId   String
+  targetServiceId   String
+  versionConstraint String?
+  criticality       String
+  createdAt         DateTime @default(now())
+
+  @@unique([sourceServiceId, targetServiceId])
+}
+
+/// Inter-release ship blocker (A blocks B). Distinct from Blocker (single-release problem record).
+model DeploymentBlocker {
+  id                 String    @id @default(cuid())
+  organizationId     String? // optional, unenforced
+  blockingReleaseId  String
+  blockedReleaseId   String
+  reason             String
+  status             String    @default("ACTIVE") // ACTIVE | RESOLVED
+  estimatedUnblockAt DateTime?
+  createdAt          DateTime  @default(now())
+  resolvedAt         DateTime?
+
+  @@index([blockingReleaseId])
+  @@index([blockedReleaseId])
+  @@index([status])
+}
+
+/// Append-only, tamper-evident release event log for graph engine / Knuct anchoring.
+/// Do not reuse ReleaseAuditEvent or ReleaseHistoryEvent for this purpose.
+model ReleaseEvent {
+  id             String    @id @default(cuid())
+  organizationId String? // optional, unenforced
+  releaseId      String
+  eventType      String // enum-like — validated at application layer
+  actorId        String? // null for system-generated events
+  payload        Json
+  hash           String? // filled later by Knuct anchoring (P1-S5); expected 64-char hex
+  knuctTxRef     String?
+  anchoredAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId, releaseId, createdAt])
+  @@index([releaseId, createdAt])
 }

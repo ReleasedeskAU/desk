@@ -8,7 +8,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Per-user **Risk Engine** settings (`UserRiskEngineConfig`, Settings → Risk Engine): Simple Risk scale/labels/cutoffs and Weighted Risk labels/cutoffs. Unifies list / heat map / detail-hero / RiskMatrix onto one classifier (defaults 5/11/19). RiskFactor catalog UI unchanged.
+- Copilot P1-S2 DependencyGraph: optional `Service.applicationId` bridge to Application/Release, `getBlockedReleases` / `calculateDeploymentOrder` / `CycleError`, and a live Release detail "Services Involved" section (computed via Service → Application → ReleaseApplication — not stored on Release).
 - Added Jira webhook connectors: shared `WebhookConnector` / `WebhookEvent` models, HMAC-SHA256 receiver on connector-engine, scheduler-based processing (no Redis/BullMQ), Sentinel setup UI with one-time secret confirmation, delivery log, and replay.
+
+### Deferred (do not lose)
+
+- **Wire `computeWeightedRiskScore` on RiskFactor / ReleaseRiskFactorInput edits** — catalog weight changes currently leave `Release.weightedRiskScore` stale until `seed-risk-factors` (or a future recompute API) runs. Separate ticket.
+- Per-factor data-driven band rules (raw→1–5) — still hardcoded in `lib/risk-scoring/factors.ts`; fast-follow after this Settings pass.
 - Added editor-gated Risk and Drift create flows with strict POST schemas, server-generated IDs, validated relational dependencies, and post-create confirmations.
 - Added editor-gated create flows for approvals, leave records, and environment versions, with strict POST validation, server-generated identities, relational lookups, and post-create confirmations.
 - Added authenticated per-user color appearance persistence with strict theme validation and an isolated `UserAppearancePreference` data model.

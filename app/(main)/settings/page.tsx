@@ -15,9 +15,11 @@ import {
   UserCircle,
   AlertTriangle,
   Palette,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { RiskEngineSettings } from "@/components/settings/RiskEngineSettings";
 import { TeamMembersTab } from "@/components/settings/TeamMembersTab";
 import { DepartmentsTab } from "@/components/settings/master-data/DepartmentsTab";
 import { ApplicationsTab } from "@/components/settings/master-data/ApplicationsTab";
@@ -28,6 +30,7 @@ import { RiskFactorsTab } from "@/components/settings/master-data/RiskFactorsTab
 const VALID_TABS = new Set([
   "general",
   "appearance",
+  "risk-engine",
   "team",
   "departments",
   "applications",
@@ -67,6 +70,7 @@ function SettingsPageInner() {
   const sidebarNav = [
     { id: "general", label: "General", icon: SettingsIcon },
     { id: "appearance", label: "Appearance", icon: Palette },
+    { id: "risk-engine", label: "Risk Engine", icon: Gauge },
     { id: "team", label: "Team Members", icon: Users },
     { id: "departments", label: "Departments", icon: Building2 },
     { id: "applications", label: "Applications", icon: Package },
@@ -118,6 +122,7 @@ function SettingsPageInner() {
 
         <div className="flex-1 min-w-0">
           {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "risk-engine" && <RiskEngineSettings />}
           {activeTab === "team" && <TeamMembersTab />}
           {activeTab === "departments" && <DepartmentsTab />}
           {activeTab === "applications" && <ApplicationsTab />}
@@ -125,7 +130,10 @@ function SettingsPageInner() {
           {activeTab === "users" && <UsersTab />}
           {activeTab === "risk-factors" && <RiskFactorsTab />}
 
-          {!masterDataTabs.has(activeTab) && activeTab !== "team" && activeTab !== "appearance" && (
+          {!masterDataTabs.has(activeTab) &&
+            activeTab !== "team" &&
+            activeTab !== "appearance" &&
+            activeTab !== "risk-engine" && (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50 py-24 text-center dark:border-[var(--border)] dark:bg-white/[0.025]">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
                 <SettingsIcon className="h-6 w-6 text-gray-400 dark:text-gray-300" />

@@ -4,6 +4,7 @@ import { TablePageSuspenseFallback } from "@/components/ui/TableSkeleton";
 import { buildDashboardPayload, type DashboardPayload } from "@/lib/dashboard-payload";
 import { ensureDbAwake, isRetryableDbError, withDbRetry } from "@/lib/prisma";
 import { parseDashboardPeriod, type DashboardPeriod } from "@/lib/dashboard-period";
+import { loadRiskEngineConfig } from "@/lib/risk-engine-config-db";
 import CommandDashboardContent from "./CommandDashboardContent";
 
 type PageProps = {
@@ -27,7 +28,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   if (userId) {
     try {
       await ensureDbAwake();
-      initialData = await withDbRetry(() => buildDashboardPayload(period), {
+      initialData = await withDbRetry(async () => {
+        const riskConfig = await loadRiskEngineConfig(userId);
+        return buildDashboardPayload(period, riskConfig);
+      }, {
         label: "dashboard-page",
         attempts: 5,
         baseDelayMs: 800,

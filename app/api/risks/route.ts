@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { riskWhere, sp } from "@/lib/list-api-filters";
-import { createRiskSchema } from "@/lib/validation/risk";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createRiskRow } from "@/lib/org-compat";
 
@@ -40,10 +39,16 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
-  const parsed = createRiskSchema.safeParse(await req.json());
+  const { loadRiskEngineConfig } = await import("@/lib/risk-engine-config-db");
+  const { createRiskSchemaForScale } = await import("@/lib/validation/risk");
+  const riskConfig = await loadRiskEngineConfig(user!.id);
+  const parsed = createRiskSchemaForScale(
+    riskConfig.likelihoodMax,
+    riskConfig.impactMax
+  ).safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   const body = parsed.data;

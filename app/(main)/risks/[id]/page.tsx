@@ -28,11 +28,14 @@ import {
 } from "@/components/detail/editable";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import { getRiskLevel } from "@/lib/risk-level";
+import { simpleRiskLevelLabel } from "@/lib/risk-engine-config";
 
 type RiskDetail = {
   id: string;
@@ -130,11 +133,15 @@ function formatScale(n: number, map: Record<number, string>) {
   return label ? `${n} (${label})` : String(n);
 }
 
-function riskLevelFromScore(score: number): { label: string; tone: ChipTone; hero: "emerald" | "amber" | "rose" } {
-  if (score <= 5) return { label: "Low", tone: "good", hero: "emerald" };
-  if (score <= 12) return { label: "Medium", tone: "warn", hero: "amber" };
-  if (score <= 19) return { label: "High", tone: "warn", hero: "amber" };
-  return { label: "Critical", tone: "bad", hero: "rose" };
+function riskLevelFromScore(
+  score: number,
+  config?: import("@/lib/risk-engine-config").RiskEngineConfig
+): { label: string; tone: ChipTone; hero: "emerald" | "amber" | "rose" } {
+  const level = getRiskLevel(score, config);
+  if (level === "LOW") return { label: simpleRiskLevelLabel(level, config), tone: "good", hero: "emerald" };
+  if (level === "MEDIUM") return { label: simpleRiskLevelLabel(level, config), tone: "warn", hero: "amber" };
+  if (level === "HIGH") return { label: simpleRiskLevelLabel(level, config), tone: "warn", hero: "amber" };
+  return { label: simpleRiskLevelLabel(level, config), tone: "bad", hero: "rose" };
 }
 
 function statusTone(status: string): ChipTone {
@@ -178,6 +185,7 @@ function toDraft(
 export default function RiskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const { config: riskConfig } = useRiskEngineConfig();
   const [row, setRow] = useState<RiskDetail | null>(null);
   const [options, setOptions] = useState<RiskOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
@@ -393,8 +401,9 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const likelihoodNum = Number(v.likelihood) || 0;
   const impactNum = Number(v.impact) || 0;
   const liveScore = likelihoodNum * impactNum;
-  const scorePct = Math.max(0, Math.min(100, (liveScore / 25) * 100));
-  const level = riskLevelFromScore(liveScore);
+  const maxScore = riskConfig.likelihoodMax * riskConfig.impactMax;
+  const scorePct = Math.max(0, Math.min(100, (liveScore / maxScore) * 100));
+  const level = riskLevelFromScore(liveScore, riskConfig);
   const openish = !/accept|closed|resolv/i.test(v.status);
   const leaveMatch = v.notes.match(/LV-\d+/i)?.[0];
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
@@ -622,7 +631,13 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
       >
         <div className="mb-4 grid items-stretch gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 dark:border-white/5 dark:bg-white/[0.03]">
-            <RiskMatrix likelihood={likelihoodNum} impact={impactNum} />
+            <RiskMatrix
+              likelihood={likelihoodNum}
+              impact={impactNum}
+              likelihoodMax={riskConfig.likelihoodMax}
+              impactMax={riskConfig.impactMax}
+              config={riskConfig}
+            />
           </div>
           <div className="space-y-3">
             <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">

@@ -1,19 +1,31 @@
 /**
- * Simple Risk Score (System 1) — derived banding for Risk.riskScore (likelihood × impact, range 1-25).
- * Bands are a display/filtering concern only — never stored as a column.
+ * Simple Risk Score (System 1) — banding for Risk.riskScore (likelihood × impact).
+ * Bands are display/filtering only — never stored as a column.
  *
- * Bands sourced from the Risk sheet's own embedded Summary Statistics box
- * (cross-checked against all 31 real risk scores — exact match: Low=3,
- * Medium=15, High=11, Critical=2). Supersedes an earlier prose-derived
- * reading of the bands that produced a different (incorrect) split.
+ * Cutoffs/labels come from UserRiskEngineConfig (via resolveSimpleRiskLevel).
+ * Defaults remain the sheet-verified 5 / 11 / 19 split.
  */
-export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+import {
+  DEFAULT_RISK_ENGINE_CONFIG,
+  resolveSimpleRiskLevel,
+  type RiskEngineConfig,
+  type RiskLevel,
+} from "@/lib/risk-engine-config";
 
-export function getRiskLevel(score: number): RiskLevel {
-  if (score <= 5) return "LOW";
-  if (score <= 11) return "MEDIUM";
-  if (score <= 19) return "HIGH";
-  return "CRITICAL";
+export type { RiskLevel };
+
+/**
+ * Classify a simple risk score. Optional config enables per-user thresholds;
+ * omitting config uses today's shipped defaults (never errors).
+ *
+ * @param score - likelihood × impact.
+ * @param config - Optional engine config (defaults applied when omitted).
+ */
+export function getRiskLevel(
+  score: number,
+  config: Pick<RiskEngineConfig, "simpleBandCutoffs"> = DEFAULT_RISK_ENGINE_CONFIG
+): RiskLevel {
+  return resolveSimpleRiskLevel(score, config);
 }
 
 /** Graphite band chips — same hex system as the Risk Heat Map. */

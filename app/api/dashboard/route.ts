@@ -10,14 +10,16 @@ export const maxDuration = 60;
  * Command Dashboard — live aggregates filtered by ?period=today|week|month|all
  */
 export async function GET(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   try {
     await ensureDbAwake();
     const url = new URL(req.url);
+    const { loadRiskEngineConfig } = await import("@/lib/risk-engine-config-db");
+    const riskConfig = await loadRiskEngineConfig(user!.id);
     const payload = await withDbRetry(
-      () => buildDashboardPayload(url.searchParams.get("period")),
+      () => buildDashboardPayload(url.searchParams.get("period"), riskConfig),
       { label: "dashboard", attempts: 5, baseDelayMs: 800 }
     );
     return NextResponse.json(payload);

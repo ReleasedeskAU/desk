@@ -13,6 +13,10 @@ import {
 } from "@/lib/dashboard-period";
 import { prisma } from "@/lib/prisma";
 import { getRiskLevel, type RiskLevel } from "@/lib/risk-level";
+import {
+  DEFAULT_RISK_ENGINE_CONFIG,
+  type RiskEngineConfig,
+} from "@/lib/risk-engine-config";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -65,7 +69,10 @@ function buildBriefing(
  * @returns Plain JSON-serializable dashboard payload.
  * @throws Prisma/DB errors to the caller.
  */
-export async function buildDashboardPayload(periodParam: string | null) {
+export async function buildDashboardPayload(
+  periodParam: string | null,
+  riskConfig: RiskEngineConfig = DEFAULT_RISK_ENGINE_CONFIG
+) {
   const period = parseDashboardPeriod(periodParam);
   const now = new Date();
   const range = dashboardPeriodRange(period, now);
@@ -222,7 +229,10 @@ export async function buildDashboardPayload(periodParam: string | null) {
       take: 2,
     }),
     prisma.release.findFirst({
-      where: { weightedRiskScore: { not: null, gte: 3.5 }, ...releaseWhere },
+      where: {
+        weightedRiskScore: { not: null, gte: riskConfig.weightedBandCutoffs.high },
+        ...releaseWhere,
+      },
       include: { department: true },
       orderBy: { weightedRiskScore: "desc" },
     }),
@@ -412,7 +422,7 @@ export async function buildDashboardPayload(periodParam: string | null) {
     select: { riskScore: true },
   });
   const riskBandCounts: Record<RiskLevel, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
-  for (const r of risks) riskBandCounts[getRiskLevel(r.riskScore)]++;
+  for (const r of risks) riskBandCounts[getRiskLevel(r.riskScore, riskConfig)]++;
   const riskDistribution = [
     { name: "Low", value: riskBandCounts.LOW, color: "#10b981", href: "/risks?band=Low" },
     { name: "Medium", value: riskBandCounts.MEDIUM, color: "#f59e0b", href: "/risks?band=Medium" },

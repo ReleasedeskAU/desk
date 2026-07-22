@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
-import { patchRiskSchema } from "@/lib/validation/risk";
+import { patchRiskSchemaForScale } from "@/lib/validation/risk";
+import { loadRiskEngineConfig } from "@/lib/risk-engine-config-db";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -33,14 +34,18 @@ export async function GET(_req: Request, { params }: Params) {
  * When likelihood or impact changes, riskScore is recomputed server-side.
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
   const existing = await findRisk(id);
   if (!existing) return NextResponse.json({ error: "Risk not found" }, { status: 404 });
 
-  const parsed = patchRiskSchema.safeParse(await req.json());
+  const riskConfig = await loadRiskEngineConfig(user!.id);
+  const parsed = patchRiskSchemaForScale(
+    riskConfig.likelihoodMax,
+    riskConfig.impactMax
+  ).safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
   if (Object.keys(body).length === 0) {

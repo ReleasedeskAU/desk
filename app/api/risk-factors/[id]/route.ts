@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * PATCH RiskFactor catalog metadata (weight/name/active).
+ *
+ * DEFERRED (separate ticket — do not lose): editing weight/active here does NOT
+ * call computeWeightedRiskScore() for releases that use this factor. Catalog
+ * edits currently leave Release.weightedRiskScore stale until the standalone
+ * seed-risk-factors script (or a future recompute API) runs.
+ */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { error } = await requireRole("editor");

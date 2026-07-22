@@ -24,6 +24,7 @@ import { DbBlockerList } from "@/components/releases/DbBlockerList";
 import { DbReleaseDriftList } from "@/components/releases/DbReleaseDriftList";
 import { DbAIRiskPanel } from "@/components/releases/DbAIRiskPanel";
 import { DbLinkedWorkItems } from "@/components/releases/DbLinkedWorkItems";
+import { DbReleaseServicesInvolved } from "@/components/releases/DbReleaseServicesInvolved";
 import { StakeholderCommsPanel } from "@/components/releases/StakeholderCommsPanel";
 import { ReleaseFormModal } from "@/components/releases/ReleaseFormModal";
 import { taBtnSecondary, taInput } from "@/lib/styles";
@@ -1122,6 +1123,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
+
+        <DbReleaseServicesInvolved releaseId={id} />
 
         <DetailSection
           icon={Megaphone}

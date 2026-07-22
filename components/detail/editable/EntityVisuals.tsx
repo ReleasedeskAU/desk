@@ -3,6 +3,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import { ArrowRight, CheckCircle2, Circle, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getRiskLevel } from "@/lib/risk-level";
+import { SIMPLE_RISK_MATRIX_FILL } from "@/lib/risk-engine-config";
 
 type VisualTone = "indigo" | "rose" | "emerald" | "sky" | "violet" | "amber";
 
@@ -100,29 +102,48 @@ export function EntityConnection({
   );
 }
 
-/** Plot one stored likelihood/impact pair on the standard 5×5 risk matrix. */
-export function RiskMatrix({ likelihood, impact }: { likelihood: number; impact: number }) {
-  const safeLikelihood = Math.max(1, Math.min(5, likelihood));
-  const safeImpact = Math.max(1, Math.min(5, impact));
+/** Plot one stored likelihood/impact pair on a risk matrix sized by config scale.
+ * Cell colors use the SAME getRiskLevel resolver as list/heat-map/detail — never a private cutoff table.
+ */
+export function RiskMatrix({
+  likelihood,
+  impact,
+  likelihoodMax = 5,
+  impactMax = 5,
+  config,
+}: {
+  likelihood: number;
+  impact: number;
+  likelihoodMax?: number;
+  impactMax?: number;
+  /** When provided, band cutoffs come from user config; otherwise shipped defaults. */
+  config?: Pick<import("@/lib/risk-engine-config").RiskEngineConfig, "simpleBandCutoffs">;
+}) {
+  const maxL = Math.max(2, Math.min(10, likelihoodMax));
+  const maxI = Math.max(2, Math.min(10, impactMax));
+  const safeLikelihood = Math.max(1, Math.min(maxL, likelihood));
+  const safeImpact = Math.max(1, Math.min(maxI, impact));
+  const impactValues = Array.from({ length: maxI }, (_, i) => maxI - i);
+  const likelihoodValues = Array.from({ length: maxL }, (_, i) => i + 1);
+
   return (
     <div className="mx-auto w-full max-w-[220px]">
       <div className="mb-2 flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
         <span>Low likelihood</span>
         <span>High likelihood</span>
       </div>
-      <div className="grid grid-cols-5 gap-1.5" role="img" aria-label={`Risk matrix: likelihood ${safeLikelihood}, impact ${safeImpact}`}>
-        {[5, 4, 3, 2, 1].flatMap((impactValue) =>
-          [1, 2, 3, 4, 5].map((likelihoodValue) => {
+      <div
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${maxL}, minmax(0, 1fr))` }}
+        role="img"
+        aria-label={`Risk matrix: likelihood ${safeLikelihood}, impact ${safeImpact}`}
+      >
+        {impactValues.flatMap((impactValue) =>
+          likelihoodValues.map((likelihoodValue) => {
             const score = impactValue * likelihoodValue;
             const selected = impactValue === safeImpact && likelihoodValue === safeLikelihood;
-            const fill =
-              score >= 20
-                ? "bg-rose-500"
-                : score >= 13
-                  ? "bg-orange-400"
-                  : score >= 6
-                    ? "bg-amber-300"
-                    : "bg-emerald-300";
+            const band = getRiskLevel(score, config);
+            const fill = SIMPLE_RISK_MATRIX_FILL[band];
             return (
               <div
                 key={`${impactValue}-${likelihoodValue}`}

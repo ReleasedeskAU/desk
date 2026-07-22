@@ -18,6 +18,11 @@ import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { cn, formatDate } from "@/lib/utils";
 import { getRiskLevel, RISK_LEVEL_COLOR, type RiskLevel } from "@/lib/risk-level";
+import {
+  DEFAULT_RISK_ENGINE_CONFIG,
+  type RiskEngineConfig,
+} from "@/lib/risk-engine-config";
+import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
 import { FilterPills, FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   RISK_COLUMNS,
@@ -178,10 +183,13 @@ function buildGrid(risks: RiskRow[]): number[][] {
   return grid;
 }
 
-function bandCounts(risks: RiskRow[]): Record<RiskLevel, number> {
+function bandCounts(
+  risks: RiskRow[],
+  config: RiskEngineConfig = DEFAULT_RISK_ENGINE_CONFIG
+): Record<RiskLevel, number> {
   const counts: Record<RiskLevel, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
   for (const r of risks) {
-    counts[getRiskLevel(r.riskScore)]++;
+    counts[getRiskLevel(r.riskScore, config)]++;
   }
   return counts;
 }
@@ -196,7 +204,10 @@ function maxCellCount(grid: number[][]): number {
  * Biggest cluster: highest cell count. Ties broken by scan order —
  * likelihood 5→1 (top→bottom), then impact 1→5 (left→right); first max wins.
  */
-function findBiggestCluster(grid: number[][]): {
+function findBiggestCluster(
+  grid: number[][],
+  config: RiskEngineConfig = DEFAULT_RISK_ENGINE_CONFIG
+): {
   likelihood: number;
   impact: number;
   count: number;
@@ -214,7 +225,7 @@ function findBiggestCluster(grid: number[][]): {
           likelihood,
           impact,
           count,
-          band: getRiskLevel(likelihood * impact),
+          band: getRiskLevel(likelihood * impact, config),
         };
       }
     }
@@ -292,6 +303,7 @@ function HeatMapCell({
   active,
   onSelect,
   dark,
+  config = DEFAULT_RISK_ENGINE_CONFIG,
 }: {
   likelihood: number;
   impact: number;
@@ -299,11 +311,12 @@ function HeatMapCell({
   active: boolean;
   onSelect: (likelihood: number, impact: number) => void;
   dark: boolean;
+  config?: RiskEngineConfig;
 }) {
   const [tipOpen, setTipOpen] = useState(false);
   const hoverCapable = useHoverCapable();
   const score = likelihood * impact;
-  const band = getRiskLevel(score);
+  const band = getRiskLevel(score, config);
   const empty = count === 0;
   const c = BAND_COLOR[band];
 
@@ -365,12 +378,14 @@ function MatrixView({
   selIm,
   onSelect,
   dark,
+  config = DEFAULT_RISK_ENGINE_CONFIG,
 }: {
   grid: number[][];
   selLi: number;
   selIm: number;
   onSelect: (likelihood: number, impact: number) => void;
   dark: boolean;
+  config?: RiskEngineConfig;
 }) {
   return (
     <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-2 gap-y-1.5">
@@ -408,6 +423,7 @@ function MatrixView({
                   active={selLi === likelihood && selIm === impact}
                   onSelect={onSelect}
                   dark={dark}
+                  config={config}
                 />
               );
             });
@@ -439,11 +455,13 @@ function BubbleView({
   maxCount,
   onSelect,
   dark,
+  config = DEFAULT_RISK_ENGINE_CONFIG,
 }: {
   grid: number[][];
   maxCount: number;
   onSelect: (likelihood: number, impact: number) => void;
   dark: boolean;
+  config?: RiskEngineConfig;
 }) {
   const size = 420;
   const pad = 48;
@@ -530,7 +548,7 @@ function BubbleView({
             const impact = colIdx + 1;
             const p = pos(likelihood, impact);
             const score = likelihood * impact;
-            const band = getRiskLevel(score);
+            const band = getRiskLevel(score, config);
             const palette = BAND_COLOR[band];
             const solid = dark ? palette.darkSolid : palette.solid;
             const label = dark ? palette.darkText : palette.text;
@@ -595,11 +613,13 @@ function DensityView({
   maxCount,
   onSelect,
   dark,
+  config = DEFAULT_RISK_ENGINE_CONFIG,
 }: {
   grid: number[][];
   maxCount: number;
   onSelect: (likelihood: number, impact: number) => void;
   dark: boolean;
+  config?: RiskEngineConfig;
 }) {
   const size = 420;
   const pad = 48;
@@ -628,7 +648,7 @@ function DensityView({
           likelihood,
           impact,
           count,
-          band: getRiskLevel(likelihood * impact),
+          band: getRiskLevel(likelihood * impact, config),
           p: pos(likelihood, impact),
           r: 26 + (count / scale) * 50,
         });
@@ -785,13 +805,14 @@ export function RiskHeatMapSection({
   onCellSelect: (likelihood: number, impact: number) => void;
   onOwnerSelect: (ownerId: string) => void;
 }) {
+  const { config: riskConfig } = useRiskEngineConfig();
   const [view, setView] = useState<HeatMapView>("matrix");
   const dark = useIsDarkMode();
   const grid = useMemo(() => buildGrid(risks), [risks]);
-  const counts = useMemo(() => bandCounts(risks), [risks]);
+  const counts = useMemo(() => bandCounts(risks, riskConfig), [risks, riskConfig]);
   const total = useMemo(() => BAND_ORDER.reduce((sum, b) => sum + counts[b], 0), [counts]);
   const maxCount = useMemo(() => maxCellCount(grid), [grid]);
-  const cluster = useMemo(() => findBiggestCluster(grid), [grid]);
+  const cluster = useMemo(() => findBiggestCluster(grid, riskConfig), [grid, riskConfig]);
   const ownership = useMemo(() => ownershipInsight(risks), [risks]);
 
   const selLi = selectedLikelihood ? parseInt(selectedLikelihood, 10) : NaN;
@@ -842,13 +863,32 @@ export function RiskHeatMapSection({
         <div className="flex min-h-[240px] items-stretch justify-stretch border-b border-slate-100 bg-[#f8fafc] p-3 sm:min-h-[320px] sm:p-4 dark:border-[var(--border)] dark:bg-slate-900/40 lg:min-h-[380px] lg:border-b-0 lg:border-r">
           <div className="h-full min-h-[200px] w-full sm:min-h-[280px] lg:min-h-[348px]">
             {view === "matrix" && (
-              <MatrixView grid={grid} selLi={selLi} selIm={selIm} onSelect={onCellSelect} dark={dark} />
+              <MatrixView
+                grid={grid}
+                selLi={selLi}
+                selIm={selIm}
+                onSelect={onCellSelect}
+                dark={dark}
+                config={riskConfig}
+              />
             )}
             {view === "bubble" && (
-              <BubbleView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
+              <BubbleView
+                grid={grid}
+                maxCount={maxCount}
+                onSelect={onCellSelect}
+                dark={dark}
+                config={riskConfig}
+              />
             )}
             {view === "density" && (
-              <DensityView grid={grid} maxCount={maxCount} onSelect={onCellSelect} dark={dark} />
+              <DensityView
+                grid={grid}
+                maxCount={maxCount}
+                onSelect={onCellSelect}
+                dark={dark}
+                config={riskConfig}
+              />
             )}
           </div>
         </div>
@@ -981,6 +1021,7 @@ export function RiskHeatMapSection({
 }
 
 export default function RiskRegisterContent() {
+  const { config: riskConfig } = useRiskEngineConfig();
   const {
     rows: risks,
     loading,
@@ -1334,10 +1375,10 @@ export default function RiskRegisterContent() {
                           <span
                             className={cn(
                               "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold",
-                              RISK_LEVEL_COLOR[getRiskLevel(r.riskScore)]
+                              RISK_LEVEL_COLOR[getRiskLevel(r.riskScore, riskConfig)]
                             )}
                           >
-                            {r.riskScore} · {getRiskLevel(r.riskScore)}
+                            {r.riskScore} · {getRiskLevel(r.riskScore, riskConfig)}
                           </span>
                         </td>
                       )}

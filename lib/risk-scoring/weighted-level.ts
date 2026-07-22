@@ -1,16 +1,30 @@
 /**
- * Weighted Risk Score (System 2) — confirmed bands from the source Excel formula.
- * These differ from the Simple Risk Score bands (System 1) and are NOT the
- * outdated README table.
+ * Weighted Risk Score (System 2) — level banding.
+ * Cutoffs/labels come from UserRiskEngineConfig; defaults match the Excel formula
+ * (1.5 / 2.5 / 3.5 / 4.0 exclusive upper bounds). Distinct from Simple Risk bands.
+ *
+ * DEFERRED (separate ticket): call computeWeightedRiskScore when RiskFactor
+ * weights/inputs change — catalog edits currently do not refresh Release scores.
  */
-export type WeightedRiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "SEVERE";
+import {
+  DEFAULT_RISK_ENGINE_CONFIG,
+  resolveWeightedRiskLevel,
+  type RiskEngineConfig,
+  type WeightedRiskLevel,
+} from "@/lib/risk-engine-config";
 
-export function getWeightedRiskLevel(score: number): WeightedRiskLevel {
-  if (score < 1.5) return "LOW";
-  if (score < 2.5) return "MEDIUM";
-  if (score < 3.5) return "HIGH";
-  if (score < 4.0) return "CRITICAL";
-  return "SEVERE";
+export type { WeightedRiskLevel };
+
+/**
+ * Classify a weighted risk score using config cutoffs (defaults when omitted).
+ * @param score - weightedRiskScore.
+ * @param config - Optional engine config.
+ */
+export function getWeightedRiskLevel(
+  score: number,
+  config: Pick<RiskEngineConfig, "weightedBandCutoffs"> = DEFAULT_RISK_ENGINE_CONFIG
+): WeightedRiskLevel {
+  return resolveWeightedRiskLevel(score, config);
 }
 
 export const WEIGHTED_RISK_LEVEL_COLOR: Record<WeightedRiskLevel, string> = {
