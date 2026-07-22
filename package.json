@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --webpack",
     "dev:turbo": "next dev",
-    "build": "npm run db:generate && next build --webpack",
+    "build": "node scripts/clean-and-generate-prisma.mjs && next build --webpack",
+    "vercel-build": "node scripts/clean-and-generate-prisma.mjs && next build --webpack",
     "start": "next start",
     "lint": "next lint",
     "db:push": "npm run db:push --prefix ./vendor/releasedesk-database",

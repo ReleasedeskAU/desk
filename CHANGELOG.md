@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Vercel production typecheck: force-clean Prisma client generate before `next build` and pin `@releasedesk/database` TS paths to the vendored generated client so new models (`Service`, `UserRiskEngineConfig`, etc.) are never typed from a stale cached client.
+
 ### Added
 
 - Per-user **Risk Engine** settings (`UserRiskEngineConfig`, Settings → Risk Engine): Simple Risk scale/labels/cutoffs and Weighted Risk labels/cutoffs. Unifies list / heat map / detail-hero / RiskMatrix onto one classifier (defaults 5/11/19). RiskFactor catalog UI unchanged.
