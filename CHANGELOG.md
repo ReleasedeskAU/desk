@@ -6,8 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
+- Risk Factors browse (`/risk-factors`): factors grouped under collapsible category sections with jump chips, per-category counts/weights, and “Add in category” — no more flat table repeating the category on every row.
+- Dynamic Simple Risk bands (3–6): Settings can add/remove bands; ordered `{ id, label, maxScore }` drives list chips, heat map legend, Risk detail, and Dashboard distribution. Legacy 4-band JSON still upgrades on load.
+- Risk Engine Settings UI: stepped Scale → Score bands → Band names → Try a score layout with live band ladder so cutoffs/labels are self-explanatory (e.g. CRITICAL → EXTREME).
+- Risk Engine Settings edits now drive list chips, heat map, create/edit scale dropdowns, Risk detail matrix/score bar, and Dashboard risk distribution labels (not only the Settings preview).
+- Risk list / heat map showed the internal band key (`CRITICAL`) instead of the Settings display label (`EXTREME`); chips now use `simpleRiskLevelLabel` (detail hero already did).
 - Risk Engine Settings save on preview/prod: create `UserRiskEngineConfig` if missing before upsert (label rename like CRITICAL → EXTREME was valid; write failed when the Vercel DB never got that migration). Clearer API error when the table/model is still unavailable.
 - Vercel production typecheck: force-clean Prisma client generate before `next build` and pin `@releasedesk/database` TS paths to the vendored generated client so new models (`Service`, `UserRiskEngineConfig`, etc.) are never typed from a stale cached client.
 

@@ -4,7 +4,11 @@ import type { CSSProperties, ReactNode } from "react";
 import { ArrowRight, CheckCircle2, Circle, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRiskLevel } from "@/lib/risk-level";
-import { SIMPLE_RISK_MATRIX_FILL } from "@/lib/risk-engine-config";
+import {
+  DEFAULT_RISK_ENGINE_CONFIG,
+  simpleRiskMatrixFill,
+  type RiskEngineConfig,
+} from "@/lib/risk-engine-config";
 
 type VisualTone = "indigo" | "rose" | "emerald" | "sky" | "violet" | "amber";
 
@@ -110,14 +114,14 @@ export function RiskMatrix({
   impact,
   likelihoodMax = 5,
   impactMax = 5,
-  config,
+  config = DEFAULT_RISK_ENGINE_CONFIG,
 }: {
   likelihood: number;
   impact: number;
   likelihoodMax?: number;
   impactMax?: number;
   /** When provided, band cutoffs come from user config; otherwise shipped defaults. */
-  config?: Pick<import("@/lib/risk-engine-config").RiskEngineConfig, "simpleBandCutoffs">;
+  config?: Pick<RiskEngineConfig, "simpleBands">;
 }) {
   const maxL = Math.max(2, Math.min(10, likelihoodMax));
   const maxI = Math.max(2, Math.min(10, impactMax));
@@ -125,6 +129,7 @@ export function RiskMatrix({
   const safeImpact = Math.max(1, Math.min(maxI, impact));
   const impactValues = Array.from({ length: maxI }, (_, i) => maxI - i);
   const likelihoodValues = Array.from({ length: maxL }, (_, i) => i + 1);
+  const bandConfig = { simpleBands: config.simpleBands ?? DEFAULT_RISK_ENGINE_CONFIG.simpleBands };
 
   return (
     <div className="mx-auto w-full max-w-[220px]">
@@ -142,8 +147,8 @@ export function RiskMatrix({
           likelihoodValues.map((likelihoodValue) => {
             const score = impactValue * likelihoodValue;
             const selected = impactValue === safeImpact && likelihoodValue === safeLikelihood;
-            const band = getRiskLevel(score, config);
-            const fill = SIMPLE_RISK_MATRIX_FILL[band];
+            const band = getRiskLevel(score, bandConfig);
+            const fill = simpleRiskMatrixFill(band, bandConfig);
             return (
               <div
                 key={`${impactValue}-${likelihoodValue}`}

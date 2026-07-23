@@ -7,6 +7,8 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { RISK_STATUSES } from "@/lib/validation/risk";
+import { scaleAxisValues } from "@/lib/risk-engine-config";
+import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
 
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId: string };
@@ -72,6 +74,9 @@ type Props = {
 
 /** Creates a validated risk and keeps its generated-ID confirmation visible after list refresh. */
 export function RiskFormModal({ open, onClose, onCreated, categoryOptions }: Props) {
+  const { config: riskConfig } = useRiskEngineConfig();
+  const likelihoodOptions = scaleAxisValues(riskConfig.likelihoodMax);
+  const impactOptions = scaleAxisValues(riskConfig.impactMax);
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -262,10 +267,10 @@ export function RiskFormModal({ open, onClose, onCreated, categoryOptions }: Pro
         <datalist id="risk-category-options">{categoryOptions.map((category) => <option key={category} value={category} />)}</datalist>
         <TextField label="Affected area" value={form.affectedArea} onChange={(event) => set("affectedArea", event.target.value)} maxLength={500} />
         <SelectField label="Likelihood" required value={form.likelihood} error={fieldErrors.likelihood} onChange={(event) => set("likelihood", event.target.value)}>
-          {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+          {likelihoodOptions.map((value) => <option key={value} value={value}>{value}</option>)}
         </SelectField>
         <SelectField label="Impact" required value={form.impact} error={fieldErrors.impact} onChange={(event) => set("impact", event.target.value)}>
-          {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+          {impactOptions.map((value) => <option key={value} value={value}>{value}</option>)}
         </SelectField>
         <SelectField label="Status" required value={form.status} error={fieldErrors.status} onChange={(event) => set("status", event.target.value as FormValues["status"])}>
           {RISK_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}

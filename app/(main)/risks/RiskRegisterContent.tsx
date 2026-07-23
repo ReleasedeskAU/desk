@@ -17,9 +17,12 @@ import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow }
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { cn, formatDate } from "@/lib/utils";
-import { getRiskLevel, RISK_LEVEL_COLOR, type RiskLevel } from "@/lib/risk-level";
+import { getRiskLevel, riskLevelChipClass, type RiskLevel } from "@/lib/risk-level";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
+  simpleBandScoreRanges,
+  simpleRiskLevelLabel,
+  scaleAxisValues,
   type RiskEngineConfig,
 } from "@/lib/risk-engine-config";
 import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
@@ -97,14 +100,10 @@ const EMPTY_CELL = {
 } as const;
 
 /**
- * Heat-map band palette — exact graphite hexes (light) + dark-canvas retunes.
- * Dark variants keep the same cool MEDIUM vs warmer HIGH distinction.
+ * Heat-map band palette by index (0 = lowest). Supports up to 6 Simple bands.
  */
-const BAND_COLOR: Record<
-  RiskLevel,
-  { bg: string; text: string; solid: string; darkBg: string; darkText: string; darkSolid: string }
-> = {
-  LOW: {
+const BAND_PALETTE = [
+  {
     bg: "#A8AFB1",
     text: "#1e293b",
     solid: "#A8AFB1",
@@ -112,7 +111,15 @@ const BAND_COLOR: Record<
     darkText: "#0f172a",
     darkSolid: "#B8BFC2",
   },
-  MEDIUM: {
+  {
+    bg: "#959CA3",
+    text: "#0f172a",
+    solid: "#959CA3",
+    darkBg: "#A8AFB6",
+    darkText: "#0f172a",
+    darkSolid: "#A8AFB6",
+  },
+  {
     bg: "#858C92",
     text: "#0f172a",
     solid: "#858C92",
@@ -120,7 +127,7 @@ const BAND_COLOR: Record<
     darkText: "#0f172a",
     darkSolid: "#9AA1A7",
   },
-  HIGH: {
+  {
     bg: "#6A655F",
     text: "#ffffff",
     solid: "#6A655F",
@@ -128,7 +135,15 @@ const BAND_COLOR: Record<
     darkText: "#ffffff",
     darkSolid: "#8B837A",
   },
-  CRITICAL: {
+  {
+    bg: "#4A5158",
+    text: "#ffffff",
+    solid: "#4A5158",
+    darkBg: "#636B73",
+    darkText: "#f8fafc",
+    darkSolid: "#636B73",
+  },
+  {
     bg: "#333A40",
     text: "#ffffff",
     solid: "#333A40",
@@ -136,24 +151,25 @@ const BAND_COLOR: Record<
     darkText: "#f8fafc",
     darkSolid: "#4B545C",
   },
-};
+] as const;
 
-const BAND_ORDER: RiskLevel[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+type BandPalette = (typeof BAND_PALETTE)[number];
 
-/** Score ranges for Simple Risk Score (likelihood × impact, 1–25). */
-const BAND_SCORE_RANGE: Record<RiskLevel, string> = {
-  LOW: "1–5",
-  MEDIUM: "6–11",
-  HIGH: "12–19",
-  CRITICAL: "20–25",
-};
+function bandPaletteFor(
+  bandId: RiskLevel,
+  config: RiskEngineConfig
+): BandPalette {
+  const idx = config.simpleBands.findIndex((b) => b.id === bandId);
+  const i = idx < 0 ? Math.max(0, config.simpleBands.length - 1) : idx;
+  return BAND_PALETTE[Math.min(i, BAND_PALETTE.length - 1)]!;
+}
 
-const BAND_GUIDE: Record<RiskLevel, string> = {
-  LOW: "Monitor in normal process",
-  MEDIUM: "Plan mitigation before CAB",
-  HIGH: "Active owner + mitigation needed",
-  CRITICAL: "Escalate — may block deploy",
-};
+function bandGuide(index: number, total: number): string {
+  if (index <= 0) return "Monitor in normal process";
+  if (index >= total - 1) return "Escalate — may block deploy";
+  if (index >= total - 2) return "Active owner + mitigation needed";
+  return "Plan mitigation before CAB";
+}
 
 function useIsDarkMode() {
   const [dark, setDark] = useState(false);
@@ -168,17 +184,25 @@ function useIsDarkMode() {
   return dark;
 }
 
-function clampScore(n: number) {
-  return Math.min(5, Math.max(1, n));
+function clampToScale(n: number, max: number) {
+  return Math.min(max, Math.max(1, n));
 }
 
-/** rows: likelihood 5→1, cols: impact 1→5 */
-function buildGrid(risks: RiskRow[]): number[][] {
-  const grid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, (): number => 0));
+/** rows: likelihood max→1, cols: impact 1→max */
+function buildGrid(
+  risks: RiskRow[],
+  likelihoodMax: number,
+  impactMax: number
+): number[][] {
+  const maxL = Math.max(2, Math.min(10, likelihoodMax));
+  const maxI = Math.max(2, Math.min(10, impactMax));
+  const grid = Array.from({ length: maxL }, () =>
+    Array.from({ length: maxI }, (): number => 0)
+  );
   for (const r of risks) {
-    const li = clampScore(r.likelihood);
-    const im = clampScore(r.impact);
-    grid[5 - li][im - 1]++;
+    const li = clampToScale(r.likelihood, maxL);
+    const im = clampToScale(r.impact, maxI);
+    grid[maxL - li][im - 1]++;
   }
   return grid;
 }
@@ -186,10 +210,12 @@ function buildGrid(risks: RiskRow[]): number[][] {
 function bandCounts(
   risks: RiskRow[],
   config: RiskEngineConfig = DEFAULT_RISK_ENGINE_CONFIG
-): Record<RiskLevel, number> {
-  const counts: Record<RiskLevel, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const b of config.simpleBands) counts[b.id] = 0;
   for (const r of risks) {
-    counts[getRiskLevel(r.riskScore, config)]++;
+    const id = getRiskLevel(r.riskScore, config);
+    counts[id] = (counts[id] ?? 0) + 1;
   }
   return counts;
 }
@@ -213,13 +239,15 @@ function findBiggestCluster(
   count: number;
   band: RiskLevel;
 } | null {
+  const maxL = grid.length;
   let best: { likelihood: number; impact: number; count: number; band: RiskLevel } | null = null;
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
+  for (let row = 0; row < maxL; row++) {
+    const maxI = grid[row]?.length ?? 0;
+    for (let col = 0; col < maxI; col++) {
       const count = grid[row][col];
       if (count === 0) continue;
       if (!best || count > best.count) {
-        const likelihood = 5 - row;
+        const likelihood = maxL - row;
         const impact = col + 1;
         best = {
           likelihood,
@@ -318,7 +346,7 @@ function HeatMapCell({
   const score = likelihood * impact;
   const band = getRiskLevel(score, config);
   const empty = count === 0;
-  const c = BAND_COLOR[band];
+  const c = bandPaletteFor(band, config);
 
   return (
     <button
@@ -338,7 +366,7 @@ function HeatMapCell({
       aria-label={
         empty
           ? `Likelihood ${likelihood}, Impact ${impact}: no risks`
-          : `Likelihood ${likelihood}, Impact ${impact}: ${count} risk${count === 1 ? "" : "s"}, ${band}`
+          : `Likelihood ${likelihood}, Impact ${impact}: ${count} risk${count === 1 ? "" : "s"}, ${simpleRiskLevelLabel(band, config)}`
       }
       className={cn(
         "group relative flex h-full w-full min-h-0 min-w-0 items-center justify-center rounded-2xl text-[clamp(13px,2.4vw,17px)] font-bold transition-all duration-150",
@@ -361,7 +389,7 @@ function HeatMapCell({
             {count} risk{count !== 1 ? "s" : ""} · Score {score}
           </div>
           <div className="mt-0.5" style={{ color: dark ? c.darkSolid : c.solid }}>
-            {band}
+            {simpleRiskLevelLabel(band, config)}
           </div>
           <div className="mt-1 text-white/60">
             Likelihood {likelihood} × Impact {impact}
@@ -387,6 +415,11 @@ function MatrixView({
   dark: boolean;
   config?: RiskEngineConfig;
 }) {
+  const maxL = grid.length;
+  const maxI = grid[0]?.length ?? maxL;
+  const likelihoodAxis = Array.from({ length: maxL }, (_, i) => maxL - i);
+  const impactAxis = scaleAxisValues(maxI);
+
   return (
     <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-2 gap-y-1.5">
       <div className="flex items-center justify-center">
@@ -399,8 +432,11 @@ function MatrixView({
       </div>
 
       <div className="grid min-h-0 min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-x-1.5 gap-y-1">
-        <div className="grid grid-rows-5 gap-1.5">
-          {[5, 4, 3, 2, 1].map((n) => (
+        <div
+          className="grid gap-1.5"
+          style={{ gridTemplateRows: `repeat(${maxL}, minmax(0, 1fr))` }}
+        >
+          {likelihoodAxis.map((n) => (
             <span
               key={n}
               className="flex items-center justify-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500"
@@ -409,9 +445,15 @@ function MatrixView({
             </span>
           ))}
         </div>
-        <div className="grid min-h-0 min-w-0 grid-cols-5 grid-rows-5 gap-1.5">
+        <div
+          className="grid min-h-0 min-w-0 gap-1.5"
+          style={{
+            gridTemplateColumns: `repeat(${maxI}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${maxL}, minmax(0, 1fr))`,
+          }}
+        >
           {grid.flatMap((row, rowIdx) => {
-            const likelihood = 5 - rowIdx;
+            const likelihood = maxL - rowIdx;
             return row.map((count, colIdx) => {
               const impact = colIdx + 1;
               return (
@@ -431,8 +473,11 @@ function MatrixView({
         </div>
         <div />
         <div className="min-w-0">
-          <div className="grid grid-cols-5 gap-1.5">
-            {[1, 2, 3, 4, 5].map((n) => (
+          <div
+            className="grid gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${maxI}, minmax(0, 1fr))` }}
+          >
+            {impactAxis.map((n) => (
               <span
                 key={n}
                 className="text-center text-[11px] font-bold tabular-nums text-slate-400 dark:text-slate-500"
@@ -463,9 +508,11 @@ function BubbleView({
   dark: boolean;
   config?: RiskEngineConfig;
 }) {
+  const maxL = grid.length;
+  const maxI = grid[0]?.length ?? maxL;
   const size = 420;
   const pad = 48;
-  const step = (size - pad * 1.5) / 5;
+  const step = (size - pad * 1.5) / Math.max(maxL, maxI);
   const pos = (likelihood: number, impact: number) => ({
     x: pad + (impact - 0.5) * step,
     y: size - pad - (likelihood - 0.5) * step,
@@ -494,27 +541,31 @@ function BubbleView({
           stroke={EMPTY_CELL.border}
           strokeWidth={1}
         />
-        {[1, 2, 3, 4, 5].map((n) => (
+        {scaleAxisValues(Math.max(maxL, maxI)).map((n) => (
           <g key={n}>
-            <line
-              x1={pad}
-              y1={size - pad - (n - 0.5) * step}
-              x2={size}
-              y2={size - pad - (n - 0.5) * step}
-              className="stroke-slate-100 dark:stroke-slate-700"
-            />
-            <line
-              x1={pad + (n - 0.5) * step}
-              y1={0}
-              x2={pad + (n - 0.5) * step}
-              y2={size - pad}
-              className="stroke-slate-100 dark:stroke-slate-700"
-            />
+            {n <= maxL ? (
+              <line
+                x1={pad}
+                y1={size - pad - (n - 0.5) * step}
+                x2={size}
+                y2={size - pad - (n - 0.5) * step}
+                className="stroke-slate-100 dark:stroke-slate-700"
+              />
+            ) : null}
+            {n <= maxI ? (
+              <line
+                x1={pad + (n - 0.5) * step}
+                y1={0}
+                x2={pad + (n - 0.5) * step}
+                y2={size - pad}
+                className="stroke-slate-100 dark:stroke-slate-700"
+              />
+            ) : null}
           </g>
         ))}
         <line x1={pad} y1={0} x2={pad} y2={size - pad} className="stroke-slate-300 dark:stroke-slate-500" strokeWidth={1.5} />
         <line x1={pad} y1={size - pad} x2={size} y2={size - pad} className="stroke-slate-300 dark:stroke-slate-500" strokeWidth={1.5} />
-        {[1, 2, 3, 4, 5].map((n) => (
+        {scaleAxisValues(maxI).map((n) => (
           <text
             key={`xl${n}`}
             x={pad + (n - 0.5) * step}
@@ -527,7 +578,7 @@ function BubbleView({
             {n}
           </text>
         ))}
-        {[1, 2, 3, 4, 5].map((n) => (
+        {scaleAxisValues(maxL).map((n) => (
           <text
             key={`yl${n}`}
             x={pad - 14}
@@ -544,12 +595,12 @@ function BubbleView({
         {grid.flatMap((row, rowIdx) =>
           row.map((count, colIdx) => {
             if (count === 0) return null;
-            const likelihood = 5 - rowIdx;
+            const likelihood = maxL - rowIdx;
             const impact = colIdx + 1;
             const p = pos(likelihood, impact);
             const score = likelihood * impact;
             const band = getRiskLevel(score, config);
-            const palette = BAND_COLOR[band];
+            const palette = bandPaletteFor(band, config);
             const solid = dark ? palette.darkSolid : palette.solid;
             const label = dark ? palette.darkText : palette.text;
             const r = 9 + (count / scale) * 26;
@@ -595,9 +646,13 @@ function BubbleView({
           </div>
           <div
             className="mt-0.5"
-            style={{ color: dark ? BAND_COLOR[tip.band].darkSolid : BAND_COLOR[tip.band].solid }}
+            style={{
+              color: dark
+                ? bandPaletteFor(tip.band, config).darkSolid
+                : bandPaletteFor(tip.band, config).solid,
+            }}
           >
-            {tip.band}
+            {simpleRiskLevelLabel(tip.band, config)}
           </div>
           <div className="mt-1 text-white/60">
             Likelihood {tip.likelihood} × Impact {tip.impact}
@@ -621,9 +676,11 @@ function DensityView({
   dark: boolean;
   config?: RiskEngineConfig;
 }) {
+  const maxL = grid.length;
+  const maxI = grid[0]?.length ?? maxL;
   const size = 420;
   const pad = 48;
-  const step = (size - pad * 1.5) / 5;
+  const step = (size - pad * 1.5) / Math.max(maxL, maxI);
   const pos = (likelihood: number, impact: number) => ({
     x: pad + (impact - 0.5) * step,
     y: size - pad - (likelihood - 0.5) * step,
@@ -642,7 +699,7 @@ function DensityView({
     grid.forEach((row, rowIdx) => {
       row.forEach((count, colIdx) => {
         if (count === 0) return;
-        const likelihood = 5 - rowIdx;
+        const likelihood = maxL - rowIdx;
         const impact = colIdx + 1;
         out.push({
           likelihood,
@@ -665,12 +722,20 @@ function DensityView({
             <radialGradient key={`g-${c.likelihood}-${c.impact}`} id={`risk-density-${c.likelihood}-${c.impact}`}>
               <stop
                 offset="0%"
-                stopColor={dark ? BAND_COLOR[c.band].darkSolid : BAND_COLOR[c.band].solid}
+                stopColor={
+                  dark
+                    ? bandPaletteFor(c.band, config).darkSolid
+                    : bandPaletteFor(c.band, config).solid
+                }
                 stopOpacity={dark ? 0.72 : 0.88}
               />
               <stop
                 offset="100%"
-                stopColor={dark ? BAND_COLOR[c.band].darkSolid : BAND_COLOR[c.band].solid}
+                stopColor={
+                  dark
+                    ? bandPaletteFor(c.band, config).darkSolid
+                    : bandPaletteFor(c.band, config).solid
+                }
                 stopOpacity={0}
               />
             </radialGradient>
@@ -697,10 +762,10 @@ function DensityView({
           ))}
         </g>
         <g stroke={EMPTY_CELL.border} strokeWidth={1} opacity={0.85}>
-          {[0, 1, 2, 3, 4, 5].map((n) => (
+          {Array.from({ length: maxI + 1 }, (_, n) => (
             <line key={`gx${n}`} x1={pad + n * step} y1={0} x2={pad + n * step} y2={size - pad} />
           ))}
-          {[0, 1, 2, 3, 4, 5].map((n) => (
+          {Array.from({ length: maxL + 1 }, (_, n) => (
             <line key={`gy${n}`} x1={pad} y1={n * step} x2={size} y2={n * step} />
           ))}
         </g>
@@ -725,7 +790,7 @@ function DensityView({
         ))}
         <line x1={pad} y1={0} x2={pad} y2={size - pad} className="stroke-slate-300 dark:stroke-slate-500" strokeWidth={1.5} />
         <line x1={pad} y1={size - pad} x2={size} y2={size - pad} className="stroke-slate-300 dark:stroke-slate-500" strokeWidth={1.5} />
-        {[1, 2, 3, 4, 5].map((n) => (
+        {scaleAxisValues(maxI).map((n) => (
           <text
             key={`xl${n}`}
             x={pad + (n - 0.5) * step}
@@ -738,7 +803,7 @@ function DensityView({
             {n}
           </text>
         ))}
-        {[1, 2, 3, 4, 5].map((n) => (
+        {scaleAxisValues(maxL).map((n) => (
           <text
             key={`yl${n}`}
             x={pad - 14}
@@ -761,15 +826,19 @@ function LegendRow({
   count,
   total,
   dark,
+  config = DEFAULT_RISK_ENGINE_CONFIG,
 }: {
   band: RiskLevel;
   count: number;
   total: number;
   dark: boolean;
+  config?: RiskEngineConfig;
 }) {
-  const c = BAND_COLOR[band];
+  const c = bandPaletteFor(band, config);
   const bandColor = dark ? c.darkSolid : c.solid;
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  const ranges = simpleBandScoreRanges(config);
+  const bandIndex = config.simpleBands.findIndex((b) => b.id === band);
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
       <span className="h-3 w-3 shrink-0 rounded-md" style={{ background: bandColor }} />
@@ -777,16 +846,16 @@ function LegendRow({
         className="text-[12px] font-semibold text-slate-700 dark:text-slate-200"
         style={dark ? { color: c.darkText } : undefined}
       >
-        {band}
+        {simpleRiskLevelLabel(band, config)}
       </span>
       <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
-        {BAND_SCORE_RANGE[band]}
+        {ranges[band]}
       </span>
       <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: bandColor }} />
       </div>
       <span className="min-w-0 flex-1 basis-full text-[11px] text-slate-500 sm:basis-auto dark:text-slate-400">
-        {BAND_GUIDE[band]}
+        {bandGuide(bandIndex < 0 ? 0 : bandIndex, config.simpleBands.length)}
       </span>
     </div>
   );
@@ -808,9 +877,15 @@ export function RiskHeatMapSection({
   const { config: riskConfig } = useRiskEngineConfig();
   const [view, setView] = useState<HeatMapView>("matrix");
   const dark = useIsDarkMode();
-  const grid = useMemo(() => buildGrid(risks), [risks]);
+  const grid = useMemo(
+    () => buildGrid(risks, riskConfig.likelihoodMax, riskConfig.impactMax),
+    [risks, riskConfig.likelihoodMax, riskConfig.impactMax]
+  );
   const counts = useMemo(() => bandCounts(risks, riskConfig), [risks, riskConfig]);
-  const total = useMemo(() => BAND_ORDER.reduce((sum, b) => sum + counts[b], 0), [counts]);
+  const total = useMemo(
+    () => riskConfig.simpleBands.reduce((sum, b) => sum + (counts[b.id] ?? 0), 0),
+    [counts, riskConfig.simpleBands]
+  );
   const maxCount = useMemo(() => maxCellCount(grid), [grid]);
   const cluster = useMemo(() => findBiggestCluster(grid, riskConfig), [grid, riskConfig]);
   const ownership = useMemo(() => ownershipInsight(risks), [risks]);
@@ -955,8 +1030,15 @@ export function RiskHeatMapSection({
               Levels in this view
             </p>
             <div className="space-y-2">
-              {BAND_ORDER.map((band) => (
-                <LegendRow key={band} band={band} count={counts[band]} total={total} dark={dark} />
+              {riskConfig.simpleBands.map((band) => (
+                <LegendRow
+                  key={band.id}
+                  band={band.id}
+                  count={counts[band.id] ?? 0}
+                  total={total}
+                  dark={dark}
+                  config={riskConfig}
+                />
               ))}
             </div>
             {total > 0 && (
@@ -977,7 +1059,8 @@ export function RiskHeatMapSection({
                   <Flame size={13} /> Biggest cluster
                 </div>
                 <p className="mt-1 text-[12px] leading-snug text-amber-900/90 dark:text-amber-100/85">
-                  {cluster.count} at L{cluster.likelihood}×I{cluster.impact} · {cluster.band}
+                  {cluster.count} at L{cluster.likelihood}×I{cluster.impact} ·{" "}
+                  {simpleRiskLevelLabel(cluster.band, riskConfig)}
                 </p>
                 <span className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
                   View <ChevronRight size={12} />
@@ -1151,7 +1234,7 @@ export default function RiskRegisterContent() {
           {isFilterVisible("likelihood") && (
             <FilterSelect value={values.likelihood} onChange={(v) => setFilter("likelihood", v)}>
               <option value="">All likelihood</option>
-              {[1, 2, 3, 4, 5].map((n) => (
+              {scaleAxisValues(riskConfig.likelihoodMax).map((n) => (
                 <option key={n} value={String(n)}>
                   {n}
                 </option>
@@ -1161,7 +1244,7 @@ export default function RiskRegisterContent() {
           {isFilterVisible("impact") && (
             <FilterSelect value={values.impact} onChange={(v) => setFilter("impact", v)}>
               <option value="">All impact</option>
-              {[1, 2, 3, 4, 5].map((n) => (
+              {scaleAxisValues(riskConfig.impactMax).map((n) => (
                 <option key={n} value={String(n)}>
                   {n}
                 </option>
@@ -1375,10 +1458,17 @@ export default function RiskRegisterContent() {
                           <span
                             className={cn(
                               "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold",
-                              RISK_LEVEL_COLOR[getRiskLevel(r.riskScore, riskConfig)]
+                              riskLevelChipClass(
+                                getRiskLevel(r.riskScore, riskConfig),
+                                riskConfig
+                              )
                             )}
                           >
-                            {r.riskScore} · {getRiskLevel(r.riskScore, riskConfig)}
+                            {r.riskScore} ·{" "}
+                            {simpleRiskLevelLabel(
+                              getRiskLevel(r.riskScore, riskConfig),
+                              riskConfig
+                            )}
                           </span>
                         </td>
                       )}

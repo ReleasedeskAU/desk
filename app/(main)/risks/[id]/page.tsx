@@ -35,7 +35,11 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
 import { getRiskLevel } from "@/lib/risk-level";
-import { simpleRiskLevelLabel } from "@/lib/risk-engine-config";
+import {
+  DEFAULT_RISK_ENGINE_CONFIG,
+  simpleRiskLevelLabel,
+  scaleAxisValues,
+} from "@/lib/risk-engine-config";
 
 type RiskDetail = {
   id: string;
@@ -116,7 +120,9 @@ const IMPACT: Record<number, string> = {
   5: "Catastrophic",
 };
 
-const SCALE_OPTIONS = [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }));
+function scaleOptions(max: number) {
+  return scaleAxisValues(max).map((n) => ({ value: String(n), label: String(n) }));
+}
 
 const STATUS_OPTIONS = [
   "Open",
@@ -137,11 +143,14 @@ function riskLevelFromScore(
   score: number,
   config?: import("@/lib/risk-engine-config").RiskEngineConfig
 ): { label: string; tone: ChipTone; hero: "emerald" | "amber" | "rose" } {
-  const level = getRiskLevel(score, config);
-  if (level === "LOW") return { label: simpleRiskLevelLabel(level, config), tone: "good", hero: "emerald" };
-  if (level === "MEDIUM") return { label: simpleRiskLevelLabel(level, config), tone: "warn", hero: "amber" };
-  if (level === "HIGH") return { label: simpleRiskLevelLabel(level, config), tone: "warn", hero: "amber" };
-  return { label: simpleRiskLevelLabel(level, config), tone: "bad", hero: "rose" };
+  const cfg = config ?? DEFAULT_RISK_ENGINE_CONFIG;
+  const level = getRiskLevel(score, cfg);
+  const label = simpleRiskLevelLabel(level, cfg);
+  const idx = cfg.simpleBands.findIndex((b) => b.id === level);
+  const last = cfg.simpleBands.length - 1;
+  if (idx <= 0) return { label, tone: "good", hero: "emerald" };
+  if (idx >= last) return { label, tone: "bad", hero: "rose" };
+  return { label, tone: "warn", hero: "amber" };
 }
 
 function statusTone(status: string): ChipTone {
@@ -461,7 +470,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
               value={d.likelihood}
               editing
               kind="select"
-              options={SCALE_OPTIONS}
+              options={scaleOptions(riskConfig.likelihoodMax)}
               onChange={(n) => edit.setField("likelihood", n)}
             />
             <EditableField
@@ -469,7 +478,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
               value={d.impact}
               editing
               kind="select"
-              options={SCALE_OPTIONS}
+              options={scaleOptions(riskConfig.impactMax)}
               onChange={(n) => edit.setField("impact", n)}
             />
             <EditableField
@@ -627,7 +636,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
         icon={AlertTriangle}
         tone="amber"
         title="Exposure matrix"
-        description="Likelihood × impact drives the stored score (max 25). Changing either scale updates the preview immediately."
+        description={`Likelihood × impact drives the stored score (max ${maxScore}). Changing either scale updates the preview immediately.`}
       >
         <div className="mb-4 grid items-stretch gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 dark:border-white/5 dark:bg-white/[0.03]">
@@ -641,7 +650,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           </div>
           <div className="space-y-3">
             <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-              <ScoreBar value={liveScore} max={25} label={`${level.label} exposure`} />
+              <ScoreBar value={liveScore} max={maxScore} label={`${level.label} exposure`} />
             </div>
             <EditableFieldGrid>
               <EditableField

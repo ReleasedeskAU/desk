@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, Loader2, MoreVertical, Plus, X } from "lucide-react";
 import { DataTableScrollArea } from "@/components/ui/data-table";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
@@ -112,6 +113,7 @@ export function MasterDataError({ message, onRetry }: { message: string; onRetry
   );
 }
 
+/** Compact ⋮ menu with Edit / Delete. Portaled so overflow parents cannot clip it. */
 export function RowActionsMenu({
   onEdit,
   onDelete,
@@ -122,65 +124,124 @@ export function RowActionsMenu({
   extraItems?: { label: string; onClick: () => void }[];
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const placeMenu = useCallback(() => {
+    const btn = triggerRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const menuWidth = 192;
+    const itemCount = (extraItems?.length ?? 0) + 2;
+    const menuHeight = itemCount * 36 + 8;
+    const gap = 4;
+    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    // Prefer below; flip above if near bottom of viewport.
+    const below = rect.bottom + gap;
+    const top =
+      below + menuHeight > window.innerHeight - 8
+        ? Math.max(8, rect.top - menuHeight - gap)
+        : below;
+    setCoords({ top, left });
+  }, [extraItems?.length]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    placeMenu();
+  }, [open, placeMenu]);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onReposition = () => placeMenu();
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open, placeMenu]);
 
   return (
-    <div className="relative inline-block text-left" ref={ref}>
+    <>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="p-2 rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[var(--muted)] dark:hover:text-[var(--foreground)]"
         aria-label="Actions"
+        aria-expanded={open}
+        aria-haspopup="menu"
       >
         <MoreVertical className="h-4 w-4" />
       </button>
-      {open && (
-        <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-          {extraItems?.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              className="w-full px-4 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-50"
-              onClick={() => {
-                setOpen(false);
-                item.onClick();
-              }}
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              style={{ top: coords.top, left: coords.left }}
+              className="fixed z-[200] w-48 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-[var(--border)] dark:bg-[var(--card)]"
             >
-              {item.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="w-full px-4 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-50"
-            onClick={() => {
-              setOpen(false);
-              onEdit();
-            }}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="w-full px-4 py-2 text-left text-[13px] text-red-600 hover:bg-red-50"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
+              {extraItems?.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  role="menuitem"
+                  className="w-full px-4 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-50 dark:text-[var(--foreground)] dark:hover:bg-[var(--muted)]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen(false);
+                    item.onClick();
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full px-4 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-50 dark:text-[var(--foreground)] dark:hover:bg-[var(--muted)]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  onEdit();
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full px-4 py-2 text-left text-[13px] text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  onDelete();
+                }}
+              >
+                Delete
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
   );
 }
 

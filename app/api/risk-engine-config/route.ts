@@ -2,13 +2,16 @@
  * GET/PUT /api/risk-engine-config — per-user Simple + Weighted threshold settings.
  * Auth: requireSession (same pattern as appearance-preferences).
  * Missing row → shipped defaults on GET (never 404/error for empty config).
+ * Simple bands: ordered list of 3–6 { id, label, maxScore } (last maxScore null).
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/api";
 import {
+  MAX_SIMPLE_BANDS,
+  MIN_SIMPLE_BANDS,
   normalizeRiskEngineConfig,
-  validateSimpleCutoffs,
+  validateSimpleBands,
   validateWeightedCutoffs,
 } from "@/lib/risk-engine-config";
 import {
@@ -16,11 +19,10 @@ import {
   saveRiskEngineConfig,
 } from "@/lib/risk-engine-config-db";
 
-const labelsSimple = z.object({
-  low: z.string().trim().min(1).max(40),
-  medium: z.string().trim().min(1).max(40),
-  high: z.string().trim().min(1).max(40),
-  critical: z.string().trim().min(1).max(40),
+const simpleBandSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1).max(40),
+  maxScore: z.union([z.coerce.number().finite(), z.null()]),
 });
 
 const labelsWeighted = z.object({
@@ -35,12 +37,7 @@ const putSchema = z
   .object({
     likelihoodMax: z.coerce.number().int().min(2).max(10),
     impactMax: z.coerce.number().int().min(2).max(10),
-    simpleBandLabels: labelsSimple,
-    simpleBandCutoffs: z.object({
-      low: z.coerce.number().finite(),
-      medium: z.coerce.number().finite(),
-      high: z.coerce.number().finite(),
-    }),
+    simpleBands: z.array(simpleBandSchema).min(MIN_SIMPLE_BANDS).max(MAX_SIMPLE_BANDS),
     weightedBandLabels: labelsWeighted,
     weightedBandCutoffs: z.object({
       low: z.coerce.number().finite(),
@@ -82,7 +79,7 @@ export async function PUT(req: Request) {
   }
 
   const config = normalizeRiskEngineConfig(parsed.data);
-  const simpleErr = validateSimpleCutoffs(config.simpleBandCutoffs);
+  const simpleErr = validateSimpleBands(config.simpleBands);
   if (simpleErr) return NextResponse.json({ error: simpleErr }, { status: 400 });
   const weightedErr = validateWeightedCutoffs(config.weightedBandCutoffs);
   if (weightedErr) return NextResponse.json({ error: weightedErr }, { status: 400 });
@@ -98,7 +95,6 @@ export async function PUT(req: Request) {
     const message = err instanceof Error ? err.message : "UnknownError";
     console.error("[risk-engine-config] save failed", { code, name: message.slice(0, 120) });
 
-    // P2021 = table does not exist; client missing model often surfaces as TypeError.
     if (code === "P2021" || /does not exist|userRiskEngineConfig/i.test(message)) {
       return NextResponse.json(
         {

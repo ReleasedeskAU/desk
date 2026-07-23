@@ -1,5 +1,5 @@
 /**
- * Proof tests: Simple Risk band unification + config defaults/fallback.
+ * Proof tests: dynamic Simple Risk bands (3–6) + legacy upgrade + Weighted defaults.
  * Run: npx tsx --test lib/risk-engine-config.test.ts
  */
 import { describe, it } from "node:test";
@@ -7,112 +7,177 @@ import assert from "node:assert/strict";
 import { getRiskLevel } from "./risk-level";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
-  SIMPLE_RISK_MATRIX_FILL,
+  legacyToSimpleBands,
   normalizeRiskEngineConfig,
   resolveSimpleRiskLevel,
   resolveWeightedRiskLevel,
+  simpleBandScoreRanges,
+  simpleRiskLevelLabel,
+  simpleRiskMatrixFill,
+  validateSimpleBands,
   type RiskEngineConfig,
+  type SimpleBand,
 } from "./risk-engine-config";
 
 /** Same classifier path used by list chips, heat-map cells, and detail hero. */
 function listBand(score: number, config?: RiskEngineConfig) {
   return getRiskLevel(score, config);
 }
-
-/** Same classifier path used by RiskMatrix cell fill (was formerly private ≥6/13/20). */
 function matrixBand(score: number, config?: RiskEngineConfig) {
   return getRiskLevel(score, config);
 }
-
-/** Same classifier path used by risks/[id] hero (was formerly ≤5/≤12/≤19). */
-function detailHeroBand(score: number, config?: RiskEngineConfig) {
+function heroBand(score: number, config?: RiskEngineConfig) {
   return getRiskLevel(score, config);
 }
 
 describe("Simple Risk three-surface unification", () => {
-  it("BEFORE drift documented: legacy matrix/detail disagreed with getRiskLevel at score 6 and 12", () => {
-    // Historical private logic (must NOT be used anymore):
-    const legacyMatrixBand = (score: number) =>
-      score >= 20 ? "CRITICAL" : score >= 13 ? "HIGH" : score >= 6 ? "MEDIUM" : "LOW";
-    const legacyDetailHero = (score: number) =>
-      score <= 5 ? "LOW" : score <= 12 ? "MEDIUM" : score <= 19 ? "HIGH" : "CRITICAL";
-
-    assert.equal(getRiskLevel(6), "MEDIUM");
-    assert.equal(legacyMatrixBand(6), "MEDIUM"); // happened to agree at 6
-    assert.equal(legacyDetailHero(6), "MEDIUM");
-
-    // Real historical disagreement at score 12:
-    assert.equal(getRiskLevel(12), "HIGH");
-    assert.equal(legacyMatrixBand(12), "MEDIUM"); // WAS wrong vs list
-    assert.equal(legacyDetailHero(12), "MEDIUM"); // WAS wrong vs list
-    process.stdout.write(
-      "PROOF before: score 12 → list=HIGH, legacyMatrix=MEDIUM, legacyDetail=MEDIUM (disagreement)\n"
-    );
-  });
-
   it("AFTER: score 6 is MEDIUM on list, matrix, and detail hero (same function)", () => {
-    const score = 6;
-    const list = listBand(score);
-    const matrix = matrixBand(score);
-    const hero = detailHeroBand(score);
-    assert.equal(list, "MEDIUM");
-    assert.equal(matrix, "MEDIUM");
-    assert.equal(hero, "MEDIUM");
-    assert.equal(list, matrix);
-    assert.equal(matrix, hero);
-    assert.equal(SIMPLE_RISK_MATRIX_FILL[matrix], "bg-amber-300");
-    process.stdout.write(
-      `PROOF after defaults: score ${score} → list=${list} matrix=${matrix} hero=${hero}\n`
-    );
+    const list = listBand(6);
+    const matrix = matrixBand(6);
+    const hero = heroBand(6);
+    assert.equal(list, "medium");
+    assert.equal(matrix, "medium");
+    assert.equal(hero, "medium");
+    assert.equal(simpleRiskMatrixFill(matrix), "bg-amber-300");
+    process.stdout.write("PROOF after defaults: score 6 → list=medium matrix=medium hero=medium\n");
   });
 
-  it("AFTER: score 12 is HIGH on all three surfaces (fixes prior ≤12 / ≥13 drift)", () => {
-    const score = 12;
-    const list = listBand(score);
-    const matrix = matrixBand(score);
-    const hero = detailHeroBand(score);
-    assert.equal(list, "HIGH");
-    assert.equal(matrix, "HIGH");
-    assert.equal(hero, "HIGH");
-    process.stdout.write(
-      `PROOF after defaults: score ${score} → list=${list} matrix=${matrix} hero=${hero}\n`
-    );
+  it("AFTER: score 12 is HIGH on all three surfaces", () => {
+    assert.equal(listBand(12), "high");
+    assert.equal(matrixBand(12), "high");
+    assert.equal(heroBand(12), "high");
+    process.stdout.write("PROOF after defaults: score 12 → list=high matrix=high hero=high\n");
   });
 
   it("before/after settings change: same score 6, different band when medium cutoff drops to 5", () => {
     const before = listBand(6, DEFAULT_RISK_ENGINE_CONFIG);
-    assert.equal(before, "MEDIUM");
-
     const afterConfig: RiskEngineConfig = {
       ...DEFAULT_RISK_ENGINE_CONFIG,
-      simpleBandCutoffs: { low: 4, medium: 5, high: 19 },
+      simpleBands: [
+        { id: "low", label: "LOW", maxScore: 4 },
+        { id: "medium", label: "MEDIUM", maxScore: 5 },
+        { id: "high", label: "HIGH", maxScore: 19 },
+        { id: "critical", label: "CRITICAL", maxScore: null },
+      ],
     };
     const afterList = listBand(6, afterConfig);
-    const afterMatrix = matrixBand(6, afterConfig);
-    const afterHero = detailHeroBand(6, afterConfig);
-    assert.equal(afterList, "HIGH");
-    assert.equal(afterMatrix, "HIGH");
-    assert.equal(afterHero, "HIGH");
-    process.stdout.write(
-      `PROOF settings change: score 6 before=${before} after=${afterList} (list=matrix=hero)\n`
-    );
+    assert.equal(before, "medium");
+    assert.equal(afterList, "high");
+    assert.equal(matrixBand(6, afterConfig), "high");
+    assert.equal(heroBand(6, afterConfig), "high");
+    process.stdout.write("PROOF settings change: score 6 before=medium after=high\n");
   });
 });
 
-describe("Config defaults + missing row fallback", () => {
-  it("normalizeRiskEngineConfig(null) returns shipped 5/11/19 and weighted 1.5/2.5/3.5/4.0", () => {
+describe("Dynamic bands + legacy normalize", () => {
+  it("normalizeRiskEngineConfig(null) returns shipped 5/11/19 bands and weighted defaults", () => {
     const c = normalizeRiskEngineConfig(null);
-    assert.deepEqual(c.simpleBandCutoffs, { low: 5, medium: 11, high: 19 });
-    assert.deepEqual(c.weightedBandCutoffs, {
-      low: 1.5,
-      medium: 2.5,
-      high: 3.5,
-      critical: 4.0,
-    });
+    assert.equal(c.simpleBands.length, 4);
+    assert.deepEqual(
+      c.simpleBands.map((b) => ({ id: b.id, maxScore: b.maxScore })),
+      [
+        { id: "low", maxScore: 5 },
+        { id: "medium", maxScore: 11 },
+        { id: "high", maxScore: 19 },
+        { id: "critical", maxScore: null },
+      ]
+    );
     assert.equal(c.likelihoodMax, 5);
-    assert.equal(resolveSimpleRiskLevel(5, c), "LOW");
-    assert.equal(resolveSimpleRiskLevel(6, c), "MEDIUM");
+    assert.equal(resolveSimpleRiskLevel(5, c), "low");
+    assert.equal(resolveSimpleRiskLevel(6, c), "medium");
     assert.equal(resolveWeightedRiskLevel(3.6, c), "CRITICAL");
     process.stdout.write("PROOF no config row → defaults, no error\n");
+  });
+
+  it("legacy low/medium/high JSON upgrades to simpleBands with custom critical label", () => {
+    const c = normalizeRiskEngineConfig({
+      likelihoodMax: 5,
+      impactMax: 5,
+      simpleBandLabels: {
+        low: "LOW",
+        medium: "MEDIUM",
+        high: "HIGH",
+        critical: "EXTREME",
+      },
+      simpleBandCutoffs: { low: 5, medium: 11, high: 19 },
+    });
+    assert.equal(c.simpleBands.length, 4);
+    assert.equal(simpleRiskLevelLabel("critical", c), "EXTREME");
+    assert.equal(resolveSimpleRiskLevel(25, c), "critical");
+  });
+
+  it("legacyToSimpleBands returns null on invalid cutoffs", () => {
+    assert.equal(legacyToSimpleBands({}, { low: 10, medium: 5, high: 19 }), null);
+  });
+
+  it("simpleRiskLevelLabel uses custom critical text (e.g. EXTREME) for list display", () => {
+    const c = normalizeRiskEngineConfig({
+      ...DEFAULT_RISK_ENGINE_CONFIG,
+      simpleBands: DEFAULT_RISK_ENGINE_CONFIG.simpleBands.map((b) =>
+        b.id === "critical" ? { ...b, label: "EXTREME" } : { ...b }
+      ),
+    });
+    assert.equal(simpleRiskLevelLabel("critical", c), "EXTREME");
+    assert.equal(simpleRiskLevelLabel("high", c), "HIGH");
+  });
+
+  it("simpleBandScoreRanges follow cutoffs and scale max", () => {
+    const ranges = simpleBandScoreRanges(DEFAULT_RISK_ENGINE_CONFIG);
+    assert.equal(ranges.low, "1–5");
+    assert.equal(ranges.medium, "6–11");
+    assert.equal(ranges.high, "12–19");
+    assert.equal(ranges.critical, "20–25");
+  });
+
+  it("3-band classify: ≤5 low, ≤15 medium, above high", () => {
+    const bands: SimpleBand[] = [
+      { id: "low", label: "LOW", maxScore: 5 },
+      { id: "medium", label: "MEDIUM", maxScore: 15 },
+      { id: "high", label: "HIGH", maxScore: null },
+    ];
+    assert.equal(validateSimpleBands(bands), null);
+    const c: RiskEngineConfig = { ...DEFAULT_RISK_ENGINE_CONFIG, simpleBands: bands };
+    assert.equal(resolveSimpleRiskLevel(5, c), "low");
+    assert.equal(resolveSimpleRiskLevel(6, c), "medium");
+    assert.equal(resolveSimpleRiskLevel(15, c), "medium");
+    assert.equal(resolveSimpleRiskLevel(16, c), "high");
+  });
+
+  it("5-band classify matches acceptance-style ladder", () => {
+    const bands: SimpleBand[] = [
+      { id: "vlow", label: "VERY LOW", maxScore: 2 },
+      { id: "low", label: "LOW", maxScore: 5 },
+      { id: "medium", label: "MEDIUM", maxScore: 10 },
+      { id: "high", label: "HIGH", maxScore: 15 },
+      { id: "vhigh", label: "VERY HIGH", maxScore: 20 },
+      { id: "critical", label: "CRITICAL", maxScore: null },
+    ];
+    assert.equal(validateSimpleBands(bands), null);
+    const c: RiskEngineConfig = { ...DEFAULT_RISK_ENGINE_CONFIG, simpleBands: bands };
+    assert.equal(resolveSimpleRiskLevel(2, c), "vlow");
+    assert.equal(resolveSimpleRiskLevel(5, c), "low");
+    assert.equal(resolveSimpleRiskLevel(10, c), "medium");
+    assert.equal(resolveSimpleRiskLevel(15, c), "high");
+    assert.equal(resolveSimpleRiskLevel(20, c), "vhigh");
+    assert.equal(resolveSimpleRiskLevel(21, c), "critical");
+    assert.equal(simpleRiskLevelLabel("vlow", c), "VERY LOW");
+  });
+
+  it("validateSimpleBands rejects fewer than 3 or non-increasing cutoffs", () => {
+    assert.match(
+      validateSimpleBands([
+        { id: "a", label: "A", maxScore: 5 },
+        { id: "b", label: "B", maxScore: null },
+      ]) ?? "",
+      /between 3 and 6/
+    );
+    assert.match(
+      validateSimpleBands([
+        { id: "a", label: "A", maxScore: 10 },
+        { id: "b", label: "B", maxScore: 5 },
+        { id: "c", label: "C", maxScore: null },
+      ]) ?? "",
+      /strictly increase/
+    );
   });
 });

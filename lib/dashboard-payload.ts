@@ -12,10 +12,12 @@ import {
   type DashboardPeriod,
 } from "@/lib/dashboard-period";
 import { prisma } from "@/lib/prisma";
-import { getRiskLevel, type RiskLevel } from "@/lib/risk-level";
+import { getRiskLevel } from "@/lib/risk-level";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
+  resolveWeightedRiskLevel,
   type RiskEngineConfig,
+  weightedRiskLevelLabel,
 } from "@/lib/risk-engine-config";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -285,10 +287,17 @@ export async function buildDashboardPayload(
     if (!seenHrefs.has(href)) {
       seenHrefs.add(href);
       const score = severeRelease.weightedRiskScore?.toFixed(2) ?? "—";
+      const weightedLevel =
+        severeRelease.weightedRiskScore != null
+          ? weightedRiskLevelLabel(
+              resolveWeightedRiskLevel(severeRelease.weightedRiskScore, riskConfig),
+              riskConfig
+            )
+          : severeRelease.weightedRiskLevel ?? "High";
       topIssues.push({
         severity: "rose",
         title: `${severeRelease.releaseCode} · ${severeRelease.name}`,
-        reason: `${severeRelease.weightedRiskLevel ?? "High"} weighted risk (${score})${
+        reason: `${weightedLevel} weighted risk (${score})${
           severeRelease.blockers?.trim() ? ` — ${severeRelease.blockers.trim()}` : ""
         }`,
         meta: `${severeRelease.department?.name ?? "—"} · Owner: ${severeRelease.owner || "—"}`,
@@ -421,14 +430,19 @@ export async function buildDashboardPayload(
     where: range ? { release: releaseWhere } : undefined,
     select: { riskScore: true },
   });
-  const riskBandCounts: Record<RiskLevel, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
-  for (const r of risks) riskBandCounts[getRiskLevel(r.riskScore, riskConfig)]++;
-  const riskDistribution = [
-    { name: "Low", value: riskBandCounts.LOW, color: "#10b981", href: "/risks?band=Low" },
-    { name: "Medium", value: riskBandCounts.MEDIUM, color: "#f59e0b", href: "/risks?band=Medium" },
-    { name: "High", value: riskBandCounts.HIGH, color: "#fb923c", href: "/risks?band=High" },
-    { name: "Critical", value: riskBandCounts.CRITICAL, color: "#f43f5e", href: "/risks?band=Critical" },
-  ];
+  const distColors = ["#10b981", "#84cc16", "#f59e0b", "#fb923c", "#f43f5e", "#be123c"];
+  const riskBandCounts: Record<string, number> = {};
+  for (const b of riskConfig.simpleBands) riskBandCounts[b.id] = 0;
+  for (const r of risks) {
+    const id = getRiskLevel(r.riskScore, riskConfig);
+    riskBandCounts[id] = (riskBandCounts[id] ?? 0) + 1;
+  }
+  const riskDistribution = riskConfig.simpleBands.map((band, i) => ({
+    name: band.label,
+    value: riskBandCounts[band.id] ?? 0,
+    color: distColors[Math.min(i, distColors.length - 1)]!,
+    href: `/risks?band=${encodeURIComponent(band.id)}`,
+  }));
 
   // --- Release Trend ---
   const releaseTrendRange =

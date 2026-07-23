@@ -4,14 +4,16 @@
  *
  * Save ensures the table exists (CREATE IF NOT EXISTS) so preview/prod DBs
  * that never ran the migration still accept Settings → Risk Engine writes.
+ * Simple bands persist as v2 `{ v:2, bands }` in simpleBandCutoffs JSON.
  */
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@releasedesk/database";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
   normalizeRiskEngineConfig,
+  toPersistedSimpleBandJson,
   type RiskEngineConfig,
-  validateSimpleCutoffs,
+  validateSimpleBands,
   validateWeightedCutoffs,
 } from "@/lib/risk-engine-config";
 
@@ -75,16 +77,17 @@ export async function saveRiskEngineConfig(
   clerkUserId: string,
   config: RiskEngineConfig
 ): Promise<RiskEngineConfig> {
-  const simpleErr = validateSimpleCutoffs(config.simpleBandCutoffs);
+  const simpleErr = validateSimpleBands(config.simpleBands);
   if (simpleErr) throw new Error(simpleErr);
   const weightedErr = validateWeightedCutoffs(config.weightedBandCutoffs);
   if (weightedErr) throw new Error(weightedErr);
 
   await ensureUserRiskEngineConfigTable();
 
+  const persisted = toPersistedSimpleBandJson(config.simpleBands);
   const json = {
-    simpleBandLabels: config.simpleBandLabels as Prisma.InputJsonValue,
-    simpleBandCutoffs: config.simpleBandCutoffs as Prisma.InputJsonValue,
+    simpleBandLabels: persisted.simpleBandLabels as Prisma.InputJsonValue,
+    simpleBandCutoffs: persisted.simpleBandCutoffs as Prisma.InputJsonValue,
     weightedBandLabels: config.weightedBandLabels as Prisma.InputJsonValue,
     weightedBandCutoffs: config.weightedBandCutoffs as Prisma.InputJsonValue,
   };
