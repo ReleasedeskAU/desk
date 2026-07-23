@@ -38,6 +38,8 @@ export type RiskEngineConfig = {
   likelihoodMax: number;
   impactMax: number;
   simpleBands: SimpleBand[];
+  /** When false, Weighted Risk (System 2) is off for this user — cutoffs/labels kept but inactive. */
+  weightedRiskEnabled: boolean;
   weightedBandLabels: WeightedBandLabels;
   weightedBandCutoffs: WeightedBandCutoffs;
 };
@@ -57,6 +59,7 @@ export const DEFAULT_RISK_ENGINE_CONFIG: RiskEngineConfig = {
   likelihoodMax: 5,
   impactMax: 5,
   simpleBands: DEFAULT_SIMPLE_BANDS.map((b) => ({ ...b })),
+  weightedRiskEnabled: true,
   weightedBandLabels: {
     low: "LOW",
     medium: "MEDIUM",
@@ -148,27 +151,43 @@ export function weightedRiskLevelLabel(
 }
 
 /**
- * Human-readable score range text per Simple band id.
+ * Numeric inclusive score ranges per Simple band id (for API filters).
  * @param config - Engine config with bands and scale.
+ * @returns Map of band id → { gte, lte }.
  */
-export function simpleBandScoreRanges(
+export function simpleBandNumericRanges(
   config: Pick<RiskEngineConfig, "simpleBands" | "likelihoodMax" | "impactMax"> = DEFAULT_RISK_ENGINE_CONFIG
-): Record<string, string> {
+): Record<string, { gte: number; lte: number }> {
   const bands = config.simpleBands;
   const scaleMax = Math.max(1, config.likelihoodMax * config.impactMax);
-  const out: Record<string, string> = {};
+  const out: Record<string, { gte: number; lte: number }> = {};
   let prev = 0;
   for (let i = 0; i < bands.length; i++) {
     const band = bands[i]!;
     const start = prev + 1;
     if (band.maxScore == null) {
       const end = Math.max(start, scaleMax);
-      out[band.id] = start >= end ? String(end) : `${start}–${end}`;
+      out[band.id] = { gte: start, lte: end };
     } else {
       const end = band.maxScore;
-      out[band.id] = start >= end ? String(end) : `${start}–${end}`;
+      out[band.id] = { gte: Math.min(start, end), lte: end };
       prev = end;
     }
+  }
+  return out;
+}
+
+/**
+ * Human-readable score range text per Simple band id.
+ * @param config - Engine config with bands and scale.
+ */
+export function simpleBandScoreRanges(
+  config: Pick<RiskEngineConfig, "simpleBands" | "likelihoodMax" | "impactMax"> = DEFAULT_RISK_ENGINE_CONFIG
+): Record<string, string> {
+  const numeric = simpleBandNumericRanges(config);
+  const out: Record<string, string> = {};
+  for (const [id, r] of Object.entries(numeric)) {
+    out[id] = r.gte >= r.lte ? String(r.lte) : `${r.gte}–${r.lte}`;
   }
   return out;
 }
@@ -321,6 +340,7 @@ export function normalizeRiskEngineConfig(
     simpleBands: unknown;
     simpleBandLabels: unknown;
     simpleBandCutoffs: unknown;
+    weightedRiskEnabled: unknown;
     weightedBandLabels: unknown;
     weightedBandCutoffs: unknown;
   }> | null | undefined
@@ -336,9 +356,15 @@ export function normalizeRiskEngineConfig(
   }
 
   const weightedLabels = asRecord(raw.weightedBandLabels);
-  const weightedCutoffs = asRecord(raw.weightedBandCutoffs);
+  const { cutoffs: weightedCutoffs, enabled: enabledFromCutoffs } = parseWeightedCutoffs(
+    raw.weightedBandCutoffs
+  );
   const likelihoodMax = clampInt(raw.likelihoodMax, 2, 10, d.likelihoodMax);
   const impactMax = clampInt(raw.impactMax, 2, 10, d.impactMax);
+  const weightedRiskEnabled =
+    typeof raw.weightedRiskEnabled === "boolean"
+      ? raw.weightedRiskEnabled
+      : enabledFromCutoffs;
 
   let simpleBands = parseSimpleBands(raw.simpleBands, raw.simpleBandCutoffs, raw.simpleBandLabels);
   if (!simpleBands || validateSimpleBands(simpleBands)) {
@@ -349,6 +375,7 @@ export function normalizeRiskEngineConfig(
     likelihoodMax,
     impactMax,
     simpleBands,
+    weightedRiskEnabled,
     weightedBandLabels: {
       low: str(weightedLabels.low, d.weightedBandLabels.low),
       medium: str(weightedLabels.medium, d.weightedBandLabels.medium),
@@ -368,6 +395,17 @@ export function normalizeRiskEngineConfig(
     config.weightedBandCutoffs = { ...d.weightedBandCutoffs };
   }
   return config;
+}
+
+/**
+ * Persist weighted cutoffs + feature flag without a schema migration.
+ * Shape: `{ v: 2, enabled, low, medium, high, critical }` (legacy flat object still loads).
+ */
+export function toPersistedWeightedCutoffsJson(
+  cutoffs: WeightedBandCutoffs,
+  enabled: boolean
+): { v: 2; enabled: boolean } & WeightedBandCutoffs {
+  return { v: 2, enabled, ...cutoffs };
 }
 
 /**
@@ -439,6 +477,18 @@ function coerceBandArray(arr: unknown[]): SimpleBand[] | null {
   // Ensure last is open-ended.
   if (bands.length) bands[bands.length - 1] = { ...bands[bands.length - 1]!, maxScore: null };
   return bands;
+}
+
+function parseWeightedCutoffs(raw: unknown): {
+  cutoffs: Record<string, unknown>;
+  enabled: boolean;
+} {
+  const rec = asRecord(raw);
+  const enabled =
+    typeof rec.enabled === "boolean"
+      ? rec.enabled
+      : DEFAULT_RISK_ENGINE_CONFIG.weightedRiskEnabled;
+  return { cutoffs: rec, enabled };
 }
 
 function asRecord(v: unknown): Record<string, unknown> {

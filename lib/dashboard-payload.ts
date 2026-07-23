@@ -230,14 +230,16 @@ export async function buildDashboardPayload(
       orderBy: { releaseDate: "asc" },
       take: 2,
     }),
-    prisma.release.findFirst({
-      where: {
-        weightedRiskScore: { not: null, gte: riskConfig.weightedBandCutoffs.high },
-        ...releaseWhere,
-      },
-      include: { department: true },
-      orderBy: { weightedRiskScore: "desc" },
-    }),
+    riskConfig.weightedRiskEnabled
+      ? prisma.release.findFirst({
+          where: {
+            weightedRiskScore: { not: null, gte: riskConfig.weightedBandCutoffs.high },
+            ...releaseWhere,
+          },
+          include: { department: true },
+          orderBy: { weightedRiskScore: "desc" },
+        })
+      : Promise.resolve(null),
     prisma.release.findFirst({
       where: { status: "Pending CAB", ...releaseWhere },
       include: { department: true },

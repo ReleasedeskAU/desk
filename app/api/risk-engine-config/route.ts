@@ -38,6 +38,7 @@ const putSchema = z
     likelihoodMax: z.coerce.number().int().min(2).max(10),
     impactMax: z.coerce.number().int().min(2).max(10),
     simpleBands: z.array(simpleBandSchema).min(MIN_SIMPLE_BANDS).max(MAX_SIMPLE_BANDS),
+    weightedRiskEnabled: z.boolean(),
     weightedBandLabels: labelsWeighted,
     weightedBandCutoffs: z.object({
       low: z.coerce.number().finite(),
@@ -56,6 +57,29 @@ export async function GET() {
   if (error) return error;
 
   const config = await loadRiskEngineConfig(user!.id);
+  // #region agent log
+  fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+    body: JSON.stringify({
+      sessionId: "496e00",
+      runId: "pre-fix",
+      hypothesisId: "H3",
+      location: "api/risk-engine-config/route.ts:GET",
+      message: "GET loaded config",
+      data: {
+        bands: config.simpleBands.map((b) => ({
+          id: b.id,
+          label: b.label,
+          maxScore: b.maxScore,
+        })),
+        likelihoodMax: config.likelihoodMax,
+        impactMax: config.impactMax,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   return NextResponse.json({ config });
 }
 
@@ -78,7 +102,64 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Invalid config", details: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Validate incoming bands BEFORE normalize — normalize fail-opens to defaults and would
+  // silently overwrite custom labels/cutoffs on a bad payload (security/correctness).
+  const incomingBands = parsed.data.simpleBands.map((b) => ({
+    id: b.id,
+    label: b.label,
+    maxScore: b.maxScore,
+  }));
+  const preNormErr = validateSimpleBands(incomingBands);
+  if (preNormErr) {
+    // #region agent log
+    fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+      body: JSON.stringify({
+        sessionId: "496e00",
+        runId: "post-fix",
+        hypothesisId: "H2",
+        location: "api/risk-engine-config/route.ts:PUT:reject",
+        message: "PUT rejected invalid bands before normalize",
+        data: { preNormErr, incomingBands },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    return NextResponse.json({ error: preNormErr }, { status: 400 });
+  }
+  const weightedPreErr = validateWeightedCutoffs(parsed.data.weightedBandCutoffs);
+  if (weightedPreErr) {
+    return NextResponse.json({ error: weightedPreErr }, { status: 400 });
+  }
+
   const config = normalizeRiskEngineConfig(parsed.data);
+  // #region agent log
+  fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+    body: JSON.stringify({
+      sessionId: "496e00",
+      runId: "post-fix",
+      hypothesisId: "H2",
+      location: "api/risk-engine-config/route.ts:PUT",
+      message: "PUT normalize check",
+      data: {
+        incomingBands,
+        normalizedBands: config.simpleBands.map((b) => ({
+          id: b.id,
+          label: b.label,
+          maxScore: b.maxScore,
+        })),
+        preNormErr: preNormErr ?? null,
+        wipedToDefaults:
+          incomingBands.map((b) => b.label).join("|") !==
+          config.simpleBands.map((b) => b.label).join("|"),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   const simpleErr = validateSimpleBands(config.simpleBands);
   if (simpleErr) return NextResponse.json({ error: simpleErr }, { status: 400 });
   const weightedErr = validateWeightedCutoffs(config.weightedBandCutoffs);
@@ -86,6 +167,29 @@ export async function PUT(req: Request) {
 
   try {
     const saved = await saveRiskEngineConfig(user!.id, config);
+    // #region agent log
+    fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+      body: JSON.stringify({
+        sessionId: "496e00",
+        runId: "post-fix",
+        hypothesisId: "H2",
+        location: "api/risk-engine-config/route.ts:PUT:saved",
+        message: "PUT persisted config",
+        data: {
+          savedBands: saved.simpleBands.map((b) => ({
+            id: b.id,
+            label: b.label,
+            maxScore: b.maxScore,
+          })),
+          likelihoodMax: saved.likelihoodMax,
+          impactMax: saved.impactMax,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     return NextResponse.json({ config: saved });
   } catch (err) {
     const code =

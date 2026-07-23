@@ -12,6 +12,7 @@ import {
   DEFAULT_RISK_ENGINE_CONFIG,
   normalizeRiskEngineConfig,
   toPersistedSimpleBandJson,
+  toPersistedWeightedCutoffsJson,
   type RiskEngineConfig,
   validateSimpleBands,
   validateWeightedCutoffs,
@@ -89,7 +90,10 @@ export async function saveRiskEngineConfig(
     simpleBandLabels: persisted.simpleBandLabels as Prisma.InputJsonValue,
     simpleBandCutoffs: persisted.simpleBandCutoffs as Prisma.InputJsonValue,
     weightedBandLabels: config.weightedBandLabels as Prisma.InputJsonValue,
-    weightedBandCutoffs: config.weightedBandCutoffs as Prisma.InputJsonValue,
+    weightedBandCutoffs: toPersistedWeightedCutoffsJson(
+      config.weightedBandCutoffs,
+      config.weightedRiskEnabled
+    ) as Prisma.InputJsonValue,
   };
 
   const row = await prisma.userRiskEngineConfig.upsert({

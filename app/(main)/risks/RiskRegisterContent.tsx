@@ -159,9 +159,13 @@ function bandPaletteFor(
   bandId: RiskLevel,
   config: RiskEngineConfig
 ): BandPalette {
-  const idx = config.simpleBands.findIndex((b) => b.id === bandId);
-  const i = idx < 0 ? Math.max(0, config.simpleBands.length - 1) : idx;
-  return BAND_PALETTE[Math.min(i, BAND_PALETTE.length - 1)]!;
+  const bands = config.simpleBands;
+  const idx = bands.findIndex((b) => b.id === bandId);
+  const i = idx < 0 ? Math.max(0, bands.length - 1) : idx;
+  if (bands.length <= 1) return BAND_PALETTE[0]!;
+  // Stretch across full palette so 3-band configs match chip contrast (not just first 3 stops).
+  const mapped = Math.round((i / (bands.length - 1)) * (BAND_PALETTE.length - 1));
+  return BAND_PALETTE[Math.min(mapped, BAND_PALETTE.length - 1)]!;
 }
 
 function bandGuide(index: number, total: number): string {
@@ -875,6 +879,12 @@ export function RiskHeatMapSection({
   onOwnerSelect: (ownerId: string) => void;
 }) {
   const { config: riskConfig } = useRiskEngineConfig();
+  // #region agent log
+  useEffect(() => {
+    const sampleScores = [1, 6, 12, 20, 25];
+    fetch('http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'496e00'},body:JSON.stringify({sessionId:'496e00',runId:'pre-fix',hypothesisId:'H4',location:'RiskRegisterContent.tsx:RiskHeatMapSection',message:'Risk heat map using config',data:{bands:riskConfig.simpleBands.map((b)=>({id:b.id,label:b.label,maxScore:b.maxScore})),sampleClassifications:sampleScores.map((s)=>({score:s,id:getRiskLevel(s,riskConfig),label:simpleRiskLevelLabel(getRiskLevel(s,riskConfig),riskConfig)})),likelihoodMax:riskConfig.likelihoodMax,impactMax:riskConfig.impactMax},timestamp:Date.now()})}).catch(()=>{});
+  }, [riskConfig]);
+  // #endregion
   const [view, setView] = useState<HeatMapView>("matrix");
   const dark = useIsDarkMode();
   const grid = useMemo(
@@ -982,10 +992,11 @@ export function RiskHeatMapSection({
                 <span className="font-semibold text-slate-800 dark:text-white">Likelihood</span> (Y-axis)
                 and{" "}
                 <span className="font-semibold text-slate-800 dark:text-white">Impact</span> (X-axis), each
-                from 1–5. Cell numbers are risk counts. Hotter cells are higher CAB priority.
+                from 1–{riskConfig.likelihoodMax} / 1–{riskConfig.impactMax}. Cell numbers are risk counts.
+                Hotter cells are higher CAB priority.
               </p>
               <div className="inline-flex rounded-lg bg-brand-50 px-3 py-1.5 text-[12.5px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-                Score = Likelihood × Impact (1–25)
+                Score = Likelihood × Impact (1–{riskConfig.likelihoodMax * riskConfig.impactMax})
               </div>
             </div>
           </details>
@@ -999,11 +1010,12 @@ export function RiskHeatMapSection({
               <span className="font-semibold text-slate-800 dark:text-white">Likelihood</span> (Y-axis,
               how likely it is) and{" "}
               <span className="font-semibold text-slate-800 dark:text-white">Impact</span> (X-axis, how
-              bad if it happens), each from 1–5. The number in a cell is how many risks sit at that
-              pair. Darker / hotter cells mean higher priority for CAB discussion.
+              bad if it happens), each from 1–{riskConfig.likelihoodMax} / 1–{riskConfig.impactMax}. The
+              number in a cell is how many risks sit at that pair. Darker / hotter cells mean higher
+              priority for CAB discussion.
             </p>
             <div className="mt-2.5 inline-flex rounded-lg bg-brand-50 px-3 py-1.5 text-[12.5px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-              Score = Likelihood × Impact (1–25)
+              Score = Likelihood × Impact (1–{riskConfig.likelihoodMax * riskConfig.impactMax})
             </div>
             <ul className="mt-3 space-y-1 text-[12px] leading-snug text-slate-500 dark:text-slate-400">
               <li>

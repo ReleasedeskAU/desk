@@ -778,7 +778,10 @@ export function integrationFlowWhere(sp: URLSearchParams): Prisma.IntegrationFlo
 
 // --- Risks ---
 
-export function riskWhere(sp: URLSearchParams): Prisma.RiskWhereInput {
+export function riskWhere(
+  sp: URLSearchParams,
+  opts?: { bandScoreRange?: { gte: number; lte: number } }
+): Prisma.RiskWhereInput {
   const parts: Prisma.RiskWhereInput[] = [];
   const status = str(sp, "status");
   const category = str(sp, "category");
@@ -861,15 +864,85 @@ export function riskWhere(sp: URLSearchParams): Prisma.RiskWhereInput {
   }
   if (likelihoodRaw) {
     const likelihood = parseInt(likelihoodRaw, 10);
-    if (Number.isFinite(likelihood) && likelihood >= 1 && likelihood <= 5) {
+    // Scale max is 10 (Settings likelihoodMax); old hardcap of 5 dropped valid filters.
+    if (Number.isFinite(likelihood) && likelihood >= 1 && likelihood <= 10) {
       parts.push({ likelihood });
+    } else if (Number.isFinite(likelihood) && likelihood > 10) {
+      // #region agent log
+      fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+        body: JSON.stringify({
+          sessionId: "496e00",
+          runId: "post-fix",
+          hypothesisId: "H5",
+          location: "list-api-filters.ts:riskWhere",
+          message: "likelihood filter dropped by hardcap 10",
+          data: { likelihoodRaw, likelihood, bandParam: str(sp, "band") },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
     }
   }
   if (impactRaw) {
     const impact = parseInt(impactRaw, 10);
-    if (Number.isFinite(impact) && impact >= 1 && impact <= 5) {
+    if (Number.isFinite(impact) && impact >= 1 && impact <= 10) {
       parts.push({ impact });
+    } else if (Number.isFinite(impact) && impact > 10) {
+      // #region agent log
+      fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+        body: JSON.stringify({
+          sessionId: "496e00",
+          runId: "post-fix",
+          hypothesisId: "H5",
+          location: "list-api-filters.ts:riskWhere",
+          message: "impact filter dropped by hardcap 10",
+          data: { impactRaw, impact },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
     }
+  }
+  const bandParam = str(sp, "band");
+  if (bandParam && opts?.bandScoreRange) {
+    parts.push({
+      riskScore: { gte: opts.bandScoreRange.gte, lte: opts.bandScoreRange.lte },
+    });
+    // #region agent log
+    fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+      body: JSON.stringify({
+        sessionId: "496e00",
+        runId: "post-fix",
+        hypothesisId: "H5",
+        location: "list-api-filters.ts:riskWhere",
+        message: "band query param applied as score range",
+        data: { bandParam, range: opts.bandScoreRange },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  } else if (bandParam) {
+    // #region agent log
+    fetch("http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "496e00" },
+      body: JSON.stringify({
+        sessionId: "496e00",
+        runId: "post-fix",
+        hypothesisId: "H5",
+        location: "list-api-filters.ts:riskWhere",
+        message: "band query param ignored (no range resolved)",
+        data: { bandParam },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
   }
   if (scoreMin !== undefined || scoreMax !== undefined) {
     const range: { gte?: number; lte?: number } = {};

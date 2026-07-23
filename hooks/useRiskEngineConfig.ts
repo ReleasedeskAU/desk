@@ -9,9 +9,10 @@ import {
   normalizeRiskEngineConfig,
   type RiskEngineConfig,
 } from "@/lib/risk-engine-config";
+import { RISK_ENGINE_CONFIG_UPDATED_EVENT } from "@/lib/risk-engine-config-events";
 
 /**
- * Fetches GET /api/risk-engine-config once on mount.
+ * Fetches GET /api/risk-engine-config on mount and whenever Settings broadcasts an update.
  * @returns { config, loading, reload } — config is always usable (defaults while loading).
  */
 export function useRiskEngineConfig(): {
@@ -24,6 +25,12 @@ export function useRiskEngineConfig(): {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    const onUpdated = () => setTick((t) => t + 1);
+    window.addEventListener(RISK_ENGINE_CONFIG_UPDATED_EVENT, onUpdated);
+    return () => window.removeEventListener(RISK_ENGINE_CONFIG_UPDATED_EVENT, onUpdated);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     void fetch("/api/risk-engine-config")
@@ -33,7 +40,11 @@ export function useRiskEngineConfig(): {
       })
       .then((data) => {
         if (cancelled || !data) return;
-        setConfig(normalizeRiskEngineConfig(data.config ?? data));
+        const next = normalizeRiskEngineConfig(data.config ?? data);
+        // #region agent log
+        fetch('http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'496e00'},body:JSON.stringify({sessionId:'496e00',runId:'post-fix',hypothesisId:'H3',location:'useRiskEngineConfig.ts:loaded',message:'Client hook loaded config',data:{tick,bands:next.simpleBands.map((b)=>({id:b.id,label:b.label,maxScore:b.maxScore})),likelihoodMax:next.likelihoodMax,impactMax:next.impactMax,isDefaultLabels:next.simpleBands.map((b)=>b.label).join('|')==='LOW|MEDIUM|HIGH|CRITICAL'},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        setConfig(next);
       })
       .catch(() => {
         /* keep defaults */

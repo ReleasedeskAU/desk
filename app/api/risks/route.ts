@@ -15,11 +15,21 @@ async function nextRiskCode(): Promise<string> {
 }
 
 export async function GET(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
+  const params = sp(req);
+  const bandId = params.get("band")?.trim();
+  let bandScoreRange: { gte: number; lte: number } | undefined;
+  if (bandId && user?.id) {
+    const { loadRiskEngineConfig } = await import("@/lib/risk-engine-config-db");
+    const { simpleBandNumericRanges } = await import("@/lib/risk-engine-config");
+    const riskConfig = await loadRiskEngineConfig(user.id);
+    bandScoreRange = simpleBandNumericRanges(riskConfig)[bandId];
+  }
+
   const data = await prisma.risk.findMany({
-    where: riskWhere(sp(req)),
+    where: riskWhere(params, { bandScoreRange }),
     include: {
       release: {
         select: {

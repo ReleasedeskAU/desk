@@ -279,6 +279,7 @@ export const RISKS_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "category", param: "category" },
   { key: "likelihood", param: "likelihood" },
   { key: "impact", param: "impact" },
+  { key: "band", param: "band" },
   { key: "riskOwnerQ", param: "owner" },
   { key: "riskScoreMin", param: "scoreMin" },
   { key: "riskScoreMax", param: "scoreMax" },

@@ -11,7 +11,9 @@ import {
   normalizeRiskEngineConfig,
   resolveSimpleRiskLevel,
   resolveWeightedRiskLevel,
+  toPersistedWeightedCutoffsJson,
   simpleBandScoreRanges,
+  simpleBandNumericRanges,
   simpleRiskLevelLabel,
   simpleRiskMatrixFill,
   validateSimpleBands,
@@ -129,6 +131,35 @@ describe("Dynamic bands + legacy normalize", () => {
     assert.equal(ranges.critical, "20–25");
   });
 
+  it("simpleBandNumericRanges match score ranges used by ?band= filters", () => {
+    const n = simpleBandNumericRanges(DEFAULT_RISK_ENGINE_CONFIG);
+    assert.deepEqual(n.low, { gte: 1, lte: 5 });
+    assert.deepEqual(n.critical, { gte: 20, lte: 25 });
+  });
+
+  it("normalize fail-opens invalid bands to defaults (PUT must validate first)", () => {
+    const wiped = normalizeRiskEngineConfig({
+      ...DEFAULT_RISK_ENGINE_CONFIG,
+      simpleBands: [
+        { id: "a", label: "CUSTOM_A", maxScore: 10 },
+        { id: "b", label: "CUSTOM_B", maxScore: 5 },
+        { id: "c", label: "CUSTOM_C", maxScore: null },
+      ],
+    });
+    assert.equal(
+      wiped.simpleBands.map((b) => b.label).join("|"),
+      "LOW|MEDIUM|HIGH|CRITICAL"
+    );
+    assert.match(
+      validateSimpleBands([
+        { id: "a", label: "CUSTOM_A", maxScore: 10 },
+        { id: "b", label: "CUSTOM_B", maxScore: 5 },
+        { id: "c", label: "CUSTOM_C", maxScore: null },
+      ]) ?? "",
+      /strictly increase/
+    );
+  });
+
   it("3-band classify: ≤5 low, ≤15 medium, above high", () => {
     const bands: SimpleBand[] = [
       { id: "low", label: "LOW", maxScore: 5 },
@@ -161,6 +192,31 @@ describe("Dynamic bands + legacy normalize", () => {
     assert.equal(resolveSimpleRiskLevel(20, c), "vhigh");
     assert.equal(resolveSimpleRiskLevel(21, c), "critical");
     assert.equal(simpleRiskLevelLabel("vlow", c), "VERY LOW");
+  });
+
+  it("weightedRiskEnabled persists via cutoffs v2 wrapper and defaults on", () => {
+    assert.equal(DEFAULT_RISK_ENGINE_CONFIG.weightedRiskEnabled, true);
+    const off = normalizeRiskEngineConfig({
+      ...DEFAULT_RISK_ENGINE_CONFIG,
+      weightedRiskEnabled: false,
+      weightedBandCutoffs: toPersistedWeightedCutoffsJson(
+        DEFAULT_RISK_ENGINE_CONFIG.weightedBandCutoffs,
+        false
+      ),
+    });
+    assert.equal(off.weightedRiskEnabled, false);
+    const fromJsonOnly = normalizeRiskEngineConfig({
+      weightedBandCutoffs: {
+        v: 2,
+        enabled: false,
+        low: 1.5,
+        medium: 2.5,
+        high: 3.5,
+        critical: 4.0,
+      },
+    });
+    assert.equal(fromJsonOnly.weightedRiskEnabled, false);
+    assert.equal(fromJsonOnly.weightedBandCutoffs.low, 1.5);
   });
 
   it("validateSimpleBands rejects fewer than 3 or non-increasing cutoffs", () => {

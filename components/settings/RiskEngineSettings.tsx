@@ -2,10 +2,11 @@
 
 /**
  * Settings → Risk Engine — per-user Simple (3–6 dynamic bands) + Weighted labels/cutoffs.
- * Soft number inputs avoid leading-zero glitches; add/remove require confirmation.
+ * Each config section is read-only until Edit; Save/Cancel/Delete are per-section (no global Save).
  */
-import { useEffect, useMemo, useState } from "react";
-import { Gauge, Plus, Save, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { Gauge, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
   MAX_SIMPLE_BANDS,
@@ -22,6 +23,7 @@ import {
   type SimpleBand,
   type WeightedRiskLevel,
 } from "@/lib/risk-engine-config";
+import { broadcastRiskEngineConfigUpdated } from "@/lib/risk-engine-config-events";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +35,27 @@ const WEIGHTED_BANDS: WeightedRiskLevel[] = [
   "SEVERE",
 ];
 
+type SectionId = "scale" | "simple" | "weighted";
+
 type ConfirmState =
   | { kind: "add" }
   | { kind: "remove"; index: number; label: string }
+  | { kind: "reset"; section: SectionId }
   | null;
+
+/**
+ * Deep-clone engine config so Cancel can restore a baseline without shared refs.
+ */
+function cloneConfig(c: RiskEngineConfig): RiskEngineConfig {
+  return {
+    likelihoodMax: c.likelihoodMax,
+    impactMax: c.impactMax,
+    simpleBands: c.simpleBands.map((b) => ({ ...b })),
+    weightedRiskEnabled: c.weightedRiskEnabled,
+    weightedBandLabels: { ...c.weightedBandLabels },
+    weightedBandCutoffs: { ...c.weightedBandCutoffs },
+  };
+}
 
 function Field({
   label,
@@ -66,27 +85,32 @@ function SectionCard({
   step,
   title,
   subtitle,
+  actions,
   children,
 }: {
   step?: string;
   title: string;
   subtitle: string;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-[var(--border)] dark:bg-[var(--card)]">
-      <div className="mb-4 flex items-start gap-3">
-        {step ? (
-          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/15 text-[12px] font-bold text-brand-700 dark:text-brand-300">
-            {step}
-          </span>
-        ) : null}
-        <div className="min-w-0">
-          <h3 className="text-[16px] font-bold tracking-tight">{title}</h3>
-          <p className="mt-1 text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-            {subtitle}
-          </p>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          {step ? (
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/15 text-[12px] font-bold text-brand-700 dark:text-brand-300">
+              {step}
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <h3 className="text-[16px] font-bold tracking-tight">{title}</h3>
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
+              {subtitle}
+            </p>
+          </div>
         </div>
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
       {children}
     </div>
@@ -134,7 +158,9 @@ function SoftNumberInput({
     }
     if (typeof min === "number") n = Math.max(min, n);
     if (typeof max === "number") n = Math.min(max, n);
-    onCommit(n);
+    flushSync(() => {
+      onCommit(n);
+    });
     setText(String(n));
   };
 
@@ -143,10 +169,12 @@ function SoftNumberInput({
       type="text"
       inputMode={integer ? "numeric" : "decimal"}
       disabled={disabled}
+      readOnly={disabled}
       placeholder={placeholder}
-      className={cn(taInput, className)}
+      className={cn(taInput, disabled && "cursor-not-allowed opacity-70", className)}
       value={text}
       onChange={(e) => {
+        if (disabled) return;
         const next = e.target.value;
         if (integer) {
           if (next === "" || /^-?\d*$/.test(next)) setText(next);
@@ -180,22 +208,18 @@ function ConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onCancel}
-      role="presentation"
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onCancel} aria-hidden />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="risk-engine-confirm-title"
-        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-theme-lg dark:border-[var(--border)] dark:bg-[var(--card)]"
-        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-[var(--border)] dark:bg-[var(--card)]"
       >
-        <h3 id="risk-engine-confirm-title" className="text-[16px] font-bold text-slate-900 dark:text-white">
+        <h4 id="risk-engine-confirm-title" className="text-[16px] font-bold text-slate-900 dark:text-white">
           {title}
-        </h3>
-        <p className="mt-2 text-[14px] leading-relaxed text-slate-600 dark:text-white/65">{body}</p>
+        </h4>
+        <p className="mt-2 text-[13px] leading-relaxed text-slate-600 dark:text-white/60">{body}</p>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={taBtnSecondary} onClick={onCancel}>
             Cancel
@@ -203,9 +227,8 @@ function ConfirmDialog({
           <button
             type="button"
             className={cn(
-              danger ? taBtnSecondary : taBtnPrimary,
-              danger &&
-                "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-200"
+              taBtnPrimary,
+              danger && "bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-500"
             )}
             onClick={onConfirm}
           >
@@ -222,6 +245,8 @@ function ConfirmDialog({
  */
 export function RiskEngineSettings() {
   const [config, setConfig] = useState<RiskEngineConfig>(DEFAULT_RISK_ENGINE_CONFIG);
+  const [baseline, setBaseline] = useState<RiskEngineConfig>(DEFAULT_RISK_ENGINE_CONFIG);
+  const [editingSection, setEditingSection] = useState<SectionId | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -229,6 +254,8 @@ export function RiskEngineSettings() {
   const [sampleScore, setSampleScore] = useState(6);
   const [weightedSample, setWeightedSample] = useState(3.6);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const configRef = useRef(config);
+  configRef.current = config;
 
   useEffect(() => {
     let cancelled = false;
@@ -236,7 +263,9 @@ export function RiskEngineSettings() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
-        setConfig(normalizeRiskEngineConfig(data.config ?? data));
+        const next = normalizeRiskEngineConfig(data.config ?? data);
+        setConfig(next);
+        setBaseline(cloneConfig(next));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -294,7 +323,6 @@ export function RiskEngineSettings() {
       config.simpleBands.map((b, i) => {
         if (i !== index) return b;
         const next = { ...b, ...patch };
-        // Top band always stays open-ended.
         if (i === config.simpleBands.length - 1) next.maxScore = null;
         return next;
       })
@@ -315,10 +343,9 @@ export function RiskEngineSettings() {
       floor + 1,
       Math.min(maxScore - 1, Math.floor((floor + maxScore) / 2) || floor + 1)
     );
-    const nextLabel = "New band";
     bands.splice(bands.length - 1, 0, {
       id: createSimpleBandId(bands),
-      label: nextLabel,
+      label: "New band",
       maxScore: suggested,
     });
     bands[bands.length - 1] = { ...top, maxScore: null };
@@ -332,49 +359,190 @@ export function RiskEngineSettings() {
     setBands(bands);
   };
 
-  const save = async () => {
-    const simpleErr = validateSimpleBands(config.simpleBands);
+  const startEdit = (section: SectionId) => {
+    if (editingSection && editingSection !== section) {
+      setConfig(cloneConfig(baseline));
+    }
+    setError(null);
+    setMessage(null);
+    setEditingSection(section);
+  };
+
+  const cancelEdit = () => {
+    setConfig(cloneConfig(baseline));
+    setEditingSection(null);
+    setError(null);
+    setMessage(null);
+  };
+
+  /**
+   * Persist current config (API requires full payload) and exit edit mode.
+   */
+  const saveSection = async (section: SectionId) => {
+    flushSync(() => {
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    });
+    const toSave = configRef.current;
+
+    if (section === "simple" || section === "scale") {
+      const simpleErr = validateSimpleBands(toSave.simpleBands);
+      if (simpleErr) {
+        setError(simpleErr);
+        return;
+      }
+    }
+    if (section === "weighted") {
+      const weightedErr = validateWeightedCutoffs(toSave.weightedBandCutoffs);
+      if (weightedErr) {
+        setError(weightedErr);
+        return;
+      }
+    }
+    // Always validate full config before PUT (API rejects invalid bands).
+    const simpleErr = validateSimpleBands(toSave.simpleBands);
     if (simpleErr) {
       setError(simpleErr);
       return;
     }
-    const weightedErr = validateWeightedCutoffs(config.weightedBandCutoffs);
+    const weightedErr = validateWeightedCutoffs(toSave.weightedBandCutoffs);
     if (weightedErr) {
       setError(weightedErr);
       return;
     }
+
     setSaving(true);
     setError(null);
     try {
       const res = await fetch("/api/risk-engine-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(toSave),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Save failed");
         return;
       }
-      setConfig(normalizeRiskEngineConfig(data.config));
-      setMessage(
-        "Saved. Open Risk list, heat map, Risk detail, or Dashboard — they reload your bands/labels."
-      );
+      const saved = normalizeRiskEngineConfig(data.config);
+      setConfig(saved);
+      setBaseline(cloneConfig(saved));
+      setEditingSection(null);
+      broadcastRiskEngineConfigUpdated();
+      setMessage("Saved. Risk list, heat map, detail, and Dashboard pick up your bands/labels automatically.");
     } finally {
       setSaving(false);
     }
   };
 
+  /**
+   * Reset one section to shipped defaults, then persist.
+   */
+  const resetSection = async (section: SectionId) => {
+    const d = DEFAULT_RISK_ENGINE_CONFIG;
+    let next = cloneConfig(configRef.current);
+    if (section === "scale") {
+      next = { ...next, likelihoodMax: d.likelihoodMax, impactMax: d.impactMax };
+    } else if (section === "simple") {
+      next = { ...next, simpleBands: d.simpleBands.map((b) => ({ ...b })) };
+    } else {
+      next = {
+        ...next,
+        weightedRiskEnabled: d.weightedRiskEnabled,
+        weightedBandLabels: { ...d.weightedBandLabels },
+        weightedBandCutoffs: { ...d.weightedBandCutoffs },
+      };
+    }
+    setConfig(next);
+    configRef.current = next;
+    setEditingSection(section);
+    setConfirm(null);
+    await saveSection(section);
+  };
+
+  const sectionActions = (section: SectionId) => {
+    const editing = editingSection === section;
+    if (editing) {
+      return (
+        <>
+          <button
+            type="button"
+            className={cn(taBtnSecondary, "inline-flex items-center gap-1.5")}
+            disabled={saving}
+            onClick={cancelEdit}
+          >
+            <X className="h-4 w-4" />
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={cn(taBtnPrimary, "inline-flex items-center gap-1.5")}
+            disabled={saving}
+            onClick={() => void saveSection(section)}
+          >
+            <Save className="h-4 w-4" />
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </>
+      );
+    }
+    return (
+      <>
+        <button
+          type="button"
+          className={cn(taBtnSecondary, "inline-flex items-center gap-1.5")}
+          disabled={saving || (editingSection !== null && editingSection !== section)}
+          onClick={() => startEdit(section)}
+        >
+          <Pencil className="h-4 w-4" />
+          Edit
+        </button>
+        <button
+          type="button"
+          className={cn(
+            taBtnSecondary,
+            "inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-300"
+          )}
+          disabled={saving || editingSection !== null}
+          onClick={() => setConfirm({ kind: "reset", section })}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </button>
+      </>
+    );
+  };
+
+  const scaleEditing = editingSection === "scale";
+  const simpleEditing = editingSection === "simple";
+  const weightedEditing = editingSection === "weighted";
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading risk engine settings…</p>;
   }
+
+  const resetCopy: Record<SectionId, { title: string; body: string }> = {
+    scale: {
+      title: "Reset Scale to defaults?",
+      body: "Likelihood max and Impact max will return to 5 × 5. This saves immediately.",
+    },
+    simple: {
+      title: "Reset Simple Risk bands to defaults?",
+      body: "Bands and cutoffs will return to LOW / MEDIUM / HIGH / CRITICAL (5 / 11 / 19). This saves immediately.",
+    },
+    weighted: {
+      title: "Reset Weighted Risk to defaults?",
+      body: "Weighted labels and cutoffs will return to shipped defaults. This saves immediately.",
+    },
+  };
 
   return (
     <section className="font-sans text-gray-900 dark:text-white" aria-labelledby="risk-engine-title">
       {confirm?.kind === "add" ? (
         <ConfirmDialog
           title="Add a risk band?"
-          body={`A new band will be inserted just below your top band (“${config.simpleBands[config.simpleBands.length - 1]?.label ?? "top"}”), with an editable Score ≤ cutoff. Existing names stay as they are. Remember to Save when you are done.`}
+          body={`A new band will be inserted just below your top band (“${config.simpleBands[config.simpleBands.length - 1]?.label ?? "top"}”), with an editable Score ≤ cutoff. Existing names stay as they are. Click Save on this section when you are done.`}
           confirmLabel="Add band"
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
@@ -386,7 +554,7 @@ export function RiskEngineSettings() {
       {confirm?.kind === "remove" ? (
         <ConfirmDialog
           title={`Remove “${confirm.label}”?`}
-          body="This band is removed from your ladder. Scores will fall into the remaining bands using their cutoffs. You can still Cancel Save by leaving the page without saving — but once you Save, Risk list and heat map use the new ladder."
+          body="This band is removed from your ladder. Click Save on this section to apply it to Risk list and heat map."
           confirmLabel="Remove band"
           danger
           onCancel={() => setConfirm(null)}
@@ -396,35 +564,34 @@ export function RiskEngineSettings() {
           }}
         />
       ) : null}
+      {confirm?.kind === "reset" ? (
+        <ConfirmDialog
+          title={resetCopy[confirm.section].title}
+          body={resetCopy[confirm.section].body}
+          confirmLabel="Reset & save"
+          danger
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => void resetSection(confirm.section)}
+        />
+      ) : null}
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-2xl">
-          <h2
-            id="risk-engine-title"
-            className="flex items-center gap-2 text-[24px] font-bold tracking-[-0.02em]"
-          >
-            <Gauge className="h-6 w-6 text-brand-600" aria-hidden />
-            Risk Engine
-          </h2>
-          <p className="mt-1 text-[14px] leading-relaxed text-slate-500 dark:text-white/55">
-            Score ={" "}
-            <span className="font-semibold text-slate-700 dark:text-white/80">
-              Likelihood × Impact
-            </span>
-            . Build {MIN_SIMPLE_BANDS}–{MAX_SIMPLE_BANDS} Simple bands with your own names and
-            cutoffs. Click <span className="font-semibold">Save changes</span> before checking Risk
-            list or heat map.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={saving}
-          className={cn(taBtnPrimary, "inline-flex items-center gap-2")}
+      <div className="mb-6 max-w-2xl">
+        <h2
+          id="risk-engine-title"
+          className="flex items-center gap-2 text-[24px] font-bold tracking-[-0.02em]"
         >
-          <Save className="h-4 w-4" />
-          {saving ? "Saving…" : "Save changes"}
-        </button>
+          <Gauge className="h-6 w-6 text-brand-600" aria-hidden />
+          Risk Engine
+        </h2>
+        <p className="mt-1 text-[14px] leading-relaxed text-slate-500 dark:text-white/55">
+          Score ={" "}
+          <span className="font-semibold text-slate-700 dark:text-white/80">
+            Likelihood × Impact
+          </span>
+          . Build {MIN_SIMPLE_BANDS}–{MAX_SIMPLE_BANDS} Simple bands with your own names and
+          cutoffs. Press <span className="font-semibold">Edit</span> on a section to change it, then{" "}
+          <span className="font-semibold">Save</span> that section.
+        </p>
       </div>
 
       {error ? (
@@ -443,6 +610,7 @@ export function RiskEngineSettings() {
           step="1"
           title="Scale"
           subtitle={`How high can Likelihood and Impact go? Max score = ${config.likelihoodMax} × ${config.impactMax} = ${maxScore}.`}
+          actions={sectionActions("scale")}
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Likelihood max" hint="Highest Likelihood on create/edit forms (2–10).">
@@ -450,6 +618,7 @@ export function RiskEngineSettings() {
                 value={config.likelihoodMax}
                 min={2}
                 max={10}
+                disabled={!scaleEditing}
                 onCommit={(n) => update("likelihoodMax", n)}
               />
             </Field>
@@ -458,6 +627,7 @@ export function RiskEngineSettings() {
                 value={config.impactMax}
                 min={2}
                 max={10}
+                disabled={!scaleEditing}
                 onCommit={(n) => update("impactMax", n)}
               />
             </Field>
@@ -468,10 +638,9 @@ export function RiskEngineSettings() {
           step="2"
           title="Simple Risk bands"
           subtitle="Lowest → highest. Each band except the top has Score ≤ cutoff. The top band catches everything above the previous cutoff (no upper score to edit)."
+          actions={sectionActions("simple")}
         >
-          <div
-            className="mb-4 overflow-x-auto overflow-hidden rounded-xl border border-slate-200 dark:border-[var(--border)]"
-          >
+          <div className="mb-4 overflow-x-auto overflow-hidden rounded-xl border border-slate-200 dark:border-[var(--border)]">
             <div
               className="min-w-[280px]"
               style={{
@@ -520,17 +689,16 @@ export function RiskEngineSettings() {
                     }
                   >
                     <input
-                      className={taInput}
+                      className={cn(taInput, !simpleEditing && "cursor-not-allowed opacity-70")}
                       value={band.label}
+                      disabled={!simpleEditing}
+                      readOnly={!simpleEditing}
                       onChange={(e) => updateBand(index, { label: e.target.value })}
                       placeholder="e.g. VERY LOW"
                     />
                   </Field>
                   {isLast ? (
-                    <Field
-                      label="Upper score"
-                      hint="Open-ended — not editable"
-                    >
+                    <Field label="Upper score" hint="Open-ended — not editable">
                       <input
                         className={cn(taInput, "cursor-not-allowed opacity-70")}
                         value="No limit"
@@ -544,6 +712,7 @@ export function RiskEngineSettings() {
                         value={band.maxScore ?? 0}
                         min={1}
                         max={1000}
+                        disabled={!simpleEditing}
                         onCommit={(n) => updateBand(index, { maxScore: n })}
                       />
                     </Field>
@@ -555,9 +724,15 @@ export function RiskEngineSettings() {
                         taBtnSecondary,
                         "inline-flex items-center gap-1.5 px-3 py-2.5 text-rose-700 disabled:opacity-40 dark:text-rose-300"
                       )}
-                      disabled={config.simpleBands.length <= MIN_SIMPLE_BANDS}
+                      disabled={
+                        !simpleEditing || config.simpleBands.length <= MIN_SIMPLE_BANDS
+                      }
                       onClick={() =>
-                        setConfirm({ kind: "remove", index, label: band.label || `Band ${index + 1}` })
+                        setConfirm({
+                          kind: "remove",
+                          index,
+                          label: band.label || `Band ${index + 1}`,
+                        })
                       }
                       aria-label={`Remove ${band.label}`}
                     >
@@ -574,7 +749,7 @@ export function RiskEngineSettings() {
             <button
               type="button"
               className={cn(taBtnSecondary, "inline-flex items-center gap-1.5")}
-              disabled={config.simpleBands.length >= MAX_SIMPLE_BANDS}
+              disabled={!simpleEditing || config.simpleBands.length >= MAX_SIMPLE_BANDS}
               onClick={() => setConfirm({ kind: "add" })}
             >
               <Plus className="h-4 w-4" />
@@ -582,12 +757,14 @@ export function RiskEngineSettings() {
             </button>
             <p className="text-[12px] text-slate-500 dark:text-white/45">
               {config.simpleBands.length} / {MAX_SIMPLE_BANDS} bands
-              {config.simpleBands.length <= MIN_SIMPLE_BANDS
-                ? ` · keep at least ${MIN_SIMPLE_BANDS}`
-                : " · new band is inserted under the top (editable Score ≤)"}
+              {!simpleEditing
+                ? " · press Edit to change bands"
+                : config.simpleBands.length <= MIN_SIMPLE_BANDS
+                  ? ` · keep at least ${MIN_SIMPLE_BANDS}`
+                  : " · new band is inserted under the top (editable Score ≤)"}
             </p>
           </div>
-          {cutoffError ? (
+          {cutoffError && simpleEditing ? (
             <p className="mt-3 text-[13px] text-rose-600 dark:text-rose-300">{cutoffError}</p>
           ) : null}
         </SectionCard>
@@ -595,7 +772,7 @@ export function RiskEngineSettings() {
         <SectionCard
           step="3"
           title="Try a score"
-          subtitle="Preview which band a Likelihood × Impact score would use (before Save)."
+          subtitle="Preview which band a Likelihood × Impact score would use (not saved)."
         >
           <div className="flex flex-wrap items-end gap-4">
             <Field label="Example score" hint={`Typical range 1–${maxScore}`}>
@@ -624,7 +801,57 @@ export function RiskEngineSettings() {
         <SectionCard
           title="Weighted Risk (System 2)"
           subtitle="Separate from Simple Risk. Fixed five levels — factor catalog unchanged."
+          actions={sectionActions("weighted")}
         >
+          <div
+            className={cn(
+              "mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3",
+              config.weightedRiskEnabled
+                ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10"
+                : "border-slate-200 bg-slate-50 dark:border-[var(--border)] dark:bg-white/5"
+            )}
+          >
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-slate-800 dark:text-white/90">
+                Feature flag · Weighted Risk
+              </p>
+              <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/45">
+                {config.weightedRiskEnabled
+                  ? "On — Dashboard and release weighted levels use these cutoffs."
+                  : "Off — cutoffs/labels are kept but System 2 is inactive."}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.weightedRiskEnabled}
+              aria-label="Weighted Risk feature flag"
+              disabled={!weightedEditing}
+              onClick={() =>
+                update("weightedRiskEnabled", !config.weightedRiskEnabled)
+              }
+              className={cn(
+                "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                config.weightedRiskEnabled
+                  ? "bg-brand-600"
+                  : "bg-slate-300 dark:bg-slate-600"
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-5 w-5 rounded-full bg-white shadow transition-transform",
+                  config.weightedRiskEnabled ? "translate-x-6" : "translate-x-1"
+                )}
+              />
+            </button>
+          </div>
+
+          <div
+            className={cn(
+              !config.weightedRiskEnabled && "pointer-events-none opacity-50"
+            )}
+            aria-disabled={!config.weightedRiskEnabled}
+          >
           <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 dark:border-[var(--border)]">
             <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-5 sm:divide-y-0 dark:divide-[var(--border)]">
               {WEIGHTED_BANDS.map((band) => {
@@ -688,6 +915,7 @@ export function RiskEngineSettings() {
                   integer={false}
                   min={0.1}
                   max={100}
+                  disabled={!weightedEditing || !config.weightedRiskEnabled}
                   onCommit={(n) =>
                     update("weightedBandCutoffs", {
                       ...config.weightedBandCutoffs,
@@ -698,7 +926,7 @@ export function RiskEngineSettings() {
               </Field>
             ))}
           </div>
-          {weightedCutoffError ? (
+          {weightedCutoffError && weightedEditing ? (
             <p className="mb-4 text-[13px] text-rose-600 dark:text-rose-300">
               {weightedCutoffError}
             </p>
@@ -711,8 +939,14 @@ export function RiskEngineSettings() {
             {(["low", "medium", "high", "critical", "severe"] as const).map((key) => (
               <Field key={key} label={`${key} label`}>
                 <input
-                  className={taInput}
+                  className={cn(
+                    taInput,
+                    (!weightedEditing || !config.weightedRiskEnabled) &&
+                      "cursor-not-allowed opacity-70"
+                  )}
                   value={config.weightedBandLabels[key]}
+                  disabled={!weightedEditing || !config.weightedRiskEnabled}
+                  readOnly={!weightedEditing || !config.weightedRiskEnabled}
                   onChange={(e) =>
                     update("weightedBandLabels", {
                       ...config.weightedBandLabels,
@@ -730,6 +964,7 @@ export function RiskEngineSettings() {
                 value={weightedSample}
                 integer={false}
                 className="w-32"
+                disabled={!config.weightedRiskEnabled}
                 onCommit={setWeightedSample}
               />
             </Field>
@@ -738,12 +973,13 @@ export function RiskEngineSettings() {
                 Result
               </p>
               <p className="mt-1 text-[16px] font-bold text-slate-900 dark:text-white">
-                {weightedPreview.label}
+                {config.weightedRiskEnabled ? weightedPreview.label : "—"}
               </p>
               <p className="text-[12px] text-slate-500 dark:text-white/45">
-                Score {weightedSample}
+                {config.weightedRiskEnabled ? `Score ${weightedSample}` : "System 2 off"}
               </p>
             </div>
+          </div>
           </div>
         </SectionCard>
       </div>

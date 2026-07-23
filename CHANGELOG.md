@@ -14,6 +14,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Risk Engine Settings edits now drive list chips, heat map, create/edit scale dropdowns, Risk detail matrix/score bar, and Dashboard risk distribution labels (not only the Settings preview).
 - Risk list / heat map showed the internal band key (`CRITICAL`) instead of the Settings display label (`EXTREME`); chips now use `simpleRiskLevelLabel` (detail hero already did).
 - Risk Engine Settings save on preview/prod: create `UserRiskEngineConfig` if missing before upsert (label rename like CRITICAL → EXTREME was valid; write failed when the Vercel DB never got that migration). Clearer API error when the table/model is still unavailable.
+- Risk Engine Settings: per-section Edit / Save / Cancel / Delete (reset to defaults). Fields stay read-only until Edit; universal Save removed. Weighted Risk (System 2) has an On/Off feature flag (persisted with cutoffs JSON; Dashboard severe-weighted highlights respect it).
+- Risk Engine PUT validates bands before normalize so invalid cutoffs return 400 instead of silently wiping to shipped defaults; SoftNumberInput commits flush before Save; Settings save broadcasts so open Risk/Detail views refetch; L/I list filters accept 1–10; Dashboard `?band=` deep-links filter Risk list by score range; heat map copy/palette follow dynamic scale/bands.
 - Vercel production typecheck: force-clean Prisma client generate before `next build` and pin `@releasedesk/database` TS paths to the vendored generated client so new models (`Service`, `UserRiskEngineConfig`, etc.) are never typed from a stale cached client.
 
 ### Added
