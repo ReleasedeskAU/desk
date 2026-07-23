@@ -23,12 +23,6 @@ const labelsSimple = z.object({
   critical: z.string().trim().min(1).max(40),
 });
 
-const cutoffsSimple = z.object({
-  low: z.number().finite(),
-  medium: z.number().finite(),
-  high: z.number().finite(),
-});
-
 const labelsWeighted = z.object({
   low: z.string().trim().min(1).max(40),
   medium: z.string().trim().min(1).max(40),
@@ -37,21 +31,23 @@ const labelsWeighted = z.object({
   severe: z.string().trim().min(1).max(40),
 });
 
-const cutoffsWeighted = z.object({
-  low: z.number().finite(),
-  medium: z.number().finite(),
-  high: z.number().finite(),
-  critical: z.number().finite(),
-});
-
 const putSchema = z
   .object({
-    likelihoodMax: z.number().int().min(2).max(10),
-    impactMax: z.number().int().min(2).max(10),
+    likelihoodMax: z.coerce.number().int().min(2).max(10),
+    impactMax: z.coerce.number().int().min(2).max(10),
     simpleBandLabels: labelsSimple,
-    simpleBandCutoffs: cutoffsSimple,
+    simpleBandCutoffs: z.object({
+      low: z.coerce.number().finite(),
+      medium: z.coerce.number().finite(),
+      high: z.coerce.number().finite(),
+    }),
     weightedBandLabels: labelsWeighted,
-    weightedBandCutoffs: cutoffsWeighted,
+    weightedBandCutoffs: z.object({
+      low: z.coerce.number().finite(),
+      medium: z.coerce.number().finite(),
+      high: z.coerce.number().finite(),
+      critical: z.coerce.number().finite(),
+    }),
   })
   .strict();
 
@@ -95,9 +91,31 @@ export async function PUT(req: Request) {
     const saved = await saveRiskEngineConfig(user!.id, config);
     return NextResponse.json({ config: saved });
   } catch (err) {
-    console.error("[risk-engine-config] save failed", {
-      name: err instanceof Error ? err.name : "UnknownError",
-    });
-    return NextResponse.json({ error: "Failed to save risk engine config" }, { status: 500 });
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: string }).code ?? "")
+        : "";
+    const message = err instanceof Error ? err.message : "UnknownError";
+    console.error("[risk-engine-config] save failed", { code, name: message.slice(0, 120) });
+
+    // P2021 = table does not exist; client missing model often surfaces as TypeError.
+    if (code === "P2021" || /does not exist|userRiskEngineConfig/i.test(message)) {
+      return NextResponse.json(
+        {
+          error:
+            "Risk engine settings table is missing on this database. Run migrations (node scripts/run-db-migrate.mjs) against the DATABASE_URL used by this Vercel deployment, then retry Save.",
+        },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json(
+      {
+        error:
+          process.env.NODE_ENV === "production"
+            ? "Failed to save risk engine config"
+            : `Failed to save risk engine config: ${message.slice(0, 180)}`,
+      },
+      { status: 500 }
+    );
   }
 }

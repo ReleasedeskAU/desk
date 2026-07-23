@@ -1,8 +1,12 @@
 /**
  * Load / upsert UserRiskEngineConfig for a Clerk user.
  * Missing row → shipped defaults (not an error).
+ *
+ * Save ensures the table exists (CREATE IF NOT EXISTS) so preview/prod DBs
+ * that never ran the migration still accept Settings → Risk Engine writes.
  */
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@releasedesk/database";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
   normalizeRiskEngineConfig,
@@ -10,6 +14,33 @@ import {
   validateSimpleCutoffs,
   validateWeightedCutoffs,
 } from "@/lib/risk-engine-config";
+
+/**
+ * Idempotent DDL so Settings save works even when migrate deploy was skipped
+ * on the target Neon (common for preview DBs).
+ * @sideEffects May CREATE UserRiskEngineConfig + unique index.
+ */
+async function ensureUserRiskEngineConfigTable(): Promise<void> {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "UserRiskEngineConfig" (
+      "id" TEXT NOT NULL,
+      "clerkUserId" TEXT NOT NULL,
+      "likelihoodMax" INTEGER NOT NULL DEFAULT 5,
+      "impactMax" INTEGER NOT NULL DEFAULT 5,
+      "simpleBandLabels" JSONB NOT NULL,
+      "simpleBandCutoffs" JSONB NOT NULL,
+      "weightedBandLabels" JSONB NOT NULL,
+      "weightedBandCutoffs" JSONB NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      CONSTRAINT "UserRiskEngineConfig_pkey" PRIMARY KEY ("id")
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "UserRiskEngineConfig_clerkUserId_key"
+      ON "UserRiskEngineConfig"("clerkUserId")
+  `);
+}
 
 /**
  * Load the user's risk engine config, or defaults when no row exists.
@@ -37,8 +68,8 @@ export async function loadRiskEngineConfig(
  * @param clerkUserId - Clerk user id.
  * @param config - Full validated config to persist.
  * @returns Saved normalized config.
- * @throws Re-throws Prisma errors after validation.
- * @sideEffects Upserts UserRiskEngineConfig.
+ * @throws Re-throws Prisma errors after validation / ensure-table.
+ * @sideEffects May create table; upserts UserRiskEngineConfig.
  */
 export async function saveRiskEngineConfig(
   clerkUserId: string,
@@ -49,24 +80,27 @@ export async function saveRiskEngineConfig(
   const weightedErr = validateWeightedCutoffs(config.weightedBandCutoffs);
   if (weightedErr) throw new Error(weightedErr);
 
+  await ensureUserRiskEngineConfigTable();
+
+  const json = {
+    simpleBandLabels: config.simpleBandLabels as Prisma.InputJsonValue,
+    simpleBandCutoffs: config.simpleBandCutoffs as Prisma.InputJsonValue,
+    weightedBandLabels: config.weightedBandLabels as Prisma.InputJsonValue,
+    weightedBandCutoffs: config.weightedBandCutoffs as Prisma.InputJsonValue,
+  };
+
   const row = await prisma.userRiskEngineConfig.upsert({
     where: { clerkUserId },
     create: {
       clerkUserId,
       likelihoodMax: config.likelihoodMax,
       impactMax: config.impactMax,
-      simpleBandLabels: config.simpleBandLabels,
-      simpleBandCutoffs: config.simpleBandCutoffs,
-      weightedBandLabels: config.weightedBandLabels,
-      weightedBandCutoffs: config.weightedBandCutoffs,
+      ...json,
     },
     update: {
       likelihoodMax: config.likelihoodMax,
       impactMax: config.impactMax,
-      simpleBandLabels: config.simpleBandLabels,
-      simpleBandCutoffs: config.simpleBandCutoffs,
-      weightedBandLabels: config.weightedBandLabels,
-      weightedBandCutoffs: config.weightedBandCutoffs,
+      ...json,
     },
   });
   return normalizeRiskEngineConfig(row);
