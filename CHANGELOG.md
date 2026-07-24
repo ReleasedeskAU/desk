@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Removed Settings → Risk Factors (add form + bulk import). CRUD lives only on the sidebar Risk Factors tab (`/risk-factors`).
 - Risk Factors browse (`/risk-factors`): factors grouped under collapsible category sections with jump chips, per-category counts/weights, and “Add in category” — no more flat table repeating the category on every row.
 - Dynamic Simple Risk bands (3–6): Settings can add/remove bands; ordered `{ id, label, maxScore }` drives list chips, heat map legend, Risk detail, and Dashboard distribution. Legacy 4-band JSON still upgrades on load.
 - Risk Engine Settings UI: stepped Scale → Score bands → Band names → Try a score layout with live band ladder so cutoffs/labels are self-explanatory (e.g. CRITICAL → EXTREME).

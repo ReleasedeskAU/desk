@@ -13,7 +13,6 @@ import {
   Package,
   Server,
   UserCircle,
-  AlertTriangle,
   Palette,
   Gauge,
 } from "lucide-react";
@@ -25,7 +24,6 @@ import { DepartmentsTab } from "@/components/settings/master-data/DepartmentsTab
 import { ApplicationsTab } from "@/components/settings/master-data/ApplicationsTab";
 import { EnvironmentsTab } from "@/components/settings/master-data/EnvironmentsTab";
 import { UsersTab } from "@/components/settings/master-data/UsersTab";
-import { RiskFactorsTab } from "@/components/settings/master-data/RiskFactorsTab";
 
 const VALID_TABS = new Set([
   "general",
@@ -36,7 +34,6 @@ const VALID_TABS = new Set([
   "applications",
   "environments",
   "users",
-  "risk-factors",
   "notifications",
   "integrations",
   "security",
@@ -76,13 +73,12 @@ function SettingsPageInner() {
     { id: "applications", label: "Applications", icon: Package },
     { id: "environments", label: "Environments", icon: Server },
     { id: "users", label: "Users", icon: UserCircle },
-    { id: "risk-factors", label: "Risk Factors", icon: AlertTriangle },
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "integrations", label: "Integrations", icon: Plug },
     { id: "security", label: "Security", icon: Shield },
   ];
 
-  const masterDataTabs = new Set(["departments", "applications", "environments", "users", "risk-factors"]);
+  const masterDataTabs = new Set(["departments", "applications", "environments", "users"]);
 
   return (
     <div className="max-w-[1200px] pb-24 font-sans">
@@ -128,7 +124,6 @@ function SettingsPageInner() {
           {activeTab === "applications" && <ApplicationsTab />}
           {activeTab === "environments" && <EnvironmentsTab />}
           {activeTab === "users" && <UsersTab />}
-          {activeTab === "risk-factors" && <RiskFactorsTab />}
 
           {!masterDataTabs.has(activeTab) &&
             activeTab !== "team" &&

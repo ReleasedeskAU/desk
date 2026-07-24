@@ -4,7 +4,7 @@
  * Risk Factors master list — grouped by category so factors are easy to scan.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, Layers } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Layers, Pencil, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { type SortDir } from "@/lib/master-data/table-utils";
 import { useTableFilters } from "@/hooks/useTableFilters";
@@ -32,7 +32,6 @@ import {
   MasterDataError,
   MasterDataLoading,
   MasterDataTableShell,
-  RowActionsMenu,
 } from "@/components/master-data/shared";
 
 export type RiskFactorRow = {
@@ -512,10 +511,32 @@ export function RiskFactorsBrowse() {
                                 </td>
                               )}
                               <td className="px-3 py-2.5 text-right">
-                                <RowActionsMenu
-                                  onEdit={() => openEdit(row)}
-                                  onDelete={() => void handleDelete(row)}
-                                />
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      taBtnSecondary,
+                                      "inline-flex h-8 items-center gap-1 px-2.5 text-[12px]"
+                                    )}
+                                    onClick={() => openEdit(row)}
+                                    aria-label={`Edit ${row.factorName}`}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      taBtnSecondary,
+                                      "inline-flex h-8 items-center gap-1 px-2.5 text-[12px] text-rose-700 dark:text-rose-300"
+                                    )}
+                                    onClick={() => void handleDelete(row)}
+                                    aria-label={`Delete ${row.factorName}`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Delete
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}

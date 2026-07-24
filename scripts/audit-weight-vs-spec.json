@@ -1,0 +1,393 @@
+{
+  "specFactorCount": 44,
+  "specWeightSum": 0.9920000000000005,
+  "dbTotal": 76,
+  "dbActive": 76,
+  "activeWeightSum": 8.146,
+  "exactWeightMatches": 40,
+  "weightMismatches": [
+    {
+      "id": "cmr4wu1y10016x88o103h7mr1",
+      "category": "Business Criticality",
+      "factorName": "Revenue Impact",
+      "dbWeight": 1,
+      "specWeight": 0.01,
+      "via": "exact",
+      "active": true,
+      "div100": 0.01,
+      "div100EqualsSpec": true
+    },
+    {
+      "id": "cmr4wu3uq0017x88oxdfu6wrd",
+      "category": "Business Criticality",
+      "factorName": "Blast Radius",
+      "dbWeight": 1,
+      "specWeight": 0.01,
+      "via": "exact",
+      "active": true,
+      "div100": 0.01,
+      "div100EqualsSpec": true
+    },
+    {
+      "id": "cmrd8ouy5002vx84snwclj422",
+      "category": "Business Criticality",
+      "factorName": "User Blast Radius",
+      "dbWeight": 1,
+      "specWeight": 0.01,
+      "via": "alias->Business Criticality|Blast Radius",
+      "active": true,
+      "div100": 0.01,
+      "div100EqualsSpec": true
+    },
+    {
+      "id": "cmrd8ohqc0029x84sszy6atba",
+      "category": "Data Migration",
+      "factorName": "Migration Required",
+      "dbWeight": 1,
+      "specWeight": 0.015,
+      "via": "alias->Data Migration|Migration Req",
+      "active": true,
+      "div100": 0.01,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmrd8oi4q002ax84sutom4mg8",
+      "category": "Data Migration",
+      "factorName": "Backup Restore Tested",
+      "dbWeight": 0.015,
+      "specWeight": 0.01,
+      "via": "alias->Data Migration|Backup Tested",
+      "active": true,
+      "div100": 0.00015,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmrd8old4002ix84sxtpekl2x",
+      "category": "Env & Dependencies",
+      "factorName": "Dependency Count",
+      "dbWeight": 0.02,
+      "specWeight": 0.03,
+      "via": "alias->Env & Dependencies|Dep Count",
+      "active": true,
+      "div100": 0.0002,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmr4wtxza0014x88oo2xyp4k3",
+      "category": "Release History",
+      "factorName": "BC Tested",
+      "dbWeight": 0.015,
+      "specWeight": 0.008,
+      "via": "exact",
+      "active": true,
+      "div100": 0.00015,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmr4wtu240012x88opwmy67f9",
+      "category": "Release History",
+      "factorName": "MTBF Days",
+      "dbWeight": 0.5,
+      "specWeight": 0.008,
+      "via": "exact",
+      "active": true,
+      "div100": 0.005,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmr4wsld3000fx88ol0cckan4",
+      "category": "Security & Compliance",
+      "factorName": "Compliance Gate",
+      "dbWeight": 0.03,
+      "specWeight": 0.02,
+      "via": "exact",
+      "active": true,
+      "div100": 0.0003,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmr4wsbnb000ax88o1lkj6qgv",
+      "category": "Testing Quality",
+      "factorName": "UAT Defects",
+      "dbWeight": 0.04,
+      "specWeight": 0.02,
+      "via": "exact",
+      "active": true,
+      "div100": 0.0004,
+      "div100EqualsSpec": false
+    },
+    {
+      "id": "cmr4wsdjq000bx88oswd6hnlb",
+      "category": "Testing Quality",
+      "factorName": "UAT Sign-off",
+      "dbWeight": 0.02,
+      "specWeight": 0.03,
+      "via": "exact",
+      "active": true,
+      "div100": 0.0002,
+      "div100EqualsSpec": false
+    }
+  ],
+  "unmatched": [
+    {
+      "id": "cmrd8okyj002hx84s2iaeg9mf",
+      "category": "Env & Dependencies",
+      "factorName": "Drift Issues",
+      "weight": 0.03,
+      "active": true
+    },
+    {
+      "id": "cmrd8on8m002lx84sh0rw80bq",
+      "category": "Operational Readiness",
+      "factorName": "Go-Live Checklist %",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8onmg002mx84s264goqz0",
+      "category": "Operational Readiness",
+      "factorName": "Change Freeze Impact",
+      "weight": 0.015,
+      "active": true
+    },
+    {
+      "id": "cmrd8oo0d002nx84suejd2kv0",
+      "category": "Operational Readiness",
+      "factorName": "Vendor Coordination",
+      "weight": 0.5,
+      "active": true
+    },
+    {
+      "id": "cmrd8oof2002ox84sq8n9gl83",
+      "category": "Operational Readiness",
+      "factorName": "Rollback Time RTO",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8ooup002px84sx5fao8qw",
+      "category": "Operational Readiness",
+      "factorName": "Deployment Automation %",
+      "weight": 0.015,
+      "active": true
+    },
+    {
+      "id": "cmrd8opa2002qx84s5yo1ea8q",
+      "category": "Performance & Scalability",
+      "factorName": "Load Test Status",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8oqsj002rx84sygx3ka0a",
+      "category": "Release History",
+      "factorName": "Rollback Flow Tested",
+      "weight": 0.015,
+      "active": true
+    },
+    {
+      "id": "cmrd8or73002sx84sjozdutcc",
+      "category": "Release History",
+      "factorName": "Previous Failures",
+      "weight": 0.5,
+      "active": true
+    },
+    {
+      "id": "cmrd8orta002tx84sv719fzi2",
+      "category": "Release History",
+      "factorName": "Release Cadence Dev",
+      "weight": 0.5,
+      "active": true
+    },
+    {
+      "id": "cmrd8ot5l002ux84srwvemcns",
+      "category": "Release History",
+      "factorName": "Recent Incidents",
+      "weight": 0.5,
+      "active": true
+    },
+    {
+      "id": "cmrd8oixp002cx84sm876c9y2",
+      "category": "Resource & Schedule",
+      "factorName": "Testers Allocated",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8ojbp002dx84sixiiosmo",
+      "category": "Resource & Schedule",
+      "factorName": "Key Staff Availability",
+      "weight": 0.03,
+      "active": true
+    },
+    {
+      "id": "cmrd8ojpl002ex84syxdkaz26",
+      "category": "Resource & Schedule",
+      "factorName": "Days Until Release",
+      "weight": 0.04,
+      "active": true
+    },
+    {
+      "id": "cmrd8ok3q002fx84sc4xiak2s",
+      "category": "Resource & Schedule",
+      "factorName": "Downstream Releases",
+      "weight": 0.03,
+      "active": true
+    },
+    {
+      "id": "cmrd8okij002gx84sgxx4ne6a",
+      "category": "Resource & Schedule",
+      "factorName": "Overlapping Releases",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8ogk10027x84sk5pnikgz",
+      "category": "Security & Compliance",
+      "factorName": "Critical/High Vulns",
+      "weight": 0.03,
+      "active": true
+    },
+    {
+      "id": "cmrd8ogy80028x84s03812lfy",
+      "category": "Security & Compliance",
+      "factorName": "Pen Test Sign-off",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8o9gm0020x84sk0mfbe4i",
+      "category": "Technical Complexity",
+      "factorName": "Code Churn (LOC)",
+      "weight": 0.03,
+      "active": true
+    },
+    {
+      "id": "cmrd8oa4s0021x84s9ydxl4hy",
+      "category": "Technical Complexity",
+      "factorName": "DB Schema Changes",
+      "weight": 0.05,
+      "active": true
+    },
+    {
+      "id": "cmrd8oanq0022x84sn7v2qykg",
+      "category": "Technical Complexity",
+      "factorName": "API Contract Changes",
+      "weight": 0.04,
+      "active": true
+    },
+    {
+      "id": "cmrd8ob5y0023x84samdaz8vq",
+      "category": "Technical Complexity",
+      "factorName": "New Technology Stack",
+      "weight": 0.02,
+      "active": true
+    },
+    {
+      "id": "cmrd8ocd70024x84sscdvrbyu",
+      "category": "Testing Quality",
+      "factorName": "Test Execution Days",
+      "weight": 0.03,
+      "active": true
+    },
+    {
+      "id": "cmrd8ocyz0025x84s86n2f2rh",
+      "category": "Testing Quality",
+      "factorName": "Bugs Found (Test)",
+      "weight": 0.04,
+      "active": true
+    },
+    {
+      "id": "cmrd8oeau0026x84srci0g1eg",
+      "category": "Testing Quality",
+      "factorName": "UAT Duration Days",
+      "weight": 0.03,
+      "active": true
+    }
+  ],
+  "byCategory": {
+    "Technical Complexity": {
+      "activeCount": 9,
+      "activeSum": 0.32,
+      "mismatchCount": 0,
+      "unmatchedActiveCount": 4,
+      "hasPctOrWeightIssue": false
+    },
+    "Testing Quality": {
+      "activeCount": 11,
+      "activeSum": 0.36,
+      "mismatchCount": 2,
+      "unmatchedActiveCount": 3,
+      "hasPctOrWeightIssue": false
+    },
+    "Security & Compliance": {
+      "activeCount": 5,
+      "activeSum": 0.14,
+      "mismatchCount": 1,
+      "unmatchedActiveCount": 2,
+      "hasPctOrWeightIssue": false
+    },
+    "Data Migration": {
+      "activeCount": 6,
+      "activeSum": 1.07,
+      "mismatchCount": 2,
+      "unmatchedActiveCount": 0,
+      "hasPctOrWeightIssue": true
+    },
+    "Resource & Schedule": {
+      "activeCount": 10,
+      "activeSum": 0.28,
+      "mismatchCount": 0,
+      "unmatchedActiveCount": 5,
+      "hasPctOrWeightIssue": false
+    },
+    "Env & Dependencies": {
+      "activeCount": 8,
+      "activeSum": 0.18,
+      "mismatchCount": 1,
+      "unmatchedActiveCount": 1,
+      "hasPctOrWeightIssue": false
+    },
+    "Operational Readiness": {
+      "activeCount": 11,
+      "activeSum": 0.67,
+      "mismatchCount": 0,
+      "unmatchedActiveCount": 5,
+      "hasPctOrWeightIssue": true
+    },
+    "Performance & Scalability": {
+      "activeCount": 3,
+      "activeSum": 0.06,
+      "mismatchCount": 0,
+      "unmatchedActiveCount": 1,
+      "hasPctOrWeightIssue": false
+    },
+    "Release History": {
+      "activeCount": 10,
+      "activeSum": 2.066,
+      "mismatchCount": 2,
+      "unmatchedActiveCount": 4,
+      "hasPctOrWeightIssue": true
+    },
+    "Business Criticality": {
+      "activeCount": 3,
+      "activeSum": 3,
+      "mismatchCount": 3,
+      "unmatchedActiveCount": 0,
+      "hasPctOrWeightIssue": true
+    }
+  },
+  "categoriesWithAnyIssue": [
+    "Technical Complexity",
+    "Testing Quality",
+    "Security & Compliance",
+    "Data Migration",
+    "Resource & Schedule",
+    "Env & Dependencies",
+    "Operational Readiness",
+    "Performance & Scalability",
+    "Release History",
+    "Business Criticality"
+  ],
+  "categoriesClean": []
+}

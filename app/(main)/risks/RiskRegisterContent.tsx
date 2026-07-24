@@ -17,7 +17,7 @@ import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow }
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { cn, formatDate } from "@/lib/utils";
-import { getRiskLevel, riskLevelChipClass, type RiskLevel } from "@/lib/risk-level";
+import { getRiskLevel, type RiskLevel } from "@/lib/risk-level";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
   simpleBandScoreRanges,
@@ -879,12 +879,6 @@ export function RiskHeatMapSection({
   onOwnerSelect: (ownerId: string) => void;
 }) {
   const { config: riskConfig } = useRiskEngineConfig();
-  // #region agent log
-  useEffect(() => {
-    const sampleScores = [1, 6, 12, 20, 25];
-    fetch('http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'496e00'},body:JSON.stringify({sessionId:'496e00',runId:'pre-fix',hypothesisId:'H4',location:'RiskRegisterContent.tsx:RiskHeatMapSection',message:'Risk heat map using config',data:{bands:riskConfig.simpleBands.map((b)=>({id:b.id,label:b.label,maxScore:b.maxScore})),sampleClassifications:sampleScores.map((s)=>({score:s,id:getRiskLevel(s,riskConfig),label:simpleRiskLevelLabel(getRiskLevel(s,riskConfig),riskConfig)})),likelihoodMax:riskConfig.likelihoodMax,impactMax:riskConfig.impactMax},timestamp:Date.now()})}).catch(()=>{});
-  }, [riskConfig]);
-  // #endregion
   const [view, setView] = useState<HeatMapView>("matrix");
   const dark = useIsDarkMode();
   const grid = useMemo(
@@ -1115,8 +1109,34 @@ export function RiskHeatMapSection({
   );
 }
 
+function RiskScoreChip({
+  score,
+  config,
+  dark,
+}: {
+  score: number;
+  config: RiskEngineConfig;
+  dark: boolean;
+}) {
+  /** Inline palette colors — same stops as the heat map; avoids purged Tailwind chip classes. */
+  const band = getRiskLevel(score, config);
+  const pal = bandPaletteFor(band, config);
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold"
+      style={{
+        backgroundColor: dark ? pal.darkSolid : pal.solid,
+        color: dark ? pal.darkText : pal.text,
+      }}
+    >
+      {score} · {simpleRiskLevelLabel(band, config)}
+    </span>
+  );
+}
+
 export default function RiskRegisterContent() {
   const { config: riskConfig } = useRiskEngineConfig();
+  const isDark = useIsDarkMode();
   const {
     rows: risks,
     loading,
@@ -1467,21 +1487,7 @@ export default function RiskRegisterContent() {
                       )}
                       {isColumnVisible("riskScore") && (
                         <td className={`${tableCell} whitespace-nowrap`}>
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold",
-                              riskLevelChipClass(
-                                getRiskLevel(r.riskScore, riskConfig),
-                                riskConfig
-                              )
-                            )}
-                          >
-                            {r.riskScore} ·{" "}
-                            {simpleRiskLevelLabel(
-                              getRiskLevel(r.riskScore, riskConfig),
-                              riskConfig
-                            )}
-                          </span>
+                          <RiskScoreChip score={r.riskScore} config={riskConfig} dark={isDark} />
                         </td>
                       )}
                       {isColumnVisible("affectedArea") && (

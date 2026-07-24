@@ -41,8 +41,12 @@ export const RISK_BAND_CHIP_BY_INDEX = [
 
 /**
  * Chip class for a band id using relative order in config (maps onto a 6-stop palette).
+ * Prefer inline palette colors in UI (see RiskScoreChip) when contrast must not depend
+ * on Tailwind scanning `lib/` — these utilities are easy to purge.
+ *
  * @param bandId - Band id from getRiskLevel.
  * @param config - Engine config with simpleBands.
+ * @returns Tailwind class string for background + text.
  */
 export function riskLevelChipClass(
   bandId: RiskLevel,
