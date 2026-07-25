@@ -12,11 +12,30 @@ interface GlobalSearchProps {
   onClose: () => void;
 }
 
-const icons = {
+const icons: Record<string, typeof Package> = {
   release: Package,
   ticket: Ticket,
   change: FileText,
   template: Sparkles,
+  booking: Package,
+  risk: FileText,
+  blocker: FileText,
+  drift: FileText,
+  approval: FileText,
+  incident: FileText,
+  conflict: FileText,
+  dependency: FileText,
+  leave: FileText,
+  alert: FileText,
+  maintenance: FileText,
+  flow: FileText,
+  application: Package,
+  department: Package,
+  user: Ticket,
+  environment: Package,
+  version: Package,
+  "risk-factor": FileText,
+  status: FileText,
 };
 
 export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
@@ -119,7 +138,9 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                 <p className="px-4 pt-3 pb-1 text-xs text-brand-600 font-medium">{interpreted}</p>
               )}
               {merged.map((r) => {
-              const Icon = r.id.startsWith("tpl-") ? icons.template : icons[r.type];
+              const Icon = r.id.startsWith("tpl-")
+                ? icons.template
+                : icons[r.type] ?? icons.change;
               return (
                 <button
                   key={r.id}

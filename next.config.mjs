@@ -184,8 +184,10 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
+            // microphone=(self): required for Gemini Live voice capture on same origin.
+            // camera/geolocation stay disabled. Empty microphone=() blocks getUserMedia even when Chrome UI says Allow.
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(), microphone=(self), geolocation=()",
           },
           {
             key: "Strict-Transport-Security",

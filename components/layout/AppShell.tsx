@@ -7,6 +7,7 @@ import { Backdrop } from "./Backdrop";
 import { NavigationHistoryTrail } from "./NavigationHistoryTrail";
 import { ChatProvider } from "@/components/chat/ChatProvider";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { VoiceMic } from "@/components/voice/VoiceMic";
 import { PageDocumentationProvider } from "@/context/PageDocumentationContext";
 import { NewUserWelcomeModal } from "@/components/help/HelpCenterModal";
 import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
@@ -37,6 +38,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             {children}
           </main>
           <ChatPanel />
+          {/* Voice lives in the shell so navigate_to does not tear down the Live session. */}
+          <VoiceMic />
           <NewUserWelcomeModal />
         </div>
       </div>

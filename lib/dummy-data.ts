@@ -404,7 +404,30 @@ export const freezeWindows: FreezeWindow[] = [
 
 export interface SearchResult {
   id: string;
-  type: "release" | "ticket" | "change";
+  /** Domain entity kind, or legacy ticket/change for agents/connectors/templates. */
+  type:
+    | "release"
+    | "ticket"
+    | "change"
+    | "risk"
+    | "application"
+    | "blocker"
+    | "drift"
+    | "approval"
+    | "incident"
+    | "booking"
+    | "conflict"
+    | "dependency"
+    | "leave"
+    | "alert"
+    | "maintenance"
+    | "flow"
+    | "department"
+    | "user"
+    | "environment"
+    | "version"
+    | "risk-factor"
+    | "status";
   label: string;
   sublabel: string;
   href: string;

@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Voice Phase 3: `propose_action` / `confirm_action` for exactly two writes — `set_approval_decision` (`PATCH /api/approvals/[id]` + `patchApprovalSchema`) and `acknowledge_alert` (`PATCH /api/monitoring-alerts/[id]` + `patchMonitoringAlertSchema`). Editor RBAC at propose and confirm; short-lived one-time `actionId` store; hard same-batch gate so compressed “yes, approve now” cannot execute; audit tagged `source:voice`. Amber transcript treatment for proposals. `record_release_decision` deferred (no Zod on events route).
+- Voice Phase 2: `get_summary` tool (manifest now 3 tools) answers spoken questions about a record via read-only `POST /api/copilot/voice/summary`, reusing Conversation Agent `lookupReleaseByCode` / same Prisma context (`lib/conversation-entity-summary.ts`) — no writes; ambiguous “tell me about…” defaults to summary before navigate.
+- Voice get_summary UX: system-instruction nudge to speak a short “Let me check that release” before `entityType=release` lookups (slow cold path); no filler for faster entity types. Transcript strip echoes the line if the model skipped pre-tool audio (`gemini-3.1-flash-live-preview` has no NON_BLOCKING tool audio).
+- Voice / GlobalSearch entity coverage expansion: `searchAll` + `GET /api/search` now index seed-backed domain entities (bookings `ENV-0001`, risks, blockers, drifts, approvals, incidents, conflicts, dependencies, leaves, alerts, maintenance, flows, depts/apps/users, etc.); `search_entity.entityType` enum + spoken ordinals/`env 001` normalization aligned; route allowlist already matched App Router product pages (auth/dev excluded).
+- Voice Phase 0 plumbing (`feature/voice-navigation`): `POST /api/copilot/voice/session` mints Gemini Live ephemeral tokens (server-side `GEMINI_API_KEY` only) with frozen `navigate_to` / `search_entity` toolManifest, per-user mint cooldown, and `lib/voice/client.ts` mic + WebSocket lifecycle (no tool handlers / mic UI yet).
+- Permissions-Policy now allows `microphone=(self)` so browser voice capture works (was `microphone=()`, which denied getUserMedia even when the site toggle was on).
+- Voice Phase 1: `navigate_to` / `search_entity` handlers (allowlist from `lib/navigation.ts` + detail patterns; search reuses GlobalSearch’s `searchAll` + `GET /api/search`), tool dispatch in `VoiceLiveClient`, and Dashboard `VoiceMic` with live transcript strip (no DB writes; session route unchanged).
+- VoiceMic mounted in `AppShell` (not Dashboard-only) so the Live session and transcript survive `navigate_to` client route changes.
+- Voice navigate_to: search results expose `path`/`href` for navigation and `refId` for speech only; reject invented `/releases/REL-*` and verify detail entities exist before `router.push` (no silent allowlist false-success).
+- Voice search understands human phrasing: filler strip, spoken versions, and ordinals (`first release`, `rel 01`) so detail pages open without memorizing route ids.
+
 ### Changed
 
 - Removed Settings → Risk Factors (add form + bulk import). CRUD lives only on the sidebar Risk Factors tab (`/risk-factors`).

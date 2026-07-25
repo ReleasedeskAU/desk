@@ -2,6 +2,7 @@ import { agents, connectors, releases, type SearchResult } from "./dummy-data";
 import { buildEnvironmentDesk } from "./enterprise-env-data";
 import { QUICK_START_TEMPLATES } from "./quick-start-templates";
 import { connectorSlug } from "./connectors";
+import { searchSeedCatalog } from "./search-seed-catalog";
 
 const deskSearchIndex = buildEnvironmentDesk(releases).versions.map((v) => ({
   application: v.application,
@@ -9,6 +10,13 @@ const deskSearchIndex = buildEnvironmentDesk(releases).versions.map((v) => ({
   prod: v.prod,
 }));
 
+const LOCAL_SEARCH_CAP = 24;
+
+/**
+ * Local GlobalSearch / voice search index (demo catalog + seed-data catalogs).
+ * @param query - User search string.
+ * @returns Deduped SearchResult rows (capped).
+ */
 export function searchAll(query: string): SearchResult[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
@@ -106,7 +114,7 @@ export function searchAll(query: string): SearchResult[] {
   ) {
     results.push({
       id: "env-desk",
-      type: "change",
+      type: "environment",
       label: "Environment Desk",
       sublabel: "Timeline · booking · versions · topology",
       href: "/environments",
@@ -121,13 +129,16 @@ export function searchAll(query: string): SearchResult[] {
     ) {
       results.push({
         id: `env-app-${v.application}`,
-        type: "release",
+        type: "version",
         label: `${v.application} — ${v.prod} in PROD`,
         sublabel: "Environment Desk · version matrix",
         href: "/environments",
       });
     }
   });
+
+  // Seed-data catalogs (ENV-0001, RSK-001, …) — same coverage expansion as voice search_entity.
+  results.push(...searchSeedCatalog(query, LOCAL_SEARCH_CAP));
 
   const seen = new Set<string>();
   return results
@@ -136,5 +147,5 @@ export function searchAll(query: string): SearchResult[] {
       seen.add(r.id);
       return true;
     })
-    .slice(0, 12);
+    .slice(0, LOCAL_SEARCH_CAP);
 }
