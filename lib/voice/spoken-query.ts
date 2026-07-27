@@ -103,6 +103,26 @@ export function normalizeSpokenVersion(q: string): string {
 }
 
 /**
+ * Map spoken release ids to REL-0001 form.
+ * “REL-0001” / “rel-0001” / “rel 0001” → REL-0001.
+ * Leaves “rel 01” / “release 1” for the ordinal parser (“first/second”).
+ * @param raw - Spoken fragment after filler strip.
+ */
+export function normalizeSpokenReleaseCode(raw: string): string | null {
+  const q = raw.trim();
+  if (!q) return null;
+  const m = q.match(/^rel(?:ease)?[\s-]*(\d{1,4})$/i);
+  if (!m) return null;
+  const digits = m[1]!;
+  const compact = q.replace(/\s+/g, "");
+  // Hyphenated REL-… or 3–4 digit spoken codes are business ids, not ordinals.
+  if (!/^rel(ease)?-\d/i.test(compact) && digits.length < 3) {
+    return null;
+  }
+  return `REL-${String(Number(digits)).padStart(4, "0")}`;
+}
+
+/**
  * Parse ordinal intents: "first release", "2nd risk", "release 1", "rel 01", "first booking".
  * @param raw - Original tool query (may include filler).
  * @returns Ordinal intent or plain text intent.
@@ -115,6 +135,12 @@ export function parseVoiceSearchIntent(raw: string): VoiceSearchIntent {
   const envCode = normalizeSpokenEnvBookingCode(normalized);
   if (envCode) {
     return { kind: "text", query: envCode, entityType: "booking" };
+  }
+
+  // Spoken release codes → REL-0001 (so “rel 0001” / “REL 1” open that detail).
+  const relCode = normalizeSpokenReleaseCode(normalized);
+  if (relCode) {
+    return { kind: "text", query: relCode, entityType: "release" };
   }
 
   const lower = normalized.toLowerCase();

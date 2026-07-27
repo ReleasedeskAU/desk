@@ -172,7 +172,8 @@ async function resolveOrdinal(
     query: displayQuery,
     matchCount: 1,
     single,
-    instruction: `User asked for the ${ordinalWord} ${entityType}: ${single.label}. Confirm that name verbally, then call navigate_to with path=${single.path}. ${NAVIGATE_WITH_PATH}`,
+    // Hard navigate cue — ordinals are unambiguous; do not wait for another turn.
+    instruction: `User asked for the ${ordinalWord} ${entityType}: ${single.label}. IMMEDIATELY call navigate_to with path=${single.path} (do not ask which one). Briefly say you are opening it.`,
     actionLine: `${voiceEntityLabel(entityType)} #${ordinal}: ${single.label}`,
   };
 }

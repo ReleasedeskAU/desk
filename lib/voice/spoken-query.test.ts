@@ -40,6 +40,21 @@ describe("parseVoiceSearchIntent", () => {
     }
   });
 
+  it("maps REL-0001 / rel 0001 to a release code text query", () => {
+    const a = parseVoiceSearchIntent("open REL-0001");
+    assert.equal(a.kind, "text");
+    if (a.kind === "text") {
+      assert.equal(a.query, "REL-0001");
+      assert.equal(a.entityType, "release");
+    }
+    const b = parseVoiceSearchIntent("rel 0001");
+    assert.equal(b.kind, "text");
+    if (b.kind === "text") {
+      assert.equal(b.query, "REL-0001");
+      assert.equal(b.entityType, "release");
+    }
+  });
+
   it("keeps name searches as text", () => {
     const a = parseVoiceSearchIntent("open Billing Hotfix");
     assert.equal(a.kind, "text");

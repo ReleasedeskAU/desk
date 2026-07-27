@@ -22,6 +22,10 @@ import { voiceSidebarCatalogBrief } from "@/lib/voice/sidebar-catalog";
  * (large base64 frames). Keep OFF for snappy voice; page context is sent as text.
  */
 const VOICE_VIEWPORT_VIDEO_ENABLED = false;
+/** Sparse interval when video capture is re-enabled. */
+const SCREEN_FRAME_INTERVAL_MS = 4_000;
+const SCREEN_FRAME_MAX_WIDTH = 720;
+const SCREEN_FRAME_INITIAL_DELAY_MS = 2_500;
 /** How often to tell the model the current route (cheap text, not screenshots). */
 const ROUTE_CONTEXT_INTERVAL_MS = 8_000;
 
@@ -920,7 +924,7 @@ export class VoiceLiveClient {
                 "You are Release Desk voice. Reply briefly and quickly.",
                 "Tools: navigate_to, search_entity, get_summary, propose_action, confirm_action.",
                 voiceSidebarCatalogBrief(),
-                "tab/page/section mean the same. Env Booking=/booking (not /bookings).",
+                "first release / rel 01 → REL-0001 by code — after search_entity, call navigate_to immediately.",
                 "You get occasional [UI] text with the current route — use that for page context (no live video).",
                 "Questions about a record → prefer get_summary. Writes: propose_action then confirm_action only after a later yes.",
                 "Never invent ids — search_entity first.",

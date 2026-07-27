@@ -18,6 +18,18 @@ function demoReleaseResults(): SearchResult[] {
   }));
 }
 
+/**
+ * Sort key for release codes — REL-0001 before REL-0002 / non-REL ids last.
+ */
+function compareReleaseCode(a: string, b: string): number {
+  const na = a.match(/^REL-(\d+)$/i);
+  const nb = b.match(/^REL-(\d+)$/i);
+  if (na && nb) return Number(na[1]) - Number(nb[1]);
+  if (na) return -1;
+  if (nb) return 1;
+  return a.localeCompare(b);
+}
+
 type DbReleaseRow = {
   id: string;
   releaseCode?: string | null;
@@ -111,6 +123,8 @@ function codeForRow(entityType: VoiceEntityKind, row: DbListRow): string {
 
 /**
  * Build an ordered list for ordinal voice picks.
+ * Releases: prefer DB rows sorted by releaseCode (REL-0001, REL-0002, …)
+ * so “first release” opens the real detail page, not a demo stub.
  * @param entityType - release | booking | risk | …
  * @returns SearchResult[] in stable order.
  */
@@ -118,28 +132,26 @@ export async function listEntitiesForVoiceOrdinal(
   entityType: VoiceEntityKind
 ): Promise<SearchResult[]> {
   if (entityType === "release") {
-    const local = demoReleaseResults();
     const api = await safeFetchJson<DbReleaseRow[]>("/api/releases", {
       label: "voice-ordinal-releases",
     });
-    if (isFetchAbort(api) || !api.ok || !Array.isArray(api.data)) {
-      return local;
+    if (!isFetchAbort(api) && api.ok && Array.isArray(api.data) && api.data.length > 0) {
+      const rows = api.data.map((r) => {
+        const code = (r.releaseCode ?? "").trim() || r.id;
+        return {
+          id: `db-rel-${r.id}`,
+          type: "release" as const,
+          label: `${code} — ${r.name ?? "Release"}`,
+          sublabel: `${r.department?.name ?? "—"} · ${r.status ?? "—"}`,
+          // Prefer business code in the path — detail routes accept REL-0001.
+          href: `/releases/${code}`,
+          code,
+        };
+      });
+      rows.sort((a, b) => compareReleaseCode(a.code, b.code));
+      return rows.map(({ code: _code, ...row }) => row);
     }
-    const fromDb: SearchResult[] = api.data.map((r) => ({
-      id: `db-rel-${r.id}`,
-      type: "release" as const,
-      label: `${r.releaseCode ?? r.id} — ${r.name ?? "Release"}`,
-      sublabel: `${r.department?.name ?? "—"} · ${r.status ?? "—"}`,
-      href: `/releases/${r.id}`,
-    }));
-    const seen = new Set<string>();
-    const merged: SearchResult[] = [];
-    for (const r of [...local, ...fromDb]) {
-      if (seen.has(r.href)) continue;
-      seen.add(r.href);
-      merged.push(r);
-    }
-    return merged;
+    return demoReleaseResults();
   }
 
   if (entityType === "booking") {

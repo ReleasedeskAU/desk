@@ -33,6 +33,41 @@ describe("handleSearchEntity", () => {
     assert.match(result.actionLine, /#1|1 match|Release/i);
   });
 
+  it("first release uses DB order so #1 is REL-0001 detail", async () => {
+    mock.method(globalThis, "fetch", async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/api/releases")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "cuid-b",
+              releaseCode: "REL-0002",
+              name: "Second",
+              status: "Open",
+              department: { name: "Finance" },
+            },
+            {
+              id: "cuid-a",
+              releaseCode: "REL-0001",
+              name: "Kyriba UI Tweak",
+              status: "Open",
+              department: { name: "Finance" },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const result = await handleSearchEntity({ query: "open the first release" });
+    assert.equal(result.ok, true);
+    assert.equal(result.single?.path, "/releases/REL-0001");
+    assert.match(result.instruction ?? "", /IMMEDIATELY call navigate_to/i);
+  });
+
   it("resolves spoken 'env 001' to /booking/ENV-0001", async () => {
     mock.method(globalThis, "fetch", async () => {
       return new Response(JSON.stringify({ results: [] }), {

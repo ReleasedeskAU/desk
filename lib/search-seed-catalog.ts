@@ -25,6 +25,11 @@ import releases from "@/prisma/seed-data/releases.json";
 
 type Row = Record<string, string>;
 
+/** JSON seed rows often include non-string fields (arrays, numbers) — cast via unknown. */
+function asRows(data: unknown): Row[] {
+  return data as unknown as Row[];
+}
+
 function matches(q: string, ...parts: Array<string | undefined | null>): boolean {
   return parts.some((p) => p && p.toLowerCase().includes(q));
 }
@@ -46,10 +51,10 @@ export function normalizeSpokenEnvBookingCode(query: string): string | null {
 }
 
 const SEED_BOOKING_CODES = new Set(
-  (envBooking as Row[]).map((r) => (r["Booking ID"] ?? "").toUpperCase()).filter(Boolean)
+  asRows(envBooking).map((r) => (r["Booking ID"] ?? "").toUpperCase()).filter(Boolean)
 );
 const SEED_RELEASE_CODES = new Set(
-  (releases as Row[]).map((r) => (r["Release ID"] ?? "").toUpperCase()).filter(Boolean)
+  asRows(releases).map((r) => (r["Release ID"] ?? "").toUpperCase()).filter(Boolean)
 );
 
 /**
@@ -80,7 +85,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
   const envCode = normalizeSpokenEnvBookingCode(q);
   const envLower = envCode?.toLowerCase() ?? null;
 
-  for (const r of releases as Row[]) {
+  for (const r of asRows(releases)) {
     const code = r["Release ID"] ?? "";
     const name = r["Release Name"] ?? "";
     if (matches(q, code, name, r.Application, r.Department, r.Owner)) {
@@ -98,7 +103,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of envBooking as Row[]) {
+  for (const r of asRows(envBooking)) {
     const code = r["Booking ID"] ?? "";
     if (
       matches(q, code, r.Application, r.Department, r["Release ID"], r.Notes) ||
@@ -118,7 +123,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of risks as Row[]) {
+  for (const r of asRows(risks)) {
     const code = r["Risk ID"] ?? "";
     if (matches(q, code, r["Risk Description"], r["Release Name"], r.Application, r.Department)) {
       push(
@@ -135,7 +140,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of blockers as Row[]) {
+  for (const r of asRows(blockers)) {
     const code = r["Blocker ID"] ?? "";
     if (matches(q, code, r["Blocker Description"], r["Release Name"], r.Application)) {
       push(
@@ -152,7 +157,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of drifts as Row[]) {
+  for (const r of asRows(drifts)) {
     const code = r["Drift ID"] ?? "";
     const label = r.Description ?? r["Drift Type:"] ?? code;
     if (matches(q, code, label, r.Application, r.Department, r["Drift Category"])) {
@@ -170,7 +175,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of approvals as Row[]) {
+  for (const r of asRows(approvals)) {
     const code = r["Approval ID"] ?? "";
     const label = r["Approval Type"] ?? code;
     if (matches(q, code, label, r["Release ID"], r.Decision, r["Approver Name"])) {
@@ -188,7 +193,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of incidents as Row[]) {
+  for (const r of asRows(incidents)) {
     const code = r["Incident ID"] ?? "";
     const label = r.Title ?? code;
     if (matches(q, code, label, r.Application, r.Severity, r.Status)) {
@@ -206,7 +211,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of conflicts as Row[]) {
+  for (const r of asRows(conflicts)) {
     const code = r["Conflict ID"] ?? "";
     if (matches(q, code, r.Application, r.Department, r.Notes, r["Release 1"], r["Release 2"])) {
       push(
@@ -223,7 +228,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of dependencies as Row[]) {
+  for (const r of asRows(dependencies)) {
     const code = r["Dep ID"] ?? "";
     const label = r["Depends On Name"] ?? r["Dependency Type"] ?? code;
     if (matches(q, code, label, r["Release ID"], r["Release Name"], r["Depends On Release"])) {
@@ -241,7 +246,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of leaves as Row[]) {
+  for (const r of asRows(leaves)) {
     const code = r["Leave ID"] ?? "";
     const name = r["User Name"] ?? code;
     if (matches(q, code, name, r.Department, r.Role, r["Leave Type"])) {
@@ -259,7 +264,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of alerts as Row[]) {
+  for (const r of asRows(alerts)) {
     const code = r["Alert ID"] ?? "";
     const label = r["Alert Type"] ?? r.Metric ?? code;
     if (matches(q, code, label, r.Application, r.Severity, r.Status)) {
@@ -277,7 +282,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of maintenance as Row[]) {
+  for (const r of asRows(maintenance)) {
     const code = r["Maintenance ID"] ?? "";
     const label = r.Type ?? code;
     if (
@@ -305,7 +310,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of flows as Row[]) {
+  for (const r of asRows(flows)) {
     const code = r["Flow ID"] ?? "";
     const label = `${r["Source System"] ?? "?"} → ${r["Target System"] ?? "?"}`;
     if (
@@ -333,7 +338,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of departments as Row[]) {
+  for (const r of asRows(departments)) {
     const code = r.deptId ?? r.code ?? "";
     const name = r.name ?? code;
     if (matches(q, code, name, r.code)) {
@@ -351,7 +356,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of applications as Row[]) {
+  for (const r of asRows(applications)) {
     const name = r.application ?? "";
     if (matches(q, name, r.department, r.applicationOwner, r.techLead)) {
       push(
@@ -368,7 +373,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of users as Row[]) {
+  for (const r of asRows(users)) {
     const code = r["User ID"] ?? "";
     const name = r.Name ?? code;
     if (matches(q, code, name, r.Email, r.Role, r.Department)) {
@@ -386,7 +391,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of riskFactors as Row[]) {
+  for (const r of asRows(riskFactors)) {
     const name = r["Factor Name"] ?? "";
     if (matches(q, name, r.Category, r.Description)) {
       push(
@@ -403,7 +408,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of appStatus as Row[]) {
+  for (const r of asRows(appStatus)) {
     const name = r.Application ?? "";
     if (matches(q, name, r.Status, r.Environment, r.Department, r.Notes)) {
       push(
@@ -420,7 +425,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
     }
   }
 
-  for (const r of versions as Row[]) {
+  for (const r of asRows(versions)) {
     const app = r.Application ?? r["App ID"] ?? "";
     const ver = r.Version ?? "";
     if (matches(q, app, ver, r.Environment, r.Notes, r.Department)) {
@@ -459,7 +464,7 @@ export function searchSeedCatalog(query: string, limit = 40): SearchResult[] {
  * Ordered seed bookings for voice ordinals ("first booking", "env 001").
  */
 export function seedBookingsOrdered(): SearchResult[] {
-  return (envBooking as Row[]).map((r) => {
+  return asRows(envBooking).map((r) => {
     const code = r["Booking ID"] ?? "";
     return {
       id: `seed-book-${code}`,
@@ -475,7 +480,7 @@ export function seedBookingsOrdered(): SearchResult[] {
  * Ordered seed risks for voice ordinals.
  */
 export function seedRisksOrdered(): SearchResult[] {
-  return (risks as Row[]).map((r) => {
+  return asRows(risks).map((r) => {
     const code = r["Risk ID"] ?? "";
     return {
       id: `seed-risk-${code}`,
