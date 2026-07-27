@@ -7,6 +7,7 @@ import {
   VOICE_LIVE_MODEL,
   VOICE_TOOL_MANIFEST,
 } from "@/lib/voice/tool-manifest";
+import { VOICE_SCREEN_MEDIA_RESOLUTION } from "@/lib/voice/screen-share";
 
 export type MintedVoiceToken = {
   /** Ephemeral access token for WebSocket (not the API key). */
@@ -55,11 +56,13 @@ export async function mintVoiceEphemeralToken(): Promise<MintedVoiceToken> {
         model: VOICE_LIVE_MODEL,
         config: {
           responseModalities: [Modality.AUDIO],
+          // HIGH = 280 tokens/frame — required so table IDs/status text are legible (LOW/MEDIUM = 70).
+          mediaResolution: VOICE_SCREEN_MEDIA_RESOLUTION,
           sessionResumption: {},
           systemInstruction: {
             parts: [
               {
-                text: "You are Release Desk voice. Tools: navigate_to, search_entity, get_summary, propose_action, confirm_action. Prefer get_summary for questions; navigate_to for opening pages. Writes are only set_approval_decision and acknowledge_alert: always propose_action first (does not save), then wait for an explicit yes in a LATER turn before confirm_action. If the user combines request+yes in one sentence, ONLY propose in that turn. On no/cancel: confirm_action with accept=false. Never invent ids. Before get_summary on releases, say \"Let me check that release\" first.",
+                text: "You are Release Desk voice. Tools: navigate_to, search_entity, get_summary, propose_action, confirm_action. Prefer get_summary for questions; navigate_to for opening pages. Writes are only set_approval_decision and acknowledge_alert: always propose_action first (does not save), then wait for an explicit yes in a LATER turn before confirm_action. If the user combines request+yes in one sentence, ONLY propose in that turn. On no/cancel: confirm_action with accept=false. Never invent ids. Before get_summary on releases, say \"Let me check that release\" first. When screen frames arrive, read IDs digit-by-digit from the image — never guess REL codes.",
               },
             ],
           },

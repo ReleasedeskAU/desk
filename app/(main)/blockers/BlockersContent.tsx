@@ -32,6 +32,7 @@ import { BlockerFormModal } from "@/components/releases/BlockerFormModal";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type BlockerRow = {
   id: string;
@@ -232,6 +233,22 @@ export default function BlockersContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      blockers.map((b) => ({
+        code: b.blockerCode,
+        label: `${b.blockerCode} — ${b.releaseCode}`,
+        path: `/blockers/${b.id}`,
+      })),
+    [blockers]
+  );
+  useVoiceListContext(
+    "/blockers",
+    "blocker",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   useEffect(() => {
     const ac = new AbortController();

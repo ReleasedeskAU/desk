@@ -38,6 +38,7 @@ import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { RISKS_FILTER_SCHEMA } from "@/lib/table-filters";
@@ -1178,6 +1179,22 @@ export default function RiskRegisterContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      risks.map((r) => ({
+        code: r.riskCode,
+        label: `${r.riskCode} — ${r.release.releaseCode}`,
+        path: `/risks/${r.id}`,
+      })),
+    [risks]
+  );
+  useVoiceListContext(
+    "/risks",
+    "risk",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   useEffect(() => {
     return loadJsonEffect<RiskRow[]>("/api/risks", setAllRisks, { label: "risks" });

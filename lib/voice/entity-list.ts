@@ -1,7 +1,7 @@
 /**
  * Ordered entity lists for voice ordinals ("first release", "first booking").
- * Releases use the same demo catalog as GlobalSearch's local index, then DB rows.
- * Bookings/risks fall back to seed JSON when APIs are unavailable (offline repro).
+ * Prefer DB rows sorted by business code (REL-0001, CNF-0001, …) so ordinals
+ * match human expectations, not raw API insertion order.
  */
 import { releases, type SearchResult } from "@/lib/dummy-data";
 import { safeFetchJson, isFetchAbort } from "@/lib/safe-fetch";
@@ -19,15 +19,30 @@ function demoReleaseResults(): SearchResult[] {
 }
 
 /**
- * Sort key for release codes — REL-0001 before REL-0002 / non-REL ids last.
+ * Sort key for business codes — PREFIX-0001 before PREFIX-0002; non-coded ids last.
+ * @param a - Code or id string.
+ * @param b - Code or id string.
  */
-function compareReleaseCode(a: string, b: string): number {
-  const na = a.match(/^REL-(\d+)$/i);
-  const nb = b.match(/^REL-(\d+)$/i);
-  if (na && nb) return Number(na[1]) - Number(nb[1]);
-  if (na) return -1;
-  if (nb) return 1;
+export function compareBusinessCode(a: string, b: string): number {
+  const parse = (s: string) => {
+    const m = s.trim().match(/^([A-Za-z]+)[_-]?(\d+)$/);
+    if (!m) return null;
+    return { prefix: m[1]!.toUpperCase(), n: Number(m[2]) };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (pa && pb) {
+    if (pa.prefix === pb.prefix) return pa.n - pb.n;
+    return pa.prefix.localeCompare(pb.prefix);
+  }
+  if (pa) return -1;
+  if (pb) return 1;
   return a.localeCompare(b);
+}
+
+/** @deprecated Use compareBusinessCode — kept for existing release tests. */
+export function compareReleaseCode(a: string, b: string): number {
+  return compareBusinessCode(a, b);
 }
 
 type DbReleaseRow = {
@@ -121,12 +136,37 @@ function codeForRow(entityType: VoiceEntityKind, row: DbListRow): string {
   }
 }
 
+function mapSortedListRows(
+  entityType: VoiceEntityKind,
+  rows: DbListRow[],
+  prefix: string
+): SearchResult[] {
+  const mapped = rows.map((row) => {
+    const code = codeForRow(entityType, row);
+    return {
+      id: `${entityType}-${row.id}`,
+      type: entityType as SearchResult["type"],
+      label:
+        entityType === "booking"
+          ? `${code} — ${row.applicationName ?? row.name ?? "Booking"}`
+          : entityType === "risk"
+            ? `${code} — ${row.description ?? row.title ?? row.name ?? code}`
+            : `${code} — ${row.title ?? row.name ?? row.description ?? code}`,
+      sublabel: row.status ?? entityType,
+      href: `${prefix}/${code}`,
+      code,
+    };
+  });
+  mapped.sort((a, b) => compareBusinessCode(a.code, b.code));
+  return mapped.map(({ code: _c, ...rest }) => rest);
+}
+
 /**
  * Build an ordered list for ordinal voice picks.
- * Releases: prefer DB rows sorted by releaseCode (REL-0001, REL-0002, …)
- * so “first release” opens the real detail page, not a demo stub.
+ * Releases: prefer DB rows sorted by releaseCode (REL-0001, REL-0002, …).
+ * Other types: sort by business code when present.
  * @param entityType - release | booking | risk | …
- * @returns SearchResult[] in stable order.
+ * @returns SearchResult[] in stable code order.
  */
 export async function listEntitiesForVoiceOrdinal(
   entityType: VoiceEntityKind
@@ -143,12 +183,11 @@ export async function listEntitiesForVoiceOrdinal(
           type: "release" as const,
           label: `${code} — ${r.name ?? "Release"}`,
           sublabel: `${r.department?.name ?? "—"} · ${r.status ?? "—"}`,
-          // Prefer business code in the path — detail routes accept REL-0001.
           href: `/releases/${code}`,
           code,
         };
       });
-      rows.sort((a, b) => compareReleaseCode(a.code, b.code));
+      rows.sort((a, b) => compareBusinessCode(a.code, b.code));
       return rows.map(({ code: _code, ...row }) => row);
     }
     return demoReleaseResults();
@@ -162,16 +201,7 @@ export async function listEntitiesForVoiceOrdinal(
     if (isFetchAbort(api) || !api.ok || !Array.isArray(api.data) || api.data.length === 0) {
       return seed;
     }
-    return api.data.map((row) => {
-      const code = codeForRow("booking", row);
-      return {
-        id: `booking-${row.id}`,
-        type: "booking" as const,
-        label: `${code} — ${row.applicationName ?? row.name ?? "Booking"}`,
-        sublabel: row.status ?? "booking",
-        href: `/booking/${code}`,
-      };
-    });
+    return mapSortedListRows("booking", api.data, "/booking");
   }
 
   if (entityType === "risk") {
@@ -182,16 +212,7 @@ export async function listEntitiesForVoiceOrdinal(
     if (isFetchAbort(api) || !api.ok || !Array.isArray(api.data) || api.data.length === 0) {
       return seed;
     }
-    return api.data.map((row) => {
-      const code = codeForRow("risk", row);
-      return {
-        id: `risk-${row.id}`,
-        type: "risk" as const,
-        label: `${code} — ${row.description ?? row.title ?? row.name ?? code}`,
-        sublabel: row.status ?? "risk",
-        href: `/risks/${code}`,
-      };
-    });
+    return mapSortedListRows("risk", api.data, "/risks");
   }
 
   const path = LIST_API[entityType];
@@ -203,14 +224,5 @@ export async function listEntitiesForVoiceOrdinal(
   });
   if (isFetchAbort(api) || !api.ok || !Array.isArray(api.data)) return [];
 
-  return api.data.map((row) => {
-    const code = codeForRow(entityType, row);
-    return {
-      id: `${entityType}-${row.id}`,
-      type: entityType,
-      label: row.title ?? row.name ?? row.description ?? code,
-      sublabel: row.status ?? entityType,
-      href: `${prefix}/${code}`,
-    };
-  });
+  return mapSortedListRows(entityType, api.data, prefix);
 }

@@ -1,20 +1,38 @@
 import { PrismaClient } from "@releasedesk/database";
 
 /**
- * Normalize Neon/Postgres URLs for Vercel serverless:
+ * Normalize Neon/Postgres URLs for Vercel serverless and local Next:
  * - pooler hosts get pgbouncer=true (Prisma transaction mode)
- * - short connection_limit avoids exhausting Neon's pool across lambdas
+ * - production/serverless: connection_limit=1 (avoid exhausting Neon across lambdas)
+ * - local/dev long-lived process: connection_limit=5 + longer pool_timeout
  * - connect_timeout gives cold compute time to accept TCP
  */
 function withServerlessParams(raw: string): string {
   try {
     const u = new URL(raw);
     const host = u.hostname.toLowerCase();
+    const isDev = process.env.NODE_ENV === "development";
     if (host.includes("pooler") || host.includes("pgbouncer")) {
       if (!u.searchParams.has("pgbouncer")) u.searchParams.set("pgbouncer", "true");
     }
     if (!u.searchParams.has("connection_limit")) {
-      u.searchParams.set("connection_limit", "1");
+      // Dev: allow concurrent API routes; prod lambdas stay at 1.
+      u.searchParams.set("connection_limit", isDev ? "10" : "1");
+    } else if (isDev) {
+      // Long-lived Next process under turbopack can saturate a tiny pool during Neon wake.
+      const n = Number(u.searchParams.get("connection_limit"));
+      if (!Number.isFinite(n) || n < 10) {
+        u.searchParams.set("connection_limit", "10");
+      }
+    }
+    if (!u.searchParams.has("pool_timeout")) {
+      // Wait longer before "Timed out fetching a new connection" under Neon wake.
+      u.searchParams.set("pool_timeout", isDev ? "60" : "30");
+    } else if (isDev) {
+      const n = Number(u.searchParams.get("pool_timeout"));
+      if (!Number.isFinite(n) || n < 60) {
+        u.searchParams.set("pool_timeout", "60");
+      }
     }
     if (!u.searchParams.has("connect_timeout")) {
       u.searchParams.set("connect_timeout", "20");
@@ -124,12 +142,22 @@ export function isRetryableDbError(err: unknown): boolean {
   return (
     msg.includes("can't reach database server") ||
     msg.includes("timed out") ||
+    msg.includes("timed out fetching a new connection") ||
+    msg.includes("connection pool") ||
     msg.includes("connection reset") ||
     msg.includes("server closed the connection") ||
     msg.includes("connection terminated") ||
     msg.includes("server has closed the connection") ||
     msg.includes("error connecting to database") ||
     msg.includes("connection refused")
+  );
+}
+
+function isPoolExhaustedError(err: unknown): boolean {
+  const msg = errMessage(err).toLowerCase();
+  return (
+    msg.includes("timed out fetching a new connection") ||
+    msg.includes("connection pool")
   );
 }
 
@@ -190,7 +218,8 @@ export async function withDbRetry<T>(
       console.warn(`[db] retry ${i + 1}/${attempts - 1} after ${delay}ms${label}:`, msg);
 
       try {
-        if (isEngineNotConnected(err)) {
+        if (isEngineNotConnected(err) || isPoolExhaustedError(err)) {
+          // Stuck / saturated pool — drop the engine and rebuild before retrying.
           await sleep(Math.min(delay, 1500));
           await resetPrismaClient();
         } else {

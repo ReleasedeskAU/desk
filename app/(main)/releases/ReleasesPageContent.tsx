@@ -22,6 +22,7 @@ import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { useReleaseFilters } from "@/context/ReleaseFiltersContext";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { filterLabel } from "@/lib/release-filters";
 import { type NeedsAttentionItem } from "@/lib/needs-attention";
 import {
@@ -277,6 +278,29 @@ export default function ReleasesPageContent() {
         dependsOn: (r) => r.dependsOnLabel ?? "",
       }),
     [unified, sortKey, sortDir]
+  );
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      (attentionMode
+        ? attentionItems.map((i) => ({
+            code: i.code,
+            label: `${i.code} — ${i.name}`,
+            path: i.href || `/releases/${i.code}`,
+          }))
+        : sorted.map((r) => ({
+            code: r.code,
+            label: `${r.code} — ${r.name}`,
+            path: `/releases/${r.code}`,
+          }))
+      ),
+    [attentionMode, attentionItems, sorted]
+  );
+  useVoiceListContext(
+    "/releases",
+    "release",
+    voiceVisibleRows,
+    attentionMode ? "attention" : hasRefinement ? "filtered" : undefined
   );
 
   const canEdit = sessionCanEdit(user);

@@ -23,7 +23,8 @@ import {
 } from "@/lib/release-store";
 import type { DeploymentLiveState, HistoryEntry, Release, ReleaseDecision } from "@/lib/types";
 
-const POLL_MS = 6000;
+const POLL_MS = 15_000;
+const POLL_MAX_MS = 60_000;
 
 interface ReleaseStoreContextValue {
   state: ReleaseStoreState;
@@ -86,25 +87,44 @@ export function ReleaseStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let inFlight = false;
+    let delayMs = POLL_MS;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = (ms: number) => {
+      if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void tick();
+      }, ms);
+    };
 
     const tick = async () => {
       if (cancelled || inFlight) return;
+      // Don't hammer Neon while the tab is backgrounded.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        schedule(POLL_MS);
+        return;
+      }
       inFlight = true;
       try {
         const next = await fetchLiveState();
-        if (!cancelled && next) setState(next);
+        if (!cancelled && next) {
+          setState(next);
+          delayMs = POLL_MS;
+        } else {
+          // Soft failure / empty — back off so we don't stack pool waits.
+          delayMs = Math.min(delayMs * 2, POLL_MAX_MS);
+        }
       } finally {
         inFlight = false;
+        schedule(delayMs);
       }
     };
 
     void tick();
-    const id = setInterval(() => {
-      void tick();
-    }, POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      if (timer) clearTimeout(timer);
     };
   }, []);
 

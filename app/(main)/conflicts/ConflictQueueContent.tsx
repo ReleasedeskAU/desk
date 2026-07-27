@@ -26,6 +26,7 @@ import { loadJsonEffect } from "@/lib/safe-fetch";
 import { ConflictFormModal } from "@/components/conflicts/ConflictFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type ConflictRow = {
   id: string;
@@ -158,6 +159,22 @@ export default function ConflictQueueContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      conflicts.map((c) => ({
+        code: c.conflictCode,
+        label: `${c.conflictCode} — ${c.release1Code}/${c.release2Code}`,
+        path: `/conflicts/${c.id}`,
+      })),
+    [conflicts]
+  );
+  useVoiceListContext(
+    "/conflicts",
+    "conflict",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   useEffect(() => {
     return loadJsonEffect<{ id: string; name: string }[]>("/api/departments", setDepartments, { label: "departments" });

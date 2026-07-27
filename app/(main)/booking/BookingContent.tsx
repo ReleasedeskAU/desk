@@ -35,6 +35,7 @@ import { DataTable, DataTableHeadRow, dataTableTableClass, tableCell, tableRow }
 import { useFilteredFetch } from "@/hooks/useTableFilters";
 import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { environmentSortRank } from "@/lib/booking-phase";
 import { BOOKING_FILTER_SCHEMA, SELECT_CLASS } from "@/lib/table-filters";
@@ -224,6 +225,24 @@ export default function BookingContent() {
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
 
   const canEdit = sessionCanEdit(user);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      bookings
+        .filter((b) => b.bookingCode && b.id)
+        .map((b) => ({
+          code: b.bookingCode as string,
+          label: `${b.bookingCode} — ${b.application?.name ?? "Booking"}`,
+          path: `/booking/${b.id}`,
+        })),
+    [bookings]
+  );
+  useVoiceListContext(
+    "/booking",
+    "booking",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   useEffect(() => {
     return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {

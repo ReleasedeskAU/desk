@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, Loader2, WifiOff, Keyboard, X } from "lucide-react";
+import { Mic, MicOff, Loader2, WifiOff, Keyboard, X, Monitor, MonitorOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   VoiceLiveClient,
@@ -36,6 +36,9 @@ export function VoiceMic() {
   const [textBusy, setTextBusy] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Opt-in tab screen share — default OFF (audio-only). */
+  const [screenShareOn, setScreenShareOn] = useState(false);
+  const [screenShareBusy, setScreenShareBusy] = useState(false);
 
   const pushLine = useCallback((entry: VoiceTranscriptEntry) => {
     setLines((prev) => [...prev.slice(-(MAX_TRANSCRIPT_LINES - 1)), entry]);
@@ -79,6 +82,7 @@ export function VoiceMic() {
               : message
         );
       },
+      onScreenShareChange: (active) => setScreenShareOn(active),
     });
     clientRef.current = client;
     return () => {
@@ -155,6 +159,7 @@ export function VoiceMic() {
       setPanelOpen(false);
       setConn("idle");
       setPhase("idle");
+      setScreenShareOn(false);
       return;
     }
     if (state === "error" || state === "disconnected") {
@@ -165,6 +170,7 @@ export function VoiceMic() {
     setShowTextFallback(false);
     setFallbackHint(null);
     clearPendingProposal();
+    setScreenShareOn(false);
     // Don't open the empty "Sees this page" card until there is real activity.
     setPanelOpen(false);
     const ok = await client.connect();
@@ -174,6 +180,26 @@ export function VoiceMic() {
       setPanelOpen(true);
     }
   }, [clearPendingProposal]);
+
+  const onToggleScreenShare = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client || screenShareBusy) return;
+    if (client.getConnectionState() !== "connected") {
+      setError("Connect voice first, then turn on screen share");
+      setPanelOpen(true);
+      return;
+    }
+    setScreenShareBusy(true);
+    try {
+      if (client.isScreenShareActive()) {
+        client.disableScreenShare();
+      } else {
+        await client.enableScreenShare();
+      }
+    } finally {
+      setScreenShareBusy(false);
+    }
+  }, [screenShareBusy]);
 
   const runTextCommand = useCallback(async () => {
     const raw = textInput.trim();
@@ -295,7 +321,9 @@ export function VoiceMic() {
               </p>
               <p className="truncate text-[11px] text-slate-500 dark:text-white/55">
                 {active
-                  ? "Listening — tap mic to stop"
+                  ? screenShareOn
+                    ? "Listening + screen share — frames are being sent"
+                    : "Listening — tap mic to stop"
                   : "Click the mic to talk"}
               </p>
             </div>
@@ -452,6 +480,41 @@ export function VoiceMic() {
           >
             {statusLabel}
           </span>
+
+          {/* Opt-in tab screen share — default off; only meaningful while connected. */}
+          <button
+            type="button"
+            onClick={() => void onToggleScreenShare()}
+            disabled={!active || screenShareBusy || reconnecting || connecting}
+            aria-label={
+              screenShareOn
+                ? "Turn off screen share"
+                : "Share screen with voice (Entire Screen, Window, or Tab)"
+            }
+            aria-pressed={screenShareOn}
+            title={
+              screenShareOn
+                ? "Screen share on — frames sent when you ask about the page"
+                : "Share Entire Screen, Window, or Tab (off by default)"
+            }
+            data-testid="voice-screen-share-toggle"
+            className={cn(
+              "relative flex h-9 w-9 items-center justify-center rounded-full transition-colors",
+              !active || reconnecting || connecting
+                ? "cursor-not-allowed text-slate-300 dark:text-white/25"
+                : screenShareOn
+                  ? "bg-[var(--theme-accent,#2548C9)]/15 text-[var(--theme-accent,#2548C9)]"
+                  : "text-slate-500 hover:bg-black/5 dark:text-white/55 dark:hover:bg-white/10"
+            )}
+          >
+            {screenShareBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : screenShareOn ? (
+              <Monitor className="h-4 w-4" />
+            ) : (
+              <MonitorOff className="h-4 w-4" />
+            )}
+          </button>
 
           <button
             type="button"

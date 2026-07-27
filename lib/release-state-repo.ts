@@ -5,7 +5,7 @@ import {
 } from "./deployment-sim";
 import { getAllHistory, releases } from "./dummy-data";
 import { getDefaultOrganizationId } from "./org-compat";
-import { prisma } from "./prisma";
+import { prisma, withDbRetry } from "./prisma";
 import type {
   AppNotification,
   DeploymentLiveState,
@@ -550,37 +550,42 @@ let liveStateCache: { at: number; data: ReleaseStoreState } | null = null;
 let liveStateInflight: Promise<ReleaseStoreState> | null = null;
 
 async function loadLiveState(): Promise<ReleaseStoreState> {
-  await ensureDefaultNotifications();
-  const now = new Date();
+  return withDbRetry(
+    async () => {
+      await ensureDefaultNotifications();
+      const now = new Date();
 
-  const [decisionRows, deploymentRows, notifications, pausedAgents, extraHistory] = await Promise.all([
-    prisma.releaseDecisionState.findMany(),
-    prisma.deploymentState.findMany(),
-    getNotifications(),
-    getPausedAgents(),
-    getExtraHistoryByRelease(),
-  ]);
+      const [decisionRows, deploymentRows, notifications, pausedAgents, extraHistory] = await Promise.all([
+        prisma.releaseDecisionState.findMany(),
+        prisma.deploymentState.findMany(),
+        getNotifications(),
+        getPausedAgents(),
+        getExtraHistoryByRelease(),
+      ]);
 
-  const decisions: ReleaseStoreState["decisions"] = {};
-  for (const row of decisionRows) {
-    const rec = toDecisionRecord(row);
-    if (rec) decisions[row.releaseId] = rec;
-  }
+      const decisions: ReleaseStoreState["decisions"] = {};
+      for (const row of decisionRows) {
+        const rec = toDecisionRecord(row);
+        if (rec) decisions[row.releaseId] = rec;
+      }
 
-  const deployments: Record<string, DeploymentLiveState> = {};
-  for (const row of deploymentRows) {
-    const release = releaseById(row.releaseId);
-    if (!release) continue;
-    deployments[row.releaseId] = await reconcileDeployment(release, now);
-  }
+      const deployments: Record<string, DeploymentLiveState> = {};
+      for (const row of deploymentRows) {
+        const release = releaseById(row.releaseId);
+        if (!release) continue;
+        deployments[row.releaseId] = await reconcileDeployment(release, now);
+      }
 
-  return {
-    decisions,
-    extraHistory,
-    notifications,
-    deployments,
-    pausedAgents,
-  };
+      return {
+        decisions,
+        extraHistory,
+        notifications,
+        deployments,
+        pausedAgents,
+      };
+    },
+    { attempts: 4, baseDelayMs: 800, label: "live-state" }
+  );
 }
 
 export async function getLiveState(): Promise<ReleaseStoreState> {

@@ -15,6 +15,10 @@ import { ENTITY_HREF_PREFIX } from "@/lib/search-entity-types";
 import { safeFetchJson, isFetchAbort } from "@/lib/safe-fetch";
 import { listEntitiesForVoiceOrdinal } from "@/lib/voice/entity-list";
 import {
+  getVoiceAppContext,
+  resolveVisibleOrdinal,
+} from "@/lib/voice/app-context";
+import {
   parseVoiceSearchIntent,
   voiceEntityLabel,
   type VoiceEntityKind,
@@ -144,12 +148,37 @@ function finishWithResults(
 
 /**
  * Resolve "first release" / "rel 01" to a concrete SearchResult.
+ * Prefers on-page [APP_CONTEXT] visible rows when entity types match.
  */
 async function resolveOrdinal(
   ordinal: number,
   entityType: VoiceEntityKind,
   displayQuery: string
 ): Promise<SearchToolResult> {
+  const ordinalWord =
+    ordinal === 1 ? "first" : ordinal === 2 ? "second" : `${ordinal}th`;
+
+  const visible = resolveVisibleOrdinal(ordinal, entityType);
+  if (visible) {
+    const single: VoiceSearchCandidate = {
+      path: visible.path,
+      href: visible.path,
+      refId: visible.code,
+      label: visible.label,
+      type: entityType,
+      sublabel: "visible table",
+    };
+    return {
+      ok: true,
+      tool: "search_entity",
+      query: displayQuery,
+      matchCount: 1,
+      single,
+      instruction: `User asked for the ${ordinalWord} ${entityType} on the current table: ${single.label}. IMMEDIATELY call navigate_to with path=${single.path}. Briefly say you are opening it.`,
+      actionLine: `${voiceEntityLabel(entityType)} #${ordinal} (visible): ${single.label}`,
+    };
+  }
+
   const list = await listEntitiesForVoiceOrdinal(entityType);
   const idx = ordinal - 1;
   if (idx < 0 || idx >= list.length) {
@@ -164,15 +193,12 @@ async function resolveOrdinal(
   }
   const pick = list[idx]!;
   const single = toCandidate(pick);
-  const ordinalWord =
-    ordinal === 1 ? "first" : ordinal === 2 ? "second" : `${ordinal}th`;
   return {
     ok: true,
     tool: "search_entity",
     query: displayQuery,
     matchCount: 1,
     single,
-    // Hard navigate cue — ordinals are unambiguous; do not wait for another turn.
     instruction: `User asked for the ${ordinalWord} ${entityType}: ${single.label}. IMMEDIATELY call navigate_to with path=${single.path} (do not ask which one). Briefly say you are opening it.`,
     actionLine: `${voiceEntityLabel(entityType)} #${ordinal}: ${single.label}`,
   };
@@ -202,6 +228,27 @@ export async function handleSearchEntity(
   }
 
   const intent = parseVoiceSearchIntent(rawQuery);
+
+  // "first one" / "the first" while on a list page — use visible context entity type.
+  if (intent.kind === "text") {
+    const bare = intent.query.trim().toLowerCase();
+    const bareOrd = bare.match(
+      /^(?:the\s+)?(first|1st|second|2nd|third|3rd)(?:\s+one)?$/
+    );
+    if (bareOrd) {
+      const ctx = getVoiceAppContext();
+      if (ctx?.entityType && ctx.visible.length > 0) {
+        const word = bareOrd[1]!;
+        const ordinal =
+          word === "first" || word === "1st"
+            ? 1
+            : word === "second" || word === "2nd"
+              ? 2
+              : 3;
+        return resolveOrdinal(ordinal, ctx.entityType, rawQuery);
+      }
+    }
+  }
 
   if (intent.kind === "ordinal") {
     return resolveOrdinal(intent.ordinal, intent.entityType, intent.raw);

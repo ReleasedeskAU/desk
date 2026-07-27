@@ -1,9 +1,13 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import type { SessionUser, UserRole } from "./roles";
 import { isUserRole, mapAccessLevelToRole } from "./role-rank";
 
 export { encodeSession, parseSession } from "./cookie";
+
+/** Avoid a Prisma hit on every 6–15s live-state poll when the pool is waking. */
+const ROLE_CACHE_TTL_MS = 60_000;
+const roleCache = new Map<string, { role: UserRole; at: number }>();
 
 /**
  * Resolves app privilege tier for the signed-in Clerk user.
@@ -15,12 +19,25 @@ async function resolveRole(email: string, metadata: Record<string, unknown> | un
   if (isUserRole(fromMeta)) return fromMeta;
 
   if (email) {
+    const cached = roleCache.get(email);
+    if (cached && Date.now() - cached.at < ROLE_CACHE_TTL_MS) {
+      return cached.role;
+    }
     try {
-      const row = await prisma.user.findUnique({
-        where: { email },
-        select: { accessLevel: true },
-      });
-      if (row?.accessLevel) return mapAccessLevelToRole(row.accessLevel);
+      // Auth path must not sit on a saturated Neon pool for 30s — retry + fail closed.
+      const row = await withDbRetry(
+        () =>
+          prisma.user.findUnique({
+            where: { email },
+            select: { accessLevel: true },
+          }),
+        { attempts: 3, baseDelayMs: 400, label: "session-role" }
+      );
+      if (row?.accessLevel) {
+        const role = mapAccessLevelToRole(row.accessLevel);
+        roleCache.set(email, { role, at: Date.now() });
+        return role;
+      }
     } catch {
       // DB unavailable — fall through to default; session remains valid for auth gate
     }
