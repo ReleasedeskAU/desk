@@ -2,12 +2,11 @@
  * Server-only: mint Gemini Live ephemeral tokens via @google/genai.
  * Real GEMINI_API_KEY never leaves this module / the session route.
  */
-import { GoogleGenAI, Modality, type FunctionDeclaration } from "@google/genai";
+import { GoogleGenAI, MediaResolution, Modality, type FunctionDeclaration } from "@google/genai";
 import {
   VOICE_LIVE_MODEL,
   VOICE_TOOL_MANIFEST,
 } from "@/lib/voice/tool-manifest";
-import { VOICE_SCREEN_MEDIA_RESOLUTION } from "@/lib/voice/screen-share";
 
 export type MintedVoiceToken = {
   /** Ephemeral access token for WebSocket (not the API key). */
@@ -57,7 +56,8 @@ export async function mintVoiceEphemeralToken(): Promise<MintedVoiceToken> {
         config: {
           responseModalities: [Modality.AUDIO],
           // HIGH = 280 tokens/frame — required so table IDs/status text are legible (LOW/MEDIUM = 70).
-          mediaResolution: VOICE_SCREEN_MEDIA_RESOLUTION,
+          // Must use the SDK enum (string literal is not assignable to MediaResolution).
+          mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
           sessionResumption: {},
           systemInstruction: {
             parts: [

@@ -46,6 +46,7 @@ describe("utteranceHasWriteIntent", () => {
 
 describe("screen-share constants", () => {
   it("uses HIGH media resolution and enforces ≤1 fps gap", () => {
+    // Must stay aligned with MediaResolution.MEDIA_RESOLUTION_HIGH in ephemeral-token.ts.
     assert.equal(VOICE_SCREEN_MEDIA_RESOLUTION, "MEDIA_RESOLUTION_HIGH");
     assert.equal(VOICE_SCREEN_MIN_FRAME_GAP_MS, 1000);
   });
