@@ -29,4 +29,22 @@ describe("checkVoiceSessionRateLimit", () => {
     assert.ok((result.retryAfterSec ?? 0) > 0);
     assert.ok((result.retryAfterSec ?? 0) <= Math.ceil(VOICE_SESSION_COOLDOWN_MS / 1000));
   });
+
+  it("uses a shorter cooldown for reconnect remints", async () => {
+    markVoiceSessionMinted("user_reconnect");
+    const cold = checkVoiceSessionRateLimit("user_reconnect");
+    assert.equal(cold.allowed, false);
+    // Soft reconnect window is 2s — still blocked immediately after mint.
+    const softImmediate = checkVoiceSessionRateLimit("user_reconnect", {
+      reconnect: true,
+    });
+    assert.equal(softImmediate.allowed, false);
+    await new Promise((r) => setTimeout(r, 2100));
+    const softLater = checkVoiceSessionRateLimit("user_reconnect", {
+      reconnect: true,
+    });
+    assert.equal(softLater.allowed, true);
+    const coldStill = checkVoiceSessionRateLimit("user_reconnect");
+    assert.equal(coldStill.allowed, false);
+  });
 });

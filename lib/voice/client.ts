@@ -1,10 +1,29 @@
 /**
- * Browser Gemini Live client — mic, WebSocket, playback, and Phase-1 tool dispatch.
+ * Browser Gemini Live client — mic, WebSocket, playback, tool dispatch,
+ * reconnect/backoff, session duration ceiling, usage heartbeats.
  * Isolated from page UI; handlers live under lib/voice/handlers/.
  */
 "use client";
 
 import { VOICE_LIVE_MODEL, type VoiceToolDeclaration } from "@/lib/voice/tool-manifest";
+import {
+  VOICE_RECONNECT_MAX_ATTEMPTS,
+  VOICE_WS_STALE_MS,
+  voiceReconnectDelayMs,
+} from "@/lib/voice/reconnect";
+import {
+  VOICE_MAX_SESSION_DURATION_MS,
+  VOICE_USAGE_HEARTBEAT_MS,
+} from "@/lib/voice/usage";
+import { voiceSidebarCatalogBrief } from "@/lib/voice/sidebar-catalog";
+
+/**
+ * Continuous DOM→JPEG capture fights Live audio on the main thread + WebSocket
+ * (large base64 frames). Keep OFF for snappy voice; page context is sent as text.
+ */
+const VOICE_VIEWPORT_VIDEO_ENABLED = false;
+/** How often to tell the model the current route (cheap text, not screenshots). */
+const ROUTE_CONTEXT_INTERVAL_MS = 8_000;
 
 export type VoiceConnectionState =
   | "idle"
@@ -12,6 +31,7 @@ export type VoiceConnectionState =
   | "minting_token"
   | "connecting"
   | "connected"
+  | "reconnecting"
   | "error"
   | "disconnected";
 
@@ -21,11 +41,23 @@ export type VoiceUiPhase =
   | "listening"
   | "thinking"
   | "speaking"
+  | "disconnected"
   | "error";
+
+/** Why voice is unavailable — distinct from mid-session drop + reconnect. */
+export type VoiceFailureKind =
+  | "mic_denied"
+  | "mic_unavailable"
+  | "ws_failed"
+  | "session_denied"
+  | "session_ceiling"
+  | "reconnect_exhausted"
+  | "max_duration"
+  | "unknown";
 
 export type VoiceTranscriptEntry = {
   id: string;
-  role: "user" | "model" | "action" | "system" | "propose";
+  role: "user" | "model" | "action" | "system" | "propose" | "info";
   text: string;
   at: number;
 };
@@ -41,10 +73,20 @@ export type VoiceClientOptions = {
   onError?: (message: string) => void;
   onSetupComplete?: () => void;
   onMessage?: (data: unknown) => void;
+  /** Fired when pending write proposals should be cleared (drop / remint). */
+  onPendingActionsInvalidated?: () => void;
+  /** Staged propose actionId for text-fallback confirm (null when cleared). */
+  onPendingActionChange?: (actionId: string | null) => void;
+  /** Hard failure where text fallback should be offered (not a transient drop). */
+  onFallbackRecommended?: (kind: VoiceFailureKind, message: string) => void;
 };
 
 type LiveServerMessage = {
   setupComplete?: unknown;
+  sessionResumptionUpdate?: {
+    newHandle?: string;
+    resumable?: boolean;
+  };
   toolCall?: {
     functionCalls?: Array<{
       id?: string;
@@ -81,6 +123,8 @@ type SessionResponse = {
   organizationId?: string | null;
   error?: string;
   retryAfterSec?: number;
+  code?: string;
+  maxSessionDurationMs?: number;
 };
 
 const LIVE_WS_PATH =
@@ -88,7 +132,7 @@ const LIVE_WS_PATH =
 
 /**
  * Opens a Gemini Live WebSocket with an ephemeral token and streams mic PCM.
- * Dropped connections set state to "error" / "disconnected" without throwing uncaught.
+ * Unexpected drops surface "disconnected", then auto-remint + reconnect with backoff.
  */
 export class VoiceLiveClient {
   private state: VoiceConnectionState = "idle";
@@ -108,6 +152,33 @@ export class VoiceLiveClient {
   private userTranscriptBuf = "";
   private modelTranscriptBuf = "";
   private toolBusy = false;
+
+  /** User clicked Stop — do not auto-reconnect. */
+  private intentionalClose = false;
+  /** Session lifecycle started (counts toward max duration). */
+  private lifecycleActive = false;
+  private lifecycleStartedAt = 0;
+  private maxSessionDurationMs = VOICE_MAX_SESSION_DURATION_MS;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private staleTimer: ReturnType<typeof setTimeout> | null = null;
+  private durationTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private lastFrameAt = 0;
+  private lastFailureKind: VoiceFailureKind | null = null;
+  /** Gemini Live session resumption handle — restore same conversation after WS drop. */
+  private sessionResumptionHandle: string | null = null;
+  /** True after first setupComplete in this lifecycle (skip hello on resume). */
+  private hasCompletedSetupOnce = false;
+  /** In-app viewport capture — disabled by default (see VOICE_VIEWPORT_VIDEO_ENABLED). */
+  private viewportCaptureEnabled = false;
+  private screenTimer: ReturnType<typeof setInterval> | null = null;
+  private screenInitialTimer: ReturnType<typeof setTimeout> | null = null;
+  private screenCaptureBusy = false;
+  private routeContextTimer: ReturnType<typeof setInterval> | null = null;
+  private lastRouteContext = "";
+  /** Monotonic connect generation — disconnect bumps it so in-flight connect aborts. */
+  private connectGeneration = 0;
 
   constructor(opts: VoiceClientOptions = {}) {
     this.opts = opts;
@@ -130,6 +201,10 @@ export class VoiceLiveClient {
     return this.lastError;
   }
 
+  getLastFailureKind(): VoiceFailureKind | null {
+    return this.lastFailureKind;
+  }
+
   getToolManifest(): VoiceToolDeclaration[] {
     return this.toolManifest;
   }
@@ -137,41 +212,74 @@ export class VoiceLiveClient {
   /**
    * Request mic first (free), then mint token, then open Live WebSocket.
    * Mic-before-mint avoids burning the server cooldown when permission is denied.
-   * Failures set state to "error" and resolve false (no uncaught throw).
    * @returns true if WebSocket reached "connected".
    */
   async connect(): Promise<boolean> {
+    this.intentionalClose = false;
+    this.reconnectAttempts = 0;
+    this.clearReconnectTimer();
+    const gen = ++this.connectGeneration;
     try {
-      // Mic before mint: DeniedError must not consume a paid token / cooldown slot.
       this.setState("requesting_mic");
       await this.startMic();
+      if (this.isConnectAborted(gen)) return false;
 
+      // Video screenshots are off by default — they add multi-second lag to spoken replies.
+      this.viewportCaptureEnabled = VOICE_VIEWPORT_VIDEO_ENABLED;
+
+      this.lifecycleActive = true;
+      this.lifecycleStartedAt = Date.now();
+      this.hasCompletedSetupOnce = false;
+      this.sessionResumptionHandle = null;
       this.setState("minting_token");
-      const session = await this.mintSession();
+      const session = await this.mintSession(false);
+      if (this.isConnectAborted(gen)) return false;
+
       this.toolManifest = session.toolManifest ?? [];
+      if (typeof session.maxSessionDurationMs === "number") {
+        this.maxSessionDurationMs = session.maxSessionDurationMs;
+      }
 
       this.setState("connecting");
       await this.openSocket(session.token, session.model ?? VOICE_LIVE_MODEL);
+      if (this.isConnectAborted(gen)) {
+        this.teardownSocketOnly();
+        this.teardownAudio();
+        this.teardownViewportCapture();
+        this.setState("idle");
+        return false;
+      }
+
+      this.armSessionWatchdogs();
       return true;
     } catch (err) {
+      if (this.isConnectAborted(gen)) return false;
       const message = err instanceof Error ? err.message : "Voice connect failed";
-      this.fail(message);
+      const kind = classifyConnectFailure(message, err);
+      this.hardFail(message, kind);
       return false;
     }
   }
 
-  /** Close WebSocket and release mic / audio nodes. */
+  /** True if the user stopped (or a newer connect started) during an in-flight connect. */
+  private isConnectAborted(gen: number): boolean {
+    return this.intentionalClose || gen !== this.connectGeneration;
+  }
+
+  /** User-initiated stop — aborts in-flight connect and tears everything down. */
   disconnect(): void {
+    this.intentionalClose = true;
+    this.connectGeneration += 1;
+    this.lifecycleActive = false;
+    this.sessionResumptionHandle = null;
+    this.hasCompletedSetupOnce = false;
+    this.clearWatchdogs();
+    this.clearReconnectTimer();
+    this.teardownSocketOnly();
     this.teardownAudio();
-    if (this.ws) {
-      try {
-        this.ws.close();
-      } catch {
-        /* ignore */
-      }
-      this.ws = null;
-    }
-    this.setState("disconnected");
+    this.teardownViewportCapture();
+    this.stopRouteContext();
+    this.setState("idle");
   }
 
   private setState(state: VoiceConnectionState) {
@@ -179,7 +287,10 @@ export class VoiceLiveClient {
     this.opts.onStateChange?.(state);
     if (state === "connected") this.setUiPhase("listening");
     if (state === "error") this.setUiPhase("error");
-    if (state === "disconnected" || state === "idle") this.setUiPhase("idle");
+    if (state === "reconnecting" || state === "disconnected") {
+      this.setUiPhase("disconnected");
+    }
+    if (state === "idle") this.setUiPhase("idle");
   }
 
   private setUiPhase(phase: VoiceUiPhase) {
@@ -201,29 +312,115 @@ export class VoiceLiveClient {
     });
   }
 
-  private fail(message: string) {
-    this.lastError = message;
-    this.opts.onError?.(message);
-    this.emitTranscript("system", message);
-    this.teardownAudio();
-    if (this.ws) {
-      try {
-        this.ws.close();
-      } catch {
-        /* ignore */
-      }
-      this.ws = null;
-    }
-    this.setState("error");
+  /** Mid-session drop path — surface disconnected UI and schedule remint. */
+  private handleUnexpectedDrop(reason: string) {
+    if (this.intentionalClose || !this.lifecycleActive) return;
+    this.clearWatchdogs();
+    this.teardownSocketOnly();
+    this.stopPlayback();
+    this.stopRouteContext();
+    // Keep mic stream for reconnect; tear down Web Audio nodes only.
+    this.teardownAudioNodesKeepMic();
+    this.lastError = reason;
+    this.opts.onError?.(reason);
+    this.emitTranscript("info", `Disconnected — ${reason}. Reconnecting…`);
+    this.opts.onPendingActionsInvalidated?.();
+    this.setState("reconnecting");
+    this.scheduleReconnect();
   }
 
-  private async mintSession(): Promise<SessionResponse> {
+  /** Hard failure (mic/WS never usable) — recommend text fallback. */
+  private hardFail(message: string, kind: VoiceFailureKind) {
+    this.lastError = message;
+    this.lastFailureKind = kind;
+    this.opts.onError?.(message);
+    this.emitTranscript("system", message);
+    this.lifecycleActive = false;
+    this.clearWatchdogs();
+    this.clearReconnectTimer();
+    this.teardownSocketOnly();
+    this.teardownAudio();
+    this.teardownViewportCapture();
+    this.stopRouteContext();
+    this.setState("error");
+    if (
+      kind === "mic_denied" ||
+      kind === "mic_unavailable" ||
+      kind === "ws_failed" ||
+      kind === "session_denied" ||
+      kind === "session_ceiling" ||
+      kind === "reconnect_exhausted" ||
+      kind === "max_duration"
+    ) {
+      this.opts.onFallbackRecommended?.(kind, message);
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.intentionalClose || !this.lifecycleActive) return;
+    if (this.reconnectAttempts >= VOICE_RECONNECT_MAX_ATTEMPTS) {
+      this.hardFail(
+        "Could not reconnect voice after several attempts — use text commands below",
+        "reconnect_exhausted"
+      );
+      return;
+    }
+    if (Date.now() - this.lifecycleStartedAt >= this.maxSessionDurationMs) {
+      this.hardFail(
+        "Voice session reached the maximum duration — start a new session or use text",
+        "max_duration"
+      );
+      return;
+    }
+    const attempt = this.reconnectAttempts;
+    const delay = voiceReconnectDelayMs(attempt);
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      void this.attemptReconnect();
+    }, delay);
+  }
+
+  private async attemptReconnect(): Promise<void> {
+    if (this.intentionalClose || !this.lifecycleActive) return;
+    this.reconnectAttempts += 1;
+    try {
+      // Remint always — never reuse a near-expiry ephemeral token.
+      this.setState("minting_token");
+      const session = await this.mintSession(true);
+      this.toolManifest = session.toolManifest ?? [];
+      this.opts.onPendingActionsInvalidated?.();
+      this.setState("connecting");
+      await this.openSocket(session.token, session.model ?? VOICE_LIVE_MODEL);
+      this.reconnectAttempts = 0;
+      this.emitTranscript(
+        "info",
+        this.sessionResumptionHandle
+          ? "Reconnected — resuming same voice session"
+          : "Reconnected"
+      );
+      this.armSessionWatchdogs();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Reconnect failed";
+      this.emitTranscript("system", `Reconnect failed — ${message}`);
+      this.setState("reconnecting");
+      this.scheduleReconnect();
+    }
+  }
+
+  private async mintSession(reconnect: boolean): Promise<SessionResponse> {
     const url = this.opts.sessionUrl ?? "/api/copilot/voice/session";
-    const res = await fetch(url, { method: "POST", credentials: "same-origin" });
+    const res = await fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: reconnect ? { "X-Voice-Reconnect": "1" } : undefined,
+    });
     const data = (await res.json().catch(() => ({}))) as SessionResponse;
     if (!res.ok) {
       if (res.status === 429) {
-        const sec = data.retryAfterSec ?? 15;
+        if (data.code === "daily_session_ceiling") {
+          throw new Error(data.error ?? "Daily voice session limit reached");
+        }
+        const sec = Math.max(1, data.retryAfterSec ?? 15);
         throw new Error(
           `${data.error ?? "Voice session rate limit"} (retry in ~${sec}s)`
         );
@@ -254,7 +451,6 @@ export class VoiceLiveClient {
       });
     } catch (err) {
       const name = err instanceof DOMException ? err.name : "";
-      // Browser maps deny / dismiss to NotAllowedError (message often just "Permission denied").
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         throw new Error(
           "Microphone permission denied — allow mic for this site (lock icon → Site settings), then Connect again"
@@ -265,6 +461,101 @@ export class VoiceLiveClient {
       }
       throw err instanceof Error ? err : new Error("Microphone access failed");
     }
+  }
+
+  /** Start sparse JPEG uplink from main content only (deferred, non-blocking). */
+  private beginScreenFrames(): void {
+    this.stopScreenFrames();
+    if (!this.viewportCaptureEnabled) return;
+    // Defer first capture so mic + WebSocket stay responsive right after connect.
+    this.screenInitialTimer = setTimeout(() => {
+      this.screenInitialTimer = null;
+      if (!this.viewportCaptureEnabled || this.intentionalClose) return;
+      void this.captureAndSendViewportFrame();
+      this.screenTimer = setInterval(() => {
+        void this.captureAndSendViewportFrame();
+      }, SCREEN_FRAME_INTERVAL_MS);
+    }, SCREEN_FRAME_INITIAL_DELAY_MS);
+  }
+
+  private async captureAndSendViewportFrame(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (this.screenCaptureBusy || this.intentionalClose) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    this.screenCaptureBusy = true;
+    try {
+      // Yield to input/audio before the expensive DOM snapshot.
+      await new Promise<void>((r) => {
+        if (typeof requestIdleCallback === "function") {
+          requestIdleCallback(() => r(), { timeout: 800 });
+        } else {
+          setTimeout(r, 0);
+        }
+      });
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.intentionalClose) {
+        return;
+      }
+      const { captureAppViewportDataUrl, dataUrlToRawBase64 } = await import(
+        "@/lib/voice/viewport-capture"
+      );
+      const dataUrl = await captureAppViewportDataUrl(SCREEN_FRAME_MAX_WIDTH);
+      if (!dataUrl || this.intentionalClose) return;
+      const base64 = dataUrlToRawBase64(dataUrl);
+      if (!base64) return;
+      this.sendJson({
+        realtimeInput: {
+          video: { mimeType: "image/jpeg", data: base64 },
+        },
+      });
+    } catch {
+      /* soft-fail — audio voice continues without visuals */
+    } finally {
+      this.screenCaptureBusy = false;
+    }
+  }
+
+  private stopScreenFrames(): void {
+    if (this.screenTimer) clearInterval(this.screenTimer);
+    if (this.screenInitialTimer) clearTimeout(this.screenInitialTimer);
+    this.screenTimer = null;
+    this.screenInitialTimer = null;
+  }
+
+  private teardownViewportCapture(): void {
+    this.stopScreenFrames();
+    this.viewportCaptureEnabled = false;
+    this.screenCaptureBusy = false;
+  }
+
+  /** Lightweight route hints so the model knows the page without JPEG video. */
+  private beginRouteContext(): void {
+    this.stopRouteContext();
+    this.pushRouteContext(true);
+    this.routeContextTimer = setInterval(() => {
+      this.pushRouteContext(false);
+    }, ROUTE_CONTEXT_INTERVAL_MS);
+  }
+
+  private stopRouteContext(): void {
+    if (this.routeContextTimer) clearInterval(this.routeContextTimer);
+    this.routeContextTimer = null;
+    this.lastRouteContext = "";
+  }
+
+  private pushRouteContext(force: boolean): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.intentionalClose) {
+      return;
+    }
+    if (typeof window === "undefined") return;
+    const path = `${window.location.pathname}${window.location.search || ""}`;
+    if (!force && path === this.lastRouteContext) return;
+    this.lastRouteContext = path;
+    // Text realtime hint — tiny vs screenshot frames; does not block audio.
+    this.sendJson({
+      realtimeInput: {
+        text: `[UI] User is on ${path}. Prefer navigate_to / get_summary for this page's entities.`,
+      },
+    });
   }
 
   private openSocket(token: string, model: string): Promise<void> {
@@ -280,9 +571,20 @@ export class VoiceLiveClient {
       }
 
       this.ws.onopen = () => {
+        if (this.intentionalClose) {
+          this.teardownSocketOnly();
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+          return;
+        }
         this.setState("connected");
+        this.lastFrameAt = Date.now();
         this.sendSetup(model);
         this.beginPcmStream();
+        this.beginScreenFrames();
+        this.beginRouteContext();
         if (!settled) {
           settled = true;
           resolve();
@@ -294,19 +596,28 @@ export class VoiceLiveClient {
         if (!settled) {
           settled = true;
           reject(new Error(msg));
-        } else {
-          this.fail(msg);
+        } else if (!this.intentionalClose) {
+          this.handleUnexpectedDrop(msg);
         }
       };
 
       this.ws.onclose = () => {
-        this.teardownAudio();
+        this.teardownAudioNodesKeepMic();
+        if (this.intentionalClose) {
+          return;
+        }
+        if (!settled) {
+          settled = true;
+          reject(new Error("Voice WebSocket closed before ready"));
+          return;
+        }
         if (this.state === "connected" || this.state === "connecting") {
-          this.setState("disconnected");
+          this.handleUnexpectedDrop("connection closed");
         }
       };
 
       this.ws.onmessage = async (event) => {
+        this.noteFrame();
         try {
           const text =
             typeof event.data === "string"
@@ -316,24 +627,21 @@ export class VoiceLiveClient {
                 : new TextDecoder().decode(event.data as ArrayBuffer);
           const parsed = JSON.parse(text) as LiveServerMessage;
           this.opts.onMessage?.(parsed);
+          if (
+            parsed.sessionResumptionUpdate?.resumable &&
+            parsed.sessionResumptionUpdate.newHandle
+          ) {
+            this.sessionResumptionHandle = parsed.sessionResumptionUpdate.newHandle;
+          }
           if (parsed.setupComplete) {
             this.opts.onSetupComplete?.();
             this.setUiPhase("listening");
-            this.sendJson({
-              clientContent: {
-                turns: [
-                  {
-                    role: "user",
-                    parts: [
-                      {
-                        text: "Say a brief hello and that you are ready to help navigate Release Desk.",
-                      },
-                    ],
-                  },
-                ],
-                turnComplete: true,
-              },
-            });
+            // Skip the auto-hello turn — it adds a full model generation before the user can speak.
+            if (this.hasCompletedSetupOnce || this.sessionResumptionHandle) {
+              this.emitTranscript("info", "Session resumed");
+            }
+            this.hasCompletedSetupOnce = true;
+            this.pushRouteContext(true);
           }
           if (parsed.toolCall?.functionCalls?.length) {
             await this.handleToolCall(parsed.toolCall.functionCalls);
@@ -346,20 +654,91 @@ export class VoiceLiveClient {
     });
   }
 
+  private noteFrame() {
+    this.lastFrameAt = Date.now();
+    this.armStaleTimer();
+  }
+
+  private armSessionWatchdogs() {
+    this.clearWatchdogs();
+    this.armStaleTimer();
+    const remaining = Math.max(
+      0,
+      this.maxSessionDurationMs - (Date.now() - this.lifecycleStartedAt)
+    );
+    this.durationTimer = setTimeout(() => {
+      if (!this.lifecycleActive || this.intentionalClose) return;
+      this.intentionalClose = true;
+      this.clearWatchdogs();
+      this.teardownSocketOnly();
+      this.teardownAudio();
+      this.hardFail(
+        "Voice session reached the maximum duration — start a new session or use text",
+        "max_duration"
+      );
+    }, remaining);
+
+    this.heartbeatTimer = setInterval(() => {
+      void fetch("/api/copilot/voice/heartbeat", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deltaMs: VOICE_USAGE_HEARTBEAT_MS }),
+      }).catch(() => {
+        /* best-effort usage; ignore network blips */
+      });
+    }, VOICE_USAGE_HEARTBEAT_MS);
+  }
+
+  private armStaleTimer() {
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = setTimeout(() => {
+      if (this.intentionalClose || this.state !== "connected") return;
+      const quiet = Date.now() - this.lastFrameAt;
+      if (quiet >= VOICE_WS_STALE_MS) {
+        try {
+          this.ws?.close();
+        } catch {
+          /* ignore */
+        }
+        this.handleUnexpectedDrop("no server activity (stale socket)");
+      }
+    }, VOICE_WS_STALE_MS);
+  }
+
+  private clearWatchdogs() {
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    if (this.durationTimer) clearTimeout(this.durationTimer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.staleTimer = null;
+    this.durationTimer = null;
+    this.heartbeatTimer = null;
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private teardownSocketOnly() {
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch {
+        /* ignore */
+      }
+      this.ws = null;
+    }
+  }
+
   /**
-   * Run navigate_to / search_entity / get_summary and send toolResponse back to Live.
-   * Sets UI phase to "thinking" while tools run so the mic strip shows progress
-   * (audio stream is not blocked by the tool await beyond that indicator).
+   * Run navigate_to / search_entity / get_summary / propose / confirm and send toolResponse.
    */
   private async handleToolCall(
     calls: NonNullable<NonNullable<LiveServerMessage["toolCall"]>["functionCalls"]>
   ) {
     this.toolBusy = true;
     this.setUiPhase("thinking");
-    // Release get_summary is a known ~8–10s cold path. Gemini 3.1 Flash Live does not
-    // support NON_BLOCKING tools (no model audio while a function_call is in flight), so
-    // primary filler is the system-instruction "speak before calling" nudge. If the model
-    // skipped that, surface the same line in the transcript strip immediately.
     if (
       calls.some((c) => {
         if (c.name !== "get_summary") return false;
@@ -374,7 +753,6 @@ export class VoiceLiveClient {
       if (!navigate) {
         throw new Error("Voice navigate adapter not configured");
       }
-      // Lazy-load handlers so Dashboard/Clerk hydration is not blocked by search index.
       const { dispatchVoiceToolCalls } = await import("@/lib/voice/handlers/dispatch");
       const { functionResponses, actionLines } = await dispatchVoiceToolCalls(
         calls,
@@ -382,6 +760,18 @@ export class VoiceLiveClient {
       );
       for (const line of actionLines) {
         this.emitTranscript(line.role, line.text);
+      }
+      for (const fr of functionResponses) {
+        if (
+          fr.name === "propose_action" &&
+          fr.response.ok &&
+          typeof fr.response.actionId === "string"
+        ) {
+          this.opts.onPendingActionChange?.(fr.response.actionId);
+        }
+        if (fr.name === "confirm_action") {
+          this.opts.onPendingActionChange?.(null);
+        }
       }
       this.sendJson({
         toolResponse: {
@@ -412,10 +802,6 @@ export class VoiceLiveClient {
     }
   }
 
-  /**
-   * Play model PCM, update transcripts, and drive speaking/listening phases.
-   * @param parsed - Live API server message.
-   */
   private handleServerContent(parsed: LiveServerMessage) {
     const content = parsed.serverContent;
     if (!content) return;
@@ -466,14 +852,10 @@ export class VoiceLiveClient {
     this.nextPlayTime = 0;
   }
 
-  /**
-   * Schedule a base64 PCM16 chunk on the playback AudioContext (24 kHz default).
-   */
   private playPcm16Base64(base64: string, mimeType?: string) {
     const ctx = this.ensurePlaybackContext();
     const rate = sampleRateFromMime(mimeType) ?? PLAYBACK_SAMPLE_RATE;
     const bytes = base64ToUint8Array(base64);
-    // Align to 16-bit samples (drop trailing odd byte if present).
     const sampleCount = Math.floor(bytes.byteLength / 2);
     const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, sampleCount);
     const float32 = new Float32Array(sampleCount);
@@ -514,7 +896,7 @@ export class VoiceLiveClient {
   }
 
   private sendSetup(model: string) {
-    const setup = {
+    const setup: Record<string, unknown> = {
       setup: {
         model: `models/${model}`,
         generationConfig: {
@@ -527,24 +909,25 @@ export class VoiceLiveClient {
         },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
+        // Resume the same Live conversation after WS drops (handle from prior updates).
+        sessionResumption: this.sessionResumptionHandle
+          ? { handle: this.sessionResumptionHandle }
+          : {},
         systemInstruction: {
           parts: [
             {
               text: [
-                "You are Release Desk voice.",
+                "You are Release Desk voice. Reply briefly and quickly.",
                 "Tools: navigate_to, search_entity, get_summary, propose_action, confirm_action.",
-                "Keep spoken replies brief.",
-                "Questions about a record → prefer get_summary over navigate_to.",
-                "Writes: ONLY set_approval_decision and acknowledge_alert via propose_action then confirm_action.",
-                "NEVER execute a write without a separate user yes after propose. If the user says \"yes, approve X now\" in one breath, call propose_action ONLY in that turn — wait for a later yes before confirm_action.",
-                "On no/cancel: confirm_action with accept=false (same actionId). Do not re-propose automatically.",
-                "Resolve ids with search_entity first. Never invent codes.",
-                "Latency: before get_summary with entityType=release, speak \"Let me check that release\" first. No filler for other entity types.",
+                voiceSidebarCatalogBrief(),
+                "tab/page/section mean the same. Env Booking=/booking (not /bookings).",
+                "You get occasional [UI] text with the current route — use that for page context (no live video).",
+                "Questions about a record → prefer get_summary. Writes: propose_action then confirm_action only after a later yes.",
+                "Never invent ids — search_entity first.",
               ].join(" "),
             },
           ],
         },
-
         tools: [
           {
             functionDeclarations: this.toolManifest.map((t) => ({
@@ -567,9 +950,7 @@ export class VoiceLiveClient {
     this.audioContext = new AudioCtx({ sampleRate: MIC_SAMPLE_RATE });
     void this.audioContext.resume();
     this.source = this.audioContext.createMediaStreamSource(this.mediaStream);
-    // ScriptProcessor is deprecated but widely available for Phase 0 PCM; AudioWorklet later.
     this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    // Mute local monitoring — mic must not play through speakers (feedback / masks model audio).
     this.muteGain = this.audioContext.createGain();
     this.muteGain.gain.value = 0;
     this.processor.onaudioprocess = (ev) => {
@@ -594,7 +975,7 @@ export class VoiceLiveClient {
     }
   }
 
-  private teardownAudio() {
+  private teardownAudioNodesKeepMic() {
     this.stopPlayback();
     try {
       this.processor?.disconnect();
@@ -610,11 +991,39 @@ export class VoiceLiveClient {
     this.muteGain = null;
     this.audioContext = null;
     this.playbackContext = null;
+  }
+
+  private teardownAudio() {
+    this.teardownAudioNodesKeepMic();
     if (this.mediaStream) {
       for (const track of this.mediaStream.getTracks()) track.stop();
       this.mediaStream = null;
     }
   }
+}
+
+function classifyConnectFailure(
+  message: string,
+  err: unknown
+): VoiceFailureKind {
+  const name = err instanceof DOMException ? err.name : "";
+  if (/permission denied|NotAllowedError|PermissionDeniedError/i.test(message) ||
+    name === "NotAllowedError") {
+    return "mic_denied";
+  }
+  if (/microphone|Microphone|NotFoundError|not available/i.test(message)) {
+    return "mic_unavailable";
+  }
+  if (/daily voice session|session_ceiling/i.test(message)) {
+    return "session_ceiling";
+  }
+  if (/rate limit|Session mint|not configured|503|502/i.test(message)) {
+    return "session_denied";
+  }
+  if (/WebSocket/i.test(message)) {
+    return "ws_failed";
+  }
+  return "unknown";
 }
 
 function floatTo16BitPCM(float32: Float32Array): Int16Array {

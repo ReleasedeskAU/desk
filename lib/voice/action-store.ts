@@ -133,6 +133,23 @@ export function discardVoiceAction(actionId: string, userId: string): boolean {
   return true;
 }
 
+/**
+ * Invalidate all open proposals for a user (session drop / remint).
+ * Prevents confirming a stale actionId after reconnect.
+ * @param userId - Clerk user id.
+ * @returns Number of pending proposals discarded.
+ */
+export function invalidatePendingVoiceActionsForUser(userId: string): number {
+  let n = 0;
+  for (const [id, row] of store) {
+    if (row.userId === userId && row.consumedAt == null) {
+      store.delete(id);
+      n += 1;
+    }
+  }
+  return n;
+}
+
 /** Test-only: clear store. */
 export function __resetVoiceActionStoreForTests(): void {
   store.clear();

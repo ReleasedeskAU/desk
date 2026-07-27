@@ -26,14 +26,14 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "navigate_to",
     description:
-      "Navigate the Release Desk UI to a known route. Use when the user wants to go/open a page. For entity detail pages, path MUST be the path field from a search_entity result — never invent ids. Prefer get_summary first when they ask what/why/status about a record. Never use for writes.",
+      "Navigate the Release Desk UI. path may be a real href (/booking, /calendar) OR a spoken sidebar name (env booking, calendar tab, calendar page) — tab/page/section mean the same. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes.",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
           description:
-            "Full app path starting with /. Examples: /risks, /releases, /dashboard, or /releases/{id} where {id} comes from search_entity.path.",
+            "Full path (/booking) or sidebar name (env booking page, calendar tab). Env Booking is /booking not /bookings. Prefer catalog paths over guesses.",
         },
         label: {
           type: "string",

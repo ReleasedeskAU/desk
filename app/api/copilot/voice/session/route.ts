@@ -4,9 +4,10 @@
  * Returns { token, toolManifest } — never the GEMINI_API_KEY.
  * Manifest (Phase 3): navigate_to, search_entity, get_summary, propose_action, confirm_action.
  *
- * Auth: requireSession (same pattern as appearance / risk-engine-config).
- * Org: optional orgId from Clerk auth() when present (unenforced).
- * Cost: per-user cooldown before minting.
+ * Auth: requireSession.
+ * Cost: per-user mint cooldown + daily session ceiling.
+ * Reconnect: X-Voice-Reconnect: 1 → soft cooldown, no extra daily count; always remints fresh token.
+ * Security: remint invalidates pending propose_action rows for this user.
  */
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
@@ -17,13 +18,39 @@ import {
   checkVoiceSessionRateLimit,
   markVoiceSessionMinted,
 } from "@/lib/voice/rate-limit";
+import { invalidatePendingVoiceActionsForUser } from "@/lib/voice/action-store";
+import {
+  checkVoiceDailySessionCeiling,
+  recordVoiceSessionStart,
+  VOICE_MAX_SESSION_DURATION_MS,
+  VOICE_MAX_SESSIONS_PER_USER_PER_DAY,
+} from "@/lib/voice/usage";
 import { VOICE_TOOL_MANIFEST } from "@/lib/voice/tool-manifest";
 
-export async function POST() {
+export async function POST(req: Request) {
   const { user, error } = await requireSession();
   if (error) return error;
 
-  const limited = checkVoiceSessionRateLimit(user!.id);
+  const reconnect =
+    req.headers.get("x-voice-reconnect")?.trim() === "1" ||
+    req.headers.get("X-Voice-Reconnect")?.trim() === "1";
+
+  if (!reconnect) {
+    const ceiling = checkVoiceDailySessionCeiling(user!.id);
+    if (!ceiling.allowed) {
+      return NextResponse.json(
+        {
+          error: ceiling.reason,
+          sessionCount: ceiling.sessionCount,
+          maxSessions: ceiling.maxSessions,
+          code: "daily_session_ceiling",
+        },
+        { status: 429 }
+      );
+    }
+  }
+
+  const limited = checkVoiceSessionRateLimit(user!.id, { reconnect });
   if (!limited.allowed) {
     return NextResponse.json(
       {
@@ -39,7 +66,6 @@ export async function POST() {
     );
   }
 
-  // Optional org context (Clerk) — never required for Phase 0.
   let organizationId: string | null = null;
   try {
     const a = await auth();
@@ -51,14 +77,23 @@ export async function POST() {
   try {
     const minted = await mintVoiceEphemeralToken();
     markVoiceSessionMinted(user!.id);
+    // Dropped sessions must not leave confirmable proposals for a new Live turn.
+    const invalidated = invalidatePendingVoiceActionsForUser(user!.id);
+    const usage = reconnect
+      ? undefined
+      : recordVoiceSessionStart(user!.id);
 
-    // Response must not include GEMINI_API_KEY or any secret env values.
     return NextResponse.json({
       token: minted.token,
       toolManifest: VOICE_TOOL_MANIFEST,
       model: minted.model,
       expireTime: minted.expireTime,
       organizationId,
+      reconnect,
+      invalidatedPendingActions: invalidated,
+      maxSessionDurationMs: VOICE_MAX_SESSION_DURATION_MS,
+      maxSessionsPerDay: VOICE_MAX_SESSIONS_PER_USER_PER_DAY,
+      usage: usage ?? null,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

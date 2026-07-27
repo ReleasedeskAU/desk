@@ -24,6 +24,7 @@ import { DepartmentsTab } from "@/components/settings/master-data/DepartmentsTab
 import { ApplicationsTab } from "@/components/settings/master-data/ApplicationsTab";
 import { EnvironmentsTab } from "@/components/settings/master-data/EnvironmentsTab";
 import { UsersTab } from "@/components/settings/master-data/UsersTab";
+import { VoiceUsagePanel } from "@/components/settings/VoiceUsagePanel";
 
 const VALID_TABS = new Set([
   "general",
@@ -124,11 +125,13 @@ function SettingsPageInner() {
           {activeTab === "applications" && <ApplicationsTab />}
           {activeTab === "environments" && <EnvironmentsTab />}
           {activeTab === "users" && <UsersTab />}
+          {activeTab === "integrations" && <VoiceUsagePanel />}
 
           {!masterDataTabs.has(activeTab) &&
             activeTab !== "team" &&
             activeTab !== "appearance" &&
-            activeTab !== "risk-engine" && (
+            activeTab !== "risk-engine" &&
+            activeTab !== "integrations" && (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50 py-24 text-center dark:border-[var(--border)] dark:bg-white/[0.025]">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
                 <SettingsIcon className="h-6 w-6 text-gray-400 dark:text-gray-300" />

@@ -73,6 +73,31 @@ describe("handleNavigateTo", () => {
     );
     assert.equal(result.ok, false);
     assert.deepEqual(pushed, []);
-    assert.match(result.reason ?? "", /path|href|search_entity/i);
+    assert.match(result.reason ?? "", /path|href|search|sidebar|Bare ids/i);
+  });
+
+  it("resolves calendar tab and env booking page via sidebar catalog", async () => {
+    const pushed: string[] = [];
+    const cal = await handleNavigateTo(
+      { path: "calendar tab" },
+      { push: (href) => pushed.push(href) }
+    );
+    assert.equal(cal.ok, true);
+    assert.equal(cal.path, "/calendar");
+
+    const booking = await handleNavigateTo(
+      { path: "env booking page" },
+      { push: (href) => pushed.push(href) }
+    );
+    assert.equal(booking.ok, true);
+    assert.equal(booking.path, "/booking");
+
+    const alias = await handleNavigateTo(
+      { path: "/bookings" },
+      { push: (href) => pushed.push(href) }
+    );
+    assert.equal(alias.ok, true);
+    assert.equal(alias.path, "/booking");
+    assert.deepEqual(pushed, ["/calendar", "/booking", "/booking"]);
   });
 });
