@@ -88,6 +88,7 @@ export function voiceEntityCatalogBrief(): string {
   return [
     "Entities:",
     lines.join("; ") + ".",
+    "Detail URLs come only from search_entity.path / get_summary.path — never invent hrefs.",
     "Ordinals: first/1st/second X → search_entity (never invent codes).",
     "On a list page, prefer [APP_CONTEXT] visible[] order for first/second.",
     `All kinds: ${SEARCH_ENTITY_TYPES.join(",")}.`,

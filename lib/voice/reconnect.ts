@@ -2,8 +2,12 @@
  * Named constants for Live WebSocket drop detection + reconnect backoff.
  */
 
-/** No server frame within this window ⇒ treat socket as stale and reconnect. */
-export const VOICE_WS_STALE_MS = 45_000;
+/**
+ * No server frame within this window ⇒ treat socket as stale and reconnect.
+ * Must be long enough for normal pauses (user thinking / silence) — 45s was
+ * killing mid-conversation sessions and forcing orange reconnect UI.
+ */
+export const VOICE_WS_STALE_MS = 5 * 60_000;
 
 /** First reconnect delay after an unexpected drop. */
 export const VOICE_RECONNECT_BASE_MS = 1_000;
@@ -12,7 +16,7 @@ export const VOICE_RECONNECT_BASE_MS = 1_000;
 export const VOICE_RECONNECT_MAX_MS = 16_000;
 
 /** Give up auto-reconnect after this many failures in one lifecycle. */
-export const VOICE_RECONNECT_MAX_ATTEMPTS = 5;
+export const VOICE_RECONNECT_MAX_ATTEMPTS = 8;
 
 /** Soft mint cooldown when reminting after a drop (full cooldown still applies to cold starts). */
 export const VOICE_RECONNECT_COOLDOWN_MS = 2_000;

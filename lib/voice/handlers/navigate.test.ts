@@ -65,6 +65,37 @@ describe("handleNavigateTo", () => {
     assert.deepEqual(pushed, ["/releases/rel-v2140"]);
   });
 
+  it("recovers invented /release/REL-0004 via search catalog href", async () => {
+    const pushed: string[] = [];
+    const result = await handleNavigateTo(
+      { path: "/release/REL-0004", label: "REL-0004" },
+      {
+        push: (href) => pushed.push(href),
+        fetch: async () => {
+          throw new Error("should not fetch when seed catalog hits");
+        },
+      }
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.path, "/releases/REL-0004");
+    assert.deepEqual(pushed, ["/releases/REL-0004"]);
+  });
+
+  it("resolves bare REL-0004 via search catalog href", async () => {
+    const pushed: string[] = [];
+    const result = await handleNavigateTo(
+      { path: "REL-0004" },
+      {
+        push: (href) => pushed.push(href),
+        fetch: async () => {
+          throw new Error("should not fetch when seed catalog hits");
+        },
+      }
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(pushed, ["/releases/REL-0004"]);
+  });
+
   it("rejects bare search refId (not a route)", async () => {
     const pushed: string[] = [];
     const result = await handleNavigateTo(

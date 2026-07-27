@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   VOICE_RECONNECT_BASE_MS,
   VOICE_RECONNECT_MAX_MS,
+  VOICE_WS_STALE_MS,
   voiceReconnectDelayMs,
 } from "./reconnect";
 
@@ -17,5 +18,9 @@ describe("voiceReconnectDelayMs", () => {
     assert.equal(voiceReconnectDelayMs(2), VOICE_RECONNECT_BASE_MS * 4);
     assert.ok(voiceReconnectDelayMs(20) <= VOICE_RECONNECT_MAX_MS);
     assert.equal(voiceReconnectDelayMs(20), VOICE_RECONNECT_MAX_MS);
+  });
+
+  it("allows long quiet periods before stale reconnect", () => {
+    assert.ok(VOICE_WS_STALE_MS >= 5 * 60_000);
   });
 });

@@ -47,7 +47,7 @@ describe("voice usage ceilings", () => {
       estimateVoiceWorstCaseUsd(VOICE_MAX_SESSIONS_PER_USER_PER_DAY),
       expected
     );
-    // Sanity: ~$13.80 at current defaults (40 × 15 × 0.023).
-    assert.ok(expected > 10 && expected < 20);
+    // Sanity: ~$55 at current defaults (40 × 60 × 0.023).
+    assert.ok(expected > 50 && expected < 60);
   });
 });

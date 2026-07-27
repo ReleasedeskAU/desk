@@ -2,6 +2,8 @@
  * navigate_to tool handler — allowlisted client-side navigation only.
  * Resolves spoken sidebar names ("calendar tab", "env booking page") and
  * path aliases (/bookings → /booking) via sidebar-catalog before allowlist checks.
+ * Bad/invented detail paths are recovered via search + app-context catalogs
+ * (never hardcoded singular→plural URL rewrites).
  */
 import {
   isAllowedVoicePath,
@@ -10,6 +12,7 @@ import {
 } from "@/lib/voice/route-allowlist";
 import { resolveVoiceNavTarget } from "@/lib/voice/sidebar-catalog";
 import { assertVoicePathExists } from "@/lib/voice/path-exists";
+import { resolveEntityNavFromHint } from "@/lib/voice/resolve-nav-path";
 
 export type NavigateToArgs = {
   path?: unknown;
@@ -51,25 +54,28 @@ export async function handleNavigateTo(
   const resolved = rawPath ? resolveVoiceNavTarget(rawPath) : null;
   const candidateRaw = resolved?.path ?? rawPath;
 
-  // Reject bare ids before normalization invents a leading slash (rel-rel-v2140 → /rel-rel-v2140).
+  // Bare non-path tokens: sidebar phrase, else entity catalog lookup (REL-0004 → seed href).
   if (
     candidateRaw &&
     !candidateRaw.startsWith("/") &&
     !/^https?:\/\//i.test(candidateRaw)
   ) {
-    // Last chance: resolve as spoken phrase without a leading slash.
     const spoken = resolveVoiceNavTarget(candidateRaw);
-    if (!spoken) {
-      return {
-        ok: false,
-        tool: "navigate_to",
-        path: rawPath,
-        reason:
-          "Bare ids are not navigable — use a sidebar name (e.g. env booking) or path from search_entity",
-        actionLine: `Navigate blocked — use search path, not id (${rawPath})`,
-      };
+    if (spoken) {
+      return navigateResolved(spoken.path, label ?? spoken.label, deps);
     }
-    return navigateResolved(spoken.path, label ?? spoken.label, deps);
+    const fromCatalog = resolveEntityNavFromHint(candidateRaw);
+    if (fromCatalog) {
+      return navigateResolved(fromCatalog.path, label ?? fromCatalog.label, deps);
+    }
+    return {
+      ok: false,
+      tool: "navigate_to",
+      path: rawPath,
+      reason:
+        "Bare ids are not navigable — call search_entity and use the returned path field",
+      actionLine: `Navigate blocked — use search path, not id (${rawPath})`,
+    };
   }
 
   return navigateResolved(candidateRaw, label ?? resolved?.label, deps);
@@ -77,60 +83,91 @@ export async function handleNavigateTo(
 
 /**
  * Allowlist + existence check + router.push.
+ * If the model invented a bad shape (/release/…), recover via catalog href.
  */
 async function navigateResolved(
   rawPath: string,
   label: string | undefined,
   deps: NavigateDeps
 ): Promise<NavigateToolResult> {
-  const path = normalizeVoicePath(rawPath);
+  let path = normalizeVoicePath(rawPath);
+  let displayHint = label;
 
   if (!path) {
     return {
       ok: false,
       tool: "navigate_to",
       reason:
-        "Missing or invalid path — pass a sidebar name or path starting with /",
+        "Missing or invalid path — pass a sidebar name or path from search_entity",
       actionLine: "Navigate failed — invalid path",
     };
   }
 
   // Apply path aliases again after normalize (e.g. /Bookings).
   const aliased = resolveVoiceNavTarget(path);
-  const finalPath =
-    aliased?.path && aliased.path.startsWith("/")
-      ? normalizeVoicePath(aliased.path) ?? path
-      : path;
-  const displayHint = label ?? aliased?.label;
-
-  if (!isAllowedVoicePath(finalPath)) {
-    return {
-      ok: false,
-      tool: "navigate_to",
-      path: finalPath,
-      reason: "Path is not in the Release Desk allowlist",
-      actionLine: `Navigate blocked — unknown page (${finalPath})`,
-    };
+  if (aliased?.path?.startsWith("/")) {
+    path = normalizeVoicePath(aliased.path) ?? path;
+    displayHint = displayHint ?? aliased.label;
   }
 
-  const exists = await assertVoicePathExists(finalPath, { fetch: deps.fetch });
+  // Unknown / disallowed shape → resolve real href from search or visible rows.
+  if (!isAllowedVoicePath(path)) {
+    const recovered = resolveEntityNavFromHint(rawPath);
+    if (recovered && isAllowedVoicePath(recovered.path)) {
+      path = normalizeVoicePath(recovered.path) ?? recovered.path;
+      displayHint = displayHint ?? recovered.label;
+    } else {
+      return {
+        ok: false,
+        tool: "navigate_to",
+        path,
+        reason:
+          "Path is not in the Release Desk allowlist — call search_entity and use candidate.path",
+        actionLine: `Navigate blocked — unknown page (${path})`,
+      };
+    }
+  }
+
+  const exists = await assertVoicePathExists(path, { fetch: deps.fetch });
   if (!exists.ok) {
-    return {
-      ok: false,
-      tool: "navigate_to",
-      path: finalPath,
-      reason: exists.reason,
-      actionLine: `Navigate blocked — ${exists.reason}`,
-    };
+    // Wrong path but real entity code in the segment — try catalog once.
+    const recovered = resolveEntityNavFromHint(path);
+    if (
+      recovered &&
+      recovered.path !== path &&
+      isAllowedVoicePath(recovered.path)
+    ) {
+      const ok2 = await assertVoicePathExists(recovered.path, { fetch: deps.fetch });
+      if (ok2.ok) {
+        path = normalizeVoicePath(recovered.path) ?? recovered.path;
+        displayHint = displayHint ?? recovered.label;
+      } else {
+        return {
+          ok: false,
+          tool: "navigate_to",
+          path,
+          reason: exists.reason,
+          actionLine: `Navigate blocked — ${exists.reason}`,
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        tool: "navigate_to",
+        path,
+        reason: exists.reason,
+        actionLine: `Navigate blocked — ${exists.reason}`,
+      };
+    }
   }
 
-  const displayName = labelForVoicePath(finalPath, displayHint);
-  deps.push(finalPath);
+  const displayName = labelForVoicePath(path, displayHint);
+  deps.push(path);
 
   return {
     ok: true,
     tool: "navigate_to",
-    path: finalPath,
+    path,
     displayName,
     actionLine: `Opening ${displayName}`,
   };

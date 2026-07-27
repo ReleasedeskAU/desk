@@ -41,9 +41,6 @@ export function useRiskEngineConfig(): {
       .then((data) => {
         if (cancelled || !data) return;
         const next = normalizeRiskEngineConfig(data.config ?? data);
-        // #region agent log
-        fetch('http://127.0.0.1:7344/ingest/492950fb-2790-4cbd-9ede-c2d15d57b4c6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'496e00'},body:JSON.stringify({sessionId:'496e00',runId:'post-fix',hypothesisId:'H3',location:'useRiskEngineConfig.ts:loaded',message:'Client hook loaded config',data:{tick,bands:next.simpleBands.map((b)=>({id:b.id,label:b.label,maxScore:b.maxScore})),likelihoodMax:next.likelihoodMax,impactMax:next.impactMax,isDefaultLabels:next.simpleBands.map((b)=>b.label).join('|')==='LOW|MEDIUM|HIGH|CRITICAL'},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         setConfig(next);
       })
       .catch(() => {

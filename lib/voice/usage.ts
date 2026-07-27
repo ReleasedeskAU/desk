@@ -8,8 +8,8 @@
  *   Combined full-duplex worst case ≈ $0.023 / min
  *
  * Defaults:
- *   Max session 15 min → ≤ ~$0.35 worst-case per session
- *   Max 40 sessions/user/day → ≤ ~$13.80/user/day worst-case if every session is full 15 min duplex
+ *   Max session 60 min → ≤ ~$1.38 worst-case per session
+ *   Max 40 sessions/user/day → ≤ ~$55/user/day worst-case if every session is full 60 min duplex
  *   Realistic mix (shorter sessions) is typically well under that ceiling.
  */
 
@@ -23,8 +23,8 @@ export const VOICE_AUDIO_OUTPUT_USD_PER_MIN = 0.018;
 export const VOICE_AUDIO_DUPLEX_USD_PER_MIN =
   VOICE_AUDIO_INPUT_USD_PER_MIN + VOICE_AUDIO_OUTPUT_USD_PER_MIN;
 
-/** Hard cap on a single Live session length. */
-export const VOICE_MAX_SESSION_DURATION_MS = 15 * 60 * 1000;
+/** Hard cap on a single Live session length (continuous mic conversation). */
+export const VOICE_MAX_SESSION_DURATION_MS = 60 * 60 * 1000;
 
 /** Max successful session mints per Clerk user per UTC day. */
 export const VOICE_MAX_SESSIONS_PER_USER_PER_DAY = 40;

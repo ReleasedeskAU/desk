@@ -33,7 +33,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
         path: {
           type: "string",
           description:
-            "Full path (/booking) or sidebar name (env booking page, calendar tab). Env Booking is /booking not /bookings. Prefer catalog paths over guesses.",
+            "Full path from search_entity/get_summary path fields, or a sidebar name (env booking, calendar tab). Never invent detail URLs — use candidate.path.",
         },
         label: {
           type: "string",

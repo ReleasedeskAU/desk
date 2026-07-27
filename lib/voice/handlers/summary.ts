@@ -7,6 +7,7 @@
  */
 import { SEARCH_ENTITY_TYPES } from "@/lib/search-entity-types";
 import { safeFetchJson, isFetchAbort } from "@/lib/safe-fetch";
+import { detailPathForEntity } from "@/lib/voice/resolve-nav-path";
 
 export type GetSummaryArgs = {
   entityType?: unknown;
@@ -18,6 +19,8 @@ export type SummaryToolResult = {
   tool: "get_summary";
   entityType?: string;
   entityId?: string;
+  /** Canonical detail href from ENTITY_HREF_PREFIX — use for navigate_to. */
+  path?: string;
   /** Concise natural-language summary for the model to speak. */
   summary?: string;
   instruction: string;
@@ -135,14 +138,20 @@ export async function handleGetSummary(args: GetSummaryArgs): Promise<SummaryToo
     };
   }
 
+  const resolvedType = data.entityType ?? entityType;
+  const resolvedId = data.entityId ?? entityId;
+  const path = detailPathForEntity(resolvedType, resolvedId) ?? undefined;
+
   return {
     ok: true,
     tool: "get_summary",
-    entityType: data.entityType ?? entityType,
-    entityId: data.entityId ?? entityId,
+    entityType: resolvedType,
+    entityId: resolvedId,
+    path,
     summary: data.summary.trim(),
-    instruction:
-      "Speak the summary field naturally in a few sentences. Do not dump raw JSON. Only call navigate_to if the user then asks to open the record.",
-    actionLine: `Summary: ${(data.entityType ?? entityType)} ${data.entityId ?? entityId}`,
+    instruction: path
+      ? `Speak the summary field naturally. If the user asks to open this record, call navigate_to with path=${path} (the path field) — do not invent URLs.`
+      : "Speak the summary field naturally. To open a record, call search_entity first and use candidate.path for navigate_to.",
+    actionLine: `Summary: ${resolvedType} ${resolvedId}`,
   };
 }
