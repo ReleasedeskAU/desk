@@ -239,6 +239,7 @@ export const VOICE_SIDEBAR_CATALOG: readonly VoiceSidebarItem[] = [
  * Common wrong / alternate paths the model or user may invent.
  * Always resolve to the canonical href before allowlist checks.
  */
+
 export const VOICE_PATH_ALIASES: Readonly<Record<string, string>> = {
   "/bookings": "/booking",
   "/env-booking": "/booking",
