@@ -537,7 +537,7 @@ function UnifiedRow({
     <tr className={cn(tableRow, "group")}>
       {isColumnVisible("releaseCode") && (
       <td className={`${tableCell} whitespace-nowrap`}>
-        <ProgressLink href={row.href} className="font-mono text-xs text-brand-600 hover:underline">{row.code}</ProgressLink>
+        <ProgressLink href={row.href} data-voice-row={row.code} className="font-mono text-xs text-brand-600 hover:underline">{row.code}</ProgressLink>
       </td>
       )}
       {isColumnVisible("name") && (

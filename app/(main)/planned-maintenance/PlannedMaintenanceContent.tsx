@@ -26,6 +26,7 @@ import { PLANNED_MAINTENANCE_FILTER_SCHEMA } from "@/lib/table-filters";
 import { PlannedMaintenanceFormModal } from "@/components/planned-maintenance/PlannedMaintenanceFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type MaintenanceRow = {
   id: string;
@@ -113,6 +114,22 @@ export default function PlannedMaintenanceContent() {
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      rows.map((r) => ({
+        code: r.maintenanceCode,
+        label: `${r.maintenanceCode} — ${r.application?.name ?? r.type}`,
+        path: `/planned-maintenance/${r.id}`,
+      })),
+    [rows]
+  );
+  useVoiceListContext(
+    "/planned-maintenance",
+    "maintenance",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>
@@ -247,7 +264,7 @@ export default function PlannedMaintenanceContent() {
                   <tr key={r.id} className={tableRow}>
                     {isColumnVisible("maintenanceCode") && (
                       <td className={`${tableCell} whitespace-nowrap`}>
-                        <ProgressLink href={`/planned-maintenance/${r.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                        <ProgressLink href={`/planned-maintenance/${r.id}`} data-voice-row={r.maintenanceCode} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
                           {r.maintenanceCode}
                         </ProgressLink>
                       </td>

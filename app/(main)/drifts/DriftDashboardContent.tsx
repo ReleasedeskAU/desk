@@ -26,6 +26,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { DriftFormModal } from "@/components/drifts/DriftFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type ReferenceDataRow = { id: string; category: string; value: string; sortOrder: number; active: boolean };
 
@@ -140,6 +141,22 @@ export default function DriftDashboardContent() {
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      drifts.map((d) => ({
+        code: d.driftCode,
+        label: `${d.driftCode} — ${d.release.releaseCode}`,
+        path: `/drifts/${d.id}`,
+      })),
+    [drifts]
+  );
+  useVoiceListContext(
+    "/drifts",
+    "drift",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>
@@ -298,7 +315,7 @@ export default function DriftDashboardContent() {
                   <tr key={d.id} className={tableRow}>
                     {isColumnVisible("driftCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <ProgressLink href={`/drifts/${d.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                      <ProgressLink href={`/drifts/${d.id}`} data-voice-row={d.driftCode} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
                         {d.driftCode}
                       </ProgressLink>
                     </td>

@@ -19,6 +19,7 @@ import {
   resolveVisibleOrdinal,
 } from "@/lib/voice/app-context";
 import {
+  parseBareOrdinal,
   parseVoiceSearchIntent,
   voiceEntityLabel,
   type VoiceEntityKind,
@@ -229,23 +230,14 @@ export async function handleSearchEntity(
 
   const intent = parseVoiceSearchIntent(rawQuery);
 
-  // "first one" / "the first" while on a list page — use visible context entity type.
+  // "first one" / "the 10th" while on a list page — use visible context entity type.
   if (intent.kind === "text") {
     const bare = intent.query.trim().toLowerCase();
-    const bareOrd = bare.match(
-      /^(?:the\s+)?(first|1st|second|2nd|third|3rd)(?:\s+one)?$/
-    );
-    if (bareOrd) {
+    const bareN = parseBareOrdinal(bare);
+    if (bareN != null) {
       const ctx = getVoiceAppContext();
       if (ctx?.entityType && ctx.visible.length > 0) {
-        const word = bareOrd[1]!;
-        const ordinal =
-          word === "first" || word === "1st"
-            ? 1
-            : word === "second" || word === "2nd"
-              ? 2
-              : 3;
-        return resolveOrdinal(ordinal, ctx.entityType, rawQuery);
+        return resolveOrdinal(bareN, ctx.entityType, rawQuery);
       }
     }
   }

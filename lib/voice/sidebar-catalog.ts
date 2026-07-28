@@ -345,14 +345,18 @@ export function resolveVoiceNavTarget(
 }
 
 /**
- * Compact brief for Live systemInstruction — keep short for faster first-token latency.
- * Full synonym resolution still lives in resolveVoiceNavTarget (client/server).
+ * Full sidebar inventory for Live systemInstruction.
+ * Built from VOICE_SIDEBAR_CATALOG so the model never “forgets” tabs that
+ * resolveVoiceNavTarget can already open (truncated briefs caused false “I don’t know that tab”).
  */
 export function voiceSidebarCatalogBrief(): string {
+  const entries = VOICE_SIDEBAR_CATALOG.map(
+    (i) => `${i.label}=${i.href}`
+  ).join("; ");
   return [
-    "Sidebar: Inbox=/inbox, Dashboard=/dashboard, Releases=/releases, Calendar=/calendar,",
-    "Env Booking=/booking, Dependencies=/dependencies, Conflicts=/conflicts, Blockers=/blockers,",
-    "System Mapping=/system-mapping, Risks=/risks, Approvals=/approvals, Alerts=/monitoring-alerts,",
-    "Settings=/settings. Aliases: bookings→/booking, calender→/calendar. tab/page/section=same.",
+    "Sidebar tabs (ALL navigable via navigate_to with label or synonym):",
+    `${entries}.`,
+    "Aliases: bookings→/booking, calender→/calendar, versions and config→/environments, reference data→/admin/reference-data.",
+    "tab/page/section mean the same. Never say you cannot open a listed sidebar tab — call navigate_to with the spoken name.",
   ].join(" ");
 }

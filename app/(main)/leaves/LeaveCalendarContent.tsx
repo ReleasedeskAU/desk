@@ -25,6 +25,7 @@ import { LEAVES_FILTER_SCHEMA } from "@/lib/table-filters";
 import { LeaveCreateModal } from "@/components/leaves/LeaveCreateModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type LeaveRow = {
   id: string;
@@ -105,6 +106,22 @@ export default function LeaveCalendarContent() {
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      leaves.map((l) => ({
+        code: l.leaveCode,
+        label: `${l.leaveCode} — ${l.user.name}`,
+        path: `/leaves/${l.id}`,
+      })),
+    [leaves]
+  );
+  useVoiceListContext(
+    "/leaves",
+    "leave",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>
@@ -252,7 +269,7 @@ export default function LeaveCalendarContent() {
                   <tr key={l.id} className={tableRow}>
                     {isColumnVisible("leaveCode") && (
                       <td className={`${tableCell} whitespace-nowrap`}>
-                        <ProgressLink href={`/leaves/${l.id}`} className="font-mono text-xs text-brand-600 hover:underline">
+                        <ProgressLink href={`/leaves/${l.id}`} data-voice-row={l.leaveCode} className="font-mono text-xs text-brand-600 hover:underline">
                           {l.leaveCode}
                         </ProgressLink>
                       </td>

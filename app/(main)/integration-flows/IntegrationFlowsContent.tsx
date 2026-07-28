@@ -25,6 +25,7 @@ import { IntegrationFlowFormModal } from "@/components/integration-flows/Integra
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type IntegrationFlowRow = {
   id: string;
@@ -100,6 +101,22 @@ export default function IntegrationFlowsContent() {
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      rows.map((r) => ({
+        code: r.flowCode,
+        label: `${r.flowCode} — ${r.sourceSystem} → ${r.targetSystem}`,
+        path: `/integration-flows/${r.id}`,
+      })),
+    [rows]
+  );
+  useVoiceListContext(
+    "/integration-flows",
+    "flow",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>
@@ -230,7 +247,7 @@ export default function IntegrationFlowsContent() {
                   <tr key={r.id} className={tableRow}>
                     {isColumnVisible("flowCode") && (
                       <td className={`${tableCell} whitespace-nowrap font-mono text-xs`}>
-                        <ProgressLink href={`/integration-flows/${r.id}`} className="text-brand-600 dark:text-brand-400 hover:underline">
+                        <ProgressLink href={`/integration-flows/${r.id}`} data-voice-row={r.flowCode} className="text-brand-600 dark:text-brand-400 hover:underline">
                           {r.flowCode}
                         </ProgressLink>
                       </td>

@@ -30,8 +30,8 @@ export type NavigateToolResult = {
 };
 
 export type NavigateDeps = {
-  /** Next.js App Router push (client-side; no full reload). */
-  push: (href: string) => void;
+  /** Next.js App Router push (may be async when voice runs a guided highlight first). */
+  push: (href: string) => void | Promise<void>;
   /** Injectable fetch for existence checks (tests). */
   fetch?: typeof fetch;
 };
@@ -162,7 +162,8 @@ async function navigateResolved(
   }
 
   const displayName = labelForVoicePath(path, displayHint);
-  deps.push(path);
+  // Await guided push so concurrent navigate_to calls run one-after-another.
+  await Promise.resolve(deps.push(path));
 
   return {
     ok: true,

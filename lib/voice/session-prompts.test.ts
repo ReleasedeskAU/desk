@@ -5,6 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildVoiceContextDigest,
   voiceSessionPromptText,
   voiceToolWaitNotice,
   voiceToolWaitNoticesForCalls,
@@ -18,11 +19,48 @@ describe("voiceSessionPromptText", () => {
     assert.match(t, /Do not call any tools/i);
   });
 
-  it("network resume apologizes and continues same chat", () => {
-    const t = voiceSessionPromptText("network_resume");
-    assert.match(t, /network/i);
-    assert.match(t, /apologize|disconnected/i);
-    assert.match(t, /same conversation|continue/i);
+  it("resume_continue keeps same chat without blaming network failure", () => {
+    const t = voiceSessionPromptText("resume_continue");
+    assert.match(t, /same conversation|prior dialogue/i);
+    assert.match(t, /still here/i);
+    assert.match(t, /Do not apologize for a network/i);
+    assert.doesNotMatch(t, /dropped due to a network issue/i);
+    assert.match(t, /Do not call any tools/i);
+  });
+
+  it("network_resume alias matches resume_continue behavior", () => {
+    const a = voiceSessionPromptText("network_resume");
+    const b = voiceSessionPromptText("resume_continue");
+    assert.equal(a, b);
+  });
+
+  it("context_bridge includes digest and avoids first-meeting restart", () => {
+    const t = voiceSessionPromptText(
+      "context_bridge",
+      "User: open releases\nAssistant: Opening the releases list."
+    );
+    assert.match(t, /could not be resumed/i);
+    assert.match(t, /open releases/i);
+    assert.match(t, /Do not re-introduce/i);
+    assert.match(t, /Do not call any tools/i);
+  });
+});
+
+describe("buildVoiceContextDigest", () => {
+  it("formats recent turns and respects max chars", () => {
+    const digest = buildVoiceContextDigest(
+      [
+        { role: "user", text: "show blockers" },
+        { role: "model", text: "Here are the open blockers." },
+      ],
+      1_400
+    );
+    assert.match(digest, /User: show blockers/);
+    assert.match(digest, /Assistant: Here are the open blockers/);
+  });
+
+  it("returns empty string for empty turns", () => {
+    assert.equal(buildVoiceContextDigest([]), "");
   });
 });
 

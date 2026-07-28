@@ -1455,6 +1455,7 @@ export default function RiskRegisterContent() {
                         <td className={`${tableCell} whitespace-nowrap`}>
                           <ProgressLink
                             href={`/risks/${r.id}`}
+                            data-voice-row={r.riskCode}
                             className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline"
                           >
                             {r.riskCode}

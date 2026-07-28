@@ -25,6 +25,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { ApprovalCreateModal } from "@/components/approvals/ApprovalCreateModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type ApprovalRow = {
   id: string;
@@ -119,6 +120,22 @@ export default function ApprovalQueueContent() {
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      approvals.map((a) => ({
+        code: a.approvalCode,
+        label: `${a.approvalCode} — ${a.release.releaseCode}`,
+        path: `/approvals/${a.id}`,
+      })),
+    [approvals]
+  );
+  useVoiceListContext(
+    "/approvals",
+    "approval",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>
@@ -266,7 +283,7 @@ export default function ApprovalQueueContent() {
                   <tr key={a.id} className={tableRow}>
                     {isColumnVisible("approvalCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <ProgressLink href={`/approvals/${a.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                      <ProgressLink href={`/approvals/${a.id}`} data-voice-row={a.approvalCode} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
                         {a.approvalCode}
                       </ProgressLink>
                     </td>

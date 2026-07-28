@@ -767,6 +767,7 @@ export default function BookingContent() {
                                 {col.key === "bookingCode" && row.id ? (
                                   <ProgressLink
                                     href={`/booking/${row.id}`}
+                                    data-voice-row={code}
                                     className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
                                   >
                                     {displayVal}

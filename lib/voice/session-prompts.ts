@@ -3,13 +3,33 @@
  * Kept pure for unit tests — Live client sends these as clientContent or transcripts.
  */
 
-export type VoiceSessionPromptKind = "greet" | "network_resume";
+export type VoiceSessionPromptKind =
+  | "greet"
+  | "resume_continue"
+  | "context_bridge"
+  /** @deprecated Use resume_continue — kept for older call sites / tests. */
+  | "network_resume";
+
+export type VoiceDigestTurn = {
+  role: "user" | "model";
+  text: string;
+};
+
+/** Max turns kept for a local continuity digest when Gemini resume fails. */
+export const VOICE_DIGEST_MAX_TURNS = 8;
+
+/** Soft cap on digest payload size sent to the model. */
+export const VOICE_DIGEST_MAX_CHARS = 1_400;
 
 /**
  * Client turn text that triggers a short spoken reply after setupComplete.
- * @param kind - Fresh mic start vs network reconnect (same Live session).
+ * @param kind - Fresh mic start, successful resume, or failed-resume bridge.
+ * @param digest - Recent user/model lines for context_bridge only.
  */
-export function voiceSessionPromptText(kind: VoiceSessionPromptKind): string {
+export function voiceSessionPromptText(
+  kind: VoiceSessionPromptKind,
+  digest = ""
+): string {
   if (kind === "greet") {
     return [
       "[SESSION]",
@@ -19,14 +39,57 @@ export function voiceSessionPromptText(kind: VoiceSessionPromptKind): string {
       "Do not call any tools yet.",
     ].join(" ");
   }
+  if (kind === "context_bridge") {
+    const body = digest.trim() || "(no prior transcript available)";
+    return [
+      "[SESSION]",
+      "Prior Live connection could not be resumed — this is a refreshed socket,",
+      "not a brand-new product tour.",
+      "Recent conversation for continuity:",
+      body,
+      "Acknowledge in one short sentence that you are back and use that context.",
+      "Do not re-introduce yourself as if meeting the user for the first time,",
+      "and do not ask how you can help from scratch unless the digest is empty.",
+      "Do not call any tools yet.",
+    ].join(" ");
+  }
+  // resume_continue | network_resume (alias)
   return [
     "[SESSION]",
-    "The Live connection dropped due to a network issue and is restored.",
-    "Briefly apologize that you got disconnected because of the network,",
-    "say you are back, and continue the same conversation.",
-    "Do not restart from scratch or re-greet as a brand-new session.",
+    "Live connection briefly refreshed (normal session rotation — same conversation).",
+    "You already have the prior dialogue in context.",
+    "Say one short line that you are still here and listening,",
+    "then wait for the user.",
+    "Do not apologize for a network outage,",
+    "do not re-introduce yourself,",
+    "and do not restart or ask how you can help from scratch.",
     "Do not call any tools yet.",
   ].join(" ");
+}
+
+/**
+ * Compact recent user/model turns for continuity when session resumption fails.
+ * @param turns - Chronological digest entries (oldest first).
+ * @param maxChars - Soft character budget for the returned string.
+ */
+export function buildVoiceContextDigest(
+  turns: VoiceDigestTurn[],
+  maxChars = VOICE_DIGEST_MAX_CHARS
+): string {
+  const lines: string[] = [];
+  for (const t of turns) {
+    const role = t.role === "user" ? "User" : "Assistant";
+    const text = t.text.replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!text) continue;
+    lines.push(`${role}: ${text}`);
+  }
+  let out = lines.join("\n");
+  if (out.length > maxChars) {
+    out = out.slice(out.length - maxChars);
+    const nl = out.indexOf("\n");
+    if (nl > 0 && nl < 80) out = out.slice(nl + 1);
+  }
+  return out;
 }
 
 /**

@@ -56,10 +56,11 @@ describe("screen-share constants", () => {
     assert.ok(VOICE_SCREEN_JPEG_QUALITY >= 0.9);
   });
 
-  it("schedules A+V proactive reconnect before the 2-minute hard limit", () => {
+  it("schedules A+V proactive remint inside the ~10 min WebSocket window", () => {
+    // Compression lifts the historical ~2 min A+V session cap; remint is for WS only.
     assert.equal(VOICE_AV_SESSION_LIMIT_MS, 120_000);
-    assert.ok(VOICE_AV_PROACTIVE_RECONNECT_MS < VOICE_AV_SESSION_LIMIT_MS);
-    assert.ok(VOICE_AV_PROACTIVE_RECONNECT_MS >= 90_000);
+    assert.ok(VOICE_AV_PROACTIVE_RECONNECT_MS < 10 * 60_000);
+    assert.ok(VOICE_AV_PROACTIVE_RECONNECT_MS >= 7 * 60_000);
   });
 
   it("keeps idle refresh at or below 1 fps", () => {

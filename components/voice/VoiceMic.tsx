@@ -17,6 +17,17 @@ import {
   type VoiceUiPhase,
 } from "@/lib/voice/client";
 import { parseVoiceTextCommand } from "@/lib/voice/text-fallback";
+import {
+  clearVoiceGuide,
+  guidedNavigateTo,
+  voiceRowCodeFromPath,
+} from "@/lib/voice/guide-ui";
+import { performVoiceRouteChange } from "@/lib/voice/perform-route-change";
+import { labelForVoicePath } from "@/lib/voice/route-allowlist";
+import {
+  clearVoiceScreenSharePrompt,
+  subscribeVoiceScreenSharePrompt,
+} from "@/lib/voice/screen-share-prompt";
 
 const MAX_TRANSCRIPT_LINES = 12;
 
@@ -39,11 +50,34 @@ export function VoiceMic() {
   /** Opt-in tab screen share — default OFF (audio-only). */
   const [screenShareOn, setScreenShareOn] = useState(false);
   const [screenShareBusy, setScreenShareBusy] = useState(false);
+  /** Pulse share CTA when the agent needs eyes for explain-page intents. */
+  const [sharePromptReason, setSharePromptReason] = useState<string | null>(null);
+
+  const guidedPush = useCallback(
+    async (href: string) => {
+      await guidedNavigateTo(
+        href,
+        (h) => {
+          performVoiceRouteChange(h, (path) => {
+            router.push(path);
+          });
+        },
+        {
+          label: labelForVoicePath(href),
+          rowCode: voiceRowCodeFromPath(href) ?? undefined,
+        }
+      );
+    },
+    [router]
+  );
 
   const pushLine = useCallback((entry: VoiceTranscriptEntry) => {
     setLines((prev) => [...prev.slice(-(MAX_TRANSCRIPT_LINES - 1)), entry]);
-    // Keep panel quiet for pure info pings; open for real activity / errors.
-    if (entry.role !== "info") setPanelOpen(true);
+    // Keep the big transcript card closed during normal navigate/action chatter.
+    // Only open for writes, errors, or when the user already opened it.
+    if (entry.role === "propose" || entry.role === "system") {
+      setPanelOpen(true);
+    }
   }, []);
 
   const clearPendingProposal = useCallback(() => {
@@ -53,7 +87,7 @@ export function VoiceMic() {
 
   useEffect(() => {
     const client = new VoiceLiveClient({
-      navigate: (href) => router.push(href),
+      navigate: guidedPush,
       onStateChange: setConn,
       onUiPhaseChange: setPhase,
       onTranscript: pushLine,
@@ -82,20 +116,36 @@ export function VoiceMic() {
               : message
         );
       },
-      onScreenShareChange: (active) => setScreenShareOn(active),
+      onScreenShareChange: (active) => {
+        setScreenShareOn(active);
+        if (active) {
+          clearVoiceScreenSharePrompt();
+          setSharePromptReason(null);
+        }
+      },
+      onScreenSharePrompt: (reason) => {
+        setSharePromptReason(reason);
+        // Compact CTA near mic — do not force the big transcript square open.
+      },
     });
     clientRef.current = client;
     return () => {
       client.disconnect();
       clientRef.current = null;
     };
-  }, [router, pushLine, clearPendingProposal]);
+  }, [guidedPush, pushLine, clearPendingProposal]);
 
   useEffect(() => {
     clientRef.current?.setOptions({
-      navigate: (href) => router.push(href),
+      navigate: guidedPush,
     });
-  }, [router]);
+  }, [guidedPush]);
+
+  useEffect(() => {
+    return subscribeVoiceScreenSharePrompt((prompt) => {
+      setSharePromptReason(prompt.active ? prompt.reason : null);
+    });
+  }, []);
 
   const active = conn === "connected";
   const reconnecting = conn === "reconnecting";
@@ -107,23 +157,16 @@ export function VoiceMic() {
     phase === "disconnected" || conn === "disconnected" || reconnecting;
   const hasPropose =
     Boolean(pendingActionId) || lines.some((l) => l.role === "propose");
-  const showPanel =
-    panelOpen ||
-    lines.length > 0 ||
+  // Compact mic pill stays; big square transcript only when needed / user opened it.
+  const showTranscriptCard =
     Boolean(error) ||
     showTextFallback ||
     disconnectedUi ||
-    hasPropose;
-
-  // Drop the empty marketing card when connected with nothing to show.
-  const showTranscriptCard =
-    showPanel &&
-    (lines.length > 0 ||
-      Boolean(error) ||
-      showTextFallback ||
-      disconnectedUi ||
-      hasPropose ||
-      panelOpen);
+    hasPropose ||
+    (panelOpen &&
+      (lines.length > 0 || Boolean(error) || showTextFallback || hasPropose));
+  const showShareToast =
+    Boolean(sharePromptReason) && active && !screenShareOn;
 
   const statusLabel = hasPropose
     ? "Confirm write"
@@ -160,6 +203,9 @@ export function VoiceMic() {
       setConn("idle");
       setPhase("idle");
       setScreenShareOn(false);
+      setSharePromptReason(null);
+      clearVoiceScreenSharePrompt();
+      clearVoiceGuide();
       return;
     }
     if (state === "error" || state === "disconnected") {
@@ -171,6 +217,8 @@ export function VoiceMic() {
     setFallbackHint(null);
     clearPendingProposal();
     setScreenShareOn(false);
+    setSharePromptReason(null);
+    clearVoiceScreenSharePrompt();
     // Don't open the empty "Sees this page" card until there is real activity.
     setPanelOpen(false);
     const ok = await client.connect();
@@ -195,6 +243,9 @@ export function VoiceMic() {
         client.disableScreenShare();
       } else {
         await client.enableScreenShare();
+        clearVoiceScreenSharePrompt();
+        setSharePromptReason(null);
+        clearVoiceGuide();
       }
     } finally {
       setScreenShareBusy(false);
@@ -236,7 +287,7 @@ export function VoiceMic() {
       );
       const { functionResponses, actionLines } = await dispatchVoiceToolCalls(
         parsed.calls,
-        { push: (href) => router.push(href) }
+        { push: guidedPush }
       );
       for (const line of actionLines) {
         pushLine({
@@ -264,7 +315,7 @@ export function VoiceMic() {
     } finally {
       setTextBusy(false);
     }
-  }, [textInput, textBusy, pendingActionId, pushLine, router]);
+  }, [textInput, textBusy, pendingActionId, pushLine, guidedPush]);
 
   const accent =
     phase === "error" || error
@@ -283,6 +334,25 @@ export function VoiceMic() {
       data-testid="voice-mic"
       data-voice-mic=""
     >
+      {showShareToast ? (
+        <div
+          className="pointer-events-auto rounded-xl border border-brand-200/90 bg-white/95 px-3 py-2 shadow-lg dark:border-brand-500/35 dark:bg-[#1e2433]/95"
+          data-testid="voice-share-prompt"
+        >
+          <p className="text-[11px] font-medium text-slate-700 dark:text-white/85">
+            {sharePromptReason}
+          </p>
+          <button
+            type="button"
+            onClick={() => void onToggleScreenShare()}
+            disabled={screenShareBusy}
+            className="mt-1.5 rounded-lg bg-[var(--theme-accent,#2548C9)] px-2.5 py-1 text-[11px] font-semibold text-white"
+          >
+            Enable screen share
+          </button>
+        </div>
+      ) : null}
+
       {showTranscriptCard ? (
         <div
           className={cn(
@@ -323,7 +393,9 @@ export function VoiceMic() {
                 {active
                   ? screenShareOn
                     ? "Listening + screen share — frames are being sent"
-                    : "Listening — tap mic to stop"
+                    : sharePromptReason
+                      ? "Tap the monitor icon to share your screen"
+                      : "Listening — tap mic to stop"
                   : "Click the mic to talk"}
               </p>
             </div>
@@ -504,9 +576,17 @@ export function VoiceMic() {
                 ? "cursor-not-allowed text-slate-300 dark:text-white/25"
                 : screenShareOn
                   ? "bg-[var(--theme-accent,#2548C9)]/15 text-[var(--theme-accent,#2548C9)]"
-                  : "text-slate-500 hover:bg-black/5 dark:text-white/55 dark:hover:bg-white/10"
+                  : sharePromptReason
+                    ? "bg-brand-500/20 text-[var(--theme-accent,#2548C9)] ring-2 ring-brand-400/70 ring-offset-1 dark:ring-offset-[#1e2433]"
+                    : "text-slate-500 hover:bg-black/5 dark:text-white/55 dark:hover:bg-white/10"
             )}
           >
+            {sharePromptReason && !screenShareOn && active ? (
+              <span
+                className="pointer-events-none absolute inset-0 animate-ping rounded-full bg-brand-400/30"
+                aria-hidden
+              />
+            ) : null}
             {screenShareBusy ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : screenShareOn ? (

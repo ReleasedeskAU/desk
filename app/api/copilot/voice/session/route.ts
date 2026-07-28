@@ -7,7 +7,8 @@
  * Auth: requireSession.
  * Cost: per-user mint cooldown + daily session ceiling.
  * Reconnect: X-Voice-Reconnect: 1 → soft cooldown, no extra daily count; always remints fresh token.
- * Security: remint invalidates pending propose_action rows for this user.
+ * Security: cold-start remint invalidates pending propose_action rows; reconnect remint keeps them
+ * (same logical session / resumption handle).
  */
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
@@ -77,8 +78,11 @@ export async function POST(req: Request) {
   try {
     const minted = await mintVoiceEphemeralToken();
     markVoiceSessionMinted(user!.id);
-    // Dropped sessions must not leave confirmable proposals for a new Live turn.
-    const invalidated = invalidatePendingVoiceActionsForUser(user!.id);
+    // Cold starts must not leave confirmable proposals from a prior mic session.
+    // Reconnect remints keep pending proposes — same logical Live conversation.
+    const invalidated = reconnect
+      ? 0
+      : invalidatePendingVoiceActionsForUser(user!.id);
     const usage = reconnect
       ? undefined
       : recordVoiceSessionStart(user!.id);

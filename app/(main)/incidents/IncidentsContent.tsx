@@ -26,6 +26,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { IncidentFormModal } from "@/components/incidents/IncidentFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type IncidentRow = {
   id: string;
@@ -119,6 +120,22 @@ export default function IncidentsContent() {
   );
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      incidents.map((i) => ({
+        code: i.incidentCode,
+        label: `${i.incidentCode} — ${i.title}`,
+        path: `/incidents/${i.id}`,
+      })),
+    [incidents]
+  );
+  useVoiceListContext(
+    "/incidents",
+    "incident",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>
@@ -257,7 +274,7 @@ export default function IncidentsContent() {
                 <tr key={i.id} className={tableRow}>
                   {isColumnVisible("incidentCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <ProgressLink href={`/incidents/${i.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                      <ProgressLink href={`/incidents/${i.id}`} data-voice-row={i.incidentCode} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
                         {i.incidentCode}
                       </ProgressLink>
                     </td>

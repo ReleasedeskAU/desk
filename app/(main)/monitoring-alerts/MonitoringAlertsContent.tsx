@@ -26,6 +26,7 @@ import { MONITORING_ALERTS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { MonitoringAlertFormModal } from "@/components/monitoring-alerts/MonitoringAlertFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type AlertRow = {
   id: string;
@@ -122,6 +123,22 @@ export default function MonitoringAlertsContent() {
 
   const tablePending = useTablePageLoading(loading, prefsLoaded);
 
+  const voiceVisibleRows = useMemo(
+    () =>
+      alerts.map((a) => ({
+        code: a.alertCode,
+        label: `${a.alertCode} ù ${a.application.name}`,
+        path: `/monitoring-alerts/${a.id}`,
+      })),
+    [alerts]
+  );
+  useVoiceListContext(
+    "/monitoring-alerts",
+    "alert",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
+
   return (
     <div>
       <TopBar
@@ -188,42 +205,42 @@ export default function MonitoringAlertsContent() {
             <FilterTextInput
               value={values.assignedToQ}
               onChange={(v) => setFilter("assignedToQ", v)}
-              placeholder="Assigned to‚Ä¶"
+              placeholder="Assigned toù"
             />
           )}
           {isFilterVisible("alertCodeQ") && (
             <FilterTextInput
               value={values.alertCodeQ}
               onChange={(v) => setFilter("alertCodeQ", v)}
-              placeholder="Alert ID‚Ä¶"
+              placeholder="Alert IDù"
             />
           )}
           {isFilterVisible("metricQ") && (
             <FilterTextInput
               value={values.metricQ}
               onChange={(v) => setFilter("metricQ", v)}
-              placeholder="Metric‚Ä¶"
+              placeholder="Metricù"
             />
           )}
           {isFilterVisible("thresholdQ") && (
             <FilterTextInput
               value={values.thresholdQ}
               onChange={(v) => setFilter("thresholdQ", v)}
-              placeholder="Threshold‚Ä¶"
+              placeholder="Thresholdù"
             />
           )}
           {isFilterVisible("currentValueQ") && (
             <FilterTextInput
               value={values.currentValueQ}
               onChange={(v) => setFilter("currentValueQ", v)}
-              placeholder="Current value‚Ä¶"
+              placeholder="Current valueù"
             />
           )}
           {isFilterVisible("timestampQ") && (
             <FilterTextInput
               value={values.timestampQ}
               onChange={(v) => setFilter("timestampQ", v)}
-              placeholder="Timestamp (YYYY-MM-DD)‚Ä¶"
+              placeholder="Timestamp (YYYY-MM-DD)ù"
             />
           )}
           {isFilterVisible("departmentQ") && (
@@ -259,14 +276,14 @@ export default function MonitoringAlertsContent() {
                   <tr key={a.id} className={tableRow}>
                     {isColumnVisible("alertCode") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
-                      <ProgressLink href={`/monitoring-alerts/${a.id}`} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                      <ProgressLink href={`/monitoring-alerts/${a.id}`} data-voice-row={a.alertCode} className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline">
                         {a.alertCode}
                       </ProgressLink>
                     </td>
                     )}
                     {isColumnVisible("timestamp") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(a.timestamp)}</td>}
                     {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{a.application.name}</td>}
-                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{a.departmentName ?? "‚Äî"}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{a.departmentName ?? "ù"}</td>}
                     {isColumnVisible("alertType") && <td className={`${tableCell} whitespace-nowrap`}>{a.alertType}</td>}
                     {isColumnVisible("severity") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
@@ -274,10 +291,10 @@ export default function MonitoringAlertsContent() {
                     </td>
                     )}
                     {isColumnVisible("metric") && <td className={`${tableCell} whitespace-nowrap`}>{a.metric}</td>}
-                    {isColumnVisible("threshold") && <td className={`${tableCell} whitespace-nowrap`}>{a.threshold ?? "‚Äî"}</td>}
-                    {isColumnVisible("currentValue") && <td className={`${tableCell} whitespace-nowrap`}>{a.currentValue ?? "‚Äî"}</td>}
+                    {isColumnVisible("threshold") && <td className={`${tableCell} whitespace-nowrap`}>{a.threshold ?? "ù"}</td>}
+                    {isColumnVisible("currentValue") && <td className={`${tableCell} whitespace-nowrap`}>{a.currentValue ?? "ù"}</td>}
                     {isColumnVisible("status") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={a.status} /></td>}
-                    {isColumnVisible("assignedTo") && <td className={`${tableCell} whitespace-nowrap`}>{a.assignedTo ?? "‚Äî"}</td>}
+                    {isColumnVisible("assignedTo") && <td className={`${tableCell} whitespace-nowrap`}>{a.assignedTo ?? "ù"}</td>}
                     {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{a.environmentName}</td>}
                   </tr>
                 ))}

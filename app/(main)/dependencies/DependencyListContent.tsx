@@ -27,6 +27,7 @@ import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 import { taBtnPrimary } from "@/lib/styles";
 import { DEPENDENCY_IMPACTS, DEPENDENCY_STATUSES } from "@/lib/validation/dependency";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type DepRow = {
   id: string;
@@ -81,7 +82,7 @@ function renderDepCell(d: DepRow, key: DepColumnKey) {
       return (
         <td key={key} className={`${tableCell} font-mono text-xs whitespace-nowrap`}>
           {d.depCode ? (
-            <ProgressLink href={`/dependencies/${d.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+            <ProgressLink href={`/dependencies/${d.id}`} data-voice-row={d.depCode} className="text-brand-600 hover:underline dark:text-brand-400">
               {d.depCode}
             </ProgressLink>
           ) : (
@@ -193,6 +194,22 @@ export default function DependencyListContent() {
     [deps]
   );
   const blockedCount = deps.filter((d) => d.status === "Blocked" || d.status === "At Risk").length;
+
+  const voiceVisibleRows = useMemo(
+    () =>
+      deps.map((d) => ({
+        code: d.depCode,
+        label: `${d.depCode} — ${d.releaseCode}`,
+        path: `/dependencies/${d.id}`,
+      })),
+    [deps]
+  );
+  useVoiceListContext(
+    "/dependencies",
+    "dependency",
+    voiceVisibleRows,
+    hasActive ? "filtered" : undefined
+  );
 
   return (
     <div>

@@ -101,7 +101,7 @@ function renderBlockerCell(b: BlockerRow, key: BlockerColumnKey) {
     case "blockerCode":
       return (
         <td key={key} className={`${tableCell} font-mono text-xs font-semibold whitespace-nowrap`}>
-          <ProgressLink href={`/blockers/${b.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+          <ProgressLink href={`/blockers/${b.id}`} data-voice-row={b.blockerCode} className="text-brand-600 hover:underline dark:text-brand-400">
             {b.blockerCode}
           </ProgressLink>
         </td>

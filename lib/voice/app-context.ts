@@ -1,14 +1,16 @@
 /**
  * Route-scoped visible-row context for voice.
- * List pages publish the rows the user currently sees; Live gets [APP_CONTEXT]
- * and search_entity prefers this order for on-page ordinals.
+ * List pages publish the rows the user currently sees; the Live client pushes
+ * [APP_CONTEXT] alongside spoken queries, and search_entity prefers this order
+ * for on-page ordinals.
  */
 import type { SearchEntityType } from "@/lib/search-entity-types";
 
-export const VOICE_APP_CONTEXT_MAX_ROWS = 15;
+/** Max visible rows published (covers typical list pages + "10th"/"20th" ordinals). */
+export const VOICE_APP_CONTEXT_MAX_ROWS = 40;
 
 export type VoiceVisibleRow = {
-  /** Business code (REL-0001, CNF-0001) or stable id. */
+  /** Business code (REL-0001, BLK-0010) or stable id. */
   code: string;
   /** Short human label for the brief / speech. */
   label: string;
@@ -67,7 +69,7 @@ export function setVoiceAppContext(
 }
 
 /**
- * Format a compact realtime hint for Gemini Live.
+ * Format a compact realtime hint for Gemini Live (codes + short labels).
  * @param packet - Current context.
  */
 export function formatVoiceAppContextHint(
@@ -77,10 +79,22 @@ export function formatVoiceAppContextHint(
     packet.visible.length === 0
       ? "(none)"
       : packet.visible
-          .map((r, i) => `${i + 1}:${r.code}`)
-          .join(",");
+          .map((r, i) => {
+            const short = r.label.replace(/\s+/g, " ").trim().slice(0, 48);
+            return short && short !== r.code
+              ? `${i + 1}:${r.code}(${short})`
+              : `${i + 1}:${r.code}`;
+          })
+          .join("; ");
   const note = packet.note ? ` note=${packet.note}` : "";
-  return `[APP_CONTEXT] page=${packet.page} entityType=${packet.entityType ?? "none"} visible=[${vis}]${note}. For first/second on this page use visible codes only — never invent IDs.`;
+  const n = packet.visible.length;
+  return [
+    `[APP_CONTEXT] page=${packet.page}`,
+    `entityType=${packet.entityType ?? "none"}`,
+    `count=${n}`,
+    `visible=[${vis}]${note}.`,
+    `On-screen ordinals: "10th ${packet.entityType ?? "item"}" / "first" map to visible[N] codes — call search_entity with the spoken query; never invent IDs.`,
+  ].join(" ");
 }
 
 /**

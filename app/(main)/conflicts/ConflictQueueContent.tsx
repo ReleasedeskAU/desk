@@ -72,7 +72,7 @@ function renderConflictCell(c: ConflictRow, key: ConflictColumnKey) {
     case "conflictCode":
       return (
         <td key={key} className={`${tableCell} font-mono text-xs font-semibold whitespace-nowrap`}>
-          <ProgressLink href={`/conflicts/${c.id}`} className="text-brand-600 hover:underline dark:text-brand-400">
+          <ProgressLink href={`/conflicts/${c.id}`} data-voice-row={c.conflictCode} className="text-brand-600 hover:underline dark:text-brand-400">
             {c.conflictCode}
           </ProgressLink>
         </td>

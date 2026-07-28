@@ -26,7 +26,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "navigate_to",
     description:
-      "Navigate the Release Desk UI. path may be a real href (/booking, /calendar) OR a spoken sidebar name (env booking, calendar tab, calendar page) — tab/page/section mean the same. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes.",
+      "REQUIRED to change pages. Navigate the Release Desk UI. path may be a real href (/blockers, /booking, /calendar) OR a spoken sidebar name (blockers, env booking, calendar tab). Always call this tool to open a tab — never only say you navigated. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes.",
     parameters: {
       type: "object",
       properties: {

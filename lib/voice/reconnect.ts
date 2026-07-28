@@ -3,6 +3,13 @@
  */
 
 /**
+ * Gemini Live audio WebSockets are typically cut around ~10 minutes.
+ * Remint with the resumption handle before that hard cut so the user
+ * never sees an unexpected drop / orange "disconnected" flash.
+ */
+export const VOICE_AUDIO_PROACTIVE_RECONNECT_MS = 8 * 60_000;
+
+/**
  * No server frame within this window ⇒ treat socket as stale and reconnect.
  * Must be long enough for normal pauses (user thinking / silence) — 45s was
  * killing mid-conversation sessions and forcing orange reconnect UI.

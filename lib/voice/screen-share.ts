@@ -3,7 +3,9 @@
  * Frame RATE (≤1 fps / on-demand) and MEDIA_RESOLUTION (HIGH for OCR) are separate knobs.
  *
  * Token costs (docs): video LOW/MEDIUM = 70 tokens/frame; HIGH = 280 tokens/frame.
- * A+V sessions without compression ≈ 2 minutes — see VOICE_AV_* constants.
+ * Without contextWindowCompression, A+V sessions hard-cap ≈ 2 minutes.
+ * With compression (enabled in Live setup), session length is unbounded; only the
+ * ~10 min WebSocket needs silent remint — same window as audio-only.
  */
 
 /** Official Live max send rate for video frames. */
@@ -21,14 +23,15 @@ export const VOICE_SCREEN_IDLE_FRAME_MS = 4_000;
  */
 export const VOICE_SCREEN_MEDIA_RESOLUTION = "MEDIA_RESOLUTION_HIGH" as const;
 
-/** Hard Live limit for audio+video without context-window compression (~2 min). */
+/** Historical hard Live limit for audio+video without compression (~2 min). */
 export const VOICE_AV_SESSION_LIMIT_MS = 2 * 60 * 1000;
 
 /**
- * Proactive remint/resume before the hard A+V cut so reconnect is planned,
- * not a surprise drop (Phase 4 failure mode).
+ * Proactive silent remint while screen share is on.
+ * Compression lifts the ~2 min A+V session cap; remint only for the ~10 min WS.
+ * Kept in sync with VOICE_AUDIO_PROACTIVE_RECONNECT_MS in reconnect.ts.
  */
-export const VOICE_AV_PROACTIVE_RECONNECT_MS = 100 * 1000;
+export const VOICE_AV_PROACTIVE_RECONNECT_MS = 8 * 60 * 1000;
 
 /** Max pixel width when encoding a tab frame — wider than 768 so table IDs stay readable. */
 export const VOICE_SCREEN_CAPTURE_MAX_WIDTH = 1280;

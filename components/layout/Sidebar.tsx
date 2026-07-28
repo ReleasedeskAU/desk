@@ -237,6 +237,7 @@ export function Sidebar() {
                       href={href}
                       title={!isWide ? label : undefined}
                       onClick={handleNavClick}
+                      data-voice-nav={href}
                       className={cn(
                         "menu-item group",
                         active ? "menu-item-active" : "menu-item-inactive",
@@ -268,6 +269,7 @@ export function Sidebar() {
         <div className="shrink-0 border-t border-[var(--border)] px-3 py-4">
           <ProgressLink
             href="/templates"
+            data-voice-nav="/templates"
             onClick={handleNavClick}
             className="block rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-4 shadow-sm transition-all hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-white/10"
           >

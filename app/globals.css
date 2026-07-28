@@ -336,6 +336,11 @@ body {
     background-color: rgb(var(--color-brand-500));
     box-shadow: var(--theme-shadow, 0 8px 24px -8px rgb(var(--color-brand-500) / 0.35));
   }
+  /* Voice walkthrough — soft outline on the target tab/row */
+  [data-voice-guide-active="1"] {
+    outline: 2px solid rgb(var(--color-brand-500) / 0.85);
+    outline-offset: 2px;
+  }
   .menu-item-inactive {
     @apply text-gray-500 hover:text-gray-900;
   }

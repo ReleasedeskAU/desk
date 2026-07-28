@@ -73,6 +73,8 @@ describe("visible ordinal preference", () => {
     assert.match(hint, /\[APP_CONTEXT\]/);
     assert.match(hint, /1:REL-0003/);
     assert.match(hint, /entityType=release/);
+    assert.match(hint, /count=2/);
+    assert.match(hint, /search_entity/);
 
     setVoiceAppContext(null);
     assert.equal(getVoiceAppContext(), null);

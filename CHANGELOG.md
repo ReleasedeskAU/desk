@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Voice session continuity: store Gemini resumption handles only when `resumable !== false` (avoid wiping a good handle mid-tool-call); proactive audio remint at ~8 min before the typical ~10 min Live WebSocket cut; quiet planned refresh (no false “network outage” apology); local transcript digest bridge when resume fails; reconnect remints no longer invalidate pending `propose_action` rows.
+- Voice silent WebSocket renew (Gemini-app style): planned remints keep the mic UI connected with no orange flash/transcript noise; `contextWindowCompression.slidingWindow` enabled so sessions can run for hours (only the ~10 min socket is swapped under the hood).
+- Voice list context: richer `[APP_CONTEXT]` (up to 40 rows with labels) pushed alongside each user utterance; `10th blocker` / `blocker 10` ordinal parsing; spoken BLK-/RSK-/CNF- code normalization; `useVoiceListContext` on dependencies, drifts, approvals, incidents, alerts, leaves, maintenance, and flows (not only releases).
+- Voice guided walkthrough: in-app pointer/highlight on sidebar (`data-voice-nav`) and list rows (`data-voice-row`) before navigate; status chip for agent intent; screen-share CTA only for explain/on-screen asks (never auto-start; no whole-app data dump).
+
 ### Added
 
 - Voice **application context layer**: `voiceEntityCatalogBrief()` (entity kinds + code prefixes) in Live systemInstruction; list pages publish visible-row `[APP_CONTEXT]` packets; `search_entity` ordinals prefer on-page visible order then canonical business-code sort (releases/conflicts/risks/blockers/booking wired).
