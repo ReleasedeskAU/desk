@@ -127,7 +127,7 @@ export default function MonitoringAlertsContent() {
     () =>
       alerts.map((a) => ({
         code: a.alertCode,
-        label: `${a.alertCode} ù ${a.application.name}`,
+        label: `${a.alertCode} ‚Äî ${a.application.name}`,
         path: `/monitoring-alerts/${a.id}`,
       })),
     [alerts]
@@ -205,42 +205,42 @@ export default function MonitoringAlertsContent() {
             <FilterTextInput
               value={values.assignedToQ}
               onChange={(v) => setFilter("assignedToQ", v)}
-              placeholder="Assigned toù"
+              placeholder="Assigned to‚Ä¶"
             />
           )}
           {isFilterVisible("alertCodeQ") && (
             <FilterTextInput
               value={values.alertCodeQ}
               onChange={(v) => setFilter("alertCodeQ", v)}
-              placeholder="Alert IDù"
+              placeholder="Alert ID‚Ä¶"
             />
           )}
           {isFilterVisible("metricQ") && (
             <FilterTextInput
               value={values.metricQ}
               onChange={(v) => setFilter("metricQ", v)}
-              placeholder="Metricù"
+              placeholder="Metric‚Ä¶"
             />
           )}
           {isFilterVisible("thresholdQ") && (
             <FilterTextInput
               value={values.thresholdQ}
               onChange={(v) => setFilter("thresholdQ", v)}
-              placeholder="Thresholdù"
+              placeholder="Threshold‚Ä¶"
             />
           )}
           {isFilterVisible("currentValueQ") && (
             <FilterTextInput
               value={values.currentValueQ}
               onChange={(v) => setFilter("currentValueQ", v)}
-              placeholder="Current valueù"
+              placeholder="Current value‚Ä¶"
             />
           )}
           {isFilterVisible("timestampQ") && (
             <FilterTextInput
               value={values.timestampQ}
               onChange={(v) => setFilter("timestampQ", v)}
-              placeholder="Timestamp (YYYY-MM-DD)ù"
+              placeholder="Timestamp (YYYY-MM-DD)‚Ä¶"
             />
           )}
           {isFilterVisible("departmentQ") && (
@@ -283,7 +283,7 @@ export default function MonitoringAlertsContent() {
                     )}
                     {isColumnVisible("timestamp") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(a.timestamp)}</td>}
                     {isColumnVisible("application") && <td className={`${tableCell} whitespace-nowrap`}>{a.application.name}</td>}
-                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{a.departmentName ?? "ù"}</td>}
+                    {isColumnVisible("department") && <td className={`${tableCell} whitespace-nowrap`}>{a.departmentName ?? "‚Äî"}</td>}
                     {isColumnVisible("alertType") && <td className={`${tableCell} whitespace-nowrap`}>{a.alertType}</td>}
                     {isColumnVisible("severity") && (
                     <td className={`${tableCell} whitespace-nowrap`}>
@@ -291,10 +291,10 @@ export default function MonitoringAlertsContent() {
                     </td>
                     )}
                     {isColumnVisible("metric") && <td className={`${tableCell} whitespace-nowrap`}>{a.metric}</td>}
-                    {isColumnVisible("threshold") && <td className={`${tableCell} whitespace-nowrap`}>{a.threshold ?? "ù"}</td>}
-                    {isColumnVisible("currentValue") && <td className={`${tableCell} whitespace-nowrap`}>{a.currentValue ?? "ù"}</td>}
+                    {isColumnVisible("threshold") && <td className={`${tableCell} whitespace-nowrap`}>{a.threshold ?? "‚Äî"}</td>}
+                    {isColumnVisible("currentValue") && <td className={`${tableCell} whitespace-nowrap`}>{a.currentValue ?? "‚Äî"}</td>}
                     {isColumnVisible("status") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={a.status} /></td>}
-                    {isColumnVisible("assignedTo") && <td className={`${tableCell} whitespace-nowrap`}>{a.assignedTo ?? "ù"}</td>}
+                    {isColumnVisible("assignedTo") && <td className={`${tableCell} whitespace-nowrap`}>{a.assignedTo ?? "‚Äî"}</td>}
                     {isColumnVisible("environment") && <td className={`${tableCell} whitespace-nowrap`}>{a.environmentName}</td>}
                   </tr>
                 ))}
