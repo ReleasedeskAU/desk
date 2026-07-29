@@ -47,12 +47,14 @@ describe("rankSearchResults", () => {
         id: "1",
         type: "release",
         label: "REL-0001 — Other",
+        sublabel: "",
         href: "/releases/REL-0001",
       },
       {
         id: "2",
         type: "release",
         label: "REL-0075 — Payment",
+        sublabel: "",
         href: "/releases/REL-0075",
       },
     ];

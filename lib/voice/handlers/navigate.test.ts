@@ -11,7 +11,7 @@ describe("handleNavigateTo", () => {
     const pushed: string[] = [];
     const result = await handleNavigateTo(
       { path: "/risks", label: "Risk register" },
-      { push: (href) => pushed.push(href) }
+      { push: (href) => { pushed.push(href); } }
     );
     assert.equal(result.ok, true);
     assert.equal(result.path, "/risks");
@@ -23,7 +23,7 @@ describe("handleNavigateTo", () => {
     const pushed: string[] = [];
     const result = await handleNavigateTo(
       { path: "/secret-admin-vault" },
-      { push: (href) => pushed.push(href) }
+      { push: (href) => { pushed.push(href); } }
     );
     assert.equal(result.ok, false);
     assert.match(result.reason ?? "", /allowlist/i);
@@ -36,7 +36,7 @@ describe("handleNavigateTo", () => {
     const result = await handleNavigateTo(
       { path: "/releases/REL-001" },
       {
-        push: (href) => pushed.push(href),
+        push: (href) => { pushed.push(href); },
         fetch: async () => {
           fetchCalled = true;
           return new Response(null, { status: 404 });
@@ -55,7 +55,7 @@ describe("handleNavigateTo", () => {
     const result = await handleNavigateTo(
       { path: "/releases/rel-v2140", label: "Platform Release" },
       {
-        push: (href) => pushed.push(href),
+        push: (href) => { pushed.push(href); },
         fetch: async () => {
           throw new Error("should not fetch when local catalog hits");
         },
@@ -70,7 +70,7 @@ describe("handleNavigateTo", () => {
     const result = await handleNavigateTo(
       { path: "/release/REL-0004", label: "REL-0004" },
       {
-        push: (href) => pushed.push(href),
+        push: (href) => { pushed.push(href); },
         fetch: async () => {
           throw new Error("should not fetch when seed catalog hits");
         },
@@ -86,7 +86,7 @@ describe("handleNavigateTo", () => {
     const result = await handleNavigateTo(
       { path: "REL-0004" },
       {
-        push: (href) => pushed.push(href),
+        push: (href) => { pushed.push(href); },
         fetch: async () => {
           throw new Error("should not fetch when seed catalog hits");
         },
@@ -100,7 +100,7 @@ describe("handleNavigateTo", () => {
     const pushed: string[] = [];
     const result = await handleNavigateTo(
       { path: "rel-rel-v2140" },
-      { push: (href) => pushed.push(href) }
+      { push: (href) => { pushed.push(href); } }
     );
     assert.equal(result.ok, false);
     assert.deepEqual(pushed, []);
@@ -111,21 +111,21 @@ describe("handleNavigateTo", () => {
     const pushed: string[] = [];
     const cal = await handleNavigateTo(
       { path: "calendar tab" },
-      { push: (href) => pushed.push(href) }
+      { push: (href) => { pushed.push(href); } }
     );
     assert.equal(cal.ok, true);
     assert.equal(cal.path, "/calendar");
 
     const booking = await handleNavigateTo(
       { path: "env booking page" },
-      { push: (href) => pushed.push(href) }
+      { push: (href) => { pushed.push(href); } }
     );
     assert.equal(booking.ok, true);
     assert.equal(booking.path, "/booking");
 
     const alias = await handleNavigateTo(
       { path: "/bookings" },
-      { push: (href) => pushed.push(href) }
+      { push: (href) => { pushed.push(href); } }
     );
     assert.equal(alias.ok, true);
     assert.equal(alias.path, "/booking");

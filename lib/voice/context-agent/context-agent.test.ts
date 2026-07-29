@@ -147,12 +147,14 @@ describe("retrieveVoiceContext", () => {
       id: "1",
       type: "release",
       label: "REL-0001 — Payment",
+      sublabel: "",
       href: "/releases/REL-0001",
     };
     const b: SearchResult = {
       id: "2",
       type: "release",
       label: "REL-0042 — Other",
+      sublabel: "",
       href: "/releases/REL-0042",
     };
     assert.ok(scoreVoiceSearchHit(b, plan) > scoreVoiceSearchHit(a, plan));

@@ -164,7 +164,7 @@ async function summarizeRelease(entityId: string): Promise<EntitySummaryLookupRe
       const openBlockers = blockers.filter((b) => !/resolved|closed|done/i.test(b.status));
       const pendingApprovals = await prisma.approval.count({
         where: {
-          releaseCode: detail.releaseCode,
+          release: { releaseCode: detail.releaseCode },
           decision: { equals: "Pending", mode: "insensitive" },
         },
       });

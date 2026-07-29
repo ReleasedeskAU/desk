@@ -117,7 +117,7 @@ function boostFromAppContext(
 function rememberedToResult(path: string, label: string, type: string, code: string): SearchResult {
   return {
     id: `mem-${code}`,
-    type,
+    type: type as SearchResult["type"],
     label,
     sublabel: "recent in session",
     href: path,
