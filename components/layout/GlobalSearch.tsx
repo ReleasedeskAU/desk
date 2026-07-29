@@ -101,6 +101,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
       setRedirectHref(null);
       return;
     }
+    const ac = new AbortController();
     const t = setTimeout(() => {
       void (async () => {
         const { interpreted: localInterpreted } = strengthenSearchKeys(q);
