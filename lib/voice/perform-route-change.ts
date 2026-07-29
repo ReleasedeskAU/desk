@@ -38,9 +38,12 @@ export function performVoiceRouteChange(
 
   const target = normalizePathname(href);
   const list = voiceGuideListHref(target);
+  // Query-bearing hrefs (list filters) must not click the bare sidebar link —
+  // that would navigate without the query and race the soft push.
+  const hasQuery = /[?]/.test(href);
 
   // List tabs: click the real ProgressLink, then soft-push as belt-and-suspenders.
-  if (target === list) {
+  if (target === list && !hasQuery) {
     const el = resolveVoiceNavElement(list);
     const anchor =
       el instanceof HTMLAnchorElement

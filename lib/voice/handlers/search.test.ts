@@ -18,7 +18,7 @@ describe("handleSearchEntity", () => {
     assert.match(result.reason ?? "", /query/i);
   });
 
-  it("resolves 'rel 01' / first release as ordinal #1 with a navigable path", async () => {
+  it("resolves 'rel 01' to REL-0001 code with a navigable path", async () => {
     mock.method(globalThis, "fetch", async () => {
       return new Response(JSON.stringify([]), {
         status: 200,
@@ -30,7 +30,36 @@ describe("handleSearchEntity", () => {
     assert.ok(result.matchCount >= 1);
     const path = result.single?.path ?? result.candidates?.[0]?.path;
     assert.ok(path?.startsWith("/releases/"));
-    assert.match(result.actionLine, /#1|1 match|Release/i);
+    assert.match(path ?? "", /REL-0001/i);
+  });
+
+  it("resolves 'open release 75' shorthand to REL-0075 search", async () => {
+    mock.method(globalThis, "fetch", async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/api/search")) {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: "cuid-75",
+                type: "release",
+                label: "REL-0075",
+                sublabel: "Payment",
+                href: "/releases/REL-0075",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const result = await handleSearchEntity({ query: "open release 75" });
+    assert.equal(result.ok, true);
+    assert.equal(result.single?.path ?? result.candidates?.[0]?.path, "/releases/REL-0075");
   });
 
   it("first release uses DB order so #1 is REL-0001 detail", async () => {

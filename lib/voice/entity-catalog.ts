@@ -89,7 +89,7 @@ export function voiceEntityCatalogBrief(): string {
     "Entities:",
     lines.join("; ") + ".",
     "Detail URLs come only from search_entity.path / get_summary.path — never invent hrefs.",
-    "Ordinals: first/10th/Nth X or X 10 → search_entity with the spoken query (never invent REL-/BLK-/CNF- codes).",
+    "Shorthand: release 75 / blocker 10 → search_entity (resolves to REL-0075 / BLK-0010 from DB). Ordinals: first/10th X → on-screen or canonical order. Never invent codes.",
     "On a list page, [APP_CONTEXT] visible[] is the on-screen order — prefer it for ordinals.",
     `All kinds: ${SEARCH_ENTITY_TYPES.join(",")}.`,
   ].join(" ");

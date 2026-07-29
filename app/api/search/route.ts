@@ -6,10 +6,15 @@ import { dbReleaseToSearchResult, demoReleaseMatchesQuery } from "@/lib/unified-
 import { releases as demoReleases } from "@/lib/dummy-data";
 import type { SearchResult } from "@/lib/dummy-data";
 import { normalizeSpokenEnvBookingCode } from "@/lib/search-seed-catalog";
+import {
+  containsAnyKey,
+  rankSearchResults,
+  strengthenSearchKeys,
+} from "@/lib/search-strengthen";
 
 /**
  * Authenticated global / voice search across domain entities.
- * Extends release/app keyword search with booking, risk, blocker, etc. code lookups.
+ * Strengthened with context-agent query keys (shorthand codes + multi-term).
  */
 export async function GET(req: Request) {
   const { error } = await requireRole("readonly");
@@ -18,24 +23,28 @@ export async function GET(req: Request) {
   const q = new URL(req.url).searchParams.get("q")?.trim() ?? "";
   if (!q) return NextResponse.json({ results: [], interpreted: null });
 
+  const { plan, keys, interpreted: strengthenInterpreted } =
+    strengthenSearchKeys(q);
+  const primary = plan.primaryQuery || q;
+
   const departments = await prisma.department.findMany();
   const nl = parseNlSearch(q, departments);
 
   const lower = q.toLowerCase();
-  const envCode = normalizeSpokenEnvBookingCode(q);
+  const envCode = normalizeSpokenEnvBookingCode(q) ?? normalizeSpokenEnvBookingCode(primary);
   const results: SearchResult[] = [...nl.extraResults];
 
   const dbReleases = await prisma.release.findMany({
     where: {
       OR: [
-        { releaseCode: { contains: q } },
-        { name: { contains: q } },
-        { owner: { contains: q } },
-        { programProject: { contains: q } },
+        ...containsAnyKey("releaseCode", keys),
+        ...containsAnyKey("name", keys),
+        ...containsAnyKey("owner", keys),
+        ...containsAnyKey("programProject", keys),
       ],
     },
     include: { department: true },
-    take: 8,
+    take: 12,
   });
   dbReleases.forEach((r) => results.push(dbReleaseToSearchResult(r)));
 
@@ -54,14 +63,19 @@ export async function GET(req: Request) {
       take: 6,
     });
     deptReleases.forEach((r) => {
-      if (!results.some((x) => x.href === `/releases/${r.id}`)) {
+      if (!results.some((x) => x.href === `/releases/${r.id}` || x.href === `/releases/${r.releaseCode}`)) {
         results.push(dbReleaseToSearchResult(r));
       }
     });
   }
 
   const apps = await prisma.application.findMany({
-    where: { OR: [{ name: { contains: q } }, { type: { contains: q } }] },
+    where: {
+      OR: [
+        ...containsAnyKey("name", keys),
+        ...containsAnyKey("type", keys),
+      ],
+    },
     include: { department: true },
     take: 5,
   });
@@ -75,24 +89,26 @@ export async function GET(req: Request) {
     })
   );
 
-  const bookingQuery = envCode ?? q;
+  const bookingQueryKeys = envCode
+    ? [...new Set([envCode, ...keys])]
+    : keys;
   const bookings = await prisma.envBooking.findMany({
     where: {
       OR: [
-        { bookingCode: { contains: bookingQuery } },
-        { departmentName: { contains: q } },
-        { purpose: { contains: q } },
-        { team: { contains: q } },
-        { bookedBy: { contains: q } },
-        { application: { name: { contains: q } } },
-        { release: { releaseCode: { contains: q } } },
+        ...containsAnyKey("bookingCode", bookingQueryKeys),
+        ...containsAnyKey("departmentName", keys),
+        ...containsAnyKey("purpose", keys),
+        ...containsAnyKey("team", keys),
+        ...containsAnyKey("bookedBy", keys),
+        { application: { OR: containsAnyKey("name", keys) } },
+        { release: { OR: containsAnyKey("releaseCode", keys) } },
       ],
     },
     include: {
       application: { select: { name: true } },
       release: { select: { releaseCode: true } },
     },
-    take: 6,
+    take: 8,
   });
   bookings.forEach((b) => {
     const code = b.bookingCode ?? b.id;
@@ -108,16 +124,15 @@ export async function GET(req: Request) {
   const risks = await prisma.risk.findMany({
     where: {
       OR: [
-        { riskCode: { contains: q } },
-        { description: { contains: q } },
-        { applicationName: { contains: q } },
-        { departmentName: { contains: q } },
-        { release: { name: { contains: q } } },
-        { release: { releaseCode: { contains: q } } },
+        ...containsAnyKey("riskCode", keys),
+        ...containsAnyKey("description", keys),
+        ...containsAnyKey("applicationName", keys),
+        ...containsAnyKey("departmentName", keys),
+        { release: { OR: [...containsAnyKey("name", keys), ...containsAnyKey("releaseCode", keys)] } },
       ],
     },
     include: { release: { select: { name: true, releaseCode: true } } },
-    take: 5,
+    take: 8,
   });
   risks.forEach((r) => {
     results.push({
@@ -132,14 +147,14 @@ export async function GET(req: Request) {
   const blockers = await prisma.blocker.findMany({
     where: {
       OR: [
-        { blockerCode: { contains: q } },
-        { blockerDescription: { contains: q } },
-        { applicationName: { contains: q } },
-        { releaseName: { contains: q } },
-        { releaseCode: { contains: q } },
+        ...containsAnyKey("blockerCode", keys),
+        ...containsAnyKey("blockerDescription", keys),
+        ...containsAnyKey("applicationName", keys),
+        ...containsAnyKey("releaseName", keys),
+        ...containsAnyKey("releaseCode", keys),
       ],
     },
-    take: 5,
+    take: 8,
   });
   blockers.forEach((b) => {
     results.push({
@@ -154,14 +169,14 @@ export async function GET(req: Request) {
   const drifts = await prisma.drift.findMany({
     where: {
       OR: [
-        { driftCode: { contains: q } },
-        { description: { contains: q } },
-        { departmentName: { contains: q } },
-        { application: { name: { contains: q } } },
+        ...containsAnyKey("driftCode", keys),
+        ...containsAnyKey("description", keys),
+        ...containsAnyKey("departmentName", keys),
+        { application: { OR: containsAnyKey("name", keys) } },
       ],
     },
     include: { application: { select: { name: true } } },
-    take: 4,
+    take: 6,
   });
   drifts.forEach((d) => {
     results.push({
@@ -176,18 +191,18 @@ export async function GET(req: Request) {
   const approvals = await prisma.approval.findMany({
     where: {
       OR: [
-        { approvalCode: { contains: q } },
-        { approvalType: { contains: q } },
-        { applicationName: { contains: q } },
-        { release: { releaseCode: { contains: q } } },
-        { approver: { name: { contains: q } } },
+        ...containsAnyKey("approvalCode", keys),
+        ...containsAnyKey("approvalType", keys),
+        ...containsAnyKey("applicationName", keys),
+        { release: { OR: containsAnyKey("releaseCode", keys) } },
+        { approver: { OR: containsAnyKey("name", keys) } },
       ],
     },
     include: {
       release: { select: { releaseCode: true } },
       approver: { select: { name: true } },
     },
-    take: 4,
+    take: 6,
   });
   approvals.forEach((a) => {
     results.push({
@@ -202,14 +217,14 @@ export async function GET(req: Request) {
   const incidents = await prisma.incident.findMany({
     where: {
       OR: [
-        { incidentCode: { contains: q } },
-        { title: { contains: q } },
-        { departmentName: { contains: q } },
-        { application: { name: { contains: q } } },
+        ...containsAnyKey("incidentCode", keys),
+        ...containsAnyKey("title", keys),
+        ...containsAnyKey("departmentName", keys),
+        { application: { OR: containsAnyKey("name", keys) } },
       ],
     },
     include: { application: { select: { name: true } } },
-    take: 4,
+    take: 6,
   });
   incidents.forEach((i) => {
     results.push({
@@ -224,15 +239,15 @@ export async function GET(req: Request) {
   const conflicts = await prisma.environmentConflict.findMany({
     where: {
       OR: [
-        { conflictCode: { contains: q } },
-        { applicationName: { contains: q } },
-        { departmentName: { contains: q } },
-        { notes: { contains: q } },
-        { release1Code: { contains: q } },
-        { release2Code: { contains: q } },
+        ...containsAnyKey("conflictCode", keys),
+        ...containsAnyKey("applicationName", keys),
+        ...containsAnyKey("departmentName", keys),
+        ...containsAnyKey("notes", keys),
+        ...containsAnyKey("release1Code", keys),
+        ...containsAnyKey("release2Code", keys),
       ],
     },
-    take: 4,
+    take: 6,
   });
   conflicts.forEach((c) => {
     results.push({
@@ -247,18 +262,21 @@ export async function GET(req: Request) {
   const deps = await prisma.releaseDependency.findMany({
     where: {
       OR: [
-        { dependencyCode: { contains: q } },
-        { notes: { contains: q } },
-        { release: { releaseCode: { contains: q } } },
-        { dependsOnRelease: { releaseCode: { contains: q } } },
-        { dependsOnRelease: { name: { contains: q } } },
+        ...containsAnyKey("dependencyCode", keys),
+        ...containsAnyKey("notes", keys),
+        { release: { OR: containsAnyKey("releaseCode", keys) } },
+        {
+          dependsOnRelease: {
+            OR: [...containsAnyKey("releaseCode", keys), ...containsAnyKey("name", keys)],
+          },
+        },
       ],
     },
     include: {
       release: { select: { releaseCode: true } },
       dependsOnRelease: { select: { name: true, releaseCode: true } },
     },
-    take: 4,
+    take: 6,
   });
   deps.forEach((d) => {
     const code = d.dependencyCode ?? d.id;
@@ -274,14 +292,13 @@ export async function GET(req: Request) {
   const leaves = await prisma.leaveRecord.findMany({
     where: {
       OR: [
-        { leaveCode: { contains: q } },
-        { leaveType: { contains: q } },
-        { user: { name: { contains: q } } },
-        { user: { department: { contains: q } } },
+        ...containsAnyKey("leaveCode", keys),
+        ...containsAnyKey("leaveType", keys),
+        { user: { OR: [...containsAnyKey("name", keys), ...containsAnyKey("department", keys)] } },
       ],
     },
     include: { user: { select: { name: true, department: true } } },
-    take: 4,
+    take: 6,
   });
   leaves.forEach((l) => {
     results.push({
@@ -296,14 +313,14 @@ export async function GET(req: Request) {
   const alerts = await prisma.monitoringAlert.findMany({
     where: {
       OR: [
-        { alertCode: { contains: q } },
-        { alertType: { contains: q } },
-        { metric: { contains: q } },
-        { application: { name: { contains: q } } },
+        ...containsAnyKey("alertCode", keys),
+        ...containsAnyKey("alertType", keys),
+        ...containsAnyKey("metric", keys),
+        { application: { OR: containsAnyKey("name", keys) } },
       ],
     },
     include: { application: { select: { name: true } } },
-    take: 4,
+    take: 6,
   });
   alerts.forEach((a) => {
     results.push({
@@ -318,15 +335,15 @@ export async function GET(req: Request) {
   const maint = await prisma.plannedMaintenance.findMany({
     where: {
       OR: [
-        { maintenanceCode: { contains: q } },
-        { type: { contains: q } },
-        { notes: { contains: q } },
-        { environmentName: { contains: q } },
-        { application: { name: { contains: q } } },
+        ...containsAnyKey("maintenanceCode", keys),
+        ...containsAnyKey("type", keys),
+        ...containsAnyKey("notes", keys),
+        ...containsAnyKey("environmentName", keys),
+        { application: { OR: containsAnyKey("name", keys) } },
       ],
     },
     include: { application: { select: { name: true } } },
-    take: 4,
+    take: 6,
   });
   maint.forEach((m) => {
     results.push({
@@ -341,13 +358,13 @@ export async function GET(req: Request) {
   const flows = await prisma.integrationFlow.findMany({
     where: {
       OR: [
-        { flowCode: { contains: q } },
-        { sourceSystem: { contains: q } },
-        { targetSystem: { contains: q } },
-        { businessPurpose: { contains: q } },
+        ...containsAnyKey("flowCode", keys),
+        ...containsAnyKey("sourceSystem", keys),
+        ...containsAnyKey("targetSystem", keys),
+        ...containsAnyKey("businessPurpose", keys),
       ],
     },
-    take: 4,
+    take: 6,
   });
   flows.forEach((f) => {
     results.push({
@@ -362,9 +379,9 @@ export async function GET(req: Request) {
   const users = await prisma.user.findMany({
     where: {
       OR: [
-        { userId: { contains: q } },
-        { name: { contains: q } },
-        { email: { contains: q } },
+        ...containsAnyKey("userId", keys),
+        ...containsAnyKey("name", keys),
+        ...containsAnyKey("email", keys),
       ],
     },
     take: 4,
@@ -379,18 +396,20 @@ export async function GET(req: Request) {
     });
   });
 
-  demoReleases
-    .filter((r) => demoReleaseMatchesQuery(r, q))
-    .slice(0, 8)
-    .forEach((r) =>
-      results.push({
-        id: `demo-rel-${r.id}`,
-        type: "release",
-        label: `${r.version} — ${r.name}`,
-        sublabel: `${r.team} · ${r.status} · Demo command center`,
-        href: `/releases/${r.id}`,
-      })
-    );
+  for (const key of keys) {
+    demoReleases
+      .filter((r) => demoReleaseMatchesQuery(r, key))
+      .slice(0, 4)
+      .forEach((r) =>
+        results.push({
+          id: `demo-rel-${r.id}`,
+          type: "release",
+          label: `${r.version} — ${r.name}`,
+          sublabel: `${r.team} · ${r.status} · Demo command center`,
+          href: `/releases/${r.id}`,
+        })
+      );
+  }
 
   if (lower.includes("booking") || lower.includes("book env") || envCode) {
     results.push({
@@ -412,18 +431,14 @@ export async function GET(req: Request) {
     });
   }
 
-  const seen = new Set<string>();
-  const merged = results
-    .filter((r) => {
-      if (seen.has(r.href + r.label)) return false;
-      seen.add(r.href + r.label);
-      return true;
-    })
-    .slice(0, 20);
+  const merged = rankSearchResults(results, plan, 20);
+  const interpreted =
+    strengthenInterpreted ??
+    (nl.interpreted !== `Keyword search for “${q}”` ? nl.interpreted : null);
 
   return NextResponse.json({
     results: merged,
-    interpreted: nl.interpreted !== `Keyword search for “${q}”` ? nl.interpreted : null,
+    interpreted,
     redirectHref: nl.redirectHref ?? null,
   });
 }

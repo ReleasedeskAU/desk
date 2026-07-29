@@ -28,8 +28,8 @@ describe("lookupEntitySpokenSummary", () => {
     const result = await lookupEntitySpokenSummary("release", "rel-v2140");
     assert.equal(result.status, "found");
     if (result.status === "found") {
-      assert.match(result.summary, /v2\.14|Platform|blocking|blocker|status/i);
-      assert.ok(result.summary.split(/[.!?]/).filter(Boolean).length <= 8);
+      assert.match(result.summary, /v2\.14|Platform|BLOCKED|READY|AT RISK|IN PROGRESS|blocker/i);
+      assert.ok(result.summary.length > 40);
     }
   });
 });

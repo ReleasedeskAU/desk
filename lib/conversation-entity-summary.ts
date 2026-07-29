@@ -15,6 +15,7 @@ import {
 import { normalizeSpokenEnvBookingCode } from "@/lib/search-seed-catalog";
 import { releases as demoReleases } from "@/lib/dummy-data";
 import { getBlockers } from "@/lib/utils";
+import { assessReleaseReadiness } from "@/lib/voice/release-readiness";
 
 export type EntitySummaryLookupResult =
   | { status: "found"; entityType: SearchEntityType; entityId: string; summary: string; facts: Record<string, unknown> }
@@ -152,7 +153,7 @@ async function summarizeRelease(entityId: string): Promise<EntitySummaryLookupRe
       const blockers = await prisma.blocker.findMany({
         where: { releaseCode: detail.releaseCode },
         orderBy: { sourceOrder: "asc" },
-        take: 5,
+        take: 8,
         select: {
           blockerCode: true,
           blockerDescription: true,
@@ -161,34 +162,55 @@ async function summarizeRelease(entityId: string): Promise<EntitySummaryLookupRe
         },
       });
       const openBlockers = blockers.filter((b) => !/resolved|closed|done/i.test(b.status));
-      const topRisks = detail.risks.slice(0, 3);
-      const conflictBookings = detail.bookings.filter((b) => b.conflict);
+      const pendingApprovals = await prisma.approval.count({
+        where: {
+          releaseCode: detail.releaseCode,
+          decision: { equals: "Pending", mode: "insensitive" },
+        },
+      });
+      const conflictBookings = detail.bookings.filter((b) => b.conflict).length;
+      const dependenciesBlocked = detail.dependencies
+        .filter((d) => /blocked|at\s*risk/i.test(d.status))
+        .map((d) => d.code);
 
-      const summary = sentences(
-        `${detail.releaseCode} (${detail.name}) is ${detail.status} for ${detail.department}, owned by ${detail.owner}.`,
-        detail.releaseDate ? `Target date ${detail.releaseDate}.` : null,
-        openBlockers.length
-          ? `Open blockers: ${openBlockers
-              .map((b) => `${b.blockerCode} — ${clip(b.blockerDescription, 80)} (${b.severity})`)
-              .join("; ")}.`
-          : "No open blockers on record.",
-        topRisks.length
-          ? `Top risks: ${topRisks.map((r) => `${r.code} score ${r.score}`).join(", ")}.`
-          : null,
-        conflictBookings.length
-          ? `${conflictBookings.length} env booking(s) flagged with conflicts.`
-          : null,
-        detail.dependencies.length
-          ? `Depends on ${detail.dependencies.map((d) => d.code).slice(0, 4).join(", ")}.`
-          : null
-      );
+      const assessment = assessReleaseReadiness({
+        releaseCode: detail.releaseCode,
+        name: detail.name,
+        status: detail.status,
+        owner: detail.owner,
+        department: detail.department,
+        priority: detail.priority,
+        releaseDate: detail.releaseDate,
+        decision: detail.decision,
+        conflictFlag: detail.conflictFlag,
+        readinessPercent: detail.readinessPercent,
+        goLiveChecklistPercent: detail.goLiveChecklistPercent,
+        approvalStatus: detail.approvalStatus,
+        releaseHealth: detail.releaseHealth,
+        rollbackPlan: detail.rollbackPlan,
+        devSignoff: detail.devSignoff,
+        testSignoff: detail.testSignoff,
+        uatSignoff: detail.uatSignoff,
+        securityClearance: detail.securityClearance,
+        openBlockers,
+        conflictBookings,
+        openRisks: detail.risks,
+        pendingApprovals,
+        dependenciesBlocked,
+      });
 
       return {
         status: "found",
         entityType: "release",
         entityId: detail.releaseCode,
-        summary,
-        facts: { ...detail, blockers: openBlockers },
+        summary: assessment.spokenSummary,
+        facts: {
+          ...detail,
+          blockers: openBlockers,
+          readinessVerdict: assessment.verdict,
+          blockingFactors: assessment.blockingFactors,
+          readySignals: assessment.readySignals,
+        },
       };
     }
   } catch {
@@ -199,21 +221,32 @@ async function summarizeRelease(entityId: string): Promise<EntitySummaryLookupRe
   const demo = demoReleases.find((r) => r.id === entityId || r.version === entityId);
   if (demo) {
     const blockers = getBlockers(demo);
-    const summary = sentences(
-      `${demo.version} (${demo.name}) is ${demo.status} for ${demo.team}, owned by ${demo.owner}.`,
-      blockers.length
-        ? `What's blocking it: ${blockers.slice(0, 3).join("; ")}.`
-        : "No blockers listed in the demo catalog.",
-      demo.changeRecord?.riskTier
-        ? `Change risk tier ${demo.changeRecord.riskTier}.`
-        : null
-    );
+    const assessment = assessReleaseReadiness({
+      releaseCode: demo.version,
+      name: demo.name,
+      status: demo.status,
+      owner: demo.owner,
+      department: demo.team,
+      openBlockers: blockers.map((b, i) => ({
+        blockerCode: `demo-${i + 1}`,
+        blockerDescription: b,
+        severity: "High",
+        status: "Open",
+      })),
+    });
     return {
       status: "found",
       entityType: "release",
       entityId: demo.id,
-      summary,
-      facts: { demo: true, id: demo.id, version: demo.version, status: demo.status, blockers },
+      summary: assessment.spokenSummary,
+      facts: {
+        demo: true,
+        id: demo.id,
+        version: demo.version,
+        status: demo.status,
+        blockers,
+        readinessVerdict: assessment.verdict,
+      },
     };
   }
 

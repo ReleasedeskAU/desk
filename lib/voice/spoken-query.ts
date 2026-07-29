@@ -113,21 +113,22 @@ const SPOKEN_CODE_PATTERNS: Array<{
   prefix: string;
   re: RegExp;
 }> = [
-  { entityType: "blocker", prefix: "BLK", re: /^(?:blk|blocker)[\s-]*(\d{1,4})$/i },
-  { entityType: "risk", prefix: "RSK", re: /^(?:rsk|risk)[\s-]*(\d{1,4})$/i },
-  { entityType: "conflict", prefix: "CNF", re: /^(?:cnf|conflict)[\s-]*(\d{1,4})$/i },
-  { entityType: "drift", prefix: "DRF", re: /^(?:drf|drift)[\s-]*(\d{1,4})$/i },
-  { entityType: "approval", prefix: "APR", re: /^(?:apr|approval)[\s-]*(\d{1,4})$/i },
-  { entityType: "incident", prefix: "INC", re: /^(?:inc|incident)[\s-]*(\d{1,4})$/i },
-  { entityType: "dependency", prefix: "DEP", re: /^(?:dep|dependency)[\s-]*(\d{1,4})$/i },
-  { entityType: "leave", prefix: "LVE", re: /^(?:lve|leave)[\s-]*(\d{1,4})$/i },
-  { entityType: "alert", prefix: "ALT", re: /^(?:alt|alert)[\s-]*(\d{1,4})$/i },
+  // Allow “blocker no 5” / “blocker number 5” / “blocker #5” / “blocker 5”
+  { entityType: "blocker", prefix: "BLK", re: /^(?:blk|blocker)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "risk", prefix: "RSK", re: /^(?:rsk|risk)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "conflict", prefix: "CNF", re: /^(?:cnf|conflict)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "drift", prefix: "DRF", re: /^(?:drf|drift)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "approval", prefix: "APR", re: /^(?:apr|approval)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "incident", prefix: "INC", re: /^(?:inc|incident)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "dependency", prefix: "DEP", re: /^(?:dep|dependency)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "leave", prefix: "LVE", re: /^(?:lve|leave)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
+  { entityType: "alert", prefix: "ALT", re: /^(?:alt|alert)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
   {
     entityType: "maintenance",
     prefix: "MNT",
-    re: /^(?:mnt|maintenance)[\s-]*(\d{1,4})$/i,
+    re: /^(?:mnt|maintenance)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i,
   },
-  { entityType: "flow", prefix: "FLW", re: /^(?:flw|flow)[\s-]*(\d{1,4})$/i },
+  { entityType: "flow", prefix: "FLW", re: /^(?:flw|flow)\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i },
 ];
 
 /**
@@ -160,28 +161,40 @@ export function normalizeSpokenVersion(q: string): string {
 }
 
 /**
- * Map spoken release ids to REL-0001 form.
- * “REL-0001” / “rel-0001” / “rel 0001” → REL-0001.
- * Leaves “rel 01” / “release 1” for the ordinal parser (“first/second”).
+ * Map spoken release ids to REL-#### form (DB business codes, not hardcoded rows).
+ * “REL-0001” / “rel 75” / “release no 5” → REL-0001 / REL-0075 / REL-0005.
  * @param raw - Spoken fragment after filler strip.
  */
 export function normalizeSpokenReleaseCode(raw: string): string | null {
   const q = raw.trim();
   if (!q) return null;
-  const m = q.match(/^rel(?:ease)?[\s-]*(\d{1,4})$/i);
+  const m = q.match(/^rel(?:ease)?\s*(?:(?:no\.?|number|#)\s*)?(\d{1,4})$/i);
   if (!m) return null;
-  const digits = m[1]!;
-  const compact = q.replace(/\s+/g, "");
-  // Hyphenated REL-… or 3–4 digit spoken codes are business ids, not ordinals.
-  if (!/^rel(ease)?-\d/i.test(compact) && digits.length < 3) {
-    return null;
-  }
-  return `REL-${String(Number(digits)).padStart(4, "0")}`;
+  return `REL-${String(Number(m[1]!)).padStart(4, "0")}`;
 }
 
 /**
- * Map spoken business codes (BLK-0010, blocker 0010, rsk 3) to PREFIX-####.
- * Short 1–2 digit forms without a hyphen stay ordinals (e.g. "blocker 10").
+ * Pad a bare number to PREFIX-#### when entity type is known (tool arg or page context).
+ * Bridges LLM mistakes like search_entity({ query: "5", entityType: "blocker" }).
+ * @param digits - 1–4 digit string.
+ * @param entityType - Known entity kind.
+ */
+export function padSpokenDigitsToCode(
+  digits: string,
+  entityType: VoiceEntityKind
+): string | null {
+  if (!/^\d{1,4}$/.test(digits.trim())) return null;
+  const prefix =
+    entityType === "release"
+      ? "REL"
+      : ENTITY_CODE_PREFIX[entityType]?.replace(/-$/, "") ?? null;
+  if (!prefix) return null;
+  return `${prefix}-${String(Number(digits.trim())).padStart(4, "0")}`;
+}
+
+/**
+ * Map spoken business codes (BLK-10, blocker 75, rsk 3) to PREFIX-####.
+ * Bridges human shorthand to tenant DB codes; “first/10th …” remain ordinals.
  * @param raw - Spoken fragment after filler strip.
  */
 export function normalizeSpokenEntityCode(
@@ -191,7 +204,6 @@ export function normalizeSpokenEntityCode(
   if (!q) return null;
 
   // Explicit PREFIX-#### / PREFIX #### (any catalog prefix).
-  // 1–2 digit forms without a hyphen stay ordinals (e.g. "rel 01", "blk 10").
   for (const [entityType, prefix] of Object.entries(ENTITY_CODE_PREFIX) as Array<
     [SearchEntityType, string]
   >) {
@@ -199,27 +211,17 @@ export function normalizeSpokenEntityCode(
     const p = prefix.replace(/-$/, "");
     const m = q.match(new RegExp(`^${p}[\\s-]*(\\d{1,4})$`, "i"));
     if (!m) continue;
-    const digits = m[1]!;
-    const compact = q.replace(/\s+/g, "");
-    const hasHyphenCode = new RegExp(`^${p}-\\d`, "i").test(compact);
-    if (!hasHyphenCode && digits.length < 3) continue;
     return {
-      code: `${p}-${String(Number(digits)).padStart(4, "0")}`,
+      code: `${p}-${String(Number(m[1]!)).padStart(4, "0")}`,
       entityType: entityType as VoiceEntityKind,
     };
   }
 
   for (const row of SPOKEN_CODE_PATTERNS) {
     const m = q.match(row.re);
-    if (!m) continue;
-    const digits = m[1];
-    if (!digits) continue;
-    // 1–2 digits without hyphenated prefix read as ordinals ("blocker 10").
-    const compact = q.replace(/\s+/g, "");
-    const hasHyphenCode = new RegExp(`^${row.prefix}-\\d`, "i").test(compact);
-    if (!hasHyphenCode && digits.length < 3) continue;
+    if (!m?.[1]) continue;
     return {
-      code: `${row.prefix}-${String(Number(digits)).padStart(4, "0")}`,
+      code: `${row.prefix}-${String(Number(m[1])).padStart(4, "0")}`,
       entityType: row.entityType,
     };
   }
@@ -241,7 +243,8 @@ export function parseBareOrdinal(lower: string): number | null {
 }
 
 /**
- * Parse ordinal intents: "first release", "10th blocker", "release 1", "rel 01".
+ * Parse search intents: shorthand codes (“release 75” → REL-0075) and
+ * explicit ordinals (“first release”, “10th blocker”).
  * @param raw - Original tool query (may include filler).
  * @returns Ordinal intent or plain text intent.
  */
@@ -255,7 +258,7 @@ export function parseVoiceSearchIntent(raw: string): VoiceSearchIntent {
     return { kind: "text", query: envCode, entityType: "booking" };
   }
 
-  // Spoken release codes → REL-0001 (so “rel 0001” / “REL 1” open that detail).
+  // Shorthand → business code (tenant DB SoT): "release 75" → REL-0075.
   const relCode = normalizeSpokenReleaseCode(normalized);
   if (relCode) {
     return { kind: "text", query: relCode, entityType: "release" };
@@ -296,17 +299,19 @@ export function parseVoiceSearchIntent(raw: string): VoiceSearchIntent {
     return { kind: "ordinal", ordinal, entityType, raw: normalized };
   }
 
-  // "blocker 10" / "blocker #10" / "blocker number 10"
-  // (1–2 digits = ordinal; 3–4 digit hyphenated codes handled above)
-  const numOrd = lower.match(
+  // "blocker number 10" / "blocker no 5" / "blocker #10"
+  const numCode = lower.match(
     new RegExp(
-      `^(${ORDINAL_ENTITY_PATTERN})\\s+(?:number\\s+|#\\s*)?0*(\\d{1,2})\\b`
+      `^(${ORDINAL_ENTITY_PATTERN})\\s+(?:(?:no\\.?|number|#)\\s*)(\\d{1,4})\\b`
     )
   );
-  if (numOrd) {
-    const entityType = ENTITY_ALIASES[numOrd[1]!] ?? "release";
-    const ordinal = Math.max(1, parseInt(numOrd[2]!, 10));
-    return { kind: "ordinal", ordinal, entityType, raw: normalized };
+  if (numCode) {
+    const entityType = ENTITY_ALIASES[numCode[1]!] ?? "release";
+    const digits = numCode[2]!;
+    const code = padSpokenDigitsToCode(digits, entityType);
+    if (code) {
+      return { kind: "text", query: code, entityType };
+    }
   }
 
   return { kind: "text", query: normalized };

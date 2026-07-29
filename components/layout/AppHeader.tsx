@@ -63,7 +63,7 @@ export function AppHeader() {
             >
               <Search className="absolute left-3 h-4 w-4 text-brand-500" />
               <span className="flex h-10 w-full items-center rounded-lg border border-gray-200 dark:border-[var(--border)] bg-gray-50 dark:bg-[var(--card)] pl-10 pr-16 text-sm text-gray-600 dark:text-white/75 transition-colors hover:bg-gray-100 dark:hover:bg-white/10 hover:border-gray-300 dark:hover:border-[var(--border)]">
-                Search releases, tickets, CRs...
+                Search releases, blockers, risks…
               </span>
               <kbd className="absolute right-3 hidden rounded-md border border-gray-200 dark:border-[var(--border)] bg-white dark:bg-[var(--card)] px-2 py-0.5 text-[10px] font-semibold text-gray-500 dark:text-white/65 shadow-sm sm:inline">
                 ⌘K

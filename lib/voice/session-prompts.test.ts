@@ -68,6 +68,10 @@ describe("voiceToolWaitNoticesForCalls", () => {
   it("maps search and navigate to wait copy", () => {
     assert.equal(voiceToolWaitNotice("search_entity"), "Searching… please wait");
     assert.equal(voiceToolWaitNotice("navigate_to"), "Navigating… please wait");
+    assert.equal(
+      voiceToolWaitNotice("apply_list_filters"),
+      "Applying filters… please wait"
+    );
     assert.deepEqual(
       voiceToolWaitNoticesForCalls(["search_entity", "navigate_to", "search_entity"]),
       ["Searching… please wait", "Navigating… please wait"]

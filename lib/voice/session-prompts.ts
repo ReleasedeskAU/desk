@@ -34,8 +34,8 @@ export function voiceSessionPromptText(
     return [
       "[SESSION]",
       "New voice session just started.",
-      "Greet the user in one short friendly sentence as Release Desk voice,",
-      "and ask how you can help (navigate, search, or summarize).",
+      "Greet the user in one short friendly sentence as their Release Desk release manager,",
+      "and ask how you can help (walkthrough, find a release, check readiness, navigate, or explain a page).",
       "Do not call any tools yet.",
     ].join(" ");
   }
@@ -103,8 +103,14 @@ export function voiceToolWaitNotice(toolName: string | undefined): string | null
       return "Searching… please wait";
     case "navigate_to":
       return "Navigating… please wait";
+    case "apply_list_filters":
+      return "Applying filters… please wait";
     case "get_summary":
       return "Looking that up… please wait";
+    case "explain_page":
+      return "Explaining this page… please wait";
+    case "run_walkthrough":
+      return "Starting walkthrough… please wait";
     case "propose_action":
       return "Preparing that change… please wait";
     case "confirm_action":

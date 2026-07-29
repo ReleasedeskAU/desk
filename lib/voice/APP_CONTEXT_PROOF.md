@@ -3,7 +3,9 @@
 ## Phase 1 (entity brief + canonical ordinals)
 
 - [ ] Connect voice off Releases page; say “first release” → opens REL-0001 (or lowest REL code).
-- [ ] Say “release 0001” / “rel 01” → REL-0001.
+- [ ] Say “release 75” / “rel 75” → REL-0075 (shorthand → DB code).
+- [ ] Say “release 0001” / “REL-0001” → REL-0001.
+- [ ] Say “blocker 10” → BLK-0010; “10th blocker” still uses on-screen ordinal.
 - [ ] Say “first conflict” → lowest CNF-#### by code (not random API order).
 - [ ] Transcript / tools never invent codes when search is empty.
 

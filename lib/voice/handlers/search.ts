@@ -1,23 +1,26 @@
 /**
- * search_entity tool handler — reuses GlobalSearch's exact stack:
- * local `searchAll` + GET `/api/search?q=` + same merge/dedupe.
+ * search_entity tool handler — GlobalSearch stack + voice context agent.
  *
- * Voice-only preprocessing (does not change ⌘K ranking):
- * - Strip command filler ("go to … page")
- * - Normalize spoken versions
- * - Resolve ordinals ("first release", "rel 01") via ordered entity lists
+ * Voice preprocessing:
+ * - Shorthand codes ("release 75" → REL-0075)
+ * - Ordinals ("first release", "10th blocker") via ordered lists / APP_CONTEXT
+ * - Fuzzy multi-term retrieve + session memory ("that release")
+ * - Short TTL cache (optimize repeats; DB remains SoT)
  *
  * Candidates expose `path` for navigate_to; `refId` is speech-only.
  */
-import { searchAll } from "@/lib/search";
 import type { SearchResult } from "@/lib/dummy-data";
-import { ENTITY_HREF_PREFIX } from "@/lib/search-entity-types";
 import { safeFetchJson, isFetchAbort } from "@/lib/safe-fetch";
 import { listEntitiesForVoiceOrdinal } from "@/lib/voice/entity-list";
 import {
   getVoiceAppContext,
   resolveVisibleOrdinal,
 } from "@/lib/voice/app-context";
+import {
+  planVoiceContextQuery,
+  rememberVoiceEntity,
+  retrieveVoiceContext,
+} from "@/lib/voice/context-agent";
 import {
   parseBareOrdinal,
   parseVoiceSearchIntent,
@@ -59,21 +62,6 @@ const NAVIGATE_WITH_PATH =
 const PICK_BY_NAME =
   "Read options by human name/version (not technical ids). User may answer with a name or first/second/third.";
 
-/**
- * Same merge/dedupe as GlobalSearch (href|label key), capped for voice.
- */
-function mergeResults(a: SearchResult[], b: SearchResult[]): SearchResult[] {
-  const seen = new Set<string>();
-  return [...a, ...b]
-    .filter((r) => {
-      const key = `${r.href}|${r.label}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 14);
-}
-
 function toCandidate(r: SearchResult): VoiceSearchCandidate {
   return {
     path: r.href,
@@ -85,25 +73,21 @@ function toCandidate(r: SearchResult): VoiceSearchCandidate {
   };
 }
 
-function filterByEntityType(
-  results: SearchResult[],
-  entityType: string | undefined
-): SearchResult[] {
-  if (!entityType?.trim()) return results;
-  const t = entityType.trim().toLowerCase();
-  const prefix = ENTITY_HREF_PREFIX[t];
-  if (prefix) {
-    return results.filter(
-      (r) => r.href === prefix || r.href.startsWith(`${prefix}/`) || r.type === t
-    );
+function rememberFromResults(results: SearchResult[]): void {
+  for (const r of results.slice(0, 3)) {
+    rememberVoiceEntity({
+      path: r.href,
+      label: r.label,
+      type: r.type,
+      code: r.href.split("/").filter(Boolean).pop(),
+    });
   }
-  return results.filter((r) => r.type === t || r.label.toLowerCase().includes(t));
 }
 
 function finishWithResults(
   query: string,
   merged: SearchResult[],
-  extras?: { ordinalNote?: string }
+  extras?: { ordinalNote?: string; fromMemory?: boolean }
 ): SearchToolResult {
   const matchCount = merged.length;
 
@@ -114,24 +98,29 @@ function finishWithResults(
       query,
       matchCount: 0,
       instruction:
-        "No matches found. Ask the user for a release/risk name, version (e.g. v2.14), team, or owner — not an id. They can also say first release / second risk.",
+        "No matches found. Ask the user for a release/risk name, version (e.g. v2.14), team, status word (blocked), or “first release” — not an invented id.",
       actionLine: `No matches for “${query}”`,
     };
   }
 
+  rememberFromResults(merged);
+
   if (matchCount === 1) {
     const single = toCandidate(merged[0]!);
     const note = extras?.ordinalNote ? ` ${extras.ordinalNote}` : "";
+    const mem = extras?.fromMemory ? " (from recent session context)." : "";
     return {
       ok: true,
       tool: "search_entity",
       query,
       matchCount: 1,
       single,
-      instruction: `One match: ${single.label}.${note} Confirm verbally, then call navigate_to with path=${single.path}. ${NAVIGATE_WITH_PATH}`,
+      instruction: `One match: ${single.label}.${note}${mem} Confirm verbally, then call navigate_to with path=${single.path}. ${NAVIGATE_WITH_PATH}`,
       actionLine: extras?.ordinalNote
         ? `${extras.ordinalNote}: ${single.label}`
-        : `Found 1 match: ${single.label}`,
+        : extras?.fromMemory
+          ? `Using recent: ${single.label}`
+          : `Found 1 match: ${single.label}`,
     };
   }
 
@@ -148,8 +137,7 @@ function finishWithResults(
 }
 
 /**
- * Resolve "first release" / "rel 01" to a concrete SearchResult.
- * Prefers on-page [APP_CONTEXT] visible rows when entity types match.
+ * Resolve ordinals against APP_CONTEXT then ordered entity lists.
  */
 async function resolveOrdinal(
   ordinal: number,
@@ -169,6 +157,12 @@ async function resolveOrdinal(
       type: entityType,
       sublabel: "visible table",
     };
+    rememberVoiceEntity({
+      path: visible.path,
+      label: visible.label,
+      type: entityType,
+      code: visible.code,
+    });
     return {
       ok: true,
       tool: "search_entity",
@@ -194,6 +188,12 @@ async function resolveOrdinal(
   }
   const pick = list[idx]!;
   const single = toCandidate(pick);
+  rememberVoiceEntity({
+    path: single.path,
+    label: single.label,
+    type: single.type,
+    code: single.path.split("/").filter(Boolean).pop(),
+  });
   return {
     ok: true,
     tool: "search_entity",
@@ -206,7 +206,7 @@ async function resolveOrdinal(
 }
 
 /**
- * Run voice search (GlobalSearch stack + spoken ordinal/name helpers).
+ * Run voice search via context agent (retrieve-don't-dump) + GlobalSearch API.
  * @param args - `{ query, entityType? }` from Gemini.
  */
 export async function handleSearchEntity(
@@ -246,21 +246,36 @@ export async function handleSearchEntity(
     return resolveOrdinal(intent.ordinal, intent.entityType, intent.raw);
   }
 
-  const query = intent.query;
-  // Prefer explicit tool arg; spoken "env 001" may already set booking.
-  const entityType = entityTypeArg ?? intent.entityType;
+  const plan = planVoiceContextQuery(rawQuery, entityTypeArg);
 
-  // Mirror GlobalSearch: local index + authenticated /api/search.
-  const localResults = searchAll(query);
+  // Fetch API once for the primary (normalized) query — context agent merges variants locally.
   let apiResults: SearchResult[] = [];
   const api = await safeFetchJson<{ results?: SearchResult[] }>(
-    `/api/search?q=${encodeURIComponent(query)}`,
+    `/api/search?q=${encodeURIComponent(plan.primaryQuery)}`,
     { label: "voice-search" }
   );
   if (!isFetchAbort(api) && api.ok) {
     apiResults = api.data.results ?? [];
   }
 
-  const merged = filterByEntityType(mergeResults(localResults, apiResults), entityType);
-  return finishWithResults(query, merged);
+  const retrieved = retrieveVoiceContext(plan, {
+    entityType: entityTypeArg ?? plan.entityType,
+    apiResults,
+  });
+
+  if (plan.pronounRef && retrieved.results.length === 0) {
+    return {
+      ok: true,
+      tool: "search_entity",
+      query: rawQuery,
+      matchCount: 0,
+      instruction:
+        "No recent entity in session memory for that pronoun. Ask the user to name the release/blocker or say first/10th on the current list.",
+      actionLine: "No recent item to refer to",
+    };
+  }
+
+  return finishWithResults(plan.primaryQuery || rawQuery, retrieved.results, {
+    fromMemory: retrieved.fromMemory,
+  });
 }

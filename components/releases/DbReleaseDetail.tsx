@@ -158,16 +158,32 @@ function signalDone(value?: string | null): boolean {
   );
 }
 
+/**
+ * Split a comma-separated code list and drop case-insensitive duplicates
+ * (seed/CSV often repeats the same REL-/CNF- code).
+ * @param raw - Comma-separated codes.
+ */
+function uniqueCodes(raw?: string | null): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of (raw ?? "").split(",")) {
+    const code = part.trim();
+    if (!code) continue;
+    const key = code.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(code);
+  }
+  return out;
+}
+
 function ConflictCodeLinks({ raw }: { raw?: string | null }) {
-  const codes = (raw ?? "")
-    .split(",")
-    .map((c) => c.trim())
-    .filter(Boolean);
+  const codes = uniqueCodes(raw);
   if (!codes.length) return <>—</>;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
       {codes.map((code, i) => (
-        <span key={code} className="inline-flex items-center">
+        <span key={code.toUpperCase()} className="inline-flex items-center">
           {i > 0 && <span className="text-gray-400 mr-1">,</span>}
           <ProgressLink
             href={`/conflicts/${encodeURIComponent(code)}`}
@@ -188,17 +204,14 @@ function ReleaseCodeLinks({
   raw?: string | null;
   releases: { id: string; releaseCode: string }[];
 }) {
-  const codes = (raw ?? "")
-    .split(",")
-    .map((c) => c.trim())
-    .filter(Boolean);
+  const codes = uniqueCodes(raw);
   if (!codes.length) return <>—</>;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
       {codes.map((code, i) => {
         const hit = releases.find((r) => r.releaseCode.toUpperCase() === code.toUpperCase());
         return (
-          <span key={code} className="inline-flex items-center">
+          <span key={code.toUpperCase()} className="inline-flex items-center">
             {i > 0 && <span className="text-gray-400 mr-1">,</span>}
             {hit ? (
               <ProgressLink

@@ -6,6 +6,9 @@ import { handleSearchEntity } from "@/lib/voice/handlers/search";
 import { handleGetSummary } from "@/lib/voice/handlers/summary";
 import { handleProposeAction } from "@/lib/voice/handlers/propose";
 import { handleConfirmAction } from "@/lib/voice/handlers/confirm";
+import { handleApplyListFilters } from "@/lib/voice/handlers/filters";
+import { handleExplainPage } from "@/lib/voice/handlers/explain-page";
+import { handleRunWalkthrough } from "@/lib/voice/handlers/walkthrough";
 
 export type VoiceFunctionCall = {
   id?: string;
@@ -53,12 +56,24 @@ export async function dispatchVoiceToolCalls(
       const result = await handleNavigateTo(args, deps);
       response = result;
       actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "apply_list_filters") {
+      const result = await handleApplyListFilters(args, deps);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
     } else if (name === "search_entity") {
       const result = await handleSearchEntity(args);
       response = result;
       actionLines.push({ text: result.actionLine, role: "action" });
     } else if (name === "get_summary") {
       const result = await handleGetSummary(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "explain_page") {
+      const result = await handleExplainPage(args, deps);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "run_walkthrough") {
+      const result = await handleRunWalkthrough(args, deps);
       response = result;
       actionLines.push({ text: result.actionLine, role: "action" });
     } else if (name === "propose_action") {

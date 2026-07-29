@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, Loader2, WifiOff, Keyboard, X, Monitor, MonitorOff } from "lucide-react";
+import { Mic, MicOff, Loader2, WifiOff, Keyboard, X, Monitor, MonitorOff, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   VoiceLiveClient,
@@ -46,7 +46,10 @@ export function VoiceMic() {
   const [textInput, setTextInput] = useState("");
   const [textBusy, setTextBusy] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  /** Shell visibility for the log card (also forced open by errors / propose). */
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Collapsible body of the log card — header stays while mic is live. */
+  const [logsExpanded, setLogsExpanded] = useState(true);
   /** Opt-in tab screen share — default OFF (audio-only). */
   const [screenShareOn, setScreenShareOn] = useState(false);
   const [screenShareBusy, setScreenShareBusy] = useState(false);
@@ -55,6 +58,18 @@ export function VoiceMic() {
 
   const guidedPush = useCallback(
     async (href: string) => {
+      const pathOnly = (href.split(/[?#]/)[0] ?? href).replace(/\/$/, "") || "/";
+      const here =
+        typeof window !== "undefined"
+          ? window.location.pathname.replace(/\/$/, "") || "/"
+          : "";
+      // Same-list filter updates: skip sidebar guide; keep query intact.
+      if (here === pathOnly && /[?]/.test(href)) {
+        performVoiceRouteChange(href, (path) => {
+          router.push(path);
+        });
+        return;
+      }
       await guidedNavigateTo(
         href,
         (h) => {
@@ -73,10 +88,10 @@ export function VoiceMic() {
 
   const pushLine = useCallback((entry: VoiceTranscriptEntry) => {
     setLines((prev) => [...prev.slice(-(MAX_TRANSCRIPT_LINES - 1)), entry]);
-    // Keep the big transcript card closed during normal navigate/action chatter.
-    // Only open for writes, errors, or when the user already opened it.
+    // Keep log shell available; expand for writes / errors.
+    setPanelOpen(true);
     if (entry.role === "propose" || entry.role === "system") {
-      setPanelOpen(true);
+      setLogsExpanded(true);
     }
   }, []);
 
@@ -157,16 +172,18 @@ export function VoiceMic() {
     phase === "disconnected" || conn === "disconnected" || reconnecting;
   const hasPropose =
     Boolean(pendingActionId) || lines.some((l) => l.role === "propose");
-  // Compact mic pill stays; big square transcript only when needed / user opened it.
+  const voiceSessionLive = active || connecting || reconnecting;
+  // Log popup above mic while session is live (collapsible), plus forced cases.
   const showTranscriptCard =
+    voiceSessionLive ||
     Boolean(error) ||
     showTextFallback ||
     disconnectedUi ||
     hasPropose ||
-    (panelOpen &&
-      (lines.length > 0 || Boolean(error) || showTextFallback || hasPropose));
+    (panelOpen && lines.length > 0);
   const showShareToast =
     Boolean(sharePromptReason) && active && !screenShareOn;
+  const lastLogLine = lines.length > 0 ? lines[lines.length - 1] : null;
 
   const statusLabel = hasPropose
     ? "Confirm write"
@@ -200,6 +217,7 @@ export function VoiceMic() {
       clearPendingProposal();
       setLines([]);
       setPanelOpen(false);
+      setLogsExpanded(true);
       setConn("idle");
       setPhase("idle");
       setScreenShareOn(false);
@@ -219,13 +237,14 @@ export function VoiceMic() {
     setScreenShareOn(false);
     setSharePromptReason(null);
     clearVoiceScreenSharePrompt();
-    // Don't open the empty "Sees this page" card until there is real activity.
-    setPanelOpen(false);
+    setPanelOpen(true);
+    setLogsExpanded(true);
     const ok = await client.connect();
     // User may have hit stop during mint — don't surface a fake error.
     if (!ok && client.getConnectionState() !== "idle") {
       setError(client.getLastError() ?? "Could not start voice");
       setPanelOpen(true);
+      setLogsExpanded(true);
     }
   }, [clearPendingProposal]);
 
@@ -287,7 +306,13 @@ export function VoiceMic() {
       );
       const { functionResponses, actionLines } = await dispatchVoiceToolCalls(
         parsed.calls,
-        { push: guidedPush }
+        {
+          push: guidedPush,
+          getCurrentHref: () =>
+            typeof window !== "undefined"
+              ? `${window.location.pathname}${window.location.search}`
+              : "/",
+        }
       );
       for (const line of actionLines) {
         pushLine({
@@ -368,7 +393,13 @@ export function VoiceMic() {
           data-testid="voice-transcript"
         >
           <div className="flex items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
-            <div className="min-w-0">
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              onClick={() => setLogsExpanded((v) => !v)}
+              aria-expanded={logsExpanded}
+              data-testid="voice-log-toggle"
+            >
               <p
                 className={cn(
                   "text-[10px] font-semibold uppercase tracking-[0.14em]",
@@ -387,28 +418,51 @@ export function VoiceMic() {
                     ? reconnecting
                       ? "Reconnecting"
                       : "Disconnected"
-                    : "Voice"}
+                    : "Voice log"}
               </p>
               <p className="truncate text-[11px] text-slate-500 dark:text-white/55">
-                {active
-                  ? screenShareOn
-                    ? "Listening + screen share — frames are being sent"
-                    : sharePromptReason
-                      ? "Tap the monitor icon to share your screen"
-                      : "Listening — tap mic to stop"
-                  : "Click the mic to talk"}
+                {!logsExpanded && lastLogLine
+                  ? lastLogLine.text
+                  : active
+                    ? screenShareOn
+                      ? "Listening + screen share"
+                      : sharePromptReason
+                        ? "Tap monitor to share screen"
+                        : "Listening — tap header to collapse"
+                    : connecting
+                      ? "Starting…"
+                      : "Activity log"}
               </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Close voice panel"
-              className="rounded-md p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
-              onClick={() => setPanelOpen(false)}
-            >
-              <X className="h-3.5 w-3.5" />
             </button>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                aria-label={logsExpanded ? "Collapse voice log" : "Expand voice log"}
+                className="rounded-md p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                onClick={() => setLogsExpanded((v) => !v)}
+                data-testid="voice-log-chevron"
+              >
+                {logsExpanded ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                )}
+              </button>
+              {!voiceSessionLive ? (
+                <button
+                  type="button"
+                  aria-label="Close voice panel"
+                  className="rounded-md p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                  onClick={() => setPanelOpen(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
           </div>
 
+          {logsExpanded ? (
+            <>
           {lines.length > 0 ? (
             <ul className="max-h-44 space-y-1.5 overflow-y-auto px-3 py-2.5 text-[12px]">
               {lines.map((l) => (
@@ -444,7 +498,11 @@ export function VoiceMic() {
                 </li>
               ))}
             </ul>
-          ) : null}
+          ) : (
+            <p className="px-3 py-2.5 text-[11px] text-slate-400 dark:text-white/40">
+              {connecting ? "Connecting…" : "Waiting for speech / actions…"}
+            </p>
+          )}
 
           {hasPropose ? (
             <p className="border-t border-amber-200/60 px-3 py-2 text-[11px] text-amber-800/90 dark:border-amber-500/20 dark:text-amber-200/90">
@@ -500,6 +558,8 @@ export function VoiceMic() {
               </form>
             </div>
           ) : null}
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -512,6 +572,7 @@ export function VoiceMic() {
             onClick={() => {
               setShowTextFallback(true);
               setPanelOpen(true);
+              setLogsExpanded(true);
               setFallbackHint("Text mode — same tools and propose → confirm gates.");
             }}
             data-testid="voice-text-fallback-toggle"

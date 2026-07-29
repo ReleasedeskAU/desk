@@ -120,6 +120,84 @@ export function parseVoiceTextCommand(
     };
   }
 
+  // Clear all list filters on the current page.
+  if (/^(?:clear|reset)\s+(?:all\s+)?filters?\b/i.test(lower)) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-clear-filters",
+          name: "apply_list_filters",
+          args: { clear: true },
+        },
+      ],
+    };
+  }
+
+  // Walkthrough / tour
+  const tour = text.match(
+    /^(?:walk\s*me\s*through|walkthrough|tour|show me how(?: to)?|morning check|daily briefing)\s*(.*)$/i
+  );
+  if (tour || /^(?:morning check|daily briefing)$/i.test(lower)) {
+    const hint =
+      tour?.[1]?.trim() ||
+      ( /morning|daily/i.test(lower) ? "morning_check" : "release_readiness");
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-walkthrough",
+          name: "run_walkthrough",
+          args: { tour: hint || "release_readiness" },
+        },
+      ],
+    };
+  }
+
+  // Explain page
+  if (
+    /^(?:explain(?: this)?(?: page|screen)?|what(?:'s| is) this page|what can i do here)\b/i.test(
+      lower
+    )
+  ) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-explain",
+          name: "explain_page",
+          args: {},
+        },
+      ],
+    };
+  }
+
+  // filter [page] by key value  |  show only critical blockers
+  const filterCmd = text.match(
+    /^(?:filter|show only|narrow)\s+(?:(?:the\s+)?(\w[\w-]*)\s+)?(?:by\s+)?(\w+)\s+(.+)$/i
+  );
+  if (filterCmd) {
+    const page = filterCmd[1]?.trim();
+    const key = filterCmd[2]!.trim();
+    const value = filterCmd[3]!.trim();
+    const args: Record<string, unknown> = {
+      filters: { [key]: value },
+    };
+    if (page && !/^(by|with|to)$/i.test(page)) {
+      args.page = page;
+    }
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-filters",
+          name: "apply_list_filters",
+          args,
+        },
+      ],
+    };
+  }
+
   const summary = text.match(
     /^(?:summarize|summary|what's|whats|tell me about)\s+(?:the\s+)?(\w[\w-]*)\s+(\S+)/i
   );

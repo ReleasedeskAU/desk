@@ -149,9 +149,16 @@ export async function handleGetSummary(args: GetSummaryArgs): Promise<SummaryToo
     entityId: resolvedId,
     path,
     summary: data.summary.trim(),
-    instruction: path
-      ? `Speak the summary field naturally. If the user asks to open this record, call navigate_to with path=${path} (the path field) — do not invent URLs.`
-      : "Speak the summary field naturally. To open a record, call search_entity first and use candidate.path for navigate_to.",
+    instruction:
+      resolvedType === "release"
+        ? `Speak the summary as a release manager — lead with READY/BLOCKED/AT RISK/IN PROGRESS and the why. ${
+            path
+              ? `If they ask to open it, navigate_to path=${path}.`
+              : "Offer search_entity if they need another release."
+          }`
+        : path
+          ? `Speak the summary field naturally. If the user asks to open this record, call navigate_to with path=${path} (the path field) — do not invent URLs.`
+          : "Speak the summary field naturally. To open a record, call search_entity first and use candidate.path for navigate_to.",
     actionLine: `Summary: ${resolvedType} ${resolvedId}`,
   };
 }

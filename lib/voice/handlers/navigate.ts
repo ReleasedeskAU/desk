@@ -13,6 +13,7 @@ import {
 import { resolveVoiceNavTarget } from "@/lib/voice/sidebar-catalog";
 import { assertVoicePathExists } from "@/lib/voice/path-exists";
 import { resolveEntityNavFromHint } from "@/lib/voice/resolve-nav-path";
+import { rememberVoiceEntity } from "@/lib/voice/context-agent";
 
 export type NavigateToArgs = {
   path?: unknown;
@@ -34,6 +35,11 @@ export type NavigateDeps = {
   push: (href: string) => void | Promise<void>;
   /** Injectable fetch for existence checks (tests). */
   fetch?: typeof fetch;
+  /**
+   * Current browser href including query — used by apply_list_filters to merge
+   * filters on the active list page. Optional in tests.
+   */
+  getCurrentHref?: () => string;
 };
 
 /**
@@ -164,6 +170,16 @@ async function navigateResolved(
   const displayName = labelForVoicePath(path, displayHint);
   // Await guided push so concurrent navigate_to calls run one-after-another.
   await Promise.resolve(deps.push(path));
+
+  const seg = path.split("/").filter(Boolean);
+  if (seg.length >= 2) {
+    rememberVoiceEntity({
+      path,
+      label: displayName,
+      type: seg[0] === "booking" ? "booking" : seg[0]?.replace(/s$/, "") || "unknown",
+      code: seg[seg.length - 1],
+    });
+  }
 
   return {
     ok: true,

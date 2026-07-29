@@ -1,11 +1,12 @@
 /**
- * Spoken query normalization — ordinals and filler.
- * Run: npx tsx --test lib/voice/spoken-query.test.ts
+ * Spoken query normalization — shorthand codes + ordinals.
+ * Run: npm run test:voice
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizeSpokenEntityCode,
+  normalizeSpokenReleaseCode,
   normalizeSpokenVersion,
   parseBareOrdinal,
   parseVoiceSearchIntent,
@@ -26,34 +27,77 @@ describe("normalizeSpokenVersion", () => {
   });
 });
 
-describe("parseVoiceSearchIntent", () => {
-  it("maps first release / rel 01 to ordinal 1", () => {
+describe("shorthand → business code", () => {
+  it("maps release 75 / rel 75 to REL-0075", () => {
+    assert.equal(normalizeSpokenReleaseCode("release 75"), "REL-0075");
+    assert.equal(normalizeSpokenReleaseCode("rel 75"), "REL-0075");
+    const a = parseVoiceSearchIntent("open release 75");
+    assert.equal(a.kind, "text");
+    if (a.kind === "text") {
+      assert.equal(a.query, "REL-0075");
+      assert.equal(a.entityType, "release");
+    }
+  });
+
+  it("maps blocker no 5 / open blocker no 5 to BLK-0005", () => {
+    const a = parseVoiceSearchIntent("open blocker no 5");
+    assert.equal(a.kind, "text");
+    if (a.kind === "text") {
+      assert.equal(a.query, "BLK-0005");
+      assert.equal(a.entityType, "blocker");
+    }
+    const b = parseVoiceSearchIntent("blocker number 5");
+    assert.equal(b.kind, "text");
+    if (b.kind === "text") assert.equal(b.query, "BLK-0005");
+  });
+
+  it("maps rel 01 / release 1 to REL-0001 (code, not list ordinal)", () => {
+    const a = parseVoiceSearchIntent("rel 01");
+    assert.equal(a.kind, "text");
+    if (a.kind === "text") {
+      assert.equal(a.query, "REL-0001");
+      assert.equal(a.entityType, "release");
+    }
+    const b = parseVoiceSearchIntent("open release 1");
+    assert.equal(b.kind, "text");
+    if (b.kind === "text") {
+      assert.equal(b.query, "REL-0001");
+    }
+  });
+
+  it("maps blocker 10 / conflict 3 to BLK-0010 / CNF-0003", () => {
+    const a = parseVoiceSearchIntent("blocker 10");
+    assert.equal(a.kind, "text");
+    if (a.kind === "text") {
+      assert.equal(a.query, "BLK-0010");
+      assert.equal(a.entityType, "blocker");
+    }
+    const b = parseVoiceSearchIntent("open conflict 3");
+    assert.equal(b.kind, "text");
+    if (b.kind === "text") {
+      assert.equal(b.query, "CNF-0003");
+      assert.equal(b.entityType, "conflict");
+    }
+    assert.equal(normalizeSpokenEntityCode("risk 12")?.code, "RSK-0012");
+  });
+});
+
+describe("parseVoiceSearchIntent ordinals", () => {
+  it("maps first release to ordinal 1", () => {
     const a = parseVoiceSearchIntent("go to the first release page");
     assert.equal(a.kind, "ordinal");
     if (a.kind === "ordinal") {
       assert.equal(a.ordinal, 1);
       assert.equal(a.entityType, "release");
     }
-    const b = parseVoiceSearchIntent("rel 01");
-    assert.equal(b.kind, "ordinal");
-    if (b.kind === "ordinal") {
-      assert.equal(b.ordinal, 1);
-      assert.equal(b.entityType, "release");
-    }
   });
 
-  it("maps 10th blocker and blocker 10 to ordinal 10", () => {
+  it("maps 10th blocker and tenth blocker to ordinal 10", () => {
     const a = parseVoiceSearchIntent("open the 10th blocker");
     assert.equal(a.kind, "ordinal");
     if (a.kind === "ordinal") {
       assert.equal(a.ordinal, 10);
       assert.equal(a.entityType, "blocker");
-    }
-    const b = parseVoiceSearchIntent("blocker 10");
-    assert.equal(b.kind, "ordinal");
-    if (b.kind === "ordinal") {
-      assert.equal(b.ordinal, 10);
-      assert.equal(b.entityType, "blocker");
     }
     const c = parseVoiceSearchIntent("tenth blocker from blockers");
     assert.equal(c.kind, "ordinal");
