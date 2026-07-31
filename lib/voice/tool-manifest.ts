@@ -1,7 +1,7 @@
 /**
  * Frozen voice tool manifest — release-manager assistant tools.
- * Tools: navigate_to, apply_list_filters, explain_page, run_walkthrough,
- * search_entity, get_summary, propose_action, confirm_action.
+ * Includes list UX, page context, manager reads (bundle/attention/calendar/compare),
+ * open/copy/undo helpers, and propose→confirm writes.
  */
 
 import { SEARCH_ENTITY_TYPES } from "@/lib/search-entity-types";
@@ -47,7 +47,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "apply_list_filters",
     description:
-      "REQUIRED to filter/narrow/clear any list page. Call this tool — never say you cannot apply filters. Omit page to filter the current list; or pass page=\"blockers\". Prefer top-level fields (status, severity, priority, dept, app, type, …). You may also pass filters={...}. clear=true clears all filters. replace=true replaces instead of merging. Use the user's spoken values (Open, Critical, department name). Never invent ids.",
+      "REQUIRED to filter/narrow/clear/sort any list page. Call this tool — never say you cannot apply filters or sort. Omit page to filter the current list; or pass page=\"blockers\". Prefer top-level fields (status, severity, priority, dept, app, type, sort, dir, …). You may also pass filters={...}. clear=true clears all filters (keeps sort unless you change it). replace=true replaces instead of merging. Use the user's spoken values (Open, Critical, department name). Never invent ids.",
     parameters: {
       type: "object",
       properties: {
@@ -120,6 +120,15 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
           type: "string",
           description: "Generic search/q filter on admin list pages.",
         },
+        sort: {
+          type: "string",
+          description:
+            "Sort column key (e.g. conflictCode, status, priority, severity, blockerCode). Use configure_table_view action=list to see presets.",
+        },
+        dir: {
+          type: "string",
+          description: "Sort direction: asc or desc.",
+        },
         filters: {
           type: "object",
           description:
@@ -142,7 +151,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "search_entity",
     description:
-      "Librarian into this company's records (all entity types). Use for shorthand (release 75→REL-0075), names, status words, ordinals, and pronouns (that/the same). Call before get_summary / propose_action / navigate_to when you lack a real path/code. Never invent ids. Prefer apply_list_filters when the user wants to narrow a whole list rather than open one record.",
+      "Librarian into this company's records (all entity types). Use for shorthand (release 75→REL-0075), names, apps (Kyriba), status words, ordinals, and pronouns (that/the same). When listing ids for an app/type, set entityType (e.g. conflict) and speak ONLY the codes/count from the tool response — never invent CNF/REL codes. Call before get_summary / propose_action / navigate_to when you lack a real path/code. Prefer apply_list_filters when the user wants to narrow a whole list rather than open one record.",
     parameters: {
       type: "object",
       properties: {
@@ -211,20 +220,190 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
     },
   },
   {
+    name: "configure_table_view",
+    description:
+      "Manage Columns and Manage Filters — show/hide which column and filter controls are visible on the current list (same as the UI pickers). Actions: list, show_columns, hide_columns, show_all_columns, show_filters, hide_filters, show_all_filters. Pass keys as labels (Notes, Assigned To) or keys (notes, assignedTo). Does NOT set filter values — use apply_list_filters for that. Does NOT sort — use apply_list_filters with sort+dir.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          description:
+            "list | show_columns | hide_columns | show_all_columns | show_filters | hide_filters | show_all_filters",
+        },
+        page: {
+          type: "string",
+          description: "Optional list page (conflicts, blockers). Defaults to current page.",
+        },
+        keys: {
+          type: "string",
+          description:
+            "Comma-separated column/filter names or keys to show/hide (e.g. \"Notes, Assigned To\").",
+        },
+        columns: {
+          type: "string",
+          description: "Alias for keys when enabling/hiding columns.",
+        },
+        filters: {
+          type: "string",
+          description: "Alias for keys when enabling/hiding filter controls.",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "scroll_page",
+    description:
+      "Scroll the main page content while explaining (up / down / top). No screen share required. Use during walkthroughs or when reading a long table. To open a detail row after scrolling, call navigate_to with search_entity.path.",
+    parameters: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          description: "up | down | top (default down)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_page_context",
+    description:
+      "REQUIRED to read what the current page/table is showing — filtered/on-screen row codes and names (ground truth). Use when the user asks what is filtered, list the releases/ids/names, how many rows, or what am I looking at on this list. Call after apply_list_filters before listing rows. No screen share. Do NOT use search_entity for the filtered table (that searches the whole DB).",
+    parameters: {
+      type: "object",
+      properties: {
+        includeFilters: {
+          type: "boolean",
+          description: "Optional; ignored — URL filters are always included when present.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_release_bundle",
+    description:
+      "One-call release package: readiness verdict + open blockers + open conflicts + pending approvals for a REL code. Prefer over chaining get_summary + multiple searches when the user asks why a release is blocked/ready or wants the full picture.",
+    parameters: {
+      type: "object",
+      properties: {
+        releaseCode: {
+          type: "string",
+          description: "Release business code (e.g. REL-0001).",
+        },
+      },
+      required: ["releaseCode"],
+    },
+  },
+  {
+    name: "get_attention_brief",
+    description:
+      "Morning Inbox style brief: Blocked/At Risk releases, critical blockers, escalated/P1 conflicts, pending approvals. Use for what needs me now / morning check / attention queue.",
+    parameters: {
+      type: "object",
+      properties: {
+        period: {
+          type: "string",
+          description: "month | quarter | year (default month)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_calendar_window",
+    description:
+      "Releases shipping (or CAB) inside a date window. Use for what ships this week / before CAB. Pass from+to as YYYY-MM-DD, or days=7 for the next N days.",
+    parameters: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Start date YYYY-MM-DD" },
+        to: { type: "string", description: "End date YYYY-MM-DD" },
+        days: { type: "number", description: "Alternative: next N days from today (max 62)" },
+        field: {
+          type: "string",
+          description: "releaseDate (default) or cabDate",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "compare_releases",
+    description:
+      "Side-by-side readiness for 2–3 releases (verdict + blocker/conflict/approval counts). Pass codes array or comma-separated string.",
+    parameters: {
+      type: "object",
+      properties: {
+        codes: {
+          type: "string",
+          description: "Comma-separated codes or JSON array of 2–3 REL codes",
+        },
+      },
+      required: ["codes"],
+    },
+  },
+  {
+    name: "open_entity",
+    description:
+      "Resolve a spoken code/name and open its detail page in one step (search + navigate). Prefer over separate search_entity + navigate_to when the user says open REL-0001 / open that blocker.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Code or name to open (REL-0001, Kyriba conflict, …)",
+        },
+        entityType: {
+          type: "string",
+          description: `Optional type filter: ${ENTITY_TYPE_ENUM}`,
+        },
+        path: {
+          type: "string",
+          description: "Optional direct path if already known from a prior tool",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "copy_visible_codes",
+    description:
+      "Copy the current on-screen/filtered business codes to the clipboard (for Slack/email). Uses get_page_context ground truth.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "undo_filters",
+    description:
+      "Restore the previous list filter/sort URL after apply_list_filters. Use when the user says undo filters / go back to previous view.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "propose_action",
     description:
-      "Stage a write for user confirmation — does NOT execute. Only actionTypes: set_approval_decision (PATCH approval decision) or acknowledge_alert (PATCH alert status). Always propose first; never write without a later confirm_action in a SEPARATE turn after the user says yes. If the user says request+yes in one breath, still ONLY propose in this turn — wait for a later yes.",
+      "Stage a write for user confirmation — does NOT execute. actionTypes: set_approval_decision, acknowledge_alert, update_blocker (status/escalation/notes), update_conflict (status/priority/notes — escalate with status=Escalated). Always propose first; never write without a later confirm_action in a SEPARATE turn after yes. If request+yes in one breath, ONLY propose this turn.",
     parameters: {
       type: "object",
       properties: {
         actionType: {
           type: "string",
-          description: "set_approval_decision | acknowledge_alert",
+          description:
+            "set_approval_decision | acknowledge_alert | update_blocker | update_conflict",
         },
         params: {
           type: "object",
           description:
-            "Must include id (approvalCode or alertCode). For set_approval_decision: decision and decisionDate (YYYY-MM-DD). For acknowledge_alert: status (usually Acknowledged). Validated by the same Zod schemas as the UI.",
+            "Must include id (code). Approval: decision + decisionDate. Alert: status Acknowledged. Blocker: status and/or escalationLevel and/or resolutionNotes. Conflict: status and/or priority and/or notes. Validated by the same Zod schemas as the UI.",
         },
       },
       required: ["actionType", "params"],

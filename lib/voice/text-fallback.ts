@@ -134,6 +134,116 @@ export function parseVoiceTextCommand(
     };
   }
 
+  // Scroll main content
+  if (/^(?:scroll(?:\s+(?:the\s+)?page)?(?:\s+(up|down|to\s+top|top))?|page\s+(?:up|down))\b/i.test(lower)) {
+    let direction = "down";
+    if (/\bup\b/i.test(lower) && !/\bdown\b/i.test(lower)) direction = "up";
+    if (/\btop\b/i.test(lower)) direction = "top";
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-scroll",
+          name: "scroll_page",
+          args: { direction },
+        },
+      ],
+    };
+  }
+
+  // Sort list: "sort by conflict id" / "sort conflicts by priority desc"
+  const sortCmd = text.match(
+    /^(?:sort(?:\s+(?:the\s+)?(?:list|table|page))?(?:\s+(?:by|on))?\s+)(.+?)(?:\s+(asc|desc|ascending|descending|a\s*->\s*z|z\s*->\s*a))?$/i
+  );
+  if (sortCmd && !/^(?:filter|show|narrow|search|find)\b/i.test(lower)) {
+    const colRaw = sortCmd[1]!.trim().replace(/\s+/g, "");
+    const dirRaw = (sortCmd[2] ?? "asc").toLowerCase();
+    const dir =
+      /desc|z\s*->\s*a|za/.test(dirRaw) || /highest|newest|latest/i.test(sortCmd[1]!)
+        ? "desc"
+        : "asc";
+    // Map common spoken labels → keys lightly; handler accepts schema keys.
+    const sortKey = colRaw
+      .replace(/conflictid|conflictcode/i, "conflictCode")
+      .replace(/blockerid|blockercode/i, "blockerCode")
+      .replace(/releaseid|releasecode/i, "releaseCode")
+      .replace(/^priority$/i, "priority")
+      .replace(/^status$/i, "status")
+      .replace(/^severity$/i, "severity");
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-sort",
+          name: "apply_list_filters",
+          args: { sort: sortKey, dir },
+        },
+      ],
+    };
+  }
+
+  // Manage columns / filters visibility
+  if (
+    /^(?:show|enable|unhide)\s+all\s+columns?\b/i.test(lower) ||
+    /^(?:manage\s+columns?|show\s+all\s+columns?)\b/i.test(lower)
+  ) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-show-all-cols",
+          name: "configure_table_view",
+          args: { action: "show_all_columns" },
+        },
+      ],
+    };
+  }
+  if (
+    /^(?:show|enable|unhide)\s+all\s+filters?\b/i.test(lower) ||
+    /^(?:manage\s+filters?|show\s+all\s+filters?)\b/i.test(lower)
+  ) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-show-all-filters",
+          name: "configure_table_view",
+          args: { action: "show_all_filters" },
+        },
+      ],
+    };
+  }
+  const showCols = text.match(
+    /^(?:show|enable|unhide)\s+(?:column|columns)\s+(.+)$/i
+  );
+  if (showCols) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-show-cols",
+          name: "configure_table_view",
+          args: { action: "show_columns", keys: showCols[1]!.trim() },
+        },
+      ],
+    };
+  }
+  const showFilters = text.match(
+    /^(?:show|enable|unhide)\s+(?:filter|filters)\s+(.+)$/i
+  );
+  if (showFilters) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-show-filters",
+          name: "configure_table_view",
+          args: { action: "show_filters", keys: showFilters[1]!.trim() },
+        },
+      ],
+    };
+  }
+
   // Walkthrough / tour
   const tour = text.match(
     /^(?:walk\s*me\s*through|walkthrough|tour|show me how(?: to)?|morning check|daily briefing)\s*(.*)$/i
@@ -154,7 +264,27 @@ export function parseVoiceTextCommand(
     };
   }
 
-  // Explain page
+  // Current page / filtered list data
+  if (
+    /^(?:what(?:'s| is|s)?\s+(?:on\s+)?(?:this|the)\s+(?:page|list|table|screen)|list(?:\s+the)?\s+filtered|show(?:\s+me)?\s+(?:the\s+)?(?:filtered\s+)?(?:releases?|rows?|ids?)|page\s+context|what(?:'s| is)\s+filtered)\b/i.test(
+      lower
+    ) ||
+    /\b(filtered|on[- ]?screen|visible)\b.*\b(names?|ids?|codes?|releases?)\b/i.test(lower) ||
+    /\b(names?|ids?|codes?)\b.*\b(filtered|showing)\b/i.test(lower)
+  ) {
+    return {
+      ok: true,
+      calls: [
+        {
+          id: "text-page-context",
+          name: "get_page_context",
+          args: {},
+        },
+      ],
+    };
+  }
+
+  // Explain page (product help — not row dump)
   if (
     /^(?:explain(?: this)?(?: page|screen)?|what(?:'s| is) this page|what can i do here)\b/i.test(
       lower

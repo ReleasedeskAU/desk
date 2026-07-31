@@ -39,7 +39,8 @@ export async function handleProposeAction(
     return {
       ok: false,
       tool: "propose_action",
-      instruction: "Need actionType and params. Allowed: set_approval_decision, acknowledge_alert.",
+      instruction:
+        "Need actionType and params. Allowed: set_approval_decision, acknowledge_alert, update_blocker, update_conflict.",
       actionLine: "Propose failed — missing actionType or params",
       reason: "Missing actionType or params",
     };

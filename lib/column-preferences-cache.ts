@@ -3,6 +3,32 @@ import { EMPTY_TABLE_PREFERENCES, type TablePreferences } from "@/lib/table-pref
 const cache = new Map<string, TablePreferences>();
 const inflight = new Map<string, Promise<TablePreferences>>();
 
+type PrefsListener = (pageKey: string, prefs: TablePreferences) => void;
+const listeners = new Set<PrefsListener>();
+
+/**
+ * Subscribe to table preference cache updates (Manage Columns / Manage Filters).
+ * Used so voice-driven PUT updates refresh mounted list pages without a full reload.
+ * @param listener - Called with pageKey + latest prefs.
+ * @returns Unsubscribe.
+ */
+export function subscribeTablePreferences(listener: PrefsListener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyPrefs(pageKey: string, prefs: TablePreferences): void {
+  for (const listener of listeners) {
+    try {
+      listener(pageKey, prefs);
+    } catch {
+      /* subscriber errors must not break preference writes */
+    }
+  }
+}
+
 export function getCachedTablePreferences(pageKey: string): TablePreferences | null {
   return cache.get(pageKey) ?? null;
 }
@@ -18,12 +44,14 @@ export function isColumnPrefsCached(pageKey: string): boolean {
 
 export function setCachedTablePreferences(pageKey: string, prefs: TablePreferences) {
   cache.set(pageKey, prefs);
+  inflight.delete(pageKey);
+  notifyPrefs(pageKey, prefs);
 }
 
 /** @deprecated use setCachedTablePreferences */
 export function setCachedHiddenColumns(pageKey: string, hiddenColumns: string[]) {
   const existing = cache.get(pageKey) ?? { ...EMPTY_TABLE_PREFERENCES };
-  cache.set(pageKey, { ...existing, hiddenColumns });
+  setCachedTablePreferences(pageKey, { ...existing, hiddenColumns });
 }
 
 export function fetchTablePreferences(pageKey: string): Promise<TablePreferences> {
@@ -40,8 +68,9 @@ export function fetchTablePreferences(pageKey: string): Promise<TablePreferences
         hiddenColumns: data.hiddenColumns ?? [],
         hiddenFilters: data.hiddenFilters ?? [],
       };
-      setCachedTablePreferences(pageKey, prefs);
+      cache.set(pageKey, prefs);
       inflight.delete(pageKey);
+      notifyPrefs(pageKey, prefs);
       return prefs;
     })
     .catch(() => {

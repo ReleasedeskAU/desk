@@ -54,13 +54,17 @@ export type SearchToolResult = {
   reason?: string;
 };
 
-const MAX_VOICE_CANDIDATES = 5;
+const MAX_VOICE_CANDIDATES = 8;
 
 const NAVIGATE_WITH_PATH =
   "When calling navigate_to, set path to the candidate's path field (full href starting with /). Never pass refId.";
 
+/** Never invent business codes — ground speech in tool candidates only. */
+const SPEAK_EXACT_CODES =
+  "Speak ONLY codes/labels that appear in candidates (or single). Never invent REL-/BLK-/CNF-/RSK- ids or change the count.";
+
 const PICK_BY_NAME =
-  "Read options by human name/version (not technical ids). User may answer with a name or first/second/third.";
+  "Offer options using the exact label from each candidate (includes the business code). User may answer with a code, name, or first/second/third.";
 
 function toCandidate(r: SearchResult): VoiceSearchCandidate {
   return {
@@ -82,6 +86,20 @@ function rememberFromResults(results: SearchResult[]): void {
       code: r.href.split("/").filter(Boolean).pop(),
     });
   }
+}
+
+/**
+ * Compact list of exact codes for the model to speak (anti-hallucination).
+ * @param results - Ranked search hits.
+ */
+function exactCodeList(results: SearchResult[]): string {
+  return results
+    .slice(0, MAX_VOICE_CANDIDATES)
+    .map((r) => {
+      const code = r.href.split("/").filter(Boolean).pop() ?? r.label;
+      return code;
+    })
+    .join(", ");
 }
 
 function finishWithResults(
@@ -115,7 +133,7 @@ function finishWithResults(
       query,
       matchCount: 1,
       single,
-      instruction: `One match: ${single.label}.${note}${mem} Confirm verbally, then call navigate_to with path=${single.path}. ${NAVIGATE_WITH_PATH}`,
+      instruction: `One match: ${single.label}.${note}${mem} Speak this exact label/code. ${SPEAK_EXACT_CODES} Confirm verbally, then call navigate_to with path=${single.path}. ${NAVIGATE_WITH_PATH}`,
       actionLine: extras?.ordinalNote
         ? `${extras.ordinalNote}: ${single.label}`
         : extras?.fromMemory
@@ -125,14 +143,15 @@ function finishWithResults(
   }
 
   const candidates = merged.slice(0, MAX_VOICE_CANDIDATES).map(toCandidate);
+  const codes = exactCodeList(merged);
   return {
     ok: true,
     tool: "search_entity",
     query,
     matchCount,
     candidates,
-    instruction: `Multiple matches. ${PICK_BY_NAME} Do NOT auto-select. ${NAVIGATE_WITH_PATH}`,
-    actionLine: `Found ${matchCount} matches — ask which one by name or first/second`,
+    instruction: `Found exactly ${matchCount} match(es). Speak this exact count and these exact codes in order: ${codes}. Candidate labels: ${candidates.map((c) => c.label).join(" | ")}. ${SPEAK_EXACT_CODES} ${PICK_BY_NAME} Do NOT invent extra rows. ${NAVIGATE_WITH_PATH}`,
+    actionLine: `Found ${matchCount} matches: ${codes}`,
   };
 }
 

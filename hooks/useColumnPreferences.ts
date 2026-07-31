@@ -7,6 +7,7 @@ import {
   getCachedTablePreferences,
   isColumnPrefsCached,
   setCachedTablePreferences,
+  subscribeTablePreferences,
 } from "@/lib/column-preferences-cache";
 import { EMPTY_TABLE_PREFERENCES } from "@/lib/table-preferences";
 
@@ -151,19 +152,23 @@ export function useColumnPreferences(pageKey: string, allColumns: ColumnDef[] = 
     if (isColumnPrefsCached(pageKey)) {
       const cached = getCachedTablePreferences(pageKey)?.hiddenColumns ?? getCachedHiddenColumns(pageKey) ?? [];
       apply(cached);
-      return () => {
-        cancelled = true;
-      };
+    } else {
+      setLoaded(false);
+      fetchTablePreferences(pageKey).then((prefs) => {
+        if (cancelled) return;
+        apply(prefs.hiddenColumns);
+      });
     }
 
-    setLoaded(false);
-    fetchTablePreferences(pageKey).then((prefs) => {
-      if (cancelled) return;
+    // Voice / external writers update the shared cache — refresh local state.
+    const unsubscribe = subscribeTablePreferences((key, prefs) => {
+      if (cancelled || key !== pageKey) return;
       apply(prefs.hiddenColumns);
     });
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [pageKey, hideableKeys, persist]);
 

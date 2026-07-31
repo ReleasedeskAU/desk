@@ -9,6 +9,18 @@ import { handleConfirmAction } from "@/lib/voice/handlers/confirm";
 import { handleApplyListFilters } from "@/lib/voice/handlers/filters";
 import { handleExplainPage } from "@/lib/voice/handlers/explain-page";
 import { handleRunWalkthrough } from "@/lib/voice/handlers/walkthrough";
+import { handleConfigureTableView } from "@/lib/voice/handlers/table-view";
+import { handleScrollPage } from "@/lib/voice/handlers/scroll";
+import { handleGetPageContext } from "@/lib/voice/handlers/page-context";
+import {
+  handleCompareReleases,
+  handleCopyVisibleCodes,
+  handleGetAttentionBrief,
+  handleGetCalendarWindow,
+  handleGetReleaseBundle,
+  handleOpenEntity,
+  handleUndoFilters,
+} from "@/lib/voice/handlers/manager-tools";
 
 export type VoiceFunctionCall = {
   id?: string;
@@ -74,6 +86,46 @@ export async function dispatchVoiceToolCalls(
       actionLines.push({ text: result.actionLine, role: "action" });
     } else if (name === "run_walkthrough") {
       const result = await handleRunWalkthrough(args, deps);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "configure_table_view") {
+      const result = await handleConfigureTableView(args, deps);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "scroll_page") {
+      const result = await handleScrollPage(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "get_page_context") {
+      const result = await handleGetPageContext(args, deps);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "get_release_bundle") {
+      const result = await handleGetReleaseBundle(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "get_attention_brief") {
+      const result = await handleGetAttentionBrief(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "get_calendar_window") {
+      const result = await handleGetCalendarWindow(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "compare_releases") {
+      const result = await handleCompareReleases(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "open_entity") {
+      const result = await handleOpenEntity(args, deps);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "copy_visible_codes") {
+      const result = await handleCopyVisibleCodes(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "undo_filters") {
+      const result = await handleUndoFilters(args, deps);
       response = result;
       actionLines.push({ text: result.actionLine, role: "action" });
     } else if (name === "propose_action") {

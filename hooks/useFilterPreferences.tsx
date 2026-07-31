@@ -7,6 +7,7 @@ import {
   getCachedTablePreferences,
   isColumnPrefsCached,
   setCachedTablePreferences,
+  subscribeTablePreferences,
 } from "@/lib/column-preferences-cache";
 import { EMPTY_TABLE_PREFERENCES } from "@/lib/table-preferences";
 
@@ -169,19 +170,22 @@ export function useFilterPreferences(
     if (isColumnPrefsCached(pageKey)) {
       const cached = getCachedTablePreferences(pageKey)?.hiddenFilters ?? [];
       apply(cached);
-      return () => {
-        cancelled = true;
-      };
+    } else {
+      setLoaded(false);
+      fetchTablePreferences(pageKey).then((prefs) => {
+        if (cancelled) return;
+        apply(prefs.hiddenFilters);
+      });
     }
 
-    setLoaded(false);
-    fetchTablePreferences(pageKey).then((prefs) => {
-      if (cancelled) return;
+    const unsubscribe = subscribeTablePreferences((key, prefs) => {
+      if (cancelled || key !== pageKey) return;
       apply(prefs.hiddenFilters);
     });
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
     // Only re-load when the page changes. Field-set / default-hidden updates
     // are read via refs inside apply().

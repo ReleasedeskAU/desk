@@ -194,7 +194,7 @@ export function formatPageExplainSpeech(
 ): string {
   const filterPage = findFilterPageForPathname(page.path);
   const filterHint = filterPage
-    ? `You can filter here with apply_list_filters using keys like ${filterPage.commonKeys.slice(0, 6).join(", ")}.`
+    ? `You can filter/sort here with apply_list_filters using keys like ${filterPage.commonKeys.slice(0, 6).join(", ")}, plus sort and dir. Manage Columns/Filters via configure_table_view; scroll with scroll_page; open a row with navigate_to after search_entity.`
     : null;
   const active =
     opts?.activeQuery && opts.activeQuery.length > 1

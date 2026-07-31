@@ -387,6 +387,10 @@ export function buildVoiceFilterHref(
 
   if (clear || replace) {
     for (const field of page.schema) {
+      // Match useTableFilters.clearAll — clear keeps sort/dir unless replace.
+      if (clear && !replace && (field.key === "sort" || field.key === "sortDir")) {
+        continue;
+      }
       baseParams.delete(field.param);
       if (field.key === "sortDir") baseParams.delete("sortDir");
     }
@@ -458,8 +462,9 @@ export function voiceListFiltersBrief(): string {
   return [
     "List filters (apply_list_filters — URL filters on every filterable list page):",
     "Omit page to filter the current list; or pass page=\"blockers\" / \"/risks\".",
-    "clear=true removes filters. replace=true replaces all filters with the new set.",
-    "Filter keys may be schema keys or URL params (status, severity, dept, app, type, …).",
+    "clear=true removes filters but keeps sort/dir. replace=true replaces all filters with the new set.",
+    "Sort with sort + dir (e.g. sort=conflictCode, dir=asc). Same as the UI sort button.",
+    "Filter keys may be schema keys or URL params (status, severity, dept, app, type, sort, dir, …).",
     lines.join(" | "),
   ].join(" ");
 }

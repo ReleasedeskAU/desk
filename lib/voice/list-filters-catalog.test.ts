@@ -158,6 +158,39 @@ describe("handleApplyListFilters", () => {
     assert.match(result.actionLine, /Cleared filters/i);
   });
 
+  it("clears filters but preserves sort", async () => {
+    const pushed: string[] = [];
+    const result = await handleApplyListFilters(
+      { clear: true },
+      {
+        push: (href) => {
+          pushed.push(href);
+        },
+        getCurrentHref: () => "/conflicts?status=Open&sort=conflictCode&dir=asc",
+      }
+    );
+    assert.equal(result.ok, true);
+    assert.match(pushed[0]!, /sort=conflictCode/);
+    assert.match(pushed[0]!, /dir=asc/);
+    assert.doesNotMatch(pushed[0]!, /status=/);
+  });
+
+  it("sorts via sort + dir top-level args", async () => {
+    const pushed: string[] = [];
+    const result = await handleApplyListFilters(
+      { sort: "conflictCode", dir: "asc" },
+      {
+        push: (href) => {
+          pushed.push(href);
+        },
+        getCurrentHref: () => "/conflicts?app=kyriba",
+      }
+    );
+    assert.equal(result.ok, true);
+    assert.match(pushed[0]!, /sort=conflictCode/);
+    assert.match(pushed[0]!, /dir=asc/);
+  });
+
   it("fails on pages without filters", async () => {
     const result = await handleApplyListFilters(
       { filters: { status: "Open" } },

@@ -18,6 +18,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Voice **manager tools**: `get_release_bundle`, `get_attention_brief`, `get_calendar_window`, `compare_releases`, `open_entity`, `copy_visible_codes`, `undo_filters`. Propose/confirm writes extended with `update_blocker` and `update_conflict` (same Zod PATCH schemas as the UI).
+- Voice **page-context agent**: `get_page_context` returns exact on-screen/filtered table rows (codes + names) from APP_CONTEXT; Live receives silent `[PAGE_UPDATE]` when the list refreshes after filters. Filtered list asks no longer require screen share. Identity: built by the **Release Desk Team** (never Google).
+- Voice **table view + scroll**: `configure_table_view` (Manage Columns / Manage Filters visibility via the same `/api/table-preferences` contract) and `scroll_page` (scroll main content while explaining). Sort uses existing `apply_list_filters` with `sort` + `dir` (same URL contract as the UI sort button). Clear filters preserves sort/dir like the UI.
 - Voice **list filters**: `apply_list_filters` tool applies/clears URL filters on every filterable list page (same query contract as the UI tables — blockers, releases, calendar, risks, booking, conflicts, approvals, etc.). Omit `page` to filter the current list. Accepts flattened top-level args (Gemini habit) and resolves spoken dept/app names to ids.
 - Voice **release manager**: persona + `explain_page` (page brief without screen share) + `run_walkthrough` tours (critical blockers, release readiness, pending approvals, env conflicts, morning check). Release `get_summary` returns READY/BLOCKED/AT RISK verdict with explicit why (blockers, conflicts, approvals, sign-offs, readiness %).
 

@@ -4,11 +4,14 @@
  */
 import { patchApprovalSchema } from "@/lib/validation/approval";
 import { patchMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
+import { patchBlockerSchema } from "@/lib/validation/blocker";
+import { patchConflictSchema } from "@/lib/validation/conflict";
 import { prisma } from "@/lib/prisma";
 import { auditActorName } from "@/lib/release-audit";
 import { getDefaultOrganizationId } from "@/lib/org-compat";
 import {
   isVoiceWriteActionType,
+  voiceWriteActionTypesList,
   type VoiceWriteActionType,
 } from "@/lib/voice/action-types";
 import {
@@ -80,14 +83,40 @@ function splitIdParams(params: Record<string, unknown>): {
   entityId: string;
   body: Record<string, unknown>;
 } | null {
-  const rawId = params.id ?? params.entityId ?? params.approvalId ?? params.alertId;
+  const rawId =
+    params.id ??
+    params.entityId ??
+    params.approvalId ??
+    params.alertId ??
+    params.blockerId ??
+    params.blockerCode ??
+    params.conflictId ??
+    params.conflictCode;
   if (typeof rawId !== "string" || !rawId.trim()) return null;
   const body = { ...params };
   delete body.id;
   delete body.entityId;
   delete body.approvalId;
   delete body.alertId;
+  delete body.blockerId;
+  delete body.blockerCode;
+  delete body.conflictId;
+  delete body.conflictCode;
   return { entityId: rawId.trim(), body };
+}
+
+function patchPathForAction(actionType: VoiceWriteActionType, entityId: string): string {
+  const id = encodeURIComponent(entityId);
+  switch (actionType) {
+    case "set_approval_decision":
+      return `/api/approvals/${id}`;
+    case "acknowledge_alert":
+      return `/api/monitoring-alerts/${id}`;
+    case "update_blocker":
+      return `/api/blockers/${id}`;
+    case "update_conflict":
+      return `/api/conflicts/${id}`;
+  }
 }
 
 async function describeApproval(entityId: string, body: Record<string, unknown>): Promise<string | null> {
@@ -106,6 +135,39 @@ async function describeApproval(entityId: string, body: Record<string, unknown>)
     return `Set approval ${row.approvalCode} on ${row.release.releaseCode} (${row.release.name}) to “${decision}”${
       body.decisionDate ? ` (decision date ${String(body.decisionDate)})` : ""
     }`;
+  } catch {
+    return null;
+  }
+}
+
+async function describeBlocker(entityId: string, body: Record<string, unknown>): Promise<string | null> {
+  try {
+    const row =
+      (await prisma.blocker.findUnique({ where: { id: entityId } })) ??
+      (await prisma.blocker.findUnique({ where: { blockerCode: entityId } }));
+    if (!row) return null;
+    const bits: string[] = [];
+    if (typeof body.status === "string") bits.push(`status→${body.status}`);
+    if (typeof body.escalationLevel === "string") bits.push(`escalation→${body.escalationLevel}`);
+    if (typeof body.resolutionNotes === "string") bits.push("add resolution notes");
+    if (typeof body.assignedTo === "string") bits.push(`assignee→${body.assignedTo}`);
+    return `Update blocker ${row.blockerCode} (${row.releaseCode}): ${bits.join(", ") || "fields"}`;
+  } catch {
+    return null;
+  }
+}
+
+async function describeConflict(entityId: string, body: Record<string, unknown>): Promise<string | null> {
+  try {
+    const row =
+      (await prisma.environmentConflict.findUnique({ where: { id: entityId } })) ??
+      (await prisma.environmentConflict.findUnique({ where: { conflictCode: entityId } }));
+    if (!row) return null;
+    const bits: string[] = [];
+    if (typeof body.status === "string") bits.push(`status→${body.status}`);
+    if (typeof body.priority === "string") bits.push(`priority→${body.priority}`);
+    if (typeof body.notes === "string") bits.push("update notes");
+    return `Update conflict ${row.conflictCode}: ${bits.join(", ") || "fields"}`;
   } catch {
     return null;
   }
@@ -154,8 +216,8 @@ export async function proposeVoiceWrite(input: {
     return {
       ok: false,
       tool: "propose_action",
-      reason: `Unsupported actionType “${actionType}”. Allowed: set_approval_decision, acknowledge_alert`,
-      instruction: "Only set_approval_decision or acknowledge_alert are available. Do not invent other writes.",
+      reason: `Unsupported actionType “${actionType}”. Allowed: ${voiceWriteActionTypesList()}`,
+      instruction: `Only these writes are available: ${voiceWriteActionTypesList()}. Do not invent other writes.`,
       actionLine: `Propose blocked — unknown action (${actionType || "?"})`,
     };
   }
@@ -165,8 +227,9 @@ export async function proposeVoiceWrite(input: {
     return {
       ok: false,
       tool: "propose_action",
-      reason: "params.id is required (approval or alert code/id)",
-      instruction: "Ask for the approval or alert id/code from search_entity, then propose again.",
+      reason: "params.id is required (entity code/id)",
+      instruction:
+        "Ask for the record id/code from search_entity or get_page_context, then propose again.",
       actionLine: "Propose failed — missing id",
     };
   }
@@ -194,7 +257,7 @@ export async function proposeVoiceWrite(input: {
       };
     }
     patchBody = parsed.data as Record<string, unknown>;
-  } else {
+  } else if (actionType === "acknowledge_alert") {
     const parsed = patchMonitoringAlertSchema.safeParse(split.body);
     if (!parsed.success) {
       return {
@@ -215,19 +278,67 @@ export async function proposeVoiceWrite(input: {
       };
     }
     patchBody = parsed.data as Record<string, unknown>;
+  } else if (actionType === "update_blocker") {
+    const parsed = patchBlockerSchema.safeParse(split.body);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        tool: "propose_action",
+        reason: parsed.error.issues.map((i) => i.message).join("; ") || "Invalid blocker params",
+        instruction:
+          "Pass status and/or escalationLevel and/or resolutionNotes (patchBlockerSchema). Example escalate: escalationLevel=\"L2 - Manager\".",
+        actionLine: "Propose rejected — invalid blocker params",
+      };
+    }
+    if (Object.keys(parsed.data).length === 0) {
+      return {
+        ok: false,
+        tool: "propose_action",
+        reason: "No updatable fields provided",
+        instruction: "Include status, escalationLevel, or resolutionNotes.",
+        actionLine: "Propose rejected — empty patch",
+      };
+    }
+    patchBody = parsed.data as Record<string, unknown>;
+  } else {
+    const parsed = patchConflictSchema.safeParse(split.body);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        tool: "propose_action",
+        reason: parsed.error.issues.map((i) => i.message).join("; ") || "Invalid conflict params",
+        instruction:
+          "Pass status and/or priority and/or notes (patchConflictSchema). Escalate: status=\"Escalated\" (optional priority P1-Critical).",
+        actionLine: "Propose rejected — invalid conflict params",
+      };
+    }
+    if (Object.keys(parsed.data).length === 0) {
+      return {
+        ok: false,
+        tool: "propose_action",
+        reason: "No updatable fields provided",
+        instruction: "Include status, priority, or notes.",
+        actionLine: "Propose rejected — empty patch",
+      };
+    }
+    patchBody = parsed.data as Record<string, unknown>;
   }
 
   const description =
     actionType === "set_approval_decision"
       ? await describeApproval(split.entityId, patchBody)
-      : await describeAlert(split.entityId, patchBody);
+      : actionType === "acknowledge_alert"
+        ? await describeAlert(split.entityId, patchBody)
+        : actionType === "update_blocker"
+          ? await describeBlocker(split.entityId, patchBody)
+          : await describeConflict(split.entityId, patchBody);
 
   if (!description) {
     return {
       ok: false,
       tool: "propose_action",
       reason: `Record not found for id “${split.entityId}”`,
-      instruction: "Search for the correct approval/alert code, then propose again.",
+      instruction: "Search for the correct code, then propose again.",
       actionLine: "Propose failed — record not found",
     };
   }
@@ -320,10 +431,7 @@ export async function confirmVoiceWrite(input: {
   }
 
   const action = lookup.action;
-  const path =
-    action.actionType === "set_approval_decision"
-      ? `/api/approvals/${encodeURIComponent(action.entityId)}`
-      : `/api/monitoring-alerts/${encodeURIComponent(action.entityId)}`;
+  const path = patchPathForAction(action.actionType, action.entityId);
 
   const fetchFn = input.deps.fetch ?? globalThis.fetch;
   let patchRes: Response;
@@ -434,22 +542,61 @@ async function writeVoiceAudit(
     return;
   }
 
-  // Alerts have no releaseAuditEvent FK — portfolio notification (org-aware insert).
+  if (actionType === "update_blocker") {
+    const row =
+      (await prisma.blocker.findUnique({
+        where: { id: entityId },
+        select: { releaseCode: true },
+      })) ??
+      (await prisma.blocker.findUnique({
+        where: { blockerCode: entityId },
+        select: { releaseCode: true },
+      }));
+    if (row) {
+      const release = await prisma.release.findUnique({
+        where: { releaseCode: row.releaseCode },
+        select: { id: true },
+      });
+      if (release) {
+        await prisma.releaseAuditEvent.create({
+          data: {
+            releaseId: release.id,
+            action: "blocker_update",
+            actor,
+            detail,
+          },
+        });
+        return;
+      }
+    }
+  }
+
+  if (actionType === "update_conflict") {
+    // Conflicts may span two releases — notify without inventing a single FK.
+  }
+
+  // Alerts / conflicts / orphan blockers — portfolio notification (org-aware insert).
   const organizationId = await getDefaultOrganizationId();
   const id = `voice_${Date.now().toString(36)}`;
   const ts = new Date();
+  const title =
+    actionType === "acknowledge_alert"
+      ? "Voice: alert updated"
+      : actionType === "update_conflict"
+        ? "Voice: conflict updated"
+        : "Voice: blocker updated";
   if (organizationId) {
     await prisma.$executeRaw`
       INSERT INTO "AppNotificationRow"
         (id, timestamp, title, message, "releaseId", read, type, "organizationId")
       VALUES
-        (${id}, ${ts}, ${"Voice: alert updated"}, ${detail}, ${null}, false, ${"voice_action"}, ${organizationId})
+        (${id}, ${ts}, ${title}, ${detail}, ${null}, false, ${"voice_action"}, ${organizationId})
     `;
   } else {
     await prisma.appNotificationRow.create({
       data: {
         id,
-        title: "Voice: alert updated",
+        title,
         message: detail,
         type: "voice_action",
         releaseId: null,

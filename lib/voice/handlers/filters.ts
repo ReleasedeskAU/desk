@@ -12,6 +12,7 @@ import {
 } from "@/lib/voice/list-filters-catalog";
 import type { NavigateDeps } from "@/lib/voice/handlers/navigate";
 import { resolveSpokenFilterLookups } from "@/lib/voice/filter-lookups";
+import { pushVoiceFilterHistory } from "@/lib/voice/filter-history";
 
 /** Reserved tool args that are not filter key→value pairs. */
 const FILTER_META_KEYS = new Set([
@@ -155,6 +156,11 @@ export async function handleApplyListFilters(
     };
   }
 
+  // Capture prior view so undo_filters can restore it.
+  if (currentHref?.startsWith("/")) {
+    pushVoiceFilterHistory(currentHref);
+  }
+
   await Promise.resolve(deps.push(built.href));
 
   const appliedPairs = Object.entries(built.applied).filter(([, v]) => v !== "");
@@ -181,8 +187,8 @@ export async function handleApplyListFilters(
     unknownKeys: built.unknownKeys.length ? built.unknownKeys : undefined,
     instruction:
       built.unknownKeys.length > 0
-        ? `Applied filters; ignored unknown keys: ${built.unknownKeys.join(", ")}`
-        : "Filters applied via URL. Confirm briefly; do not invent extra filter values.",
+        ? `Applied filters; ignored unknown keys: ${built.unknownKeys.join(", ")}. If the user asks what is showing, call get_page_context and speak ONLY those rows.`
+        : "Filters applied via URL. Confirm briefly. If the user asks for filtered names/ids or what is showing, call get_page_context next and speak ONLY those exact rows — do not invent codes and do not use search_entity for the filtered table.",
     actionLine,
   };
 }

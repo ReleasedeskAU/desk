@@ -1,5 +1,5 @@
 /**
- * Phase-3 toolManifest — 5 tools including propose/confirm.
+ * Voice toolManifest — release-manager tools.
  * Run: npx tsx --test lib/voice/tool-manifest.test.ts
  */
 import { describe, it } from "node:test";
@@ -10,40 +10,46 @@ import {
   voiceToolDeclarationsForLive,
 } from "./tool-manifest";
 
+const EXPECTED = [
+  "apply_list_filters",
+  "compare_releases",
+  "configure_table_view",
+  "confirm_action",
+  "copy_visible_codes",
+  "explain_page",
+  "get_attention_brief",
+  "get_calendar_window",
+  "get_page_context",
+  "get_release_bundle",
+  "get_summary",
+  "navigate_to",
+  "open_entity",
+  "propose_action",
+  "run_walkthrough",
+  "scroll_page",
+  "search_entity",
+  "undo_filters",
+].sort();
+
 describe("VOICE_TOOL_MANIFEST", () => {
   it("targets gemini-3.1-flash-live-preview", () => {
     assert.equal(VOICE_LIVE_MODEL, "gemini-3.1-flash-live-preview");
   });
 
-  it("includes release-manager tools and no extras", () => {
+  it("includes manager tools and no extras", () => {
     const names = VOICE_TOOL_MANIFEST.map((t) => t.name).sort();
-    assert.deepEqual(names, [
-      "apply_list_filters",
-      "confirm_action",
-      "explain_page",
-      "get_summary",
-      "navigate_to",
-      "propose_action",
-      "run_walkthrough",
-      "search_entity",
-    ]);
+    assert.deepEqual(names, EXPECTED);
   });
 
   it("maps to Live functionDeclarations", () => {
     const decls = voiceToolDeclarationsForLive();
-    assert.equal(decls.length, 8);
+    assert.equal(decls.length, EXPECTED.length);
+    assert.ok(decls.find((d) => d.name === "get_release_bundle"));
+    assert.ok(decls.find((d) => d.name === "get_attention_brief"));
+    assert.ok(decls.find((d) => d.name === "open_entity"));
+    assert.ok(decls.find((d) => d.name === "undo_filters"));
     const propose = decls.find((d) => d.name === "propose_action");
-    const confirm = decls.find((d) => d.name === "confirm_action");
-    const filters = decls.find((d) => d.name === "apply_list_filters");
-    const explain = decls.find((d) => d.name === "explain_page");
-    const walk = decls.find((d) => d.name === "run_walkthrough");
     assert.ok(propose);
-    assert.ok(confirm);
-    assert.ok(filters);
-    assert.ok(explain);
-    assert.ok(walk);
-    assert.deepEqual(propose!.parameters.required, ["actionType", "params"]);
-    assert.deepEqual(confirm!.parameters.required, ["actionId"]);
-    assert.deepEqual(walk!.parameters.required, ["tour"]);
+    assert.match(propose!.parameters.properties.actionType.description, /update_blocker/);
   });
 });

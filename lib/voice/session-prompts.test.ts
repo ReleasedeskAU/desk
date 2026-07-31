@@ -76,5 +76,14 @@ describe("voiceToolWaitNoticesForCalls", () => {
       voiceToolWaitNoticesForCalls(["search_entity", "navigate_to", "search_entity"]),
       ["Searching… please wait", "Navigating… please wait"]
     );
+    assert.equal(
+      voiceToolWaitNotice("configure_table_view"),
+      "Updating table view… please wait"
+    );
+    assert.equal(voiceToolWaitNotice("scroll_page"), null);
+    assert.equal(
+      voiceToolWaitNotice("get_page_context"),
+      "Reading this page… please wait"
+    );
   });
 });

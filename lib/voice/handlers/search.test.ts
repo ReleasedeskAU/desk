@@ -141,12 +141,32 @@ describe("handleSearchEntity", () => {
     assert.ok((result.matchCount ?? 0) >= 2);
     assert.ok(result.candidates && result.candidates.length >= 2);
     assert.equal(result.single, undefined);
-    assert.match(result.instruction, /Do NOT auto-select/i);
+    assert.match(result.instruction, /exact codes|Speak this exact count|Do NOT invent/i);
     const c0 = result.candidates![0]!;
     assert.ok(c0.path.startsWith("/"));
     assert.equal(c0.path, c0.href);
     assert.ok(c0.refId);
     assert.equal("id" in c0, false);
     assert.match(result.instruction, /path field|Never pass refId/i);
+  });
+
+  it("lists exact Kyriba conflict codes (anti-hallucination instruction)", async () => {
+    mock.method(globalThis, "fetch", async () => {
+      return new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const result = await handleSearchEntity({
+      query: "kyriba conflicts",
+      entityType: "conflict",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.matchCount, 3);
+    assert.match(result.instruction, /CNF-0001/);
+    assert.match(result.instruction, /CNF-0016/);
+    assert.match(result.instruction, /CNF-0026/);
+    assert.match(result.instruction, /exactly 3/i);
+    assert.doesNotMatch(result.instruction, /CNF-0002/);
   });
 });

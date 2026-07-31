@@ -34,8 +34,9 @@ export function voiceSessionPromptText(
     return [
       "[SESSION]",
       "New voice session just started.",
-      "Greet the user in one short friendly sentence as their Release Desk release manager,",
-      "and ask how you can help (walkthrough, find a release, check readiness, navigate, or explain a page).",
+      "Greet the user in one short friendly sentence as their Release Desk release manager",
+      "(you were built by the Release Desk Team — never say Google).",
+      "Ask how you can help (walkthrough, find a release, check readiness, navigate, or explain a page).",
       "Do not call any tools yet.",
     ].join(" ");
   }
@@ -111,6 +112,26 @@ export function voiceToolWaitNotice(toolName: string | undefined): string | null
       return "Explaining this page… please wait";
     case "run_walkthrough":
       return "Starting walkthrough… please wait";
+    case "configure_table_view":
+      return "Updating table view… please wait";
+    case "scroll_page":
+      return null;
+    case "get_page_context":
+      return "Reading this page… please wait";
+    case "get_release_bundle":
+      return "Loading release bundle… please wait";
+    case "get_attention_brief":
+      return "Building attention brief… please wait";
+    case "get_calendar_window":
+      return "Checking the calendar… please wait";
+    case "compare_releases":
+      return "Comparing releases… please wait";
+    case "open_entity":
+      return "Opening… please wait";
+    case "copy_visible_codes":
+      return "Copying codes… please wait";
+    case "undo_filters":
+      return "Restoring previous filters… please wait";
     case "propose_action":
       return "Preparing that change… please wait";
     case "confirm_action":
