@@ -8,10 +8,18 @@ import { assessReleaseReadiness } from "./release-readiness";
 import {
   formatPageExplainSpeech,
   resolveVoicePageExplain,
+  VOICE_PAGE_EXPLAIN_CATALOG,
 } from "./page-explain-catalog";
+import { VOICE_SIDEBAR_CATALOG } from "./sidebar-catalog";
 import { resolveVoiceWalkthrough } from "./walkthrough-catalog";
 import { handleExplainPage } from "./handlers/explain-page";
 import { handleRunWalkthrough } from "./handlers/walkthrough";
+
+/**
+ * Sidebar routes intentionally without explain_page copy.
+ * Keep empty unless a nav item is deliberately non-explainable.
+ */
+const EXPLAIN_PAGE_SIDEBAR_EXEMPTIONS = new Set<string>([]);
 
 describe("assessReleaseReadiness", () => {
   it("marks open blockers as BLOCKED with why", () => {
@@ -53,11 +61,30 @@ describe("assessReleaseReadiness", () => {
 });
 
 describe("page explain + walkthrough", () => {
+  it("covers every sidebar catalog path (or an explicit exemption)", () => {
+    const explainPaths = new Set(VOICE_PAGE_EXPLAIN_CATALOG.map((p) => p.path));
+    const missing = VOICE_SIDEBAR_CATALOG.map((item) => item.href).filter(
+      (href) =>
+        !EXPLAIN_PAGE_SIDEBAR_EXEMPTIONS.has(href) && !explainPaths.has(href)
+    );
+    assert.deepEqual(
+      missing,
+      [],
+      `explain_page catalog missing sidebar paths: ${missing.join(", ")}`
+    );
+  });
+
   it("resolves releases page explain", () => {
     const page = resolveVoicePageExplain("releases");
     assert.ok(page);
     assert.match(formatPageExplainSpeech(page!), /Releases/i);
     assert.match(formatPageExplainSpeech(page!), /ready|blocked/i);
+  });
+
+  it("resolves a formerly missing sidebar page (system-mapping)", () => {
+    const page = resolveVoicePageExplain("system mapping");
+    assert.ok(page);
+    assert.equal(page?.path, "/system-mapping");
   });
 
   it("resolves morning check tour", () => {

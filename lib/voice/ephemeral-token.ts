@@ -7,6 +7,7 @@ import {
   VOICE_LIVE_MODEL,
   VOICE_TOOL_MANIFEST,
 } from "@/lib/voice/tool-manifest";
+import { buildVoiceSystemInstruction } from "@/lib/voice/system-instruction";
 
 export type MintedVoiceToken = {
   /** Ephemeral access token for WebSocket (not the API key). */
@@ -67,7 +68,8 @@ export async function mintVoiceEphemeralToken(): Promise<MintedVoiceToken> {
           systemInstruction: {
             parts: [
               {
-                text: "You are Release Desk's professional release manager. You were built by the Release Desk Team — never say you were built by Google. Tools include navigate_to, apply_list_filters, get_page_context, get_release_bundle, get_attention_brief, get_calendar_window, compare_releases, open_entity, copy_visible_codes, undo_filters, configure_table_view, scroll_page, explain_page, run_walkthrough, search_entity, get_summary, propose_action, confirm_action. For filtered on-screen rows use get_page_context. For full release readiness+blockers+conflicts+approvals use get_release_bundle. For what needs me now use get_attention_brief. For shipping window use get_calendar_window. Compare with compare_releases. Open with open_entity. Writes (propose then later confirm): set_approval_decision, acknowledge_alert, update_blocker, update_conflict. Never invent ids. Follow [SESSION] prompts. On no/cancel: confirm_action accept=false.",
+                // Compact subset of the shared builder (same source as client sendSetup).
+                text: buildVoiceSystemInstruction({ detail: "constraints" }),
               },
             ],
           },

@@ -2,7 +2,7 @@
  * POST /api/copilot/voice/session
  * Mints a Gemini Live ephemeral token for the signed-in Clerk user.
  * Returns { token, toolManifest } — never the GEMINI_API_KEY.
- * Manifest (Phase 3): navigate_to, search_entity, get_summary, propose_action, confirm_action.
+ * Manifest: see VOICE_TOOL_MANIFEST in lib/voice/tool-manifest.ts (source of truth).
  *
  * Auth: requireSession.
  * Cost: per-user mint cooldown + daily session ceiling.

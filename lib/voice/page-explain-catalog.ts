@@ -153,7 +153,216 @@ const PAGES: readonly VoicePageExplain[] = [
     canDo: ["Drill into Releases, Blockers, or Risks for evidence"],
     nextSteps: ["Dashboard", "Releases"],
   },
+  {
+    path: "/system-mapping",
+    title: "System Mapping",
+    purpose:
+      "Visual map of applications, environments, and how they connect for change impact.",
+    canDo: [
+      "Open related apps or environments",
+      "Search an application and ask what releases touch it",
+    ],
+    nextSteps: ["Applications", "Integration Flows", "Versions & Config"],
+  },
+  {
+    path: "/integration-flows",
+    title: "Integration Flows",
+    purpose: "End-to-end integration paths between systems that releases can disrupt.",
+    canDo: [
+      "Filter or open a flow",
+      "Relate a flow to apps and releases via search",
+    ],
+    nextSteps: ["System Mapping", "Applications", "Conflicts"],
+  },
+  {
+    path: "/environments",
+    title: "Versions & Config",
+    purpose:
+      "Environment versions and config baselines used for booking and promotion fidelity.",
+    canDo: [
+      "Inspect env/version state",
+      "Jump to Env Booking or Drift when versions diverge",
+    ],
+    nextSteps: ["Env Booking", "Drift Dashboard", "System Mapping"],
+  },
+  {
+    path: "/leaves",
+    title: "Leave Calendar",
+    purpose:
+      "People availability that can delay approvals, UAT, or go-live coverage.",
+    canDo: [
+      "Check who is out around a go-live date",
+      "Cross-check owners on critical releases",
+    ],
+    nextSteps: ["Calendar", "Approvals", "Releases"],
+  },
+  {
+    path: "/application-status",
+    title: "Application Status",
+    purpose:
+      "Operational health of applications that may freeze or reverse a release.",
+    canDo: [
+      "Filter by status or app",
+      "Relate status to monitoring alerts and incidents",
+    ],
+    nextSteps: ["Monitoring Alerts", "Incidents", "Applications"],
+  },
+  {
+    path: "/planned-maintenance",
+    title: "Planned Maintenance",
+    purpose:
+      "Scheduled maintenance windows that collide with go-lives and env bookings.",
+    canDo: [
+      "Find maintenance near a release date",
+      "Open Calendar to see collisions",
+    ],
+    nextSteps: ["Calendar", "Env Booking", "Releases"],
+  },
+  {
+    path: "/compare",
+    title: "Compare",
+    purpose:
+      "Side-by-side comparison of releases or change sets before a go decision.",
+    canDo: [
+      "Ask to compare two releases (compare_releases)",
+      "Open either release for readiness",
+    ],
+    nextSteps: ["Releases", "Executive"],
+  },
+  {
+    path: "/insights",
+    title: "Insights",
+    purpose:
+      "Analytics, predictive forecasts, and trend patterns across the release portfolio.",
+    canDo: [
+      "Drill into Releases, Risks, or Blockers for evidence behind a trend",
+      "Ask what needs attention via get_attention_brief",
+    ],
+    nextSteps: ["Executive", "Dashboard", "Releases"],
+  },
+  {
+    path: "/departments",
+    title: "Departments",
+    purpose:
+      "Master list of departments used for ownership and filtering across Release Desk.",
+    canDo: [
+      "Open a department",
+      "Filter releases or blockers by department on list pages",
+    ],
+    nextSteps: ["Users", "Releases", "Applications"],
+  },
+  {
+    path: "/applications",
+    title: "Applications",
+    purpose:
+      "Application catalog — systems touched by releases, bookings, and conflicts.",
+    canDo: [
+      "Open an application",
+      "Search conflicts or releases for an app name",
+    ],
+    nextSteps: ["Conflicts", "Env Booking", "System Mapping"],
+  },
+  {
+    path: "/users",
+    title: "Users",
+    purpose: "People and roles who own approvals, blockers, and release work.",
+    canDo: [
+      "Find an owner",
+      "Relate a user to Approvals or Leave Calendar",
+    ],
+    nextSteps: ["Departments", "Approvals", "Leave Calendar"],
+  },
+  {
+    path: "/risk-factors",
+    title: "Risk Factors",
+    purpose: "Reusable risk factor definitions that feed the risk register.",
+    canDo: [
+      "Browse factors",
+      "Open Risks to see live scored risks on releases",
+    ],
+    nextSteps: ["Risk", "Releases"],
+  },
+  {
+    path: "/knowledge-graph",
+    title: "Knowledge Graph",
+    purpose:
+      "Relationship graph across releases, apps, and dependencies for impact analysis.",
+    canDo: [
+      "Explore linked entities",
+      "Search a release and ask what depends on it",
+    ],
+    nextSteps: ["Dependencies", "System Mapping", "Releases"],
+  },
+  {
+    path: "/agents",
+    title: "Agents",
+    purpose:
+      "Agent control room — AI agents watching releases, connectors, and deployments.",
+    canDo: [
+      "Review which agents are active or paused",
+      "Return to operational lists for release work",
+    ],
+    nextSteps: ["Settings", "Dashboard"],
+  },
+  {
+    path: "/history",
+    title: "History Log",
+    purpose:
+      "Audit trail of system actions and release cycles across the workspace.",
+    canDo: [
+      "Scan recent activity",
+      "Open a related release or entity via search",
+    ],
+    nextSteps: ["Releases", "Connectors"],
+  },
+  {
+    path: "/connectors",
+    title: "Connectors",
+    purpose:
+      "External system connectors that sync tickets, alerts, or change data into Release Desk.",
+    canDo: [
+      "Check connector health",
+      "Relate synced entities back to releases via search",
+    ],
+    nextSteps: ["History Log", "Reference Data", "Settings"],
+  },
+  {
+    path: "/admin/reference-data",
+    title: "Reference Data",
+    purpose:
+      "Admin reference values (statuses, types, lookups) that drive filters and forms.",
+    canDo: [
+      "Review lookup values",
+      "Avoid inventing filter values — use spoken names from lists",
+    ],
+    nextSteps: ["Settings", "Connectors"],
+  },
+  {
+    path: "/settings",
+    title: "Settings",
+    purpose:
+      "Workspace and user preferences, including voice usage where enabled.",
+    canDo: [
+      "Review preferences",
+      "Check voice usage ceilings if available",
+    ],
+    nextSteps: ["Users", "Reference Data"],
+  },
+  {
+    path: "/templates",
+    title: "Templates",
+    purpose:
+      "Quick-start guided demo scenarios for walking release-management workflows with sample data.",
+    canDo: [
+      "Open a template scenario",
+      "Run a morning-check walkthrough afterward",
+    ],
+    nextSteps: ["Dashboard", "Inbox"],
+  },
 ];
+
+/** Exported for drift tests against VOICE_SIDEBAR_CATALOG. */
+export const VOICE_PAGE_EXPLAIN_CATALOG = PAGES;
 
 const BY_PATH = new Map(PAGES.map((p) => [p.path, p]));
 
