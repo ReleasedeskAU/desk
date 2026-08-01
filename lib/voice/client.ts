@@ -1431,11 +1431,14 @@ export class VoiceLiveClient {
           setVoiceGuideStatus(
             dir === "top"
               ? "Scrolling to top…"
-              : dir === "up"
-                ? "Scrolling up…"
-                : "Scrolling down…"
+              : dir === "bottom"
+                ? "Scrolling to bottom…"
+                : dir === "up"
+                  ? "Scrolling up…"
+                  : "Scrolling down…"
           );
-          window.setTimeout(() => setVoiceGuideStatus(null), 700);
+          // Human-paced scroll runs ~1–2s; keep the status up until it settles.
+          window.setTimeout(() => setVoiceGuideStatus(null), 1800);
         }
         // Filtered / on-screen list data → get_page_context (no screen share).
         else if (isPageDataQuery(utterance) && !this.screenShareActive) {

@@ -303,13 +303,17 @@ export async function guidedNavigateTo(
   if (epoch !== guideEpoch) return;
 
   if (typeof document !== "undefined") {
-    const main = document.querySelector("main.materio-main");
-    if (main instanceof HTMLElement) {
-      try {
-        main.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
-      } catch {
-        /* ignore */
+    // Landing on a new page resets instantly (no slow reading scroll here);
+    // reset both scrollports since the page can be offset even when a table owns scroll.
+    try {
+      cancelVoiceScroll();
+      const port = resolveVoiceScrollTarget("top");
+      if (port) port.scrollTop = 0;
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
       }
+    } catch {
+      /* ignore */
     }
     if (opts?.rowCode) {
       await sleep(reduced ? 40 : 200);
@@ -334,34 +338,279 @@ export function voiceRowCodeFromPath(href: string): string | null {
   return null;
 }
 
+export type VoiceScrollDirection = "up" | "down" | "top" | "bottom";
+
 /**
- * Soft page scroll without screen share (DOM scroll, not OCR).
- * @param direction - up / down / top.
+ * Whether an element can scroll vertically (overflow + content taller than box).
+ * Pure helper for tests — pass computed overflowY from the DOM in production.
+ * @param scrollHeight - Element scrollHeight.
+ * @param clientHeight - Element clientHeight.
+ * @param overflowY - Computed overflow-y.
  */
-export function voiceScrollMain(
-  direction: "up" | "down" | "top" = "down"
-): void {
-  if (typeof document === "undefined") return;
+export function elementCanScrollY(
+  scrollHeight: number,
+  clientHeight: number,
+  overflowY: string
+): boolean {
+  const oy = overflowY.trim().toLowerCase();
+  const allows =
+    oy === "auto" || oy === "scroll" || oy === "overlay" || oy === "hidden";
+  // `hidden` still scrolls programmatically; skip visible/clip (not a scrollport).
+  return allows && scrollHeight > clientHeight + 1;
+}
+
+/**
+ * Whether a scrollport still has room to move in the requested direction.
+ * Lets a maxed-out inner table hand the gesture back to the page.
+ * @param scrollTop - Current scroll offset.
+ * @param scrollHeight - Content height.
+ * @param clientHeight - Viewport height of the scrollport.
+ * @param direction - Requested direction.
+ */
+export function canScrollFurther(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  direction: VoiceScrollDirection
+): boolean {
+  const max = scrollHeight - clientHeight;
+  if (max <= 1) return false;
+  if (direction === "up") return scrollTop > 1;
+  if (direction === "top") return scrollTop > 1;
+  return scrollTop < max - 1;
+}
+
+/** Scrollports the voice agent always prefers when present (page-sized by design). */
+const VOICE_PRIMARY_SCROLLPORTS = "[data-voice-scroll], .data-table-body";
+/** Generic scrollports — only used when they are big enough to be the page's content. */
+const VOICE_GENERIC_SCROLLPORTS =
+  '.overflow-y-auto, .overflow-auto, [class*="overflow-y-auto"], [class*="overflow-auto"]';
+
+/**
+ * Whether a nested scrollport is large enough to be what the user means by "the page".
+ * Small cards (a 10rem activity list) must not swallow a page scroll.
+ * @param clientHeight - Scrollport height.
+ * @param viewportHeight - Window height.
+ */
+export function isMajorScrollport(
+  clientHeight: number,
+  viewportHeight: number
+): boolean {
+  if (viewportHeight <= 0) return clientHeight >= 240;
+  return clientHeight >= Math.max(240, viewportHeight * 0.5);
+}
+
+function isScrollableNow(el: HTMLElement): boolean {
+  const overflowY =
+    typeof window !== "undefined"
+      ? window.getComputedStyle(el).overflowY
+      : "auto";
+  return elementCanScrollY(el.scrollHeight, el.clientHeight, overflowY);
+}
+
+/**
+ * Ordered scroll candidates for the current page.
+ * Open dialog scrollports first, then in-page scrollports, then the document —
+ * so every route has a working target, not just data tables.
+ */
+function voiceScrollCandidates(): HTMLElement[] {
+  if (typeof document === "undefined") return [];
+  const viewport = typeof window !== "undefined" ? window.innerHeight : 0;
+  const out: HTMLElement[] = [];
+  const push = (el: Element | null, requireMajor = false) => {
+    if (!(el instanceof HTMLElement) || out.includes(el)) return;
+    if (requireMajor && !isMajorScrollport(el.clientHeight, viewport)) return;
+    if (isScrollableNow(el)) out.push(el);
+  };
+
+  // An open modal owns the gesture while it is visible.
+  const dialog = document.querySelector('[role="dialog"]:not([aria-hidden="true"])');
+  if (dialog instanceof HTMLElement) {
+    push(dialog);
+    dialog
+      .querySelectorAll(`${VOICE_PRIMARY_SCROLLPORTS}, ${VOICE_GENERIC_SCROLLPORTS}`)
+      .forEach((el) => push(el));
+  }
+
   const main = document.querySelector("main.materio-main");
-  const el =
-    main instanceof HTMLElement
-      ? main
-      : document.scrollingElement instanceof HTMLElement
-        ? document.scrollingElement
-        : null;
-  if (!el) return;
-  const delta = Math.round(
-    typeof window !== "undefined" ? window.innerHeight * 0.7 : 400
+  if (main instanceof HTMLElement) {
+    main.querySelectorAll(VOICE_PRIMARY_SCROLLPORTS).forEach((el) => push(el));
+    main
+      .querySelectorAll(VOICE_GENERIC_SCROLLPORTS)
+      .forEach((el) => push(el, true));
+    push(main);
+  }
+
+  // Any route where the shell itself scrolls (dashboard, detail pages, settings…).
+  const doc = document.scrollingElement ?? document.documentElement;
+  if (doc instanceof HTMLElement) out.push(doc);
+  return out;
+}
+
+/**
+ * Resolve the node that should scroll for this direction.
+ * Falls through exhausted inner scrollports so the page keeps moving.
+ * @param direction - Requested direction.
+ * @returns Scroll target, or null if DOM unavailable.
+ */
+export function resolveVoiceScrollTarget(
+  direction: VoiceScrollDirection = "down"
+): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const candidates = voiceScrollCandidates();
+  if (!candidates.length) return null;
+
+  for (const el of candidates) {
+    if (canScrollFurther(el.scrollTop, el.scrollHeight, el.clientHeight, direction)) {
+      return el;
+    }
+  }
+  // Nothing can move further — return the page so the call is still a no-op, not an error.
+  return candidates[candidates.length - 1] ?? null;
+}
+
+/** Reading pace in px/s — a person skimming, not a jump-cut. */
+const VOICE_SCROLL_SPEED_PX_PER_SEC = 420;
+const VOICE_SCROLL_MIN_MS = 550;
+const VOICE_SCROLL_MAX_MS = 4000;
+
+/**
+ * How long a voice scroll of this distance should take to feel hand-driven.
+ * @param distancePx - Signed or absolute pixels to travel.
+ */
+export function voiceScrollDurationMs(distancePx: number): number {
+  const d = Math.abs(distancePx);
+  if (d < 2) return 0;
+  const raw = (d / VOICE_SCROLL_SPEED_PX_PER_SEC) * 1000;
+  return Math.round(
+    Math.min(VOICE_SCROLL_MAX_MS, Math.max(VOICE_SCROLL_MIN_MS, raw))
   );
-  try {
-    if (direction === "top") {
-      el.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/** Ease-in-out so the scroll starts and settles gently instead of snapping. */
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+let voiceScrollFrame: number | null = null;
+let voiceScrollAbort: (() => void) | null = null;
+
+/** Stop any in-flight voice scroll (new command, or the user grabbed the page). */
+export function cancelVoiceScroll(): void {
+  if (voiceScrollFrame !== null && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(voiceScrollFrame);
+  }
+  voiceScrollFrame = null;
+  voiceScrollAbort?.();
+  voiceScrollAbort = null;
+}
+
+/**
+ * Animate a scrollport to an absolute offset at reading pace.
+ * Uses rAF rather than `behavior: "smooth"`, which is a fixed ~300ms snap.
+ */
+function animateVoiceScroll(
+  el: HTMLElement,
+  isDocumentScroll: boolean,
+  to: number
+): void {
+  cancelVoiceScroll();
+
+  const read = (): number =>
+    isDocumentScroll && typeof window !== "undefined"
+      ? (window.scrollY ?? el.scrollTop)
+      : el.scrollTop;
+  const write = (top: number) => {
+    if (isDocumentScroll && typeof window !== "undefined") {
+      window.scrollTo(window.scrollX ?? 0, top);
+    } else {
+      el.scrollTop = top;
+    }
+  };
+
+  const from = read();
+  const distance = to - from;
+  const duration = voiceScrollDurationMs(distance);
+  if (duration === 0 || typeof requestAnimationFrame !== "function") {
+    write(to);
+    return;
+  }
+
+  // A human interrupting beats the agent — drop the animation on real input.
+  const stop = () => cancelVoiceScroll();
+  const events: (keyof WindowEventMap)[] = [
+    "wheel",
+    "touchstart",
+    "pointerdown",
+    "keydown",
+  ];
+  if (typeof window !== "undefined") {
+    events.forEach((e) => window.addEventListener(e, stop, { passive: true }));
+    voiceScrollAbort = () =>
+      events.forEach((e) => window.removeEventListener(e, stop));
+  }
+
+  const start =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  const step = (now: number) => {
+    const elapsed = now - start;
+    const t = Math.min(1, elapsed / duration);
+    write(from + distance * easeInOutCubic(t));
+    if (t < 1) {
+      voiceScrollFrame = requestAnimationFrame(step);
       return;
     }
-    el.scrollBy({
-      top: direction === "up" ? -delta : delta,
-      behavior: "smooth",
-    });
+    voiceScrollFrame = null;
+    voiceScrollAbort?.();
+    voiceScrollAbort = null;
+  };
+  voiceScrollFrame = requestAnimationFrame(step);
+}
+
+/**
+ * Soft page scroll without screen share (DOM scroll, not OCR).
+ * Works on every route: modal → in-page scrollport → document.
+ * Moves at a human reading pace so the user can follow along while the agent talks.
+ * @param direction - up / down / top / bottom.
+ */
+export function voiceScrollMain(direction: VoiceScrollDirection = "down"): void {
+  if (typeof document === "undefined") return;
+  const el = resolveVoiceScrollTarget(direction);
+  if (!el) return;
+
+  const viewport =
+    typeof window !== "undefined" && window.innerHeight > 0
+      ? window.innerHeight
+      : el.clientHeight || 600;
+  // Leave a couple of lines of overlap so the user keeps their place.
+  const step = Math.round(Math.max(220, viewport * 0.7));
+  const isDocumentScroll =
+    el === document.documentElement ||
+    el === document.body ||
+    el === document.scrollingElement;
+  const current =
+    isDocumentScroll && typeof window !== "undefined"
+      ? (window.scrollY ?? el.scrollTop)
+      : el.scrollTop;
+  const max = Math.max(0, el.scrollHeight - el.clientHeight);
+
+  let to: number;
+  if (direction === "top") to = 0;
+  else if (direction === "bottom") to = max;
+  else to = current + (direction === "up" ? -step : step);
+  to = Math.min(max, Math.max(0, to));
+
+  try {
+    if (prefersReducedMotion()) {
+      cancelVoiceScroll();
+      if (isDocumentScroll && typeof window !== "undefined") {
+        window.scrollTo(window.scrollX ?? 0, to);
+      } else {
+        el.scrollTop = to;
+      }
+      return;
+    }
+    animateVoiceScroll(el, isDocumentScroll, to);
   } catch {
     /* ignore */
   }
@@ -378,7 +627,8 @@ export function isScrollPageQuery(raw: string): boolean {
     /\bscroll\b/.test(t) ||
     /\b(page|go)\s+down\b/.test(t) ||
     /\b(page|go)\s+up\b/.test(t) ||
-    /\b(top of (the )?page|bottom of (the )?page)\b/.test(t)
+    /\b(top|bottom|end) of (the )?page\b/.test(t) ||
+    /\ball the way (down|up)\b/.test(t)
   );
 }
 
@@ -386,9 +636,10 @@ export function isScrollPageQuery(raw: string): boolean {
  * Parse scroll direction from speech.
  * @param raw - User utterance.
  */
-export function parseScrollDirection(raw: string): "up" | "down" | "top" {
+export function parseScrollDirection(raw: string): VoiceScrollDirection {
   const t = raw.trim().toLowerCase();
   if (/\btop\b/.test(t)) return "top";
+  if (/\b(bottom|end of (the )?page|all the way down)\b/.test(t)) return "bottom";
   if (/\bup\b/.test(t)) return "up";
   return "down";
 }

@@ -255,13 +255,13 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "scroll_page",
     description:
-      "Scroll the main page content while explaining (up / down / top). No screen share required. Use during walkthroughs or when reading a long table. To open a detail row after scrolling, call navigate_to with search_entity.path.",
+      "Scroll the current page (up / down / top / bottom). Works on every page — dashboards, detail pages, settings, and long tables — no screen share required. Use during walkthroughs or when reading a long page. To open a detail row after scrolling, call navigate_to with search_entity.path.",
     parameters: {
       type: "object",
       properties: {
         direction: {
           type: "string",
-          description: "up | down | top (default down)",
+          description: "up | down | top | bottom (default down)",
         },
       },
       required: [],
