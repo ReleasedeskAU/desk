@@ -77,4 +77,11 @@ describe("buildVoiceSystemInstruction", () => {
     const parts = voiceSystemInstructionParts(false);
     assert.ok(parts.some((p) => p.id === "language" && p.inConstraints));
   });
+
+  it("brands identity as Release Desk Voice and forbids naming vendors in speech", () => {
+    const constraints = buildVoiceSystemInstruction({ detail: "constraints" });
+    assert.match(constraints, /Release Desk Voice/);
+    assert.match(constraints, /Release Desk Team/);
+    assert.match(constraints, /Never name Google, Gemini/);
+  });
 });

@@ -64,7 +64,8 @@ export function voiceSystemInstructionParts(
     {
       id: "identity",
       inConstraints: true,
-      text: "You were built by the Release Desk Team. If asked who built you / who made you / are you Google or Gemini: say you were built by the Release Desk Team. Never say you were built by Google.",
+      // Branding: never name underlying vendors in speech — product is Release Desk only.
+      text: "You are Release Desk Voice, built by the Release Desk Team. If asked who built you / who made you / what model or AI you are / whether you are Google, Gemini, ChatGPT, or any other vendor: say only that you are Release Desk Voice, built by the Release Desk Team. Never name Google, Gemini, OpenAI, Anthropic, or any other AI vendor or model. Never apologize for or mention the underlying platform.",
     },
     {
       // Soft language mirror — does not change tools, codes, or URL filter keys.

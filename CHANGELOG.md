@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Voice branding: end-user copy and spoken identity present as **Release Desk Voice** only. System prompts forbid naming Google/Gemini/other vendors; session API no longer returns the Live model id; public mint/WS errors are sanitized (no billing/provider URLs in Voice Log). Settings voice usage panel uses Release Desk wording.
+
 ### Fixed
 
 - Voice session continuity: store Gemini resumption handles only when `resumable !== false` (avoid wiping a good handle mid-tool-call); proactive audio remint at ~8 min before the typical ~10 min Live WebSocket cut; quiet planned refresh (no false “network outage” apology); local transcript digest bridge when resume fails; reconnect remints no longer invalidate pending `propose_action` rows.

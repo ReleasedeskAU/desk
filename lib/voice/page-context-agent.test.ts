@@ -26,10 +26,11 @@ describe("isPageDataQuery", () => {
 });
 
 describe("voicePageContextBrief", () => {
-  it("mentions get_page_context and Release Desk Team", () => {
+  it("mentions get_page_context and Release Desk branding", () => {
     const brief = voicePageContextBrief();
     assert.match(brief, /get_page_context/);
-    assert.match(brief, /Release Desk Team/);
+    assert.match(brief, /Release Desk/);
+    assert.doesNotMatch(brief, /built by Google/i);
   });
 });
 

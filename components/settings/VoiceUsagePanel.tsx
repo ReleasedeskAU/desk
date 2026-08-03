@@ -74,7 +74,7 @@ export function VoiceUsagePanel() {
           Voice usage (today)
         </h2>
         <p className="mt-1 text-[14px] text-gray-500 dark:text-gray-300">
-          In-memory session counts for Gemini Live. Ceilings limit runaway spend;
+          In-memory session counts for Release Desk Voice. Ceilings limit runaway spend;
           rates are planning estimates for audio duplex.
         </p>
       </div>

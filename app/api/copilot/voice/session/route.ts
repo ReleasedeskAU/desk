@@ -87,10 +87,10 @@ export async function POST(req: Request) {
       ? undefined
       : recordVoiceSessionStart(user!.id);
 
+    // Do not return vendor model ids to the browser — client uses its own constant.
     return NextResponse.json({
       token: minted.token,
       toolManifest: VOICE_TOOL_MANIFEST,
-      model: minted.model,
       expireTime: minted.expireTime,
       organizationId,
       reconnect,
@@ -102,13 +102,14 @@ export async function POST(req: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     if (/GEMINI_API_KEY is not configured/i.test(message)) {
+      // Public copy stays vendor-neutral (key name stays in server logs only).
       return NextResponse.json(
-        { error: "Voice is not configured on this server (missing GEMINI_API_KEY)" },
+        { error: "Voice is not configured on this server" },
         { status: 503 }
       );
     }
     return jsonError(err, {
-      publicMessage: "Failed to mint voice session token",
+      publicMessage: "Failed to start voice session",
       status: 502,
       logLabel: "voice.session.mint",
     });

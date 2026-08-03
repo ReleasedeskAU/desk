@@ -35,6 +35,7 @@ import {
   isPageDataQuery,
 } from "@/lib/voice/page-context-agent";
 import { buildVoiceSystemInstruction } from "@/lib/voice/system-instruction";
+import { sanitizeVoicePublicMessage } from "@/lib/voice/public-branding";
 import {
   parseVoiceSearchIntent,
   stripSpokenFiller,
@@ -730,10 +731,12 @@ export class VoiceLiveClient {
 
   /** Hard failure (mic/WS never usable) — recommend text fallback. */
   private hardFail(message: string, kind: VoiceFailureKind) {
-    this.lastError = message;
+    // Never surface provider/billing wording in Voice Log or UI.
+    const safe = sanitizeVoicePublicMessage(message);
+    this.lastError = safe;
     this.lastFailureKind = kind;
-    this.opts.onError?.(message);
-    this.emitTranscript("system", message);
+    this.opts.onError?.(safe);
+    this.emitTranscript("system", safe);
     this.lifecycleActive = false;
     this.clearWatchdogs();
     this.clearReconnectTimer();
@@ -753,7 +756,7 @@ export class VoiceLiveClient {
       kind === "reconnect_exhausted" ||
       kind === "max_duration"
     ) {
-      this.opts.onFallbackRecommended?.(kind, message);
+      this.opts.onFallbackRecommended?.(kind, safe);
     }
   }
 
@@ -1061,7 +1064,7 @@ export class VoiceLiveClient {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         if (!isCurrentSocket()) return;
         this.teardownAudioNodesKeepMic();
         if (this.intentionalClose) {
@@ -1073,7 +1076,15 @@ export class VoiceLiveClient {
           return;
         }
         if (!settled) {
-          settleErr(new Error("Voice WebSocket closed before setup completed"));
+          // Close reason may name the Live provider / billing — sanitize before UI.
+          const reason = typeof ev?.reason === "string" ? ev.reason : "";
+          settleErr(
+            new Error(
+              sanitizeVoicePublicMessage(
+                reason || "Voice WebSocket closed before setup completed"
+              )
+            )
+          );
           return;
         }
         if (this.state === "connected" || this.state === "connecting") {
@@ -1472,7 +1483,7 @@ export class VoiceLiveClient {
                 "User asked to visually explain layout painted on screen, but screen share is OFF.",
                 "Ask them briefly to tap Enable screen share for visual walkthrough.",
                 "For filtered/on-screen row names and ids, call get_page_context — that works WITHOUT share.",
-                "Do NOT say you were built by Google — you were built by the Release Desk Team.",
+                "You are Release Desk Voice — never name Google, Gemini, or any other AI vendor.",
               ].join(" "),
             },
           });
