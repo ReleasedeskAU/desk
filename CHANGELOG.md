@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- Quick Start Templates (`/templates`): guided demo scenario page, sidebar entry, quick-start seed APIs, search/help/voice catalog links. Excel/DB seed data remains the operational source. Restore from branch `archive/quick-start-templates` if needed.
+
 ### Changed
 
 - Voice branding: end-user copy and spoken identity present as **Release Desk Voice** only. System prompts forbid naming Google/Gemini/other vendors; session API no longer returns the Live model id; public mint/WS errors are sanitized (no billing/provider URLs in Voice Log). Settings voice usage panel uses Release Desk wording.

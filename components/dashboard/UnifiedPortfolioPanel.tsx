@@ -33,7 +33,7 @@ export function UnifiedPortfolioPanel({ data }: { data: Overview }) {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <SourceStat label="Combined releases" value={data.counts.combined.total} hint="DB + demo in period" />
           <SourceStat label="Database" value={data.counts.database.total} hint="SQLite / MVP" icon={Database} />
-          <SourceStat label="Demo command center" value={data.counts.demo.total} hint="Synthetic / Quick Start" icon={Sparkles} />
+          <SourceStat label="Demo command center" value={data.counts.demo.total} hint="Synthetic demo data" icon={Sparkles} />
           <SourceStat label="Env bookings" value={data.environment.bookedEnvs} hint={`${data.environment.driftApps} apps with version drift`} />
         </div>
         <div className="flex flex-wrap gap-2">

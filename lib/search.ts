@@ -1,6 +1,5 @@
 import { agents, connectors, releases, type SearchResult } from "./dummy-data";
 import { buildEnvironmentDesk } from "./enterprise-env-data";
-import { QUICK_START_TEMPLATES } from "./quick-start-templates";
 import { connectorSlug } from "./connectors";
 import { searchSeedCatalog } from "./search-seed-catalog";
 
@@ -59,23 +58,6 @@ export function searchAll(query: string): SearchResult[] {
         label: r.changeRecord.crNumber,
         sublabel: `${r.version} · ${r.changeRecord.riskTier} risk · CAB ${r.changeRecord.cabStatus}`,
         href: `/releases/${r.id}`,
-      });
-    }
-  });
-
-  QUICK_START_TEMPLATES.forEach((t) => {
-    if (
-      t.title.toLowerCase().includes(q) ||
-      t.description.toLowerCase().includes(q) ||
-      t.category.toLowerCase().includes(q) ||
-      t.id.toLowerCase().includes(q)
-    ) {
-      results.push({
-        id: `tpl-${t.id}`,
-        type: "change",
-        label: t.title,
-        sublabel: `Quick Start · ${t.category}`,
-        href: t.href,
       });
     }
   });

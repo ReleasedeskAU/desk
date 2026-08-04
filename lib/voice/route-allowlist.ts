@@ -69,7 +69,6 @@ export const VOICE_DYNAMIC_ROUTE_PATTERNS: readonly string[] = [
   "/incidents/:id",
   "/planned-maintenance/:id",
   "/admin/users",
-  "/templates",
 ];
 
 const DYNAMIC_REGEXES: readonly { pattern: string; re: RegExp }[] =

@@ -227,12 +227,6 @@ export const VOICE_SIDEBAR_CATALOG: readonly VoiceSidebarItem[] = [
     section: "Operations",
     synonyms: ["settings", "preferences"],
   },
-  {
-    href: "/templates",
-    label: "Templates",
-    section: "Bottom",
-    synonyms: ["templates", "guided demo", "demo scenarios"],
-  },
 ] as const;
 
 /**

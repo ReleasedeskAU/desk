@@ -348,17 +348,6 @@ const PAGES: readonly VoicePageExplain[] = [
     ],
     nextSteps: ["Users", "Reference Data"],
   },
-  {
-    path: "/templates",
-    title: "Templates",
-    purpose:
-      "Quick-start guided demo scenarios for walking release-management workflows with sample data.",
-    canDo: [
-      "Open a template scenario",
-      "Run a morning-check walkthrough afterward",
-    ],
-    nextSteps: ["Dashboard", "Inbox"],
-  },
 ];
 
 /** Exported for drift tests against VOICE_SIDEBAR_CATALOG. */

@@ -181,12 +181,6 @@ export function HelpCenterModal({
           ))}
 
           <div className="pt-2 border-t border-gray-100">
-            <p className="text-xs text-gray-500 mb-2">Also explore</p>
-            <div className="flex flex-wrap gap-2">
-              <ProgressLink href="/templates" onClick={onClose} className={taBtnSecondary + " text-xs !py-1.5"}>
-                Quick Start demos
-              </ProgressLink>
-            </div>
             <button
               type="button"
               className="mt-4 flex items-center gap-1 text-xs text-gray-500 hover:text-brand-600"

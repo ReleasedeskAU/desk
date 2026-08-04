@@ -1,6 +1,5 @@
 "use client";
 
-import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { LOGIN_GUIDE, dataSourceLabel } from "@/lib/page-guide";
 import { CircleHelp, Lightbulb } from "lucide-react";
 
@@ -30,12 +29,6 @@ export function LoginHelpCard() {
               </span>
             ))}
           </div>
-          <ProgressLink
-            href="/templates"
-            className="inline-block mt-3 text-xs font-medium text-brand-600 hover:underline"
-          >
-            Browse Quick Start demos first →
-          </ProgressLink>
         </div>
       </div>
     </div>
