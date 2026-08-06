@@ -26,6 +26,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Per-user Release lifecycle configuration foundation: Clerk-user-scoped statuses, transitions, and fixed-catalog gate attachments with the locked 15-status defaults. `organizationId` is reserved for a later org cutover. Deploying → Deployed and Deployed → Closed intentionally seed as Flexible until their underlying facts are trustworthy.
 - Voice **manager tools**: `get_release_bundle`, `get_attention_brief`, `get_calendar_window`, `compare_releases`, `open_entity`, `copy_visible_codes`, `undo_filters`. Propose/confirm writes extended with `update_blocker` and `update_conflict` (same Zod PATCH schemas as the UI).
 - Voice **page-context agent**: `get_page_context` returns exact on-screen/filtered table rows (codes + names) from APP_CONTEXT; Live receives silent `[PAGE_UPDATE]` when the list refreshes after filters. Filtered list asks no longer require screen share. Identity: built by the **Release Desk Team** (never Google).
 - Voice **table view + scroll**: `configure_table_view` (Manage Columns / Manage Filters visibility via the same `/api/table-preferences` contract) and `scroll_page` (scroll main content while explaining). Sort uses existing `apply_list_filters` with `sort` + `dir` (same URL contract as the UI sort button). Clear filters preserves sort/dir like the UI.

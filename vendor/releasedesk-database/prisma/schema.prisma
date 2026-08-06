@@ -860,6 +860,80 @@ model UserRiskEngineConfig {
   updatedAt           DateTime @updatedAt
 }
 
+/// Per-user release lifecycle statuses. organizationId is reserved for the
+/// future org-scoped cutover and is intentionally unused/unenforced today.
+model UserReleaseLifecycleStatus {
+  id             String   @id @default(cuid())
+  clerkUserId    String
+  organizationId String?
+  key            String
+  label          String
+  sortOrder      Int      @default(0)
+  terminal       Boolean  @default(false)
+  kind           String   @default("mainline")
+  isSystem       Boolean  @default(true)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  transitionsFrom UserReleaseLifecycleTransition[] @relation("LifecycleFrom")
+  transitionsTo   UserReleaseLifecycleTransition[] @relation("LifecycleTo")
+
+  @@unique([clerkUserId, key])
+  @@unique([clerkUserId, label])
+  @@index([clerkUserId, enabled, sortOrder])
+  @@index([organizationId])
+}
+
+/// Per-user allowed release-status transition. targetKey is a stable,
+/// tenant-scoped uniqueness discriminator; "__previous__" represents
+/// Blocked returning to Release.previousStatus.
+model UserReleaseLifecycleTransition {
+  id               String   @id @default(cuid())
+  clerkUserId      String
+  organizationId   String?
+  fromStatusId     String
+  toStatusId       String?
+  targetKey        String
+  isPreviousStatus Boolean  @default(false)
+  enabled          Boolean  @default(true)
+  enforcement      String   @default("flexible")
+  isSystem         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  fromStatus UserReleaseLifecycleStatus  @relation("LifecycleFrom", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatus   UserReleaseLifecycleStatus? @relation("LifecycleTo", fields: [toStatusId], references: [id], onDelete: Restrict)
+  gates      UserReleaseLifecycleGate[]
+
+  @@unique([clerkUserId, fromStatusId, targetKey])
+  @@index([clerkUserId, fromStatusId, enabled])
+  @@index([organizationId])
+}
+
+/// Gate attachment for a lifecycle transition. gateType and params are
+/// validated against the fixed application gate catalog; no free-form logic.
+model UserReleaseLifecycleGate {
+  id             String   @id @default(cuid())
+  clerkUserId    String
+  organizationId String?
+  transitionId   String
+  gateType       String
+  enabled        Boolean  @default(true)
+  enforcement    String   @default("inherit")
+  params         Json?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  transition UserReleaseLifecycleTransition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@unique([transitionId, gateType])
+  @@index([clerkUserId])
+  @@index([organizationId])
+}
+
 /// Inbound webhook connector (Jira, etc.). Secrets encrypted with connector-engine AES-256-GCM.
 model WebhookConnector {
   id             String         @id @default(cuid())

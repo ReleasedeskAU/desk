@@ -59,3 +59,4 @@ overview.json
 # Prisma client generated into vendored package (created on install/build)
 /vendor/releasedesk-database/generated/
 /vendor/releasedesk-database/node_modules/
+.env*

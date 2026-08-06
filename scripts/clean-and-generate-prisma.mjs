@@ -68,7 +68,14 @@ if (!existsSync(serviceMarker)) {
 // Fail fast if the new Copilot models are missing from types (stale/wrong schema).
 const { readFileSync } = await import("node:fs");
 const dts = readFileSync(serviceMarker, "utf8");
-for (const needle of ["get service()", "get userRiskEngineConfig()", "get deploymentBlocker()"]) {
+for (const needle of [
+  "get service()",
+  "get userRiskEngineConfig()",
+  "get userReleaseLifecycleStatus()",
+  "get userReleaseLifecycleTransition()",
+  "get userReleaseLifecycleGate()",
+  "get deploymentBlocker()",
+]) {
   if (!dts.includes(needle)) {
     console.error(
       `clean-and-generate-prisma: generated types missing "${needle}" — schema/client mismatch`
@@ -77,4 +84,6 @@ for (const needle of ["get service()", "get userRiskEngineConfig()", "get deploy
   }
 }
 
-console.log("clean-and-generate-prisma: OK (Service + UserRiskEngineConfig present)");
+console.log(
+  "clean-and-generate-prisma: OK (Service + risk/lifecycle config models present)"
+);
