@@ -20,6 +20,7 @@ import {
 import { ReleaseDashboardTile } from "@/components/releases/ReleaseDashboardTile";
 import { ReleaseSummaryBar } from "@/components/releases/ReleaseSummaryBar";
 import { ReleaseActionStrip } from "@/components/releases/ReleaseActionStrip";
+import { ReleaseLifecycleStepper } from "@/components/releases/ReleaseLifecycleStepper";
 import { DbBlockerList } from "@/components/releases/DbBlockerList";
 import { DbReleaseDriftList } from "@/components/releases/DbReleaseDriftList";
 import { DbAIRiskPanel } from "@/components/releases/DbAIRiskPanel";
@@ -513,6 +514,15 @@ export function DbReleaseDetail({ id }: { id: string }) {
         }}
         onRecordDecision={recordDecision}
       />
+
+      {/* Full lifecycle rail on every release detail — order follows Settings sortOrder. */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)] sm:p-5">
+        <ReleaseLifecycleStepper
+          releaseId={id}
+          refreshKey={commandRefreshKey}
+          readinessPercent={release.readinessPercent}
+        />
+      </div>
 
       {/* Dashboard tiles — logical flow: ready → risks → envs → dates */}
       <div>

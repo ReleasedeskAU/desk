@@ -161,6 +161,30 @@ describe("listLegalNextStatuses / stepper", () => {
       true
     );
   });
+
+  it("keeps a disabled current status on the rail and blocks moves into disabled targets", () => {
+    const draft = {
+      ...config,
+      statuses: config.statuses.map((s) =>
+        s.key === "uat" ? { ...s, enabled: false } : s
+      ),
+      transitions: config.transitions.map((t) =>
+        t.fromKey === "uat" || t.toKey === "uat" ? { ...t, enabled: false } : t
+      ),
+    };
+    const model = buildLifecycleStepperModel({
+      config: draft,
+      currentStatus: "UAT",
+    });
+    assert.ok(model.mainline.some((s) => s.key === "uat" && s.state === "current"));
+    const denied = validateReleaseTransition({
+      config: draft,
+      fromStatus: "Testing",
+      toStatus: "UAT",
+      gateFacts: baseFacts,
+    });
+    assert.equal(denied.allowed, false);
+  });
 });
 
 describe("enforceReleaseStatusChange (PATCH path)", () => {

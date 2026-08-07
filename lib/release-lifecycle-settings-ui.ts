@@ -106,6 +106,106 @@ export function statusRemovalBlockReason(
 }
 
 /**
+ * Enable or disable a status. Disabling also turns off transitions that use it
+ * so the graph stays valid; enabling does not auto-restore those transitions.
+ *
+ * @param config - Draft config.
+ * @param key - Status key.
+ * @param enabled - Desired flag.
+ * @returns Next config, or an error string.
+ */
+export function toggleLifecycleStatus(
+  config: ReleaseLifecycleConfig,
+  key: string,
+  enabled: boolean
+): { config: ReleaseLifecycleConfig } | { error: string } {
+  const next = cloneLifecycleConfig(config);
+  const status = next.statuses.find((item) => item.key === key);
+  if (!status) return { error: `Unknown status: ${key}` };
+  status.enabled = enabled;
+  if (!enabled) {
+    // Keep validation happy: no enabled edge may touch a disabled status.
+    for (const item of next.transitions) {
+      if (item.fromKey === key || item.toKey === key) {
+        item.enabled = false;
+      }
+    }
+  }
+  const validationError = validateReleaseLifecycleConfig(next);
+  if (validationError) return { error: validationError };
+  return { config: next };
+}
+
+/**
+ * Apply a full status order (e.g. after drag-and-drop) by rewriting sortOrder.
+ *
+ * @param config - Draft config.
+ * @param orderedKeys - Status keys in the desired top-to-bottom order.
+ * @returns Next config, or an error string.
+ */
+export function reorderLifecycleStatuses(
+  config: ReleaseLifecycleConfig,
+  orderedKeys: string[]
+): { config: ReleaseLifecycleConfig } | { error: string } {
+  const existing = new Set(config.statuses.map((item) => item.key));
+  if (orderedKeys.length !== config.statuses.length) {
+    return { error: "Reorder must include every status exactly once" };
+  }
+  if (new Set(orderedKeys).size !== orderedKeys.length) {
+    return { error: "Reorder contains duplicate status keys" };
+  }
+  for (const key of orderedKeys) {
+    if (!existing.has(key)) return { error: `Unknown status: ${key}` };
+  }
+
+  const orderByKey = new Map(
+    orderedKeys.map((key, i) => [key, (i + 1) * 10] as const)
+  );
+  const next: ReleaseLifecycleConfig = {
+    ...config,
+    statuses: config.statuses.map((item) => ({
+      ...item,
+      sortOrder: orderByKey.get(item.key) ?? item.sortOrder,
+    })),
+  };
+  const validationError = validateReleaseLifecycleConfig(next);
+  if (validationError) return { error: validationError };
+  return { config: next };
+}
+
+/**
+ * Move a status one step up or down in display/timeline order (sortOrder).
+ *
+ * @param config - Draft config.
+ * @param key - Status key to move.
+ * @param direction - "up" = earlier in the journey, "down" = later.
+ * @returns Next config, or an error string.
+ */
+export function moveLifecycleStatus(
+  config: ReleaseLifecycleConfig,
+  key: string,
+  direction: "up" | "down"
+): { config: ReleaseLifecycleConfig } | { error: string } {
+  const sorted = [...config.statuses].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label)
+  );
+  const index = sorted.findIndex((item) => item.key === key);
+  if (index < 0) return { error: `Unknown status: ${key}` };
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= sorted.length) {
+    return { error: "Status is already at the end of the list" };
+  }
+  const reordered = sorted.slice();
+  const tmp = reordered[index]!;
+  reordered[index] = reordered[swapWith]!;
+  reordered[swapWith] = tmp;
+  return reorderLifecycleStatuses(
+    config,
+    reordered.map((item) => item.key)
+  );
+}
+
+/**
  * Remove a status and all transitions that reference it.
  * @param config - Draft config.
  * @param key - Status key to remove.
@@ -235,6 +335,59 @@ export function setLifecycleTransitionEnforcement(
       ? "This transition is Required but has no gates attached. Nothing will be checked when someone moves along this path."
       : null;
   return { config: next, warning };
+}
+
+/**
+ * Decide if a transition may be deleted from the draft.
+ * System defaults stay in the catalog (turn Off instead); custom edges can be removed.
+ *
+ * @param transition - Transition candidate.
+ * @returns null when removable, otherwise a user-facing block reason.
+ */
+export function transitionRemovalBlockReason(
+  transition: Pick<ReleaseLifecycleTransitionConfig, "isSystem" | "fromKey" | "toKey">
+): string | null {
+  if (transition.isSystem) {
+    return "Enterprise default transitions cannot be deleted — turn Off instead.";
+  }
+  return null;
+}
+
+/**
+ * Remove a custom transition (and its gate attachments) from the draft.
+ *
+ * @param config - Draft config.
+ * @param fromKey - Source status key.
+ * @param targetKey - Target key (status key or previous-status sentinel).
+ * @returns Next config, or an error string.
+ */
+export function removeLifecycleTransition(
+  config: ReleaseLifecycleConfig,
+  fromKey: string,
+  targetKey: string
+): { config: ReleaseLifecycleConfig } | { error: string } {
+  const item = config.transitions.find(
+    (transition) =>
+      transition.fromKey === fromKey &&
+      releaseLifecycleTargetKey(transition) === targetKey
+  );
+  if (!item) return { error: "Unknown transition" };
+  const blocked = transitionRemovalBlockReason(item);
+  if (blocked) return { error: blocked };
+
+  const next: ReleaseLifecycleConfig = {
+    ...config,
+    transitions: config.transitions.filter(
+      (transition) =>
+        !(
+          transition.fromKey === fromKey &&
+          releaseLifecycleTargetKey(transition) === targetKey
+        )
+    ),
+  };
+  const validationError = validateReleaseLifecycleConfig(next);
+  if (validationError) return { error: validationError };
+  return { config: next };
 }
 
 /**

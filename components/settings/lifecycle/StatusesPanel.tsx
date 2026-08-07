@@ -1,15 +1,17 @@
 "use client";
 
 /**
- * Statuses panel — list system + custom statuses; add custom; block unsafe deletes.
+ * Statuses panel — list system + custom statuses; toggle, drag-reorder, add, remove.
  */
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { GripVertical, Plus, Trash2 } from "lucide-react";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import {
   isHardBoundaryStatusKey,
   statusRemovalBlockReason,
   type StatusUsageMap,
 } from "@/lib/release-lifecycle-settings-ui";
+import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +25,9 @@ export type StatusesPanelProps = {
   onNewTerminalChange: (value: boolean) => void;
   onAdd: () => void;
   onRemove: (key: string) => void;
+  onToggleEnabled: (key: string, enabled: boolean) => void;
+  /** Apply a new top-to-bottom key order after drag-and-drop. */
+  onReorder: (orderedKeys: string[]) => void;
 };
 
 /**
@@ -38,8 +43,34 @@ export function StatusesPanel({
   onNewTerminalChange,
   onAdd,
   onRemove,
+  onToggleEnabled,
+  onReorder,
 }: StatusesPanelProps) {
   const sorted = [...config.statuses].sort((a, b) => a.sortOrder - b.sortOrder);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+
+  const applyDrop = (targetKey: string) => {
+    if (!editing || !dragKey || dragKey === targetKey) {
+      setDragKey(null);
+      setOverKey(null);
+      return;
+    }
+    const keys = sorted.map((s) => s.key);
+    const from = keys.indexOf(dragKey);
+    const to = keys.indexOf(targetKey);
+    if (from < 0 || to < 0) {
+      setDragKey(null);
+      setOverKey(null);
+      return;
+    }
+    const next = keys.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved!);
+    onReorder(next);
+    setDragKey(null);
+    setOverKey(null);
+  };
 
   return (
     <div className="space-y-4" data-testid="lifecycle-statuses-panel">
@@ -47,10 +78,41 @@ export function StatusesPanel({
         {sorted.map((status) => {
           const count = usage[status.key] ?? 0;
           const block = statusRemovalBlockReason(status, count);
+          const isDragging = dragKey === status.key;
+          const isOver = overKey === status.key && dragKey !== status.key;
           return (
             <li
               key={status.key}
-              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              draggable={editing}
+              onDragStart={(e) => {
+                if (!editing) return;
+                setDragKey(status.key);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", status.key);
+              }}
+              onDragEnd={() => {
+                setDragKey(null);
+                setOverKey(null);
+              }}
+              onDragOver={(e) => {
+                if (!editing || !dragKey) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (overKey !== status.key) setOverKey(status.key);
+              }}
+              onDragLeave={() => {
+                if (overKey === status.key) setOverKey(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                applyDrop(status.key);
+              }}
+              className={cn(
+                "flex flex-wrap items-center justify-between gap-3 px-4 py-3",
+                !status.enabled && "opacity-60",
+                isDragging && "opacity-40",
+                isOver && "bg-brand-500/8 dark:bg-brand-500/15"
+              )}
               data-testid={`lifecycle-status-row-${status.key}`}
             >
               <div className="min-w-0">
@@ -77,28 +139,69 @@ export function StatusesPanel({
                       Terminal
                     </span>
                   ) : null}
+                  {!status.enabled ? (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-200">
+                      Off
+                    </span>
+                  ) : null}
                 </div>
                 <p className="mt-0.5 font-mono text-[11px] text-slate-400 dark:text-white/40">
                   {status.key}
                   {count > 0 ? ` · ${count} release${count === 1 ? "" : "s"} in use` : ""}
                 </p>
               </div>
-              {editing ? (
-                <button
-                  type="button"
-                  className={cn(
-                    taBtnSecondary,
-                    "gap-1.5 px-3 py-1.5 text-[12px] text-rose-700 disabled:opacity-40 dark:text-rose-300"
-                  )}
-                  disabled={Boolean(block)}
-                  title={block ?? "Remove status"}
-                  onClick={() => onRemove(status.key)}
-                  data-testid={`lifecycle-status-remove-${status.key}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Remove
-                </button>
-              ) : null}
+
+              <div className="flex flex-wrap items-center gap-3">
+                {editing ? (
+                  <>
+                    <LifecycleToggle
+                      checked={status.enabled}
+                      onCheckedChange={(enabled) => onToggleEnabled(status.key, enabled)}
+                      label={status.enabled ? "On" : "Off"}
+                      title={
+                        status.enabled
+                          ? "Turn off — hides from timeline and next-status choices"
+                          : "Turn on — shows on timeline when transitions allow it"
+                      }
+                      aria-label={`${status.label} ${status.enabled ? "On" : "Off"}`}
+                      data-testid={`lifecycle-status-enabled-${status.key}`}
+                    />
+                    <button
+                      type="button"
+                      className="cursor-grab touch-none rounded-md px-1 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing dark:hover:bg-white/10 dark:hover:text-white/80"
+                      title="Drag to rearrange timeline order"
+                      aria-label={`Drag to reorder ${status.label}`}
+                      data-testid={`lifecycle-status-drag-${status.key}`}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <GripVertical className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        taBtnSecondary,
+                        "gap-1.5 px-3 py-1.5 text-[12px] text-rose-700 disabled:opacity-40 dark:text-rose-300"
+                      )}
+                      disabled={Boolean(block)}
+                      title={block ?? "Remove status"}
+                      onClick={() => onRemove(status.key)}
+                      data-testid={`lifecycle-status-remove-${status.key}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <LifecycleToggle
+                    checked={status.enabled}
+                    onCheckedChange={() => undefined}
+                    label={status.enabled ? "On" : "Off"}
+                    disabled
+                    aria-label={`${status.label} ${status.enabled ? "On" : "Off"}`}
+                    data-testid={`lifecycle-status-enabled-${status.key}`}
+                  />
+                )}
+              </div>
             </li>
           );
         })}

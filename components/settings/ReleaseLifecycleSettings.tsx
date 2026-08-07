@@ -4,8 +4,8 @@
  * Settings → Release Lifecycle — per-user statuses, transitions, and fixed-catalog gates.
  * Matches the Risk Engine settings pattern: section cards, Edit / Save / Cancel per page.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { GitBranch, Pencil, Save, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { CircleHelp, GitBranch, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultReleaseLifecycleConfig,
   validateReleaseLifecycleConfig,
@@ -16,8 +16,11 @@ import {
   addLifecycleTransition,
   cloneLifecycleConfig,
   removeLifecycleStatus,
+  removeLifecycleTransition,
+  reorderLifecycleStatuses,
   setLifecycleTransitionEnforcement,
   toggleLifecycleGate,
+  toggleLifecycleStatus,
   toggleLifecycleTransition,
   type StatusUsageMap,
 } from "@/lib/release-lifecycle-settings-ui";
@@ -30,16 +33,86 @@ import { cn } from "@/lib/utils";
 
 type PanelId = "statuses" | "transitions" | "gates";
 
+const LIFECYCLE_TAB_HELP: Record<
+  PanelId,
+  { title: string; points: string[] }
+> = {
+  statuses: {
+    title: "Quick help · Statuses",
+    points: [
+      "Statuses are the stages a release can sit in (Draft, Planning, Testing…).",
+      "Use On/Off to hide a stage you don’t use — don’t delete defaults.",
+      "Drag the ⋮⋮ handle to rearrange. That order is what the release detail timeline shows.",
+      "Only unused custom statuses can be removed.",
+    ],
+  },
+  transitions: {
+    title: "Quick help · Transitions",
+    points: [
+      "A transition is an allowed move from one stage to another (for example UAT → Pending CAB).",
+      "On = people can pick this move. Off = the move is hidden.",
+      "Flexible = if a gate fails, you can still proceed with a written reason.",
+      "Required = if a gate fails, the move is blocked — no override.",
+      "“1 gate” means 1 homework check is attached to that move. Click the row to manage those checks.",
+    ],
+  },
+  gates: {
+    title: "Quick help · Gates",
+    points: [
+      "Gates are homework checks on a specific move (booking exists, owner set, no blockers…).",
+      "“Active on this move” = the rules that actually run for the selected transition.",
+      "“Available checks” = the full menu. Turn Attached on to add a check to this move.",
+      "Whether a failed check blocks hard or allows an override is set on Transitions (Required vs Flexible).",
+    ],
+  },
+};
+
+/**
+ * Plain-language help callout shared across Release Lifecycle tabs.
+ */
+function LifecycleHelpBox({
+  title,
+  points,
+}: {
+  title: string;
+  points: string[];
+}) {
+  return (
+    <div
+      className="mb-4 rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 dark:border-sky-500/30 dark:bg-sky-500/10"
+      data-testid="lifecycle-help-box"
+      role="note"
+    >
+      <div className="flex items-start gap-2.5">
+        <CircleHelp
+          className="mt-0.5 h-4 w-4 shrink-0 text-sky-700 dark:text-sky-300"
+          aria-hidden
+        />
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-sky-950 dark:text-sky-100">{title}</p>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-sky-900/85 dark:text-sky-100/80">
+            {points.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SectionCard({
   step,
   title,
   subtitle,
+  help,
   children,
 }: {
   step: string;
   title: string;
   subtitle: string;
-  children: React.ReactNode;
+  help: { title: string; points: string[] };
+  children: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-[var(--border)] dark:bg-[var(--card)]">
@@ -54,6 +127,7 @@ function SectionCard({
           </p>
         </div>
       </div>
+      <LifecycleHelpBox title={help.title} points={help.points} />
       {children}
     </div>
   );
@@ -308,7 +382,8 @@ export function ReleaseLifecycleSettings() {
         <SectionCard
           step="1"
           title="Statuses"
-          subtitle="15 enterprise defaults stay protected. Add custom statuses for your process; removal is blocked when any release still uses that status."
+          subtitle="Use the On/Off switch for defaults (don’t delete them). Drag the ⋮⋮ handle beside the switch to rearrange — that order drives the release detail timeline. Custom statuses can be removed only when unused."
+          help={LIFECYCLE_TAB_HELP.statuses}
         >
           <StatusesPanel
             config={draft}
@@ -326,6 +401,12 @@ export function ReleaseLifecycleSettings() {
             onRemove={(key) => {
               applyResult(removeLifecycleStatus(draft, key, usage[key] ?? 0));
             }}
+            onToggleEnabled={(key, enabled) => {
+              applyResult(toggleLifecycleStatus(draft, key, enabled));
+            }}
+            onReorder={(orderedKeys) => {
+              applyResult(reorderLifecycleStatuses(draft, orderedKeys));
+            }}
           />
         </SectionCard>
       ) : null}
@@ -334,7 +415,8 @@ export function ReleaseLifecycleSettings() {
         <SectionCard
           step="2"
           title="Transitions"
-          subtitle="Allowed moves between statuses. Required transitions should have gates — you'll see a warning if they don't."
+          subtitle="Allowed moves between statuses. On = available as a next step. Required = gates hard-block (no override). Custom edges can be removed; defaults use Off instead."
+          help={LIFECYCLE_TAB_HELP.transitions}
         >
           <TransitionsPanel
             config={draft}
@@ -363,6 +445,16 @@ export function ReleaseLifecycleSettings() {
               setDraft(result.config);
               setEnforcementWarning(result.warning);
             }}
+            onRemove={(fromKey, targetKey) => {
+              applyResult(removeLifecycleTransition(draft, fromKey, targetKey));
+              if (
+                selectedFromKey === fromKey &&
+                selectedTargetKey === targetKey
+              ) {
+                setSelectedFromKey(null);
+                setSelectedTargetKey(null);
+              }
+            }}
             addFrom={addFrom}
             addTo={addTo}
             onAddFromChange={setAddFrom}
@@ -382,6 +474,7 @@ export function ReleaseLifecycleSettings() {
           step="3"
           title="Gates"
           subtitle="Attach gates from the fixed catalog only. Unreliable deploy gates are labeled so they cannot be mistaken for real protection."
+          help={LIFECYCLE_TAB_HELP.gates}
         >
           <GatesPanel
             config={draft}

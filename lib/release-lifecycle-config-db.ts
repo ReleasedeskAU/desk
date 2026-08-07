@@ -26,6 +26,16 @@ import {
   type ResolvedReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config-version";
 
+/**
+ * Neon pooler + multi-round-trip graph rewrites (delete statuses/transitions,
+ * createMany, version snapshot) regularly exceed Prisma's default 5s interactive
+ * transaction timeout. Match system-mapping's more generous budget.
+ */
+const LIFECYCLE_TX_OPTIONS = {
+  maxWait: 10_000,
+  timeout: 30_000,
+} as const;
+
 /** Load result — includes a loud signal when stored config was substituted. */
 export type LoadedReleaseLifecycleConfig = {
   config: ReleaseLifecycleConfig;
@@ -296,7 +306,10 @@ async function ensureVersionHistoryFromHead(
   if (existing) return existing;
 
   // Only backfill when we have a real head graph — never invent version 0.
-  return prisma.$transaction((tx) => appendConfigVersion(tx, clerkUserId, config));
+  return prisma.$transaction(
+    (tx) => appendConfigVersion(tx, clerkUserId, config),
+    LIFECYCLE_TX_OPTIONS
+  );
 }
 
 /**
@@ -326,7 +339,7 @@ export async function loadReleaseLifecycleConfig(
     await prisma.$transaction(async (tx) => {
       await writeGraph(tx, clerkUserId, defaults);
       await appendConfigVersion(tx, clerkUserId, defaults);
-    });
+    }, LIFECYCLE_TX_OPTIONS);
   } catch (error) {
     const concurrent = await readGraph(clerkUserId);
     if (concurrent) {
@@ -366,7 +379,7 @@ export async function saveReleaseLifecycleConfig(
     await tx.userReleaseLifecycleStatus.deleteMany({ where: { clerkUserId } });
     await writeGraph(tx, clerkUserId, config);
     await appendConfigVersion(tx, clerkUserId, config);
-  });
+  }, LIFECYCLE_TX_OPTIONS);
   const loaded = await readGraph(clerkUserId);
   return loaded?.config ?? normalizeReleaseLifecycleConfig(config);
 }

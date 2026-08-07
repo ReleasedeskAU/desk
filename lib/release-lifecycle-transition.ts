@@ -91,12 +91,20 @@ export function resolveLifecycleStatusRef(
   if (raw == null) return null;
   const trimmed = String(raw).trim();
   if (!trimmed) return null;
-  const byKey = config.statuses.find((s) => s.key === trimmed && s.enabled);
-  if (byKey) return byKey;
+  // Prefer enabled matches, but still resolve disabled statuses so releases
+  // already sitting on a toggled-off stage remain enforceable / displayable.
+  const byKeyEnabled = config.statuses.find((s) => s.key === trimmed && s.enabled);
+  if (byKeyEnabled) return byKeyEnabled;
   const lower = trimmed.toLocaleLowerCase();
+  const byLabelEnabled = config.statuses.find(
+    (s) => s.enabled && s.label.trim().toLocaleLowerCase() === lower
+  );
+  if (byLabelEnabled) return byLabelEnabled;
+  const byKeyAny = config.statuses.find((s) => s.key === trimmed);
+  if (byKeyAny) return byKeyAny;
   return (
     config.statuses.find(
-      (s) => s.enabled && s.label.trim().toLocaleLowerCase() === lower
+      (s) => s.label.trim().toLocaleLowerCase() === lower
     ) ?? null
   );
 }
@@ -276,6 +284,17 @@ export function validateReleaseTransition(args: {
       fromKey: from.key,
       toKey: toRequested.key,
       canonicalStatus: toRequested.label,
+    };
+  }
+
+  // Disabled targets stay in the catalog for history, but are not selectable.
+  if (!toRequested.enabled) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: `Status "${toRequested.label}" is turned off in the lifecycle configuration`,
+      fromKey: from.key,
+      toKey: toRequested.key,
     };
   }
 
@@ -494,8 +513,10 @@ export function buildLifecycleStepperModel(args: {
   }[];
 } {
   const current = resolveLifecycleStatusRef(args.config, args.currentStatus);
+  // Show every enabled status in configured order; keep the current stage
+  // visible even if it was toggled off after the release landed there.
   const enabled = args.config.statuses
-    .filter((s) => s.enabled)
+    .filter((s) => s.enabled || (current != null && s.key === current.key))
     .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
 
   const mainlineStatuses = enabled.filter(

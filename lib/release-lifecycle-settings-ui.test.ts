@@ -14,11 +14,16 @@ import {
   cloneLifecycleConfig,
   isAlwaysPassLifecycleGate,
   isHardBoundaryStatusKey,
+  moveLifecycleStatus,
   removeLifecycleStatus,
+  removeLifecycleTransition,
+  reorderLifecycleStatuses,
   setLifecycleTransitionEnforcement,
   statusRemovalBlockReason,
   toggleLifecycleGate,
+  toggleLifecycleStatus,
   toggleLifecycleTransition,
+  transitionRemovalBlockReason,
 } from "./release-lifecycle-settings-ui";
 
 describe("statusRemovalBlockReason / removeLifecycleStatus", () => {
@@ -73,6 +78,53 @@ describe("statusRemovalBlockReason / removeLifecycleStatus", () => {
   });
 });
 
+describe("status toggle and reorder", () => {
+  it("disables a default status and turns off its transitions", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const off = toggleLifecycleStatus(config, "uat", false);
+    assert.ok("config" in off);
+    const uat = off.config.statuses.find((s) => s.key === "uat");
+    assert.equal(uat?.enabled, false);
+    assert.equal(
+      off.config.transitions.some(
+        (t) => t.enabled && (t.fromKey === "uat" || t.toKey === "uat")
+      ),
+      false
+    );
+    assert.equal(validateReleaseLifecycleConfig(off.config), null);
+  });
+
+  it("moves a status earlier in sortOrder for the timeline", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const before = [...config.statuses]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => s.key);
+    const planningIdx = before.indexOf("planning");
+    assert.ok(planningIdx > 0);
+    const moved = moveLifecycleStatus(config, "planning", "up");
+    assert.ok("config" in moved);
+    const after = [...moved.config.statuses]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => s.key);
+    assert.equal(after[planningIdx - 1], "planning");
+    assert.equal(validateReleaseLifecycleConfig(moved.config), null);
+  });
+
+  it("reorders statuses by full key list (drag-and-drop)", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const keys = [...config.statuses]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => s.key);
+    const swapped = [keys[1]!, keys[0]!, ...keys.slice(2)];
+    const result = reorderLifecycleStatuses(config, swapped);
+    assert.ok("config" in result);
+    const after = [...result.config.statuses]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => s.key);
+    assert.deepEqual(after.slice(0, 2), [keys[1], keys[0]]);
+  });
+});
+
 describe("transition toggles", () => {
   it("toggles a transition on/off", () => {
     const config = createDefaultReleaseLifecycleConfig();
@@ -82,6 +134,26 @@ describe("transition toggles", () => {
       (t) => t.fromKey === "draft" && t.toKey === "planning"
     );
     assert.equal(edge?.enabled, false);
+  });
+
+  it("removes a custom transition but blocks deleting system defaults", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const system = config.transitions.find(
+      (t) => t.fromKey === "draft" && t.toKey === "planning"
+    )!;
+    assert.match(transitionRemovalBlockReason(system) ?? "", /cannot be deleted/);
+    assert.ok("error" in removeLifecycleTransition(config, "draft", "planning"));
+
+    const added = addLifecycleTransition(config, "draft", "testing");
+    assert.ok("config" in added);
+    const removed = removeLifecycleTransition(added.config, "draft", "testing");
+    assert.ok("config" in removed);
+    assert.equal(
+      removed.config.transitions.some(
+        (t) => t.fromKey === "draft" && t.toKey === "testing"
+      ),
+      false
+    );
   });
 
   it("warns when setting Required with no enabled gates", () => {

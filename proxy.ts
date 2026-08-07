@@ -7,7 +7,12 @@ const isPublicRoute = createRouteMatcher([
   // Legacy /api/auth/login removed from public allowlist — Clerk-only auth.
   // Dev-only overlay diagnostic (no auth). Safe: no secrets, local verification only.
   ...(process.env.NODE_ENV === "development"
-    ? ["/dev/sidebar-peek-test(.*)", "/dev/detail-visual-preview(.*)"]
+    ? [
+        "/dev/sidebar-peek-test(.*)",
+        "/dev/detail-visual-preview(.*)",
+        // TEMPORARY — remove with app/(main)/dev/lifecycle-ui-preview after Wave-1 screenshots
+        "/dev/lifecycle-ui-preview(.*)",
+      ]
     : []),
 ]);
 
@@ -34,6 +39,8 @@ function buildAuthorizedParties(): string[] {
   if (process.env.NODE_ENV === "development") {
     add("http://localhost:3000");
     add("http://127.0.0.1:3000");
+    add("http://localhost:3010");
+    add("http://127.0.0.1:3010");
     add("http://10.138.194.41:3000");
   }
 
