@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Release lifecycle PATCH enforcement: `PATCH /api/releases/[id]` validates status changes via `validateReleaseTransition` against the release's pinned (or latest-unpinned) config. Illegal/unknown statuses → 422; Flexible unmet gates need `overrideReason`; Required gates → 409 with no override. Canonical status label written on success.
+- Settings → **Release Lifecycle** tab: per-user statuses / transitions / fixed-catalog gates UI (`ReleaseLifecycleSettings`), plus `GET /api/release-lifecycle-config/status-usage` so custom statuses in use by any `Release.status` cannot be deleted. Own config only (session-scoped PUT unchanged).
 - Release lifecycle config versioning + pin (Wave 1 mid-flight guard): `UserReleaseLifecycleConfigVersion` snapshots on seed/save; `Release.lifecycleConfigVersionId`; new releases pin to the creator's latest version via `POST /api/releases`. Migration `20260807164500_lifecycle_config_version_pin`. Existing unpinned rows remain `latest-unpinned` (tracked in `docs/lifecycle-backlog.md`).
 - Migration history baseline (2026-08-07): `Organization` model tracked in Prisma to match live Neon; `20260807120000_baseline_post_reconciliation` migration; `docs/migration-history-note.md`. The other 25 abandoned tenancy-era tables are left in the DB and tracked for a separate cleanup ticket (`docs/tickets/cleanup-25-dead-tenancy-tables.md`).
 
