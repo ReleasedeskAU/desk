@@ -1,0 +1,395 @@
+/**
+ * Pure release-status transition validation against a lifecycle config.
+ *
+ * Flexible unmet gates require a non-empty overrideReason. Required unmet
+ * gates hard-block with no override path. Runtime gate facts are supplied by
+ * the caller (PATCH loads them from the DB).
+ */
+import {
+  RELEASE_LIFECYCLE_GATE_CATALOG,
+  type ReleaseLifecycleGateType,
+} from "@/lib/release-lifecycle-gates";
+import type {
+  ReleaseLifecycleConfig,
+  ReleaseLifecycleEnforcement,
+  ReleaseLifecycleGateAttachment,
+  ReleaseLifecycleStatusConfig,
+  ReleaseLifecycleTransitionConfig,
+} from "@/lib/release-lifecycle-config";
+
+export const MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH = 3;
+
+/** Facts the gate evaluators can inspect without free-form queries. */
+export type ReleaseLifecycleGateFacts = {
+  owner: string | null | undefined;
+  releaseSize: string | null | undefined;
+  priority: string | null | undefined;
+  releaseDate: Date | string | null | undefined;
+  rollbackPlan: string | null | undefined;
+  goLiveChecklistPercent: number | null | undefined;
+  /** Count of blockers still open for this release. */
+  openBlockerCount: number;
+  /** True when a UAT-purpose environment booking exists. */
+  hasUatBooking: boolean;
+  /** True when a deploy-purpose (or any active) deploy booking exists. */
+  hasDeployBooking: boolean;
+  /** True when all hard dependencies are Clear/Resolved. */
+  hardDependenciesMet: boolean;
+  /** True when required sign-off fields look complete. */
+  signoffsComplete: boolean;
+  /** Optional field bag for required_fields_set. */
+  fields?: Record<string, unknown>;
+};
+
+export type TransitionResult =
+  | {
+      allowed: true;
+      overridden: false;
+      fromKey: string;
+      toKey: string;
+      canonicalStatus: string;
+    }
+  | {
+      allowed: true;
+      overridden: true;
+      fromKey: string;
+      toKey: string;
+      canonicalStatus: string;
+      ruleIds: string[];
+      unmetReasons: string[];
+      overrideReason: string;
+    }
+  | {
+      allowed: false;
+      code:
+        | "UNKNOWN_STATUS"
+        | "ILLEGAL_TRANSITION"
+        | "TRANSITION_NEEDS_OVERRIDE"
+        | "TRANSITION_BLOCKED";
+      reason: string;
+      ruleIds?: string[];
+      unmetReasons?: string[];
+      fromKey?: string;
+      toKey?: string;
+    };
+
+function isPresent(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (value instanceof Date) return !Number.isNaN(value.getTime());
+  return true;
+}
+
+/**
+ * Resolve a client/DB status string to a config status (key or label, case-insensitive label).
+ * No legacy alias map — unmatched values return null.
+ */
+export function resolveLifecycleStatusRef(
+  config: ReleaseLifecycleConfig,
+  raw: string | null | undefined
+): ReleaseLifecycleStatusConfig | null {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  const byKey = config.statuses.find((s) => s.key === trimmed && s.enabled);
+  if (byKey) return byKey;
+  const lower = trimmed.toLocaleLowerCase();
+  return (
+    config.statuses.find(
+      (s) => s.enabled && s.label.trim().toLocaleLowerCase() === lower
+    ) ?? null
+  );
+}
+
+function effectiveGateEnforcement(
+  transition: ReleaseLifecycleTransitionConfig,
+  gate: ReleaseLifecycleGateAttachment
+): ReleaseLifecycleEnforcement {
+  if (gate.enforcement === "inherit") return transition.enforcement;
+  return gate.enforcement;
+}
+
+type GateEval = {
+  gateType: ReleaseLifecycleGateType;
+  passed: boolean;
+  reason: string;
+  ruleIds: string[];
+  enforcement: ReleaseLifecycleEnforcement;
+};
+
+/**
+ * Evaluate one catalog gate against provided facts.
+ * Missing/partial reliability still evaluates best-effort — unmet when unproven.
+ */
+export function evaluateLifecycleGate(
+  gate: ReleaseLifecycleGateAttachment,
+  facts: ReleaseLifecycleGateFacts,
+  transition: ReleaseLifecycleTransitionConfig
+): GateEval {
+  const def = RELEASE_LIFECYCLE_GATE_CATALOG[gate.gateType];
+  const enforcement = effectiveGateEnforcement(transition, gate);
+  const base = {
+    gateType: gate.gateType,
+    ruleIds: [...def.ruleIds],
+    enforcement,
+  };
+
+  const fail = (reason: string): GateEval => ({
+    ...base,
+    passed: false,
+    reason,
+  });
+  const pass = (): GateEval => ({
+    ...base,
+    passed: true,
+    reason: def.label,
+  });
+
+  if (!gate.enabled) return pass();
+
+  switch (gate.gateType) {
+    case "owner_set":
+      return isPresent(facts.owner) ? pass() : fail("Owner is not set");
+    case "size_set":
+      return isPresent(facts.releaseSize) ? pass() : fail("Release size is not set");
+    case "priority_set":
+      return isPresent(facts.priority) ? pass() : fail("Priority is not set");
+    case "go_live_date_set":
+      return isPresent(facts.releaseDate)
+        ? pass()
+        : fail("Go-live date is not set");
+    case "rollback_plan_documented":
+      return isPresent(facts.rollbackPlan)
+        ? pass()
+        : fail("Rollback plan is not documented");
+    case "no_open_blockers":
+    case "blocker_resolved":
+      return facts.openBlockerCount === 0
+        ? pass()
+        : fail(
+            `${facts.openBlockerCount} open blocker${facts.openBlockerCount === 1 ? "" : "s"} remain`
+          );
+    case "uat_environment_booked":
+      return facts.hasUatBooking
+        ? pass()
+        : fail("No UAT environment booking on record");
+    case "environment_booked_for_deploy":
+      return facts.hasDeployBooking
+        ? pass()
+        : fail("No deployment environment booking on record");
+    case "hard_dependencies_met":
+      return facts.hardDependenciesMet
+        ? pass()
+        : fail("Hard dependencies are not all clear");
+    case "signoffs_complete":
+      return facts.signoffsComplete
+        ? pass()
+        : fail("Required sign-offs are incomplete");
+    case "pre_deployment_checklist_complete":
+      return typeof facts.goLiveChecklistPercent === "number" &&
+        facts.goLiveChecklistPercent >= 100
+        ? pass()
+        : fail("Pre-deployment checklist is not complete");
+    case "required_fields_set": {
+      const fields = gate.params?.fields;
+      if (!Array.isArray(fields) || fields.length === 0) {
+        return fail("required_fields_set has no approved fields configured");
+      }
+      const bag = facts.fields ?? {};
+      const missing = fields.filter(
+        (field) => typeof field === "string" && !isPresent(bag[field])
+      );
+      return missing.length === 0
+        ? pass()
+        : fail(`Required fields missing: ${missing.join(", ")}`);
+    }
+    case "scope_unchanged_since_cab":
+      // Data reliability: missing — cannot prove; treat unmet until snapshot exists.
+      return fail(
+        "Scope-unchanged-since-CAB cannot be verified yet (no CAB scope snapshot)"
+      );
+    case "post_deployment_validation_complete":
+      return fail(
+        "Post-deployment validation cannot be verified yet (no validation record)"
+      );
+    case "root_cause_documented":
+      return fail(
+        "Rollback root cause cannot be verified yet (no dedicated root-cause field)"
+      );
+    default:
+      return fail(`Unhandled gate type: ${String(gate.gateType)}`);
+  }
+}
+
+function findEnabledTransition(
+  config: ReleaseLifecycleConfig,
+  fromKey: string,
+  toKey: string,
+  isPreviousStatus: boolean
+): ReleaseLifecycleTransitionConfig | null {
+  return (
+    config.transitions.find((item) => {
+      if (!item.enabled || item.fromKey !== fromKey) return false;
+      if (isPreviousStatus) return item.isPreviousStatus;
+      return !item.isPreviousStatus && item.toKey === toKey;
+    }) ?? null
+  );
+}
+
+/**
+ * Validate a status transition against the supplied lifecycle config.
+ *
+ * @param args.fromStatus - Current Release.status (key or label)
+ * @param args.toStatus - Requested next status (key or label)
+ * @param args.previousStatus - Prior status for `__previous__` interrupt returns
+ * @param args.overrideReason - Required when Flexible gates are unmet
+ * @param args.gateFacts - Evaluated checklist facts for attached gates
+ */
+export function validateReleaseTransition(args: {
+  config: ReleaseLifecycleConfig;
+  fromStatus: string;
+  toStatus: string;
+  previousStatus?: string | null;
+  overrideReason?: string | null;
+  gateFacts: ReleaseLifecycleGateFacts;
+}): TransitionResult {
+  const from = resolveLifecycleStatusRef(args.config, args.fromStatus);
+  const toRequested = resolveLifecycleStatusRef(args.config, args.toStatus);
+
+  if (!from || !toRequested) {
+    const which = !from && !toRequested
+      ? `current ("${args.fromStatus}") and requested ("${args.toStatus}")`
+      : !from
+        ? `current ("${args.fromStatus}")`
+        : `requested ("${args.toStatus}")`;
+    return {
+      allowed: false,
+      code: "UNKNOWN_STATUS",
+      reason: `Status ${which} is not in the lifecycle configuration. No legacy alias map is applied — migrate labels or use a configured status key/label.`,
+    };
+  }
+
+  if (from.key === toRequested.key) {
+    return {
+      allowed: true,
+      overridden: false,
+      fromKey: from.key,
+      toKey: toRequested.key,
+      canonicalStatus: toRequested.label,
+    };
+  }
+
+  if (from.terminal) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: `Status "${from.label}" is terminal — no further transitions are allowed`,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  const previous = resolveLifecycleStatusRef(args.config, args.previousStatus);
+  const isPreviousReturn =
+    Boolean(previous) && previous!.key === toRequested.key;
+
+  const transition =
+    findEnabledTransition(
+      args.config,
+      from.key,
+      toRequested.key,
+      false
+    ) ??
+    (isPreviousReturn
+      ? findEnabledTransition(args.config, from.key, toRequested.key, true)
+      : null);
+
+  if (!transition) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: `Transition from "${from.label}" to "${toRequested.label}" is not allowed by the lifecycle configuration`,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  const enabledGates = transition.gates.filter((g) => g.enabled);
+  const evaluations = enabledGates.map((gate) =>
+    evaluateLifecycleGate(gate, args.gateFacts, transition)
+  );
+  const unmet = evaluations.filter((e) => !e.passed);
+  if (unmet.length === 0) {
+    return {
+      allowed: true,
+      overridden: false,
+      fromKey: from.key,
+      toKey: toRequested.key,
+      canonicalStatus: toRequested.label,
+    };
+  }
+
+  const requiredUnmet = unmet.filter((e) => e.enforcement === "required");
+  const flexibleUnmet = unmet.filter((e) => e.enforcement === "flexible");
+  const unmetReasons = unmet.map((e) => e.reason);
+  const ruleIds = [...new Set(unmet.flatMap((e) => e.ruleIds))];
+
+  if (requiredUnmet.length > 0) {
+    return {
+      allowed: false,
+      code: "TRANSITION_BLOCKED",
+      reason:
+        "Transition blocked by required gate(s); override is not permitted",
+      unmetReasons: requiredUnmet.map((e) => e.reason),
+      ruleIds: [...new Set(requiredUnmet.flatMap((e) => e.ruleIds))],
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  const reasonText = (args.overrideReason ?? "").trim();
+  if (reasonText.length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH) {
+    return {
+      allowed: false,
+      code: "TRANSITION_NEEDS_OVERRIDE",
+      reason:
+        "Transition has unmet flexible gate(s). Provide overrideReason (min 3 characters) to proceed.",
+      unmetReasons,
+      ruleIds,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  return {
+    allowed: true,
+    overridden: true,
+    fromKey: from.key,
+    toKey: toRequested.key,
+    canonicalStatus: toRequested.label,
+    ruleIds,
+    unmetReasons,
+    overrideReason: reasonText,
+  };
+}
+
+/** Empty facts for unit tests / transitions with no gates. */
+export function emptyLifecycleGateFacts(
+  overrides: Partial<ReleaseLifecycleGateFacts> = {}
+): ReleaseLifecycleGateFacts {
+  return {
+    owner: null,
+    releaseSize: null,
+    priority: null,
+    releaseDate: null,
+    rollbackPlan: null,
+    goLiveChecklistPercent: null,
+    openBlockerCount: 0,
+    hasUatBooking: false,
+    hasDeployBooking: false,
+    hardDependenciesMet: true,
+    signoffsComplete: false,
+    fields: {},
+    ...overrides,
+  };
+}

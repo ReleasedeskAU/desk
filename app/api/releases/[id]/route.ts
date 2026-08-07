@@ -7,6 +7,7 @@ import {
   summarizeReleaseFieldEdits,
 } from "@/lib/release-audit";
 import { normalizeProgramProject } from "@/lib/release-id";
+import { enforceReleaseStatusChange } from "@/lib/release-lifecycle-status-patch";
 
 const releaseInclude = {
   department: true,
@@ -66,11 +67,64 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const realId = existing.id;
 
   const data: Record<string, unknown> = {};
-  for (const key of ["name", "owner", "status", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
+  for (const key of ["name", "owner", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
     if (body[key] !== undefined) data[key] = body[key];
   }
   if (body.programProject !== undefined) {
     data.programProject = normalizeProgramProject(body.programProject) ?? "N/A";
+  }
+
+  // Status changes go through lifecycle enforcement (pinned or latest-unpinned config).
+  let statusOverrideAudit: string | null = null;
+  if (body.status !== undefined) {
+    const requestedStatus = String(body.status);
+    if (requestedStatus !== existing.status) {
+      let enforcement;
+      try {
+        enforcement = await enforceReleaseStatusChange({
+          clerkUserId: user!.id,
+          release: {
+            id: existing.id,
+            releaseCode: existing.releaseCode,
+            status: existing.status,
+            owner: existing.owner,
+            releaseSize: existing.releaseSize,
+            priority: existing.priority,
+            releaseDate: existing.releaseDate,
+            rollbackPlan: existing.rollbackPlan,
+            goLiveChecklistPercent: existing.goLiveChecklistPercent,
+            lifecycleConfigVersionId: existing.lifecycleConfigVersionId,
+            devSignoff: existing.devSignoff,
+            testSignoff: existing.testSignoff,
+            uatSignoff: existing.uatSignoff,
+            securityClearance: existing.securityClearance,
+          },
+          requestedStatus,
+          overrideReason:
+            typeof body.overrideReason === "string" ? body.overrideReason : null,
+          previousStatusHint:
+            typeof body.previousStatus === "string" ? body.previousStatus : null,
+        });
+      } catch (err) {
+        console.error("[releases PATCH] lifecycle enforcement failed", {
+          releaseId: realId,
+          message: err instanceof Error ? err.message : "unknown",
+        });
+        return NextResponse.json(
+          { error: "Release status validation is temporarily unavailable" },
+          { status: 500 }
+        );
+      }
+      if (!enforcement.ok) {
+        return NextResponse.json(enforcement.body, {
+          status: enforcement.httpStatus,
+        });
+      }
+      data.status = enforcement.canonicalStatus;
+      if (enforcement.result.overridden) {
+        statusOverrideAudit = `overrideReason=${enforcement.result.overrideReason}; unmet=${enforcement.result.unmetReasons.join("|")}`;
+      }
+    }
   }
 
   for (const key of [
@@ -202,14 +256,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       !body.dependsOnReleaseIds &&
       !body.stakeholderIds;
 
+    const statusDetail = statusOnly
+      ? `Status changed to ${String(data.status)}${
+          statusOverrideAudit ? ` (${statusOverrideAudit})` : ""
+        }`
+      : [
+          ...auditParts,
+          ...(statusOverrideAudit
+            ? [`Status override: ${statusOverrideAudit}`]
+            : []),
+        ].join(" · ");
+
     await prisma.releaseAuditEvent.create({
       data: {
         releaseId: realId,
         action: statusOnly ? "status_change" : "edit",
         actor: auditActorName(user!),
-        detail: statusOnly
-          ? `Status changed to ${String(data.status)}`
-          : auditParts.join(" · "),
+        detail: statusDetail,
       },
     });
   }
