@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Migration history baseline (2026-08-07): `Organization` model tracked in Prisma to match live Neon; `20260807120000_baseline_post_reconciliation` migration; `docs/migration-history-note.md`. The other 25 abandoned tenancy-era tables are left in the DB and tracked for a separate cleanup ticket (`docs/tickets/cleanup-25-dead-tenancy-tables.md`).
+
 ### Removed
 
 - Quick Start Templates (`/templates`): guided demo scenario page, sidebar entry, quick-start seed APIs, search/help/voice catalog links. Excel/DB seed data remains the operational source. Restore from branch `archive/quick-start-templates` if needed.

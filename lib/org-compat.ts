@@ -2,12 +2,23 @@ import { prisma } from "./prisma";
 
 let cachedOrgId: string | null | undefined;
 
-/** v2 Neon DB has Organization FK columns not in v1 Prisma schema */
+/**
+ * Returns the default Organization id for live Neon writes.
+ *
+ * Not multi-tenant routing — only satisfies NOT NULL organizationId columns left
+ * from the July 2026 tenancy era. Local/v1 DBs without Organization return null
+ * and callers fall back to plain Prisma creates.
+ *
+ * @returns Organization id, or null when the table/row is unavailable.
+ */
 export async function getDefaultOrganizationId(): Promise<string | null> {
   if (cachedOrgId !== undefined) return cachedOrgId;
   try {
-    const rows = await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "Organization" LIMIT 1`;
-    cachedOrgId = rows[0]?.id ?? null;
+    const row = await prisma.organization.findFirst({
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    cachedOrgId = row?.id ?? null;
   } catch {
     cachedOrgId = null;
   }

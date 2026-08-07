@@ -12,6 +12,28 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/**
+ * Default organization row used by live Neon create-paths.
+ *
+ * This is NOT product multi-tenancy: reads are not org-scoped. Many tables still
+ * have NOT NULL organizationId from the July 2026 tenancy era; org-compat stamps
+ * this id on inserts. See docs/migration-history-note.md. The other 25 abandoned
+ * tenancy tables are intentionally omitted from this schema.
+ */
+model Organization {
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  status                String    @default("ACTIVE")
+  isSystemGlobal        Boolean   @default(false)
+  clerkOrgId            String?   @unique
+  logoUrl               String?
+  onboardingCompletedAt DateTime?
+  onboardingStep        String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
 model Department {
   id           String        @id @default(cuid())
   name         String        @unique
