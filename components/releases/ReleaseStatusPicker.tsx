@@ -87,7 +87,15 @@ export function ReleaseStatusPicker({
     });
     setBusy(false);
     if (!result.ok) {
-      const payload = result.data as { error?: string; code?: string } | null;
+      setError(result.error || "Status change failed");
+      return;
+    }
+    // rejectHttpErrors: false — HTTP errors still return ok:true with an error body.
+    if ((result.status ?? 0) >= 300) {
+      const payload =
+        result.data && typeof result.data === "object"
+          ? (result.data as { error?: string })
+          : null;
       setError(payload?.error ?? `Status change failed (${result.status})`);
       return;
     }

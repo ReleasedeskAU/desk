@@ -307,19 +307,42 @@ export type ReleaseLifecycleNormalizeResult = {
  * @returns Normalized config plus whether Enterprise Default was substituted.
  */
 export function normalizeReleaseLifecycleConfigResult(
-  raw: ReleaseLifecycleConfig | null | undefined,
+  raw: unknown,
   context?: { clerkUserId?: string }
 ): ReleaseLifecycleNormalizeResult {
-  if (!raw) {
+  if (raw == null) {
     return {
       config: createDefaultReleaseLifecycleConfig(),
       usedEnterpriseDefaultFallback: false,
       fallbackReason: null,
     };
   }
+  // Prisma JSON snapshots arrive as unknown — narrow before cloning.
+  if (
+    typeof raw !== "object" ||
+    !("statuses" in raw) ||
+    !("transitions" in raw) ||
+    !Array.isArray((raw as { statuses: unknown }).statuses) ||
+    !Array.isArray((raw as { transitions: unknown }).transitions)
+  ) {
+    const reason = "Stored lifecycle config is not a valid statuses/transitions graph";
+    console.error(
+      "[release-lifecycle-config] INVALID_STORED_CONFIG — falling back to Enterprise Default",
+      {
+        reason,
+        clerkUserId: context?.clerkUserId ?? null,
+      }
+    );
+    return {
+      config: createDefaultReleaseLifecycleConfig(),
+      usedEnterpriseDefaultFallback: true,
+      fallbackReason: reason,
+    };
+  }
+  const graph = raw as ReleaseLifecycleConfig;
   const candidate: ReleaseLifecycleConfig = {
-    statuses: raw.statuses.map((status) => ({ ...status })),
-    transitions: raw.transitions.map((item) => ({
+    statuses: graph.statuses.map((status) => ({ ...status })),
+    transitions: graph.transitions.map((item) => ({
       ...item,
       gates: item.gates.map((itemGate) => ({
         ...itemGate,
@@ -361,9 +384,7 @@ export function normalizeReleaseLifecycleConfigResult(
  * @param raw - Persisted graph, or null/undefined when none exists yet.
  * @returns Normalized lifecycle config (may be Enterprise Default after fallback).
  */
-export function normalizeReleaseLifecycleConfig(
-  raw: ReleaseLifecycleConfig | null | undefined
-): ReleaseLifecycleConfig {
+export function normalizeReleaseLifecycleConfig(raw: unknown): ReleaseLifecycleConfig {
   return normalizeReleaseLifecycleConfigResult(raw).config;
 }
 

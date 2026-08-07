@@ -238,10 +238,11 @@ function ReleasePreview() {
       </div>
 
       <ReleaseActionStrip
+        releaseId="preview-release"
         status="Blocked"
         decision="No-Go — blocked"
         canEdit
-        onPatchStatus={() => undefined}
+        onStatusChanged={() => undefined}
         onRecordDecision={() => undefined}
       />
 
@@ -256,7 +257,12 @@ function ReleasePreview() {
           title="Readiness & Lifecycle"
           description="Computed readiness, lifecycle stage, and next best actions."
         >
-          <ReadinessLifecycleContent data={mockCommand} storedReadiness={75} checklistPercent={79} />
+          <ReadinessLifecycleContent
+            releaseId="preview-release"
+            data={mockCommand}
+            storedReadiness={75}
+            checklistPercent={79}
+          />
         </DetailSection>
         <DetailSection
           id="blockers"
