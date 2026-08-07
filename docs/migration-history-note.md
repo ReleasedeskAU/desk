@@ -61,3 +61,21 @@ history has a single finished `0_baseline`.
 Anyone applying schema changes to production **outside** a committed migration
 file in this repository must document it in this note (or a dated addendum)
 **immediately** — not weeks later. Silent production DDL is how we lost July 2.
+
+## Note on `prisma migrate dev` vs `migrate deploy` (2026-08-07)
+
+`prisma migrate dev` still cannot run cleanly against this Neon database: the
+shadow-DB drift check sees the three July 2 migrations that exist in
+`_prisma_migrations` but have no SQL in the repo, and prompts for
+`migrate reset` (which we must never do on production data).
+
+For additive schema work (e.g. `20260807164500_lifecycle_config_version_pin`):
+
+1. Update `schema.prisma`
+2. Author the migration SQL under `prisma/migrations/<timestamp>_<name>/`
+3. Apply with `prisma migrate deploy`
+4. Confirm `prisma migrate status` is up to date
+5. Commit schema + migration SQL together
+
+That is the standard path for this project until the July 2 history gap is
+fully reconciled (it is not reconstructable — see above).

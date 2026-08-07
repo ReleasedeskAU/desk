@@ -184,6 +184,14 @@ model Release {
   /// Linked Jira issue key for webhook-driven release updates (e.g. REL-1 / PROJ-123).
   jiraIssueKey String?
 
+  /**
+   * Pin to the lifecycle config snapshot this release entered under.
+   * Null = legacy/unpinned — enforcement uses the caller's latest config
+   * (configPin: latest-unpinned). See docs/lifecycle-backlog.md.
+   */
+  lifecycleConfigVersionId String?
+  lifecycleConfigVersion   UserReleaseLifecycleConfigVersion? @relation(fields: [lifecycleConfigVersionId], references: [id], onDelete: Restrict)
+
   // --- Relations ---
   applications     ReleaseApplication[]
   dependsOn        ReleaseDependency[]      @relation("ReleaseDependsOn")
@@ -201,6 +209,7 @@ model Release {
   updatedAt        DateTime                 @updatedAt
 
   @@index([jiraIssueKey])
+  @@index([lifecycleConfigVersionId])
 }
 
 model ReleaseApplication {
@@ -880,6 +889,22 @@ model UserRiskEngineConfig {
   weightedBandCutoffs Json // {"low","medium","high","critical"} exclusive upper bounds
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+/**
+ * Immutable snapshot of a user's lifecycle graph at seed/save time.
+ * Pinned releases enforce against this JSON, not the mutable head tables.
+ */
+model UserReleaseLifecycleConfigVersion {
+  id          String    @id @default(cuid())
+  clerkUserId String
+  version     Int
+  snapshot    Json
+  createdAt   DateTime  @default(now())
+  releases    Release[]
+
+  @@unique([clerkUserId, version])
+  @@index([clerkUserId, createdAt])
 }
 
 /// Per-user release lifecycle statuses. organizationId is reserved for the

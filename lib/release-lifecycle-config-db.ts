@@ -3,6 +3,10 @@
  *
  * Missing graphs are seeded transactionally on first access. organizationId
  * remains null until the future organization-scoped cutover.
+ *
+ * Every seed/save appends an immutable UserReleaseLifecycleConfigVersion
+ * snapshot. New releases pin to the latest version; unpinned legacy rows
+ * resolve as configPin: latest-unpinned (see docs/lifecycle-backlog.md).
  */
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@releasedesk/database";
@@ -15,6 +19,12 @@ import {
   validateReleaseLifecycleConfig,
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
+import {
+  nextLifecycleConfigVersionNumber,
+  parseLifecycleConfigSnapshot,
+  resolveLifecycleConfigPin,
+  type ResolvedReleaseLifecycleConfig,
+} from "@/lib/release-lifecycle-config-version";
 
 /** Load result — includes a loud signal when stored config was substituted. */
 export type LoadedReleaseLifecycleConfig = {
@@ -24,6 +34,9 @@ export type LoadedReleaseLifecycleConfig = {
    * was returned instead. Clients must treat this as a data-integrity warning.
    */
   enterpriseDefaultFallback?: { reason: string };
+  /** Latest immutable version id when history exists. */
+  latestVersionId?: string | null;
+  latestVersion?: number | null;
 };
 
 type StatusRowInput = {
@@ -39,7 +52,7 @@ type StatusRowInput = {
   enabled: boolean;
 };
 
-/** Idempotent preview-database fallback matching the checked-in migration. */
+/** Idempotent preview-database fallback matching the checked-in migrations. */
 async function ensureUserReleaseLifecycleTables(): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "UserReleaseLifecycleStatus" (
@@ -86,6 +99,14 @@ async function ensureUserReleaseLifecycleTables(): Promise<void> {
         ON DELETE CASCADE ON UPDATE CASCADE
     )
   `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "UserReleaseLifecycleConfigVersion" (
+      "id" TEXT NOT NULL, "clerkUserId" TEXT NOT NULL, "version" INTEGER NOT NULL,
+      "snapshot" JSONB NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "UserReleaseLifecycleConfigVersion_pkey" PRIMARY KEY ("id")
+    )
+  `);
 
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS "UserReleaseLifecycleStatus_clerkUserId_key_key" ON "UserReleaseLifecycleStatus"("clerkUserId", "key")`,
@@ -98,6 +119,8 @@ async function ensureUserReleaseLifecycleTables(): Promise<void> {
     `CREATE UNIQUE INDEX IF NOT EXISTS "UserReleaseLifecycleGate_transitionId_gateType_key" ON "UserReleaseLifecycleGate"("transitionId", "gateType")`,
     `CREATE INDEX IF NOT EXISTS "UserReleaseLifecycleGate_clerkUserId_idx" ON "UserReleaseLifecycleGate"("clerkUserId")`,
     `CREATE INDEX IF NOT EXISTS "UserReleaseLifecycleGate_organizationId_idx" ON "UserReleaseLifecycleGate"("organizationId")`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "UserReleaseLifecycleConfigVersion_clerkUserId_version_key" ON "UserReleaseLifecycleConfigVersion"("clerkUserId", "version")`,
+    `CREATE INDEX IF NOT EXISTS "UserReleaseLifecycleConfigVersion_clerkUserId_createdAt_idx" ON "UserReleaseLifecycleConfigVersion"("clerkUserId", "createdAt")`,
   ];
   for (const statement of indexes) await prisma.$executeRawUnsafe(statement);
 }
@@ -112,6 +135,33 @@ function statusInputs(
     organizationId: null,
     ...status,
   }));
+}
+
+/**
+ * Append an immutable config snapshot for the user.
+ * @returns Created version row id and version number.
+ */
+async function appendConfigVersion(
+  tx: Prisma.TransactionClient,
+  clerkUserId: string,
+  config: ReleaseLifecycleConfig
+): Promise<{ id: string; version: number }> {
+  const agg = await tx.userReleaseLifecycleConfigVersion.aggregate({
+    where: { clerkUserId },
+    _max: { version: true },
+  });
+  const version = nextLifecycleConfigVersionNumber(agg._max.version);
+  const id = randomUUID();
+  await tx.userReleaseLifecycleConfigVersion.create({
+    data: {
+      id,
+      clerkUserId,
+      version,
+      // Store the validated graph as JSON — enforcement reads this, not head tables.
+      snapshot: config as unknown as Prisma.InputJsonValue,
+    },
+  });
+  return { id, version };
 }
 
 async function writeGraph(
@@ -224,32 +274,83 @@ async function readGraph(
   };
 }
 
+async function readLatestVersionMeta(
+  clerkUserId: string
+): Promise<{ id: string; version: number } | null> {
+  return prisma.userReleaseLifecycleConfigVersion.findFirst({
+    where: { clerkUserId },
+    orderBy: { version: "desc" },
+    select: { id: true, version: true },
+  });
+}
+
+/**
+ * If head tables exist but version history was never written (pre-versioning
+ * graphs), snapshot the current head as version 1 so new releases can pin.
+ */
+async function ensureVersionHistoryFromHead(
+  clerkUserId: string,
+  config: ReleaseLifecycleConfig
+): Promise<{ id: string; version: number } | null> {
+  const existing = await readLatestVersionMeta(clerkUserId);
+  if (existing) return existing;
+
+  // Only backfill when we have a real head graph — never invent version 0.
+  return prisma.$transaction((tx) => appendConfigVersion(tx, clerkUserId, config));
+}
+
 /**
  * Load and seed the caller's default lifecycle graph on first access.
+ * Seeds also create immutable version 1. Existing heads without history get
+ * a one-time version-1 backfill from the current graph.
+ *
  * @throws only when table setup/read/seed fails; callers decide read fallback.
- * @returns Config plus an optional Enterprise Default fallback warning.
+ * @returns Config plus optional Enterprise Default fallback warning and latest version meta.
  */
 export async function loadReleaseLifecycleConfig(
   clerkUserId: string
 ): Promise<LoadedReleaseLifecycleConfig> {
   await ensureUserReleaseLifecycleTables();
   const existing = await readGraph(clerkUserId);
-  if (existing) return existing;
+  if (existing) {
+    const latest = await ensureVersionHistoryFromHead(clerkUserId, existing.config);
+    return {
+      ...existing,
+      latestVersionId: latest?.id ?? null,
+      latestVersion: latest?.version ?? null,
+    };
+  }
 
   const defaults = createDefaultReleaseLifecycleConfig();
   try {
-    await prisma.$transaction((tx) => writeGraph(tx, clerkUserId, defaults));
+    await prisma.$transaction(async (tx) => {
+      await writeGraph(tx, clerkUserId, defaults);
+      await appendConfigVersion(tx, clerkUserId, defaults);
+    });
   } catch (error) {
     const concurrent = await readGraph(clerkUserId);
-    if (concurrent) return concurrent;
+    if (concurrent) {
+      const latest = await ensureVersionHistoryFromHead(clerkUserId, concurrent.config);
+      return {
+        ...concurrent,
+        latestVersionId: latest?.id ?? null,
+        latestVersion: latest?.version ?? null,
+      };
+    }
     throw error;
   }
   const afterSeed = await readGraph(clerkUserId);
-  return afterSeed ?? { config: defaults };
+  const latest = await readLatestVersionMeta(clerkUserId);
+  return {
+    config: afterSeed?.config ?? defaults,
+    latestVersionId: latest?.id ?? null,
+    latestVersion: latest?.version ?? null,
+  };
 }
 
 /**
- * Replace one user's lifecycle graph after complete validation.
+ * Replace one user's lifecycle graph after complete validation and append a
+ * new immutable config version (mid-flight releases keep their prior pin).
  * @throws on invalid graphs or persistence errors.
  */
 export async function saveReleaseLifecycleConfig(
@@ -264,7 +365,67 @@ export async function saveReleaseLifecycleConfig(
     await tx.userReleaseLifecycleTransition.deleteMany({ where: { clerkUserId } });
     await tx.userReleaseLifecycleStatus.deleteMany({ where: { clerkUserId } });
     await writeGraph(tx, clerkUserId, config);
+    await appendConfigVersion(tx, clerkUserId, config);
   });
   const loaded = await readGraph(clerkUserId);
   return loaded?.config ?? normalizeReleaseLifecycleConfig(config);
+}
+
+/**
+ * Latest version id for pinning a newly created release.
+ * Ensures the caller's graph (and version history) exists first.
+ * @returns Version row id, or null if versioning is unavailable.
+ */
+export async function getLatestLifecycleConfigVersionId(
+  clerkUserId: string
+): Promise<string | null> {
+  const loaded = await loadReleaseLifecycleConfig(clerkUserId);
+  return loaded.latestVersionId ?? null;
+}
+
+/**
+ * Resolve the lifecycle config a release should enforce against.
+ * Pinned releases use their snapshot; unpinned use latest (latest-unpinned).
+ *
+ * @param clerkUserId - Config owner (session user today)
+ * @param lifecycleConfigVersionId - Release.lifecycleConfigVersionId
+ * @returns Resolved config + pin kind for API/UI feedback
+ */
+export async function resolveLifecycleConfigForRelease(
+  clerkUserId: string,
+  lifecycleConfigVersionId: string | null | undefined
+): Promise<ResolvedReleaseLifecycleConfig> {
+  const latestLoaded = await loadReleaseLifecycleConfig(clerkUserId);
+  const latest = {
+    versionId: latestLoaded.latestVersionId ?? null,
+    version: latestLoaded.latestVersion ?? null,
+    config: latestLoaded.config,
+  };
+
+  let pinned: {
+    versionId: string;
+    version: number;
+    config: ReleaseLifecycleConfig;
+  } | null = null;
+
+  if (lifecycleConfigVersionId) {
+    const row = await prisma.userReleaseLifecycleConfigVersion.findFirst({
+      where: { id: lifecycleConfigVersionId, clerkUserId },
+      select: { id: true, version: true, snapshot: true },
+    });
+    if (row) {
+      const parsed = parseLifecycleConfigSnapshot(row.snapshot, { clerkUserId });
+      pinned = {
+        versionId: row.id,
+        version: row.version,
+        config: parsed.config,
+      };
+    }
+  }
+
+  return resolveLifecycleConfigPin({
+    lifecycleConfigVersionId,
+    pinned,
+    latest,
+  });
 }

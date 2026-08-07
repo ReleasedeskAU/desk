@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Release lifecycle config versioning + pin (Wave 1 mid-flight guard): `UserReleaseLifecycleConfigVersion` snapshots on seed/save; `Release.lifecycleConfigVersionId`; new releases pin to the creator's latest version via `POST /api/releases`. Migration `20260807164500_lifecycle_config_version_pin`. Existing unpinned rows remain `latest-unpinned` (tracked in `docs/lifecycle-backlog.md`).
 - Migration history baseline (2026-08-07): `Organization` model tracked in Prisma to match live Neon; `20260807120000_baseline_post_reconciliation` migration; `docs/migration-history-note.md`. The other 25 abandoned tenancy-era tables are left in the DB and tracked for a separate cleanup ticket (`docs/tickets/cleanup-25-dead-tenancy-tables.md`).
 
 ### Removed

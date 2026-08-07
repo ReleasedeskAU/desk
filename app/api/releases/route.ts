@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { releaseListOrderBy, releaseListWhere, sp } from "@/lib/list-api-filters";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
 import { createReleaseRow } from "@/lib/org-compat";
+import { getLatestLifecycleConfigVersionId } from "@/lib/release-lifecycle-config-db";
 
 function optionalString(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
   const body = await req.json();
 
@@ -57,6 +58,19 @@ export async function POST(req: Request) {
   }
 
   const releaseDate = body.releaseDate ? new Date(body.releaseDate) : new Date();
+
+  // Pin new releases to the creator's latest lifecycle snapshot so mid-flight
+  // config edits cannot re-route them. Existing rows stay unpinned until backfill.
+  let lifecycleConfigVersionId: string | null = null;
+  try {
+    lifecycleConfigVersionId = await getLatestLifecycleConfigVersionId(user!.id);
+  } catch (pinError) {
+    // Fail open on pin only — release create must not break if versioning is unavailable.
+    console.error("[release-create] lifecycle config pin failed", {
+      clerkUserId: user!.id,
+      message: pinError instanceof Error ? pinError.message : "unknown",
+    });
+  }
 
   const created = await createReleaseRow({
       releaseCode,
@@ -87,8 +101,8 @@ export async function POST(req: Request) {
       goLiveChecklistPercent: optionalFloat(body.goLiveChecklistPercent) ?? null,
       deploymentWindow: optionalString(body.deploymentWindow) ?? null,
       releaseOwnerId: optionalString(body.releaseOwnerId) ?? null,
-  });
-
+      lifecycleConfigVersionId,
+    });
   await Promise.all([
     body.applicationIds?.length
       ? prisma.releaseApplication.createMany({
