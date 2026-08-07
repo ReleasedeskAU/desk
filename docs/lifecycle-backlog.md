@@ -24,6 +24,17 @@ or only partially shipped.
 > mid-flight editing problem is NOT solved for them yet, only for new
 > releases going forward. Needs a deliberate backfill/pin decision later.**
 
+**Done (2026-08-07) — status / approval vocabulary on live data:**
+
+- Neon backup: `backup-pre-status-migration-2026-08-07` (`br-winter-tooth-ahjq9rcn`)
+- Script 1: `scripts/migrate-release-status-vocabulary.ts` — 7 rows remapped
+  (Approved→CAB Approved, Complete→Deployed, In Progress→Planning,
+  Scheduled→Planning) + audit `status_migration`
+- Script 2: `scripts/migrate-release-approval-status.ts` — 75 rows cleaned
+  (Draft/Planning/Testing→Not Submitted, CAB Submitted→Pending; On Hold kept)
+  + audit `approval_status_migration`
+- Verified: `legacyStatus=0`, `legacyApproval=0`
+
 Do not treat that backfill as optional polish. Until those rows are pinned
 (or explicitly accepted as “follow latest”), editing a user’s lifecycle
 rules can still strand or re-route in-flight work for those 80.
