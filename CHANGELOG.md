@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Settings → **Release Lifecycle** tab: per-user statuses / transitions / fixed-catalog gates UI (`ReleaseLifecycleSettings`), plus `GET /api/release-lifecycle-config/status-usage` so custom statuses in use by any `Release.status` cannot be deleted. Own config only (session-scoped PUT unchanged).
 - Migration history baseline (2026-08-07): `Organization` model tracked in Prisma to match live Neon; `20260807120000_baseline_post_reconciliation` migration; `docs/migration-history-note.md`. The other 25 abandoned tenancy-era tables are left in the DB and tracked for a separate cleanup ticket (`docs/tickets/cleanup-25-dead-tenancy-tables.md`).
 
 ### Removed
