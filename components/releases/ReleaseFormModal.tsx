@@ -73,15 +73,21 @@ type CreatedSummary = {
 };
 
 const STATUSES = [
-  "Planned",
-  "Scheduled",
-  "Ready",
-  "In Progress",
-  "Approved",
+  "Draft",
+  "Planning",
+  "Testing",
+  "UAT",
+  "Pending CAB",
+  "CAB Approved",
+  "Ready to deploy",
+  "Deploying",
+  "Deployed",
+  "Closed",
+  "Cancelled",
   "Blocked",
-  "At Risk",
-  "Complete",
-  "Shipped",
+  "Rolled Back",
+  "Deferred",
+  "Rejected",
 ];
 const PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium", "P4 - Low"];
 const IMPACTS = ["High", "Medium", "Low"];
@@ -92,7 +98,7 @@ const EMPTY_FORM: ReleaseFormData = {
   name: "",
   programProject: "",
   owner: "",
-  status: "Planned",
+  status: "Draft",
   releaseDate: "",
   priority: "P3 - Medium",
   impact: "Medium",

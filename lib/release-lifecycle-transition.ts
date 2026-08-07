@@ -393,3 +393,145 @@ export function emptyLifecycleGateFacts(
     ...overrides,
   };
 }
+
+export type LegalNextGateView = {
+  gateType: ReleaseLifecycleGateType;
+  label: string;
+  passed: boolean;
+  enforcement: ReleaseLifecycleEnforcement;
+  reason: string;
+  /** Flexible unmet — warn / needs override. */
+  soft: boolean;
+  /** Required unmet — hard block. */
+  hard: boolean;
+};
+
+export type LegalNextStatusView = {
+  key: string;
+  label: string;
+  kind: ReleaseLifecycleStatusConfig["kind"];
+  isPreviousStatus: boolean;
+  transitionEnforcement: ReleaseLifecycleEnforcement;
+  gates: LegalNextGateView[];
+  outcome: "allowed" | "needs_override" | "blocked";
+};
+
+/**
+ * List legal next statuses from the current status with inline gate feedback.
+ * Does not consume overrideReason — used by the status picker preview.
+ */
+export function listLegalNextStatuses(args: {
+  config: ReleaseLifecycleConfig;
+  fromStatus: string;
+  previousStatus?: string | null;
+  gateFacts: ReleaseLifecycleGateFacts;
+}): LegalNextStatusView[] {
+  const from = resolveLifecycleStatusRef(args.config, args.fromStatus);
+  if (!from || from.terminal) return [];
+
+  const previous = resolveLifecycleStatusRef(args.config, args.previousStatus);
+  const statusByKey = new Map(args.config.statuses.map((s) => [s.key, s]));
+  const edges = args.config.transitions.filter(
+    (item) => item.enabled && item.fromKey === from.key
+  );
+
+  const results: LegalNextStatusView[] = [];
+  for (const edge of edges) {
+    let to: ReleaseLifecycleStatusConfig | null = null;
+    if (edge.isPreviousStatus) {
+      if (!previous || previous.key === from.key) continue;
+      to = previous;
+    } else if (edge.toKey) {
+      to = statusByKey.get(edge.toKey) ?? null;
+    }
+    if (!to || !to.enabled) continue;
+
+    const evaluations = edge.gates
+      .filter((g) => g.enabled)
+      .map((gate) => evaluateLifecycleGate(gate, args.gateFacts, edge));
+    const gates: LegalNextGateView[] = evaluations.map((e) => ({
+      gateType: e.gateType,
+      label: RELEASE_LIFECYCLE_GATE_CATALOG[e.gateType].label,
+      passed: e.passed,
+      enforcement: e.enforcement,
+      reason: e.reason,
+      soft: !e.passed && e.enforcement === "flexible",
+      hard: !e.passed && e.enforcement === "required",
+    }));
+    const hasHard = gates.some((g) => g.hard);
+    const hasSoft = gates.some((g) => g.soft);
+    results.push({
+      key: to.key,
+      label: to.label,
+      kind: to.kind,
+      isPreviousStatus: edge.isPreviousStatus,
+      transitionEnforcement: edge.enforcement,
+      gates,
+      outcome: hasHard ? "blocked" : hasSoft ? "needs_override" : "allowed",
+    });
+  }
+
+  return results.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Build the mainline rail + interrupt panel model for the detail stepper. */
+export function buildLifecycleStepperModel(args: {
+  config: ReleaseLifecycleConfig;
+  currentStatus: string;
+}): {
+  currentKey: string | null;
+  currentLabel: string;
+  mainline: {
+    key: string;
+    label: string;
+    state: "complete" | "current" | "upcoming";
+  }[];
+  interruptPanels: {
+    key: string;
+    label: string;
+    kind: ReleaseLifecycleStatusConfig["kind"];
+    active: boolean;
+  }[];
+} {
+  const current = resolveLifecycleStatusRef(args.config, args.currentStatus);
+  const enabled = args.config.statuses
+    .filter((s) => s.enabled)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+
+  const mainlineStatuses = enabled.filter(
+    (s) => s.kind === "mainline" || (s.kind === "terminal" && s.key === "closed")
+  );
+  const interruptStatuses = enabled.filter(
+    (s) =>
+      s.kind === "interrupt" ||
+      s.kind === "branch" ||
+      (s.kind === "terminal" && s.key !== "closed")
+  );
+
+  const currentIdx = current
+    ? mainlineStatuses.findIndex((s) => s.key === current.key)
+    : -1;
+  const onMainline = currentIdx >= 0;
+
+  return {
+    currentKey: current?.key ?? null,
+    currentLabel: current?.label ?? args.currentStatus,
+    mainline: mainlineStatuses.map((s, idx) => ({
+      key: s.key,
+      label: s.label,
+      state: !onMainline
+        ? ("upcoming" as const)
+        : idx < currentIdx
+          ? ("complete" as const)
+          : idx === currentIdx
+            ? ("current" as const)
+            : ("upcoming" as const),
+    })),
+    interruptPanels: interruptStatuses.map((s) => ({
+      key: s.key,
+      label: s.label,
+      kind: s.kind,
+      active: current?.key === s.key,
+    })),
+  };
+}

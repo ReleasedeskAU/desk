@@ -357,17 +357,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
     [lookups.releases]
   );
 
-  const patchStatus = async (status: string) => {
-    await safeFetchJson(`/api/releases/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-      label: "release-patch-status",
-    });
-    load();
-    refreshCommandCenter();
-  };
-
   const recordDecision = async (detail: string) => {
     await safeFetchJson(`/api/releases/${id}/events`, {
       method: "POST",
@@ -513,10 +502,15 @@ export function DbReleaseDetail({ id }: { id: string }) {
       />
 
       <ReleaseActionStrip
+        releaseId={id}
         status={release.status}
         decision={release.decision}
         canEdit={canEdit}
-        onPatchStatus={patchStatus}
+        refreshKey={commandRefreshKey}
+        onStatusChanged={() => {
+          load();
+          refreshCommandCenter();
+        }}
         onRecordDecision={recordDecision}
       />
 
@@ -735,9 +729,11 @@ export function DbReleaseDetail({ id }: { id: string }) {
         >
           {commandData ? (
             <ReadinessLifecycleContent
+              releaseId={id}
               data={commandData}
               storedReadiness={release.readinessPercent}
               checklistPercent={release.goLiveChecklistPercent}
+              refreshKey={commandRefreshKey}
             />
           ) : (
             <div className="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-white/5" />

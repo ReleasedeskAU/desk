@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { ReadinessGauge } from "@/components/gauges/ReadinessGauge";
-import { ReleaseLifecycleStrip } from "@/components/releases/ReleaseLifecycleStrip";
+import { ReleaseLifecycleStepper } from "@/components/releases/ReleaseLifecycleStepper";
 import { DbPredictiveNudge } from "@/components/releases/DbPredictiveNudge";
 import { EmptyHint, ScoreBar } from "@/components/detail/editable";
 import type { DbNextAction } from "@/lib/db-release-command";
@@ -57,22 +57,26 @@ export function useReleaseCommandCenter({
 }
 
 type ReadinessLifecycleContentProps = {
+  releaseId: string;
   data: CommandCenterData;
   storedReadiness?: number | null;
   checklistPercent?: number | null;
+  refreshKey?: number;
 };
 
 /**
- * Full Readiness & Lifecycle tile body: predictive nudge, 6-stage strip,
- * readiness signal breakdown, and next-best-actions list.
+ * Full Readiness & Lifecycle tile body: predictive nudge, config-driven
+ * lifecycle stepper, readiness signal breakdown, and next-best-actions list.
  *
  * @param props - Command-center data plus stored/checklist readiness signals.
  * @returns Expanded tile content (existing intelligence, repositioned).
  */
 export function ReadinessLifecycleContent({
+  releaseId,
   data,
   storedReadiness,
   checklistPercent,
+  refreshKey = 0,
 }: ReadinessLifecycleContentProps) {
   return (
     <div className="space-y-5">
@@ -82,7 +86,11 @@ export function ReadinessLifecycleContent({
         <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
           Release lifecycle
         </p>
-        <ReleaseLifecycleStrip stages={data.stages} embedded />
+        <ReleaseLifecycleStepper
+          releaseId={releaseId}
+          refreshKey={refreshKey}
+          readinessPercent={storedReadiness ?? data.readiness}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -189,9 +197,11 @@ export function DbReleaseCommandCenter({
   }
   return (
     <ReadinessLifecycleContent
+      releaseId={releaseId}
       data={data}
       storedReadiness={storedReadiness}
       checklistPercent={checklistPercent}
+      refreshKey={refreshKey}
     />
   );
 }

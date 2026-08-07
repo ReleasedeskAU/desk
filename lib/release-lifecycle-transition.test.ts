@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import {
+  buildLifecycleStepperModel,
   emptyLifecycleGateFacts,
+  listLegalNextStatuses,
   resolveLifecycleStatusRef,
   validateReleaseTransition,
 } from "@/lib/release-lifecycle-transition";
@@ -127,6 +129,37 @@ describe("validateReleaseTransition", () => {
       gateFacts: emptyLifecycleGateFacts({ openBlockerCount: 0 }),
     });
     assert.equal(result.allowed, true);
+  });
+});
+
+describe("listLegalNextStatuses / stepper", () => {
+  it("lists only legal next statuses with soft gate flags", () => {
+    const next = listLegalNextStatuses({
+      config,
+      fromStatus: "Planning",
+      gateFacts: emptyLifecycleGateFacts({ owner: null, releaseSize: null }),
+    });
+    const testing = next.find((n) => n.key === "testing");
+    assert.ok(testing);
+    assert.equal(testing!.outcome, "needs_override");
+    assert.ok(testing!.gates.some((g) => g.soft));
+    assert.equal(
+      next.some((n) => n.key === "deployed"),
+      false
+    );
+  });
+
+  it("builds mainline rail and interrupt panels", () => {
+    const model = buildLifecycleStepperModel({
+      config,
+      currentStatus: "Blocked",
+    });
+    assert.ok(model.mainline.some((s) => s.key === "draft"));
+    assert.ok(model.interruptPanels.some((p) => p.key === "blocked" && p.active));
+    assert.equal(
+      model.mainline.every((s) => s.state === "upcoming"),
+      true
+    );
   });
 });
 

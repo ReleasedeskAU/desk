@@ -77,7 +77,7 @@ export async function POST(req: Request) {
       name: String(body.name ?? ""),
       programProject: normalizeProgramProject(body.programProject ?? "") ?? "N/A",
       owner: String(body.owner ?? "Unknown"),
-      status: String(body.status ?? "Planned"),
+      status: String(body.status ?? "Draft"),
       releaseDate,
       priority: String(body.priority ?? "P3 - Medium"),
       impact: String(body.impact ?? "Medium"),
