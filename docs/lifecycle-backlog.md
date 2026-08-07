@@ -1,33 +1,46 @@
 # Release Lifecycle — Tracked Backlog
 
-Requirements that are **agreed and mandatory**, but intentionally deferred.
+Requirements that are **agreed and mandatory**, but intentionally deferred
+or only partially shipped.
 
-## Effective-dating / config versioning (BLOCKING for live enforcement)
+## Effective-dating / config versioning (Wave 1 mid-flight guard)
 
-**Status:** Not started. Required before we ever turn on live transition
-enforcement or hard "no override" (Required) gates.
+**Status:** Snapshot + pin shipped for **new** releases (2026-08-07).
 
-**Why:** Today `saveReleaseLifecycleConfig` fully replaces the caller's
-graph. `Release.status` is a free string with no pin to a config version.
-If rules change while a release is mid-flow, later enforcement would
-evaluate against the *current* graph and can strand or re-route in-flight
-work.
+**What shipped:**
+
+- `UserReleaseLifecycleConfigVersion` — immutable JSON snapshot on every
+  seed/save
+- `Release.lifecycleConfigVersionId` — pin to the snapshot the release
+  entered under
+- `POST /api/releases` pins new rows to the creator's latest version
+- Enforcement (when wired) must call `resolveLifecycleConfigForRelease`
+  so pinned releases keep their graph after settings edits
+
+**Still open — existing unpinned releases:**
+
+> **80 existing releases remain unpinned (`configPin: latest-unpinned`) —
+> they silently follow whatever the current latest config is, meaning the
+> mid-flight editing problem is NOT solved for them yet, only for new
+> releases going forward. Needs a deliberate backfill/pin decision later.**
+
+Do not treat that backfill as optional polish. Until those rows are pinned
+(or explicitly accepted as “follow latest”), editing a user’s lifecycle
+rules can still strand or re-route in-flight work for those 80.
 
 **Must ship before:**
 
-- Evaluating gates at transition time
 - Promoting any transition/gate from Flexible to Required with hard block
 - Any "no override" CAB/go-live gate behaviour
 
-**Out of scope until then:** Soft/Flexible warnings that only read the
-latest config remain acceptable for previews.
+**Still deferred (optional layering):**
 
-**Rough shape (when we build it):**
+- Effective-dating (`effectiveFrom` / `effectiveTo`) for scheduled cutovers
+- UI “adopt latest config” for a single in-flight release
+- Migration path that pins the 80 existing rows to a chosen version
 
-- Version or effective-date the lifecycle graph (or snapshot on change)
-- Pin each in-flight release to the config version it entered under
-- Enforcement reads the pinned snapshot; new releases use latest
-- Migration path for existing rows
+## Other deferred items
 
-Do not treat this as optional polish — it is a release gate for Wave 1
-enforcement.
+- Provisional Override (never built)
+- Org-scoped config (`organizationId` / `tenant_id`) — still `clerkUserId` today
+- Hard Required gates on Deploying → Deployed / Deployed → Closed (stay Flexible)
