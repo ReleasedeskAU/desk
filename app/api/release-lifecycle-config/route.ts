@@ -85,8 +85,21 @@ export async function GET() {
   if (error) return error;
 
   try {
-    const config = await loadReleaseLifecycleConfig(user!.id);
-    return NextResponse.json({ config });
+    const loaded = await loadReleaseLifecycleConfig(user!.id);
+    // Surface fallback loudly to the client — never silently serve Enterprise
+    // Default when the caller's stored graph failed validation.
+    if (loaded.enterpriseDefaultFallback) {
+      return NextResponse.json({
+        config: loaded.config,
+        warning: {
+          code: "ENTERPRISE_DEFAULT_FALLBACK",
+          message:
+            "Stored lifecycle config was invalid and was replaced with the Enterprise Default for this response. Fix and re-save the configuration.",
+          reason: loaded.enterpriseDefaultFallback.reason,
+        },
+      });
+    }
+    return NextResponse.json({ config: loaded.config });
   } catch (loadError) {
     console.error("[release-lifecycle-config] load failed", {
       name: loadError instanceof Error ? loadError.name : "UnknownError",

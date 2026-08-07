@@ -16,6 +16,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Release lifecycle previous-status validation is config-driven: any status with `kind: "interrupt"` may own a `__previous__` edge (no longer hardcoded to key `"blocked"`).
+- Invalid stored lifecycle graphs still fall back to the Enterprise Default for reads, but the fallback is loud: structured `console.error`, `usedEnterpriseDefaultFallback` on normalize, and GET `/api/release-lifecycle-config` returns `warning.code = ENTERPRISE_DEFAULT_FALLBACK`.
 - Voice session continuity: store Gemini resumption handles only when `resumable !== false` (avoid wiping a good handle mid-tool-call); proactive audio remint at ~8 min before the typical ~10 min Live WebSocket cut; quiet planned refresh (no false “network outage” apology); local transcript digest bridge when resume fails; reconnect remints no longer invalidate pending `propose_action` rows.
 - Voice silent WebSocket renew (Gemini-app style): planned remints keep the mic UI connected with no orange flash/transcript noise; `contextWindowCompression.slidingWindow` enabled so sessions can run for hours (only the ~10 min socket is swapped under the hood).
 - Voice list context: richer `[APP_CONTEXT]` (up to 40 rows with labels) pushed alongside each user utterance; `10th blocker` / `blocker 10` ordinal parsing; spoken BLK-/RSK-/CNF- code normalization; `useVoiceListContext` on dependencies, drifts, approvals, incidents, alerts, leaves, maintenance, and flows (not only releases).
@@ -26,6 +28,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Second-config regression suite: compact 4-status lifecycle (`Draft` / `In Review` / `Approved` / `Live`) exercises validate/normalize against a non–Enterprise-Default graph.
+- Tracked backlog: effective-dating / config versioning is mandatory before live enforcement or hard Required gates (`docs/lifecycle-backlog.md`).
 - Per-user Release lifecycle configuration foundation: Clerk-user-scoped statuses, transitions, and fixed-catalog gate attachments with the locked 15-status defaults. `organizationId` is reserved for a later org cutover. Deploying → Deployed and Deployed → Closed intentionally seed as Flexible until their underlying facts are trustworthy.
 - Voice **manager tools**: `get_release_bundle`, `get_attention_brief`, `get_calendar_window`, `compare_releases`, `open_entity`, `copy_visible_codes`, `undo_filters`. Propose/confirm writes extended with `update_blocker` and `update_conflict` (same Zod PATCH schemas as the UI).
 - Voice **page-context agent**: `get_page_context` returns exact on-screen/filtered table rows (codes + names) from APP_CONTEXT; Live receives silent `[PAGE_UPDATE]` when the list refreshes after filters. Filtered list asks no longer require screen share. Identity: built by the **Release Desk Team** (never Google).

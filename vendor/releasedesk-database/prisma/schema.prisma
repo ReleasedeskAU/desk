@@ -886,8 +886,9 @@ model UserReleaseLifecycleStatus {
 }
 
 /// Per-user allowed release-status transition. targetKey is a stable,
-/// tenant-scoped uniqueness discriminator; "__previous__" represents
-/// Blocked returning to Release.previousStatus.
+/// tenant-scoped uniqueness discriminator; "__previous__" represents an
+/// interrupt status returning to the release's prior status (any interrupt
+/// kind in config — not hardcoded to a "blocked" key).
 model UserReleaseLifecycleTransition {
   id               String   @id @default(cuid())
   clerkUserId      String

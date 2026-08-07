@@ -243,8 +243,10 @@ export function validateReleaseLifecycleConfig(
     if (item.isPreviousStatus !== (item.toKey === null)) {
       return `Transition ${item.fromKey} has an invalid previous-status target`;
     }
-    if (item.isPreviousStatus && item.fromKey !== "blocked") {
-      return "Only Blocked may transition to its previous status";
+    // Previous-status returns are interrupt-only — keyed by config kind, not a
+    // hardcoded status name like "blocked", so renamed interrupt statuses work.
+    if (item.isPreviousStatus && from.kind !== "interrupt") {
+      return `Only interrupt statuses may transition to previous status (got kind "${from.kind}" on ${item.fromKey})`;
     }
     const to = item.toKey ? statuses.get(item.toKey) : null;
     if (item.toKey && !to) return `Unknown transition target: ${item.toKey}`;
@@ -281,14 +283,40 @@ export function validateReleaseLifecycleConfig(
   return null;
 }
 
+export type ReleaseLifecycleNormalizeResult = {
+  config: ReleaseLifecycleConfig;
+  /**
+   * True only when a non-empty stored graph failed validation and was replaced
+   * with the Enterprise Default. Missing/null input is a first-load case, not
+   * a silent corruption fallback.
+   */
+  usedEnterpriseDefaultFallback: boolean;
+  /** Validation error that triggered the fallback; null otherwise. */
+  fallbackReason: string | null;
+};
+
 /**
- * Normalize stored configuration. Invalid stored graphs fail open to shipped
- * defaults for reads; write and enforcement paths validate explicitly.
+ * Normalize stored configuration with an explicit fallback signal.
+ *
+ * Invalid stored graphs still fail open to shipped defaults for reads (writes
+ * validate separately), but the fallback is never silent — callers must surface
+ * `usedEnterpriseDefaultFallback`, and this function always logs when it fires.
+ *
+ * @param raw - Persisted graph, or null/undefined when none exists yet.
+ * @param context - Optional ids for structured logs (never log the full graph).
+ * @returns Normalized config plus whether Enterprise Default was substituted.
  */
-export function normalizeReleaseLifecycleConfig(
-  raw: ReleaseLifecycleConfig | null | undefined
-): ReleaseLifecycleConfig {
-  if (!raw) return createDefaultReleaseLifecycleConfig();
+export function normalizeReleaseLifecycleConfigResult(
+  raw: ReleaseLifecycleConfig | null | undefined,
+  context?: { clerkUserId?: string }
+): ReleaseLifecycleNormalizeResult {
+  if (!raw) {
+    return {
+      config: createDefaultReleaseLifecycleConfig(),
+      usedEnterpriseDefaultFallback: false,
+      fallbackReason: null,
+    };
+  }
   const candidate: ReleaseLifecycleConfig = {
     statuses: raw.statuses.map((status) => ({ ...status })),
     transitions: raw.transitions.map((item) => ({
@@ -299,9 +327,44 @@ export function normalizeReleaseLifecycleConfig(
       })),
     })),
   };
-  return validateReleaseLifecycleConfig(candidate)
-    ? createDefaultReleaseLifecycleConfig()
-    : candidate;
+  const validationError = validateReleaseLifecycleConfig(candidate);
+  if (!validationError) {
+    return {
+      config: candidate,
+      usedEnterpriseDefaultFallback: false,
+      fallbackReason: null,
+    };
+  }
+
+  // Loud on purpose: silent Enterprise Default substitution hides data corruption.
+  console.error(
+    "[release-lifecycle-config] INVALID_STORED_CONFIG — falling back to Enterprise Default",
+    {
+      reason: validationError,
+      clerkUserId: context?.clerkUserId ?? null,
+      statusCount: candidate.statuses.length,
+      transitionCount: candidate.transitions.length,
+    }
+  );
+
+  return {
+    config: createDefaultReleaseLifecycleConfig(),
+    usedEnterpriseDefaultFallback: true,
+    fallbackReason: validationError,
+  };
+}
+
+/**
+ * Normalize stored configuration (config only). Prefer
+ * `normalizeReleaseLifecycleConfigResult` when the fallback flag must be surfaced.
+ *
+ * @param raw - Persisted graph, or null/undefined when none exists yet.
+ * @returns Normalized lifecycle config (may be Enterprise Default after fallback).
+ */
+export function normalizeReleaseLifecycleConfig(
+  raw: ReleaseLifecycleConfig | null | undefined
+): ReleaseLifecycleConfig {
+  return normalizeReleaseLifecycleConfigResult(raw).config;
 }
 
 export const DEFAULT_RELEASE_LIFECYCLE_CONFIG =

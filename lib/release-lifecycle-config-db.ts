@@ -10,10 +10,21 @@ import { prisma } from "@/lib/prisma";
 import {
   createDefaultReleaseLifecycleConfig,
   normalizeReleaseLifecycleConfig,
+  normalizeReleaseLifecycleConfigResult,
   releaseLifecycleTargetKey,
   validateReleaseLifecycleConfig,
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
+
+/** Load result — includes a loud signal when stored config was substituted. */
+export type LoadedReleaseLifecycleConfig = {
+  config: ReleaseLifecycleConfig;
+  /**
+   * Present when persisted rows failed validation and the Enterprise Default
+   * was returned instead. Clients must treat this as a data-integrity warning.
+   */
+  enterpriseDefaultFallback?: { reason: string };
+};
 
 type StatusRowInput = {
   id: string;
@@ -153,7 +164,9 @@ async function writeGraph(
   }
 }
 
-async function readGraph(clerkUserId: string): Promise<ReleaseLifecycleConfig | null> {
+async function readGraph(
+  clerkUserId: string
+): Promise<LoadedReleaseLifecycleConfig | null> {
   const [statuses, transitions] = await Promise.all([
     prisma.userReleaseLifecycleStatus.findMany({
       where: { clerkUserId },
@@ -167,47 +180,58 @@ async function readGraph(clerkUserId: string): Promise<ReleaseLifecycleConfig | 
   ]);
   if (!statuses.length) return null;
 
-  return normalizeReleaseLifecycleConfig({
-    statuses: statuses.map((status) => ({
-      key: status.key,
-      label: status.label,
-      sortOrder: status.sortOrder,
-      terminal: status.terminal,
-      kind: status.kind as ReleaseLifecycleConfig["statuses"][number]["kind"],
-      isSystem: status.isSystem,
-      enabled: status.enabled,
-    })),
-    transitions: transitions.map((item) => ({
-      fromKey: item.fromStatus.key,
-      toKey: item.toStatus?.key ?? null,
-      isPreviousStatus: item.isPreviousStatus,
-      enabled: item.enabled,
-      enforcement: item.enforcement as ReleaseLifecycleConfig["transitions"][number]["enforcement"],
-      isSystem: item.isSystem,
-      sortOrder: item.sortOrder,
-      gates: item.gates.map((attachment) => ({
-        gateType: attachment.gateType as ReleaseLifecycleConfig["transitions"][number]["gates"][number]["gateType"],
-        enabled: attachment.enabled,
-        enforcement: attachment.enforcement as ReleaseLifecycleConfig["transitions"][number]["gates"][number]["enforcement"],
-        params:
-          attachment.params &&
-          typeof attachment.params === "object" &&
-          !Array.isArray(attachment.params)
-            ? (attachment.params as Record<string, unknown>)
-            : undefined,
-        sortOrder: attachment.sortOrder,
+  const normalized = normalizeReleaseLifecycleConfigResult(
+    {
+      statuses: statuses.map((status) => ({
+        key: status.key,
+        label: status.label,
+        sortOrder: status.sortOrder,
+        terminal: status.terminal,
+        kind: status.kind as ReleaseLifecycleConfig["statuses"][number]["kind"],
+        isSystem: status.isSystem,
+        enabled: status.enabled,
       })),
-    })),
-  });
+      transitions: transitions.map((item) => ({
+        fromKey: item.fromStatus.key,
+        toKey: item.toStatus?.key ?? null,
+        isPreviousStatus: item.isPreviousStatus,
+        enabled: item.enabled,
+        enforcement: item.enforcement as ReleaseLifecycleConfig["transitions"][number]["enforcement"],
+        isSystem: item.isSystem,
+        sortOrder: item.sortOrder,
+        gates: item.gates.map((attachment) => ({
+          gateType: attachment.gateType as ReleaseLifecycleConfig["transitions"][number]["gates"][number]["gateType"],
+          enabled: attachment.enabled,
+          enforcement: attachment.enforcement as ReleaseLifecycleConfig["transitions"][number]["gates"][number]["enforcement"],
+          params:
+            attachment.params &&
+            typeof attachment.params === "object" &&
+            !Array.isArray(attachment.params)
+              ? (attachment.params as Record<string, unknown>)
+              : undefined,
+          sortOrder: attachment.sortOrder,
+        })),
+      })),
+    },
+    { clerkUserId }
+  );
+
+  return {
+    config: normalized.config,
+    ...(normalized.usedEnterpriseDefaultFallback && normalized.fallbackReason
+      ? { enterpriseDefaultFallback: { reason: normalized.fallbackReason } }
+      : {}),
+  };
 }
 
 /**
  * Load and seed the caller's default lifecycle graph on first access.
  * @throws only when table setup/read/seed fails; callers decide read fallback.
+ * @returns Config plus an optional Enterprise Default fallback warning.
  */
 export async function loadReleaseLifecycleConfig(
   clerkUserId: string
-): Promise<ReleaseLifecycleConfig> {
+): Promise<LoadedReleaseLifecycleConfig> {
   await ensureUserReleaseLifecycleTables();
   const existing = await readGraph(clerkUserId);
   if (existing) return existing;
@@ -220,7 +244,8 @@ export async function loadReleaseLifecycleConfig(
     if (concurrent) return concurrent;
     throw error;
   }
-  return (await readGraph(clerkUserId)) ?? defaults;
+  const afterSeed = await readGraph(clerkUserId);
+  return afterSeed ?? { config: defaults };
 }
 
 /**
@@ -240,5 +265,6 @@ export async function saveReleaseLifecycleConfig(
     await tx.userReleaseLifecycleStatus.deleteMany({ where: { clerkUserId } });
     await writeGraph(tx, clerkUserId, config);
   });
-  return (await readGraph(clerkUserId)) ?? normalizeReleaseLifecycleConfig(config);
+  const loaded = await readGraph(clerkUserId);
+  return loaded?.config ?? normalizeReleaseLifecycleConfig(config);
 }
