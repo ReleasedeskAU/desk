@@ -11,7 +11,9 @@ import {
 } from "@/lib/needs-attention";
 import { periodRange, type Period } from "@/lib/unified-releases";
 
-const OPEN_BLOCKER = { notIn: ["Resolved", "Closed", "Done"] };
+const OPEN_BLOCKER = {
+  notIn: ["Resolved", "Closed", "Done", "Cancelled", "Canceled", "Mitigated"],
+};
 const PENDING_DECISION = { equals: "Pending", mode: "insensitive" as const };
 
 function isoDate(d: Date): string {

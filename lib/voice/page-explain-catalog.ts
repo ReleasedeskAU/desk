@@ -283,6 +283,36 @@ const PAGES: readonly VoicePageExplain[] = [
     nextSteps: ["Risk", "Releases"],
   },
   {
+    path: "/lifecycle",
+    title: "Lifecycle Settings",
+    purpose:
+      "Configure entity status workflows, transitions, gates, and edit rules — releases through alerts.",
+    canDo: [
+      "Review Release Lifecycle statuses and gates",
+      "Review Blocker Lifecycle statuses and cascade rules",
+      "Review Approval Lifecycle decisions and immutability rules",
+      "Review Sign-off Lifecycle statuses and mandatory types",
+      "Review Risk Lifecycle statuses and score requirements",
+      "Review Incident Lifecycle statuses and escalation rules",
+      "Review Dependency Lifecycle statuses and Hard-gate rules",
+      "Review Conflict Lifecycle statuses and conflict types",
+      "Review Drift Lifecycle statuses (Detected through Escalated)",
+      "Review Alert Lifecycle statuses and alert types",
+    ],
+    nextSteps: [
+      "Releases",
+      "Blockers",
+      "Approvals",
+      "Risk",
+      "Incidents",
+      "Dependencies",
+      "Conflicts",
+      "Drifts",
+      "Alerts",
+      "Settings",
+    ],
+  },
+  {
     path: "/knowledge-graph",
     title: "Knowledge Graph",
     purpose:

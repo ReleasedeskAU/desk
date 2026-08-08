@@ -16,15 +16,19 @@ export function riskScoreDimSchema(max: number) {
   return z.coerce.number().int().min(1).max(upper);
 }
 
-/** Allowed lifecycle states for a qualitative risk. */
+/**
+ * Canonical risk statuses for create / UI.
+ * PATCH is validated by the risk lifecycle graph; legacy Open / Monitoring /
+ * In Progress still resolve via aliases at enforce time.
+ */
 export const RISK_STATUSES = [
-  "Open",
-  "Monitoring",
+  "Identified",
+  "Assessing",
   "Mitigating",
-  "In Progress",
-  "Escalated",
+  "Mitigated",
   "Accepted",
   "Closed",
+  "Escalated",
 ] as const;
 
 /**
@@ -82,6 +86,8 @@ export function patchRiskSchemaForScale(likelihoodMax: number, impactMax: number
       riskOwnerId: z.union([z.string().trim().min(1).max(64), z.null()]).optional(),
       status: z.string().trim().min(1).max(64).optional(),
       notes: optionalNullableString,
+      /** Required when Flexible soft-gates are unmet. */
+      overrideReason: z.string().trim().min(1).max(2000).optional(),
     })
     .strict();
 }

@@ -13,7 +13,12 @@ import {
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 
-const CONFLICT_STATUSES = ["Open", "In Progress", "Pending Review", "Escalated", "Resolved"] as const;
+const CONFLICT_STATUSES = [
+  "Detected",
+  "Under Review",
+  "Resolved",
+  "Dismissed",
+] as const;
 const CONFLICT_PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium"] as const;
 
 type Department = { id: string; name: string };
@@ -48,7 +53,7 @@ type CreatedConflict = {
 };
 
 const emptyForm = (): FormValues => ({
-  status: "Open",
+  status: "Detected",
   priority: "P2 - High",
   departmentId: "",
   applicationId: "",

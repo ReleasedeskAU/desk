@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchConflictSchema } from "@/lib/validation/conflict";
+import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
+import { deniedConflictEditFields } from "@/lib/conflict-lifecycle-edit-policy";
+import { validateConflictTransition } from "@/lib/conflict-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -77,9 +80,10 @@ export async function GET(_req: Request, { params }: Params) {
 /**
  * Updates mutable conflict fields. Conflict ID (conflictCode) is intentionally immutable —
  * rejected by patchConflictSchema.strict() if present in the body.
+ * Status transitions and edit policy are enforced from the caller's conflict lifecycle config.
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -91,6 +95,60 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven soft gates).
+  try {
+    const { config } = await loadConflictLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedConflictEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This conflict is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.status !== undefined && String(body.status) !== existing.status) {
+      const transition = validateConflictTransition({
+        config,
+        fromStatus: existing.status,
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+        facts: {
+          notes: body.notes !== undefined ? body.notes : existing.notes,
+        },
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            unmetReasons: transition.unmetReasons,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[conflicts PATCH] lifecycle enforcement failed", {
+      conflictId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Conflict lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const data: Record<string, unknown> = {};

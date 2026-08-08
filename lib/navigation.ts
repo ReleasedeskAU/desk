@@ -100,6 +100,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: "Lifecycle",
+    items: [
+      { href: "/lifecycle", label: "Lifecycle Settings", icon: GitBranch },
+    ],
+  },
+  {
     title: "Operations",
     items: [
       { href: "/knowledge-graph", label: "Knowledge Graph", icon: Share2 },

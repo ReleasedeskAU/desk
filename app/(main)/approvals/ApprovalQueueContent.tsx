@@ -48,6 +48,9 @@ const DECISION_ICON: Record<string, React.ReactNode> = {
   "Approved with Conditions": <AlertCircle className="h-4 w-4 text-amber-500" />,
   Pending: <Clock className="h-4 w-4 text-gray-400" />,
   Rejected: <XCircle className="h-4 w-4 text-red-500" />,
+  Deferred: <Clock className="h-4 w-4 text-amber-500" />,
+  Expired: <AlertCircle className="h-4 w-4 text-orange-500" />,
+  Withdrawn: <XCircle className="h-4 w-4 text-slate-400" />,
 };
 
 export default function ApprovalQueueContent() {

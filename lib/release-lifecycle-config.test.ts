@@ -40,25 +40,28 @@ describe("default Release lifecycle configuration", () => {
       DEFAULT_RELEASE_LIFECYCLE_CONFIG.statuses.map((status) => status.label),
       CANONICAL_LABELS
     );
-    assert.equal(DEFAULT_RELEASE_LIFECYCLE_CONFIG.transitions.length, 35);
+    assert.equal(DEFAULT_RELEASE_LIFECYCLE_CONFIG.transitions.length, 37);
     assert.equal(validateReleaseLifecycleConfig(DEFAULT_RELEASE_LIFECYCLE_CONFIG), null);
     assert.equal(transition("blocked", null)?.isPreviousStatus, true);
     assert.equal(transition("deferred", "pending_cab")?.enabled, true);
     assert.equal(transition("rejected", "planning")?.enabled, true);
   });
 
-  it("keeps the two future hard-gate transitions Flexible with explicit follow-ups", () => {
-    assert.equal(transition("deploying", "deployed")?.enforcement, "flexible");
-    assert.equal(transition("deployed", "closed")?.enforcement, "flexible");
-    assert.match(
-      RELEASE_LIFECYCLE_GATE_CATALOG.environment_booked_for_deploy
-        .futureFollowUp ?? "",
-      /before making Deploying/
+  it("marks Deploying/Deployed exits Required (CFG-06)", () => {
+    assert.equal(transition("deploying", "deployed")?.enforcement, "required");
+    assert.equal(transition("deploying", "rolled_back")?.enforcement, "required");
+    assert.equal(transition("deploying", "blocked")?.enforcement, "required");
+    assert.equal(transition("deployed", "closed")?.enforcement, "required");
+    assert.equal(transition("deployed", "rolled_back")?.enforcement, "required");
+    assert.ok(
+      transition("deferred", "pending_cab")?.gates.some(
+        (g) => g.gateType === "reactivation_decision_recorded"
+      )
     );
-    assert.match(
-      RELEASE_LIFECYCLE_GATE_CATALOG.post_deployment_validation_complete
-        .futureFollowUp ?? "",
-      /before making Deployed/
+    assert.ok(
+      transition("rejected", "planning")?.gates.some(
+        (g) => g.gateType === "rework_acknowledged"
+      )
     );
   });
 

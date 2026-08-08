@@ -26,6 +26,8 @@ export type ReleaseLifecycleGateFacts = {
   priority: string | null | undefined;
   releaseDate: Date | string | null | undefined;
   rollbackPlan: string | null | undefined;
+  /** Release notes — used for reactivation / rework / root-cause proxies. */
+  notes: string | null | undefined;
   goLiveChecklistPercent: number | null | undefined;
   /** Count of blockers still open for this release. */
   openBlockerCount: number;
@@ -217,13 +219,23 @@ export function evaluateLifecycleGate(
         "Scope-unchanged-since-CAB cannot be verified yet (no CAB scope snapshot)"
       );
     case "post_deployment_validation_complete":
-      return fail(
-        "Post-deployment validation cannot be verified yet (no validation record)"
-      );
+      // Best-effort until a dedicated validation record exists.
+      return typeof facts.goLiveChecklistPercent === "number" &&
+        facts.goLiveChecklistPercent >= 100
+        ? pass()
+        : fail("Post-deployment validation is not complete (checklist must be 100%)");
     case "root_cause_documented":
-      return fail(
-        "Rollback root cause cannot be verified yet (no dedicated root-cause field)"
-      );
+      return isPresent(facts.notes) || isPresent(facts.rollbackPlan)
+        ? pass()
+        : fail("Root cause is not documented (add notes or a rollback plan)");
+    case "reactivation_decision_recorded":
+      return isPresent(facts.notes)
+        ? pass()
+        : fail("Reactivation decision is not recorded (add notes before leaving Deferred)");
+    case "rework_acknowledged":
+      return isPresent(facts.notes)
+        ? pass()
+        : fail("Rework is not acknowledged (add notes before returning to Planning)");
     default:
       return fail(`Unhandled gate type: ${String(gate.gateType)}`);
   }
@@ -402,6 +414,7 @@ export function emptyLifecycleGateFacts(
     priority: null,
     releaseDate: null,
     rollbackPlan: null,
+    notes: null,
     goLiveChecklistPercent: null,
     openBlockerCount: 0,
     hasUatBooking: false,

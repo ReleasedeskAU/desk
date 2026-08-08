@@ -13,9 +13,25 @@ import {
   type ReleaseLifecycleGateFacts,
   type TransitionResult,
 } from "@/lib/release-lifecycle-transition";
+import { createDefaultSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
+import { mandatorySignoffsComplete } from "@/lib/signoff-lifecycle-transition";
 
-const OPEN_BLOCKER_STATUSES_EXCLUDED = ["Resolved", "Closed", "Done"] as const;
-const HARD_DEP_CLEAR = ["Clear", "Resolved"] as const;
+const OPEN_BLOCKER_STATUSES_EXCLUDED = [
+  "Resolved",
+  "Closed",
+  "Done",
+  "Cancelled",
+  "Canceled",
+  "Mitigated",
+] as const;
+/** Hard deps that satisfy VR-18 — includes lifecycle Met/Waived/Removed + legacy Clear/Resolved. */
+const HARD_DEP_CLEAR = [
+  "Met",
+  "Waived",
+  "Removed",
+  "Clear",
+  "Resolved",
+] as const;
 
 export type ReleaseStatusPatchRelease = {
   id: string;
@@ -26,6 +42,7 @@ export type ReleaseStatusPatchRelease = {
   priority: string;
   releaseDate: Date;
   rollbackPlan: string | null;
+  notes?: string | null;
   goLiveChecklistPercent: number | null;
   lifecycleConfigVersionId: string | null;
   devSignoff?: string | null;
@@ -59,16 +76,13 @@ export type ReleaseStatusEnforcementResult =
   | ReleaseStatusEnforcementDenied;
 
 function signoffsLookComplete(release: ReleaseStatusPatchRelease): boolean {
-  const fields = [
-    release.devSignoff,
-    release.testSignoff,
-    release.uatSignoff,
-    release.securityClearance,
-  ];
-  // Best-effort: treat non-empty values that are not obvious "no/pending" as done.
-  return fields.every((value) => {
-    if (!value || !String(value).trim()) return false;
-    return !/^(no|n\/a|pending|not\s*started|todo)$/i.test(String(value).trim());
+  // Config-driven: mandatory types must be Approved / Approved with Conditions
+  // (legacy Yes/Done aliases resolve via the sign-off lifecycle).
+  return mandatorySignoffsComplete(createDefaultSignoffLifecycleConfig(), {
+    devSignoff: release.devSignoff,
+    testSignoff: release.testSignoff,
+    uatSignoff: release.uatSignoff,
+    securityClearance: release.securityClearance,
   });
 }
 
@@ -133,6 +147,7 @@ export async function loadReleaseLifecycleGateFacts(
     priority: release.priority,
     releaseDate: release.releaseDate,
     rollbackPlan: release.rollbackPlan,
+    notes: release.notes,
     goLiveChecklistPercent: release.goLiveChecklistPercent,
     openBlockerCount,
     hasUatBooking,

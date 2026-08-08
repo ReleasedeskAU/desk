@@ -125,13 +125,13 @@ function scaleOptions(max: number) {
 }
 
 const STATUS_OPTIONS = [
-  "Open",
-  "Monitoring",
+  "Identified",
+  "Assessing",
   "Mitigating",
-  "In Progress",
-  "Escalated",
+  "Mitigated",
   "Accepted",
   "Closed",
+  "Escalated",
 ].map((v) => ({ value: v, label: v }));
 
 function formatScale(n: number, map: Record<number, string>) {

@@ -14,7 +14,13 @@ const dateInput = z
 export const DRIFT_SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
 
 /** Allowed lifecycle states for a configuration drift. */
-export const DRIFT_STATUSES = ["Open", "In Progress", "Resolved", "Closed"] as const;
+export const DRIFT_STATUSES = [
+  "Detected",
+  "Investigating",
+  "Approved",
+  "Reverted",
+  "Escalated",
+] as const;
 
 /**
  * POST /api/drifts body. Rejects unknown fields and never accepts a client-provided Drift ID.
@@ -58,6 +64,8 @@ export const patchDriftSchema = z
     remediationAction: optionalNullableString,
     status: z.string().trim().min(1).max(80).optional(),
     etaToFix: optionalNullableDate,
+    /** Soft-gate override when a Flexible transition needs justification. */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 

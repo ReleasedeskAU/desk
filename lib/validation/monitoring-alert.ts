@@ -49,6 +49,8 @@ export const patchMonitoringAlertSchema = z
     status: z.string().trim().min(1).max(80).optional(),
     assignedTo: optionalNullableString,
     environmentName: z.string().trim().min(1).max(200).optional(),
+    /** Soft-gate override / dismiss justification (Flexible transitions). */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 

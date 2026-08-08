@@ -22,6 +22,8 @@ export const RELEASE_LIFECYCLE_GATE_TYPES = [
   "post_deployment_validation_complete",
   "blocker_resolved",
   "root_cause_documented",
+  "reactivation_decision_recorded",
+  "rework_acknowledged",
 ] as const;
 
 export type ReleaseLifecycleGateType =
@@ -118,8 +120,6 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
     description: "A valid deployment environment booking must exist.",
     ruleIds: ["VR-19"],
     dataReliability: "partial",
-    futureFollowUp:
-      "Capture an explicit deploy-purpose booking before making Deploying → Deployed Required.",
   },
   hard_dependencies_met: {
     label: "Hard dependencies met",
@@ -129,11 +129,10 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
   },
   post_deployment_validation_complete: {
     label: "Post-deployment validation complete",
-    description: "Post-deployment validation must be recorded as complete.",
+    description:
+      "Post-deployment validation must be recorded (go-live checklist at 100% until a dedicated field exists).",
     ruleIds: ["POST-DEPLOY-VALIDATION"],
-    dataReliability: "missing",
-    futureFollowUp:
-      "Add a trustworthy validation record before making Deployed → Closed Required.",
+    dataReliability: "partial",
   },
   blocker_resolved: {
     label: "Blocker resolved",
@@ -143,10 +142,22 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
   },
   root_cause_documented: {
     label: "Root cause documented",
-    description: "Rollback root-cause documentation must be present.",
+    description:
+      "Rollback root-cause documentation must be present (notes or rollback plan until a dedicated field exists).",
     ruleIds: ["§4-10"],
-    dataReliability: "missing",
-    futureFollowUp: "Add a dedicated rollback root-cause field or record.",
+    dataReliability: "partial",
+  },
+  reactivation_decision_recorded: {
+    label: "Reactivation decision recorded",
+    description: "A reactivation decision must be recorded before leaving Deferred.",
+    ruleIds: ["CAB-REACTIVATE"],
+    dataReliability: "partial",
+  },
+  rework_acknowledged: {
+    label: "Rework acknowledged",
+    description: "Rework after CAB rejection must be acknowledged before returning to Planning.",
+    ruleIds: ["§4-12"],
+    dataReliability: "partial",
   },
 };
 

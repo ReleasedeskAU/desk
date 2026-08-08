@@ -85,7 +85,13 @@ const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low", "Info"].map((v) =
   label: v,
 }));
 
-const STATUS_OPTIONS = ["Open", "Acknowledged", "Investigating", "Resolved", "Closed"].map(
+const STATUS_OPTIONS = [
+  "Pending",
+  "Acknowledged",
+  "Actioned",
+  "Dismissed",
+  "Expired",
+].map(
   (v) => ({ value: v, label: v })
 );
 

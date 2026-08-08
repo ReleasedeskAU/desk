@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchRiskSchemaForScale } from "@/lib/validation/risk";
 import { loadRiskEngineConfig } from "@/lib/risk-engine-config-db";
+import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
+import { deniedRiskEditFields } from "@/lib/risk-lifecycle-edit-policy";
+import { validateRiskTransition } from "@/lib/risk-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -32,6 +35,7 @@ export async function GET(_req: Request, { params }: Params) {
 /**
  * Updates allowlisted risk fields. riskCode is immutable (schema.strict).
  * When likelihood or impact changes, riskScore is recomputed server-side.
+ * Status transitions and edit policy are enforced from the caller's risk lifecycle config.
  */
 export async function PATCH(req: Request, { params }: Params) {
   const { user, error } = await requireRole("editor");
@@ -50,6 +54,69 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven soft gates).
+  try {
+    const { config } = await loadRiskLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedRiskEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This risk is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.status !== undefined && String(body.status) !== existing.status) {
+      const nextLikelihood = body.likelihood ?? existing.likelihood;
+      const nextImpact = body.impact ?? existing.impact;
+      const transition = validateRiskTransition({
+        config,
+        fromStatus: existing.status,
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+        facts: {
+          likelihood: nextLikelihood,
+          impact: nextImpact,
+          riskScore: nextLikelihood * nextImpact,
+          mitigationStrategy:
+            body.mitigationStrategy !== undefined
+              ? body.mitigationStrategy
+              : existing.mitigationStrategy,
+          notes: body.notes !== undefined ? body.notes : existing.notes,
+        },
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            unmetReasons: transition.unmetReasons,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[risks PATCH] lifecycle enforcement failed", {
+      riskId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Risk lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const nextReleaseId = body.releaseId ?? existing.releaseId;

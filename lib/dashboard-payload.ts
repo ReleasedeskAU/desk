@@ -133,11 +133,16 @@ export async function buildDashboardPayload(
       where: { status: { notIn: ["Resolved"] }, ...timestampFilter(range) },
       _count: true,
     }),
+    // Open = Pending (canonical) + Active (legacy seed/UI).
     prisma.monitoringAlert.count({
-      where: { severity: "Critical", status: "Active", ...timestampFilter(range) },
+      where: {
+        severity: "Critical",
+        status: { in: ["Active", "Pending"] },
+        ...timestampFilter(range),
+      },
     }),
     prisma.monitoringAlert.count({
-      where: { status: "Active", ...timestampFilter(range) },
+      where: { status: { in: ["Active", "Pending"] }, ...timestampFilter(range) },
     }),
     prisma.envBooking.count({
       where: { conflictFlag: true, ...bookingOverlapFilter(range) },
@@ -526,12 +531,15 @@ export async function buildDashboardPayload(
       prisma.release.groupBy({ by: ["priority"], where: releaseWhere, _count: true }),
       prisma.monitoringAlert.groupBy({
         by: ["severity"],
-        where: { status: "Active" },
+        where: { status: { in: ["Active", "Pending"] } },
         _count: true,
       }),
       prisma.monitoringAlert.count({ where: { status: "Acknowledged" } }),
       prisma.monitoringAlert.count({
-        where: { status: "Resolved", timestamp: { gte: new Date(now.getTime() - DAY_MS) } },
+        where: {
+          status: { in: ["Resolved", "Actioned"] },
+          timestamp: { gte: new Date(now.getTime() - DAY_MS) },
+        },
       }),
       prisma.incident.count({
         where: { status: "Investigating" },

@@ -104,22 +104,26 @@ function transition(
   toKey: string | null,
   sortOrder: number,
   gates: ReleaseLifecycleGateAttachment[] = [],
-  isPreviousStatus = false
+  isPreviousStatus = false,
+  enforcement: ReleaseLifecycleEnforcement = "flexible"
 ): ReleaseLifecycleTransitionConfig {
   return {
     fromKey,
     toKey,
     isPreviousStatus,
     enabled: true,
-    // CFG-06 hard gates are intentionally Flexible until their facts are reliable.
-    enforcement: "flexible",
+    enforcement,
     isSystem: true,
     sortOrder,
     gates,
   };
 }
 
-/** Reviewed default graph. All edges seed Flexible during the data-gap rollout. */
+/**
+ * Reviewed default graph.
+ * Flexible until Deploying/Deployed (CFG-06 Required). Extras kept:
+ * Testing → Planning, Rolled Back → Cancelled.
+ */
 export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTransitionConfig[] = [
   transition("draft", "planning", 10),
   transition("draft", "cancelled", 20),
@@ -128,6 +132,8 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
   transition("planning", "cancelled", 30),
   transition("testing", "uat", 10, [gate("priority_set", 10)]),
   transition("testing", "blocked", 20),
+  // Extra (product ask): Testing may return to Planning.
+  transition("testing", "planning", 25),
   transition("testing", "cancelled", 30),
   transition("uat", "pending_cab", 10, [gate("uat_environment_booked", 10)]),
   transition("uat", "testing", 20),
@@ -155,22 +161,34 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
   ]),
   transition("ready_to_deploy", "blocked", 20),
   transition("ready_to_deploy", "cancelled", 30),
-  transition("deploying", "deployed", 10, [
-    gate("environment_booked_for_deploy", 10),
-    gate("hard_dependencies_met", 20),
-  ]),
-  transition("deploying", "rolled_back", 20),
-  transition("deploying", "blocked", 30),
-  transition("deployed", "closed", 10, [
-    gate("post_deployment_validation_complete", 10),
-  ]),
-  transition("deployed", "rolled_back", 20),
+  // CFG-06: Deploying / Deployed exits are Required (no override).
+  transition(
+    "deploying",
+    "deployed",
+    10,
+    [gate("environment_booked_for_deploy", 10), gate("hard_dependencies_met", 20)],
+    false,
+    "required"
+  ),
+  transition("deploying", "rolled_back", 20, [], false, "required"),
+  transition("deploying", "blocked", 30, [], false, "required"),
+  transition(
+    "deployed",
+    "closed",
+    10,
+    [gate("post_deployment_validation_complete", 10)],
+    false,
+    "required"
+  ),
+  transition("deployed", "rolled_back", 20, [], false, "required"),
   transition("blocked", null, 10, [gate("blocker_resolved", 10)], true),
   transition("blocked", "cancelled", 20, [gate("blocker_resolved", 10)]),
   transition("rolled_back", "testing", 10, [gate("root_cause_documented", 10)]),
-  transition("deferred", "pending_cab", 10),
+  // Extra (product ask): Rolled Back may cancel.
+  transition("rolled_back", "cancelled", 20),
+  transition("deferred", "pending_cab", 10, [gate("reactivation_decision_recorded", 10)]),
   transition("deferred", "cancelled", 20),
-  transition("rejected", "planning", 10),
+  transition("rejected", "planning", 10, [gate("rework_acknowledged", 10)]),
 ];
 
 /** Fresh default object so consumers cannot mutate shared constants. */

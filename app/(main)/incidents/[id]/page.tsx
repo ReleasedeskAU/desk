@@ -83,7 +83,15 @@ const INCIDENT_FIELD_LABELS: Partial<Record<keyof IncidentDraft, string>> = {
 
 const SEVERITY_OPTIONS = ["P1", "P2", "P3"].map((v) => ({ value: v, label: v }));
 
-const STATUS_OPTIONS = ["Active", "Investigating", "Mitigated", "Resolved", "Closed"].map(
+const STATUS_OPTIONS = [
+  "Open",
+  "Investigating",
+  "Escalated",
+  "Resolving",
+  "Resolved",
+  "Closed",
+  "Reopened",
+].map(
   (v) => ({ value: v, label: v })
 );
 
@@ -108,9 +116,17 @@ function severityTone(severity: string): ChipTone {
 
 function statusTone(status: string): ChipTone {
   const s = status.toLowerCase();
-  if (s.includes("active") || s.includes("open")) return "bad";
-  if (s.includes("investigat") || s.includes("mitigat") || s.includes("progress")) return "warn";
-  if (s.includes("resolv") || s.includes("closed")) return "good";
+  if (s.includes("closed")) return "good";
+  if (s === "resolved" || s.endsWith("resolved")) return "good";
+  if (s.includes("escalat") || s.includes("reopen")) return "bad";
+  if (s.includes("active") || s === "open") return "bad";
+  if (
+    s.includes("investigat") ||
+    s.includes("resolving") ||
+    s.includes("mitigat")
+  ) {
+    return "warn";
+  }
   return "neutral";
 }
 
@@ -133,10 +149,12 @@ function heroToneFromSeverity(severity: string): "rose" | "amber" | "emerald" | 
 /** Rough clearance progress from status for the hero ring. */
 function statusPercent(status: string): number {
   const s = status.toLowerCase();
-  if (s.includes("closed") || s.includes("resolv")) return 100;
-  if (s.includes("mitigat")) return 70;
+  if (s.includes("closed")) return 100;
+  if (s === "resolved" || s.endsWith("resolved")) return 90;
+  if (s.includes("resolving") || s.includes("mitigat")) return 70;
+  if (s.includes("escalat") || s.includes("reopen")) return 55;
   if (s.includes("investigat")) return 45;
-  if (s.includes("active") || s.includes("open")) return 20;
+  if (s.includes("active") || s === "open") return 20;
   return 35;
 }
 

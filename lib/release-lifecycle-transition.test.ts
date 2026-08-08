@@ -21,8 +21,13 @@ const baseFacts = emptyLifecycleGateFacts({
   releaseSize: "M",
   priority: "P2",
   releaseDate: new Date("2026-09-01"),
+  notes: "Decision recorded",
+  rollbackPlan: "Rollback to v1",
+  goLiveChecklistPercent: 100,
   openBlockerCount: 0,
   hardDependenciesMet: true,
+  hasDeployBooking: true,
+  signoffsComplete: true,
 });
 
 describe("resolveLifecycleStatusRef", () => {
@@ -160,6 +165,59 @@ describe("listLegalNextStatuses / stepper", () => {
       model.mainline.every((s) => s.state === "upcoming"),
       true
     );
+  });
+
+  it("allows Testing → Planning and Rolled Back → Cancelled from the default graph", () => {
+    const toPlanning = validateReleaseTransition({
+      config,
+      fromStatus: "Testing",
+      toStatus: "Planning",
+      gateFacts: baseFacts,
+    });
+    assert.equal(toPlanning.allowed, true);
+
+    const toCancelled = validateReleaseTransition({
+      config,
+      fromStatus: "Rolled Back",
+      toStatus: "Cancelled",
+      gateFacts: baseFacts,
+    });
+    assert.equal(toCancelled.allowed, true);
+  });
+
+  it("hard-blocks Deploying → Deployed when Required gates fail (CFG-06, no override)", () => {
+    const denied = validateReleaseTransition({
+      config,
+      fromStatus: "Deploying",
+      toStatus: "Deployed",
+      overrideReason: "please let me through",
+      gateFacts: emptyLifecycleGateFacts({
+        hasDeployBooking: false,
+        hardDependenciesMet: false,
+      }),
+    });
+    assert.equal(denied.allowed, false);
+    if (!denied.allowed) {
+      assert.equal(denied.code, "TRANSITION_BLOCKED");
+    }
+  });
+
+  it("requires notes for Deferred → Pending CAB and Rejected → Planning", () => {
+    const deferredDenied = validateReleaseTransition({
+      config,
+      fromStatus: "Deferred",
+      toStatus: "Pending CAB",
+      gateFacts: emptyLifecycleGateFacts({ notes: null }),
+    });
+    assert.equal(deferredDenied.allowed, false);
+
+    const rejectedOk = validateReleaseTransition({
+      config,
+      fromStatus: "Rejected",
+      toStatus: "Planning",
+      gateFacts: emptyLifecycleGateFacts({ notes: "Rework started" }),
+    });
+    assert.equal(rejectedOk.allowed, true);
   });
 
   it("keeps a disabled current status on the rail and blocks moves into disabled targets", () => {

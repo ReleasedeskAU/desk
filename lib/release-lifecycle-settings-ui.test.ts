@@ -170,23 +170,20 @@ describe("transition toggles", () => {
 
   it("adds a new transition between statuses", () => {
     const config = createDefaultReleaseLifecycleConfig();
-    const result = addLifecycleTransition(config, "testing", "planning");
+    const result = addLifecycleTransition(config, "testing", "deferred");
     assert.ok("config" in result);
     assert.ok(
       result.config.transitions.some(
-        (t) => t.fromKey === "testing" && t.toKey === "planning"
+        (t) => t.fromKey === "testing" && t.toKey === "deferred"
       )
     );
   });
 });
 
 describe("gates panel helpers", () => {
-  it("marks the two unreliable deploy gates as always-pass", () => {
-    assert.equal(isAlwaysPassLifecycleGate("environment_booked_for_deploy"), true);
-    assert.equal(
-      isAlwaysPassLifecycleGate("post_deployment_validation_complete"),
-      true
-    );
+  it("marks only unverifiable scope-CAB gate as always-pass UI warning", () => {
+    assert.equal(isAlwaysPassLifecycleGate("scope_unchanged_since_cab"), true);
+    assert.equal(isAlwaysPassLifecycleGate("environment_booked_for_deploy"), false);
     assert.equal(isAlwaysPassLifecycleGate("owner_set"), false);
   });
 

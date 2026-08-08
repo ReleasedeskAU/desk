@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
+import { loadAlertLifecycleConfig } from "@/lib/alert-lifecycle-config-db";
+import { deniedAlertEditFields } from "@/lib/alert-lifecycle-edit-policy";
+import { validateAlertTransition } from "@/lib/alert-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -34,10 +37,11 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * Updates allowlisted alert fields. alertCode is immutable (schema.strict).
+ * Enforces lifecycle edit policy and status transitions (config-driven soft gates).
  * threshold/currentValue remain strings to support non-numeric seed values.
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -49,6 +53,58 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven soft gates).
+  try {
+    const { config } = await loadAlertLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedAlertEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This alert is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.status !== undefined && String(body.status) !== existing.status) {
+      const transition = validateAlertTransition({
+        config,
+        fromStatus: existing.status,
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+        facts: { reason: body.overrideReason ?? null },
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            unmetReasons: transition.unmetReasons,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[monitoring-alerts PATCH] lifecycle enforcement failed", {
+      alertId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Alert lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const timestamp = parseDate(body.timestamp);

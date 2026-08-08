@@ -63,7 +63,7 @@ const emptyForm = (): FormValues => ({
   description: "",
   impactOnRelease: "",
   remediationAction: "",
-  status: "Open",
+  status: "Detected",
   etaToFix: "",
 });
 

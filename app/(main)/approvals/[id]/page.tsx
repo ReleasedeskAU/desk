@@ -79,7 +79,14 @@ const APPROVAL_FIELD_LABELS: Partial<Record<keyof ApprovalDraft, string>> = {
   cabMeetingId: "CAB Meeting",
 };
 
-const DECISION_OPTIONS = ["Pending", "Approved", "Rejected", "Deferred"].map((v) => ({
+const DECISION_OPTIONS = [
+  "Pending",
+  "Approved",
+  "Rejected",
+  "Deferred",
+  "Expired",
+  "Withdrawn",
+].map((v) => ({
   value: v,
   label: v,
 }));

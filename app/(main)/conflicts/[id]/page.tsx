@@ -76,7 +76,12 @@ const CONFLICT_FIELD_LABELS: Partial<Record<keyof ConflictDraft, string>> = {
   notes: "Notes",
 };
 
-const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"].map((v) => ({
+const STATUS_OPTIONS = [
+  "Detected",
+  "Under Review",
+  "Resolved",
+  "Dismissed",
+].map((v) => ({
   value: v,
   label: v,
 }));

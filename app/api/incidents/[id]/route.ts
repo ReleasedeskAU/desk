@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchIncidentSchema } from "@/lib/validation/incident";
+import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
+import { deniedIncidentEditFields } from "@/lib/incident-lifecycle-edit-policy";
+import { validateIncidentTransition } from "@/lib/incident-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -46,9 +49,10 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * Updates allowlisted incident fields. incidentCode is immutable (schema.strict).
+ * Status transitions and edit policy are enforced from the caller's incident lifecycle config.
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -60,6 +64,62 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven soft gates).
+  try {
+    const { config } = await loadIncidentLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedIncidentEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This incident is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.status !== undefined && String(body.status) !== existing.status) {
+      const transition = validateIncidentTransition({
+        config,
+        fromStatus: existing.status,
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+        facts: {
+          severity: body.severity ?? existing.severity,
+          assignedTo:
+            body.assignedTo !== undefined ? body.assignedTo : existing.assignedTo,
+        },
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            unmetReasons: transition.unmetReasons,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[incidents PATCH] lifecycle enforcement failed", {
+      incidentId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Incident lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const timestamp = parseDate(body.timestamp);

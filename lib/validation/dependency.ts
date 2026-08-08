@@ -1,7 +1,18 @@
 import { z } from "zod";
 
 export const DEPENDENCY_TYPES = ["Hard", "Soft", "Technical", "Data", "Integration"] as const;
-export const DEPENDENCY_STATUSES = ["Blocked", "At Risk", "Clear", "Resolved"] as const;
+/**
+ * Canonical dependency statuses for create / UI.
+ * PATCH is validated by the dependency lifecycle graph; legacy Clear / Resolved /
+ * Blocked still resolve via aliases at enforce time.
+ */
+export const DEPENDENCY_STATUSES = [
+  "Pending",
+  "At Risk",
+  "Met",
+  "Waived",
+  "Removed",
+] as const;
 export const DEPENDENCY_IMPACTS = [
   "Release Delay",
   "Partial Functionality",
@@ -19,7 +30,7 @@ export const createDependencySchema = z
     releaseId: z.string().trim().min(1).max(64),
     dependsOnReleaseId: z.string().trim().min(1).max(64),
     dependencyType: z.enum(DEPENDENCY_TYPES),
-    status: z.enum(DEPENDENCY_STATUSES).default("Clear"),
+    status: z.enum(DEPENDENCY_STATUSES).default("Pending"),
     impactIfBlocked: z.enum(DEPENDENCY_IMPACTS),
     notes: z.string().trim().max(4000).nullable().optional(),
   })
@@ -37,9 +48,11 @@ export const patchDependencySchema = z
     releaseId: z.string().trim().min(1).max(64).optional(),
     dependsOnReleaseId: z.string().trim().min(1).max(64).optional(),
     dependencyType: z.enum(DEPENDENCY_TYPES).optional(),
-    status: z.enum(DEPENDENCY_STATUSES).optional(),
+    status: z.string().trim().min(1).max(80).optional(),
     impactIfBlocked: z.enum(DEPENDENCY_IMPACTS).optional(),
     notes: z.string().trim().max(4000).nullable().optional(),
+    /** Required when Flexible soft-gates are unmet (e.g. Waive without notes). */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict()
   .refine(

@@ -25,6 +25,7 @@ import {
   resolveLifecycleConfigPin,
   type ResolvedReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config-version";
+import { reconcileLifecycleSpecDefaults } from "@/lib/release-lifecycle-spec-reconcile";
 
 /**
  * Neon pooler + multi-round-trip graph rewrites (delete statuses/transitions,
@@ -329,6 +330,7 @@ export async function loadReleaseLifecycleConfig(
     const latest = await ensureVersionHistoryFromHead(clerkUserId, existing.config);
     return {
       ...existing,
+      config: reconcileLifecycleSpecDefaults(existing.config),
       latestVersionId: latest?.id ?? null,
       latestVersion: latest?.version ?? null,
     };
@@ -436,9 +438,14 @@ export async function resolveLifecycleConfigForRelease(
     }
   }
 
-  return resolveLifecycleConfigPin({
+  const resolved = resolveLifecycleConfigPin({
     lifecycleConfigVersionId,
     pinned,
     latest,
   });
+  // Apply enterprise-spec upgrades (CFG-06 Required, missing edges/gates) in memory.
+  return {
+    ...resolved,
+    config: reconcileLifecycleSpecDefaults(resolved.config),
+  };
 }

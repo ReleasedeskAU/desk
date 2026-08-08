@@ -15,12 +15,10 @@ import {
   UserCircle,
   Palette,
   Gauge,
-  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { RiskEngineSettings } from "@/components/settings/RiskEngineSettings";
-import { ReleaseLifecycleSettings } from "@/components/settings/ReleaseLifecycleSettings";
 import { TeamMembersTab } from "@/components/settings/TeamMembersTab";
 import { DepartmentsTab } from "@/components/settings/master-data/DepartmentsTab";
 import { ApplicationsTab } from "@/components/settings/master-data/ApplicationsTab";
@@ -32,7 +30,6 @@ const VALID_TABS = new Set([
   "general",
   "appearance",
   "risk-engine",
-  "release-lifecycle",
   "team",
   "departments",
   "applications",
@@ -47,7 +44,16 @@ function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam && VALID_TABS.has(tabParam) ? tabParam : "team";
+
+  // Release Lifecycle moved to the dedicated Lifecycle sidebar page.
+  useEffect(() => {
+    if (tabParam === "release-lifecycle") {
+      router.replace("/lifecycle");
+    }
+  }, [tabParam, router]);
+
+  const initialTab =
+    tabParam && VALID_TABS.has(tabParam) ? tabParam : "team";
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
@@ -72,7 +78,6 @@ function SettingsPageInner() {
     { id: "general", label: "General", icon: SettingsIcon },
     { id: "appearance", label: "Appearance", icon: Palette },
     { id: "risk-engine", label: "Risk Engine", icon: Gauge },
-    { id: "release-lifecycle", label: "Release Lifecycle", icon: GitBranch },
     { id: "team", label: "Team Members", icon: Users },
     { id: "departments", label: "Departments", icon: Building2 },
     { id: "applications", label: "Applications", icon: Package },
@@ -124,7 +129,6 @@ function SettingsPageInner() {
         <div className="flex-1 min-w-0">
           {activeTab === "appearance" && <AppearanceSettings />}
           {activeTab === "risk-engine" && <RiskEngineSettings />}
-          {activeTab === "release-lifecycle" && <ReleaseLifecycleSettings />}
           {activeTab === "team" && <TeamMembersTab />}
           {activeTab === "departments" && <DepartmentsTab />}
           {activeTab === "applications" && <ApplicationsTab />}
@@ -136,7 +140,6 @@ function SettingsPageInner() {
             activeTab !== "team" &&
             activeTab !== "appearance" &&
             activeTab !== "risk-engine" &&
-            activeTab !== "release-lifecycle" &&
             activeTab !== "integrations" && (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50 py-24 text-center dark:border-[var(--border)] dark:bg-white/[0.025]">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">

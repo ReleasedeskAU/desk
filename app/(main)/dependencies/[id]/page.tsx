@@ -65,9 +65,17 @@ const IMPACT_OPTIONS = DEPENDENCY_IMPACTS.map((v) => ({ value: v, label: v }));
 
 function statusTone(status: string): ChipTone {
   const s = status.toLowerCase();
-  if (s.includes("block")) return "bad";
+  if (s.includes("block") || s === "pending") return "bad";
   if (s.includes("risk")) return "warn";
-  if (s.includes("clear") || s.includes("resolv")) return "good";
+  if (
+    s.includes("met") ||
+    s.includes("waiv") ||
+    s.includes("remov") ||
+    s.includes("clear") ||
+    s.includes("resolv")
+  ) {
+    return "good";
+  }
   return "neutral";
 }
 
@@ -89,9 +97,17 @@ function statusHeroTone(status: string): "rose" | "amber" | "emerald" | "indigo"
 /** Rough clearance progress from dependency status for the hero ring. */
 function statusPercent(status: string): number {
   const s = status.toLowerCase();
-  if (s.includes("resolv") || s.includes("clear")) return 100;
+  if (
+    s.includes("met") ||
+    s.includes("waiv") ||
+    s.includes("remov") ||
+    s.includes("resolv") ||
+    s.includes("clear")
+  ) {
+    return 100;
+  }
   if (s.includes("risk")) return 45;
-  if (s.includes("block")) return 15;
+  if (s.includes("block") || s === "pending") return 15;
   return 35;
 }
 
@@ -259,7 +275,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const upstreamRelease =
     releases.find((r) => r.id === v.dependsOnReleaseId) ??
     (v.dependsOnReleaseId === row.dependsOnRelease.id ? row.dependsOnRelease : null);
-  const blockedish = /block|risk/i.test(v.status);
+  const blockedish = /block|risk|pending/i.test(v.status);
 
   return (
     <EditableDetailShell

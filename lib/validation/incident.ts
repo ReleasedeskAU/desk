@@ -4,6 +4,21 @@ const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).
 const dateTimeInput = z.string().trim().min(1).max(40);
 
 /**
+ * Canonical incident statuses for create / UI.
+ * PATCH is validated by the incident lifecycle graph; legacy Active /
+ * Acknowledged / Mitigated still resolve via aliases at enforce time.
+ */
+export const INCIDENT_STATUSES = [
+  "Open",
+  "Investigating",
+  "Escalated",
+  "Resolving",
+  "Resolved",
+  "Closed",
+  "Reopened",
+] as const;
+
+/**
  * POST /api/incidents body. Rejects unknown fields and never accepts a client-provided incidentCode.
  * Application and related-release existence are checked by the API.
  */
@@ -13,7 +28,7 @@ export const createIncidentSchema = z
     applicationId: z.string().trim().min(1).max(64),
     severity: z.string().trim().min(1).max(40),
     title: z.string().trim().min(1).max(500),
-    status: z.string().trim().min(1).max(80),
+    status: z.enum(INCIDENT_STATUSES),
     impact: z.string().trim().min(1).max(200),
     environmentName: z.string().trim().min(1).max(200),
     departmentName: optionalNullableString,
@@ -40,6 +55,8 @@ export const patchIncidentSchema = z
     assignedTo: optionalNullableString,
     relatedReleaseCode: optionalNullableString,
     environmentName: z.string().trim().min(1).max(200).optional(),
+    /** Required when Flexible soft-gates are unmet (e.g. VR-13). */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 

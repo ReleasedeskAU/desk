@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { patchDependencySchema } from "@/lib/validation/dependency";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
+import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
+import { deniedDependencyEditFields } from "@/lib/dependency-lifecycle-edit-policy";
+import { validateDependencyTransition } from "@/lib/dependency-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -48,9 +51,12 @@ export async function GET(_req: Request, { params }: Params) {
   return NextResponse.json(mapDetail(row));
 }
 
-/** Update allowlisted dependency fields (editor+). */
+/**
+ * Update allowlisted dependency fields (editor+).
+ * Status transitions and edit policy are enforced from the caller's dependency lifecycle config.
+ */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -62,6 +68,63 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven soft gates).
+  try {
+    const { config } = await loadDependencyLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedDependencyEditFields(
+      config,
+      existing.status ?? "Pending",
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This dependency is ${mode.replaceAll("_", "-")} in status "${existing.status ?? "Pending"}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (
+      body.status !== undefined &&
+      String(body.status) !== (existing.status ?? "")
+    ) {
+      const transition = validateDependencyTransition({
+        config,
+        fromStatus: existing.status ?? "Pending",
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+        facts: {
+          notes: body.notes !== undefined ? body.notes : existing.notes,
+        },
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            unmetReasons: transition.unmetReasons,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[dependencies PATCH] lifecycle enforcement failed", {
+      dependencyId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Dependency lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const nextReleaseId = body.releaseId ?? existing.releaseId;

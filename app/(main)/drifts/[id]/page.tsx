@@ -165,7 +165,13 @@ const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"].map((v) => ({
   label: v,
 }));
 
-const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"].map((v) => ({
+const STATUS_OPTIONS = [
+  "Detected",
+  "Investigating",
+  "Approved",
+  "Reverted",
+  "Escalated",
+].map((v) => ({
   value: v,
   label: v,
 }));
@@ -418,7 +424,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
 
   const daysOpen = daysSinceDetected(v.detectedDate || row.detectedDate);
   const urgencyPct = Math.max(0, Math.min(100, (Math.min(daysOpen, 30) / 30) * 100));
-  const resolved = /resolv|closed|fixed/i.test(v.status);
+  const resolved = /approved|reverted|resolv|closed|fixed/i.test(v.status);
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
   const selectedApp = applications.find((a) => a.id === v.applicationId);
   const selectedDept = departments.find((dept) => dept.id === v.departmentId);

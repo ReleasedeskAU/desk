@@ -21,10 +21,12 @@ import {
 /** Status keys that must remain present for the hard-gate rollout (CFG-06). */
 export const HARD_BOUNDARY_STATUS_KEYS = ["deploying", "deployed"] as const;
 
-/** Gates that always pass today — show an explicit “not yet enforced” label. */
+/**
+ * Gates that still cannot be proven from data (UI warning only).
+ * Evaluators may still fail-closed for Flexible/Required transitions.
+ */
 export const ALWAYS_PASS_GATE_TYPES: ReadonlySet<ReleaseLifecycleGateType> = new Set([
-  "environment_booked_for_deploy",
-  "post_deployment_validation_complete",
+  "scope_unchanged_since_cab",
 ]);
 
 export type StatusUsageMap = Record<string, number>;

@@ -45,7 +45,12 @@ type ConflictRow = {
   notes: string | null;
 };
 
-const STATUS_OPTIONS = ["Open", "In Progress", "Pending Review", "Escalated", "Resolved"] as const;
+const STATUS_OPTIONS = [
+  "Detected",
+  "Under Review",
+  "Resolved",
+  "Dismissed",
+] as const;
 const PRIORITY_OPTIONS = ["P1 - Critical", "P2 - High", "P3 - Medium"] as const;
 
 type ConflictColumnKey = (typeof CONFLICT_COLUMNS)[number]["key"];
@@ -197,7 +202,15 @@ export default function ConflictQueueContent() {
     [apps, values.departmentId]
   );
 
-  const openCount = conflicts.filter((c) => c.status === "Open" || c.status === "Escalated").length;
+  const openCount = conflicts.filter(
+    (c) =>
+      c.status === "Detected" ||
+      c.status === "Under Review" ||
+      c.status === "Open" ||
+      c.status === "Escalated" ||
+      c.status === "In Progress" ||
+      c.status === "Pending Review"
+  ).length;
 
   const conflictTypes = useMemo(
     () => [...new Set(conflicts.map((c) => c.environmentConflictType).filter(Boolean))].sort(),
