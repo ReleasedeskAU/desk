@@ -4,9 +4,9 @@ const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).
 const dateTimeInput = z.string().trim().min(1).max(40);
 
 /**
- * Canonical incident statuses for create / UI.
- * PATCH is validated by the incident lifecycle graph; legacy Active /
- * Acknowledged / Mitigated still resolve via aliases at enforce time.
+ * Default incident status labels (mirrors lifecycle seed).
+ * Create/UI options come from the caller's incident lifecycle config; this list
+ * is a fallback when config has not loaded. PATCH is validated by the lifecycle graph.
  */
 export const INCIDENT_STATUSES = [
   "Open",
@@ -28,7 +28,8 @@ export const createIncidentSchema = z
     applicationId: z.string().trim().min(1).max(64),
     severity: z.string().trim().min(1).max(40),
     title: z.string().trim().min(1).max(500),
-    status: z.enum(INCIDENT_STATUSES),
+    /** Validated against the caller's incident lifecycle config on create. */
+    status: z.string().trim().min(1).max(80).optional(),
     impact: z.string().trim().min(1).max(200),
     environmentName: z.string().trim().min(1).max(200),
     departmentName: optionalNullableString,

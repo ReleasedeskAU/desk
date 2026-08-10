@@ -1,6 +1,8 @@
 import { releases as demoReleases } from "@/lib/dummy-data";
 import { inPeriod, periodRange, type Period } from "@/lib/period-range";
 import type { SearchResult } from "@/lib/dummy-data";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { bucketReleaseStatusWithConfig } from "@/lib/release-lifecycle-status-ui";
 
 export type DataSource = "database" | "demo";
 
@@ -229,34 +231,26 @@ export function mergeReleases(db: UnifiedRelease[], demo: UnifiedRelease[]): Uni
 
 type StatusBucket = "planned" | "inProgress" | "blocked" | "atRisk" | "shipped";
 
-/** Maps demo + workbook release statuses into dashboard tile buckets. */
-export function bucketReleaseStatus(status: string): StatusBucket {
-  switch (status) {
-    case "Blocked":
-      return "blocked";
-    case "At Risk":
-      return "atRisk";
-    case "Draft":
-    case "Planning":
-    case "Planned":
-    case "Scheduled":
-      return "planned";
-    case "Approved":
-    case "Pending CAB":
-    case "Testing":
-    case "In Progress":
-    case "Ready":
-      return "inProgress";
-    case "Shipped":
-    case "Complete":
-    case "Completed":
-      return "shipped";
-    default:
-      return "planned";
-  }
+/**
+ * Maps release statuses into dashboard tile buckets.
+ * Prefer passing lifecycle config so custom/enabled kinds bucket correctly.
+ */
+export function bucketReleaseStatus(
+  status: string,
+  config?: ReleaseLifecycleConfig | null
+): StatusBucket {
+  return bucketReleaseStatusWithConfig(status, config);
 }
 
-export function countByStatus(rows: Array<{ status: string }>) {
+/**
+ * Count releases into coarse buckets (optionally config-aware).
+ * @param rows - Releases with status labels.
+ * @param config - Optional lifecycle graph for kind-based bucketing.
+ */
+export function countByStatus(
+  rows: Array<{ status: string }>,
+  config?: ReleaseLifecycleConfig | null
+) {
   const counts = {
     planned: 0,
     inProgress: 0,
@@ -266,7 +260,7 @@ export function countByStatus(rows: Array<{ status: string }>) {
     total: rows.length,
   };
   for (const r of rows) {
-    counts[bucketReleaseStatus(r.status)]++;
+    counts[bucketReleaseStatus(r.status, config)]++;
   }
   return counts;
 }

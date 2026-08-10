@@ -2,6 +2,8 @@
 
 import { CheckCircle2 } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +40,27 @@ export function RequiredMark() {
   return <span className="text-rose-500">*</span>;
 }
 
-export function FormError({ message }: { message: string }) {
+/**
+ * Save/API error as a popup (not an inline banner).
+ * @param message - Error text to show.
+ * @param onDismiss - Clears parent formError state; required so the dialog can close.
+ * @param title - Optional override; lifecycle messages auto-title via buildFormSaveAlert when used upstream.
+ */
+export function FormError({
+  message,
+  onDismiss,
+  title,
+}: {
+  message: string;
+  onDismiss: () => void;
+  title?: string;
+}) {
+  const alert = buildFormSaveAlert(null, message, { entityLabel: "record" });
   return (
-    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
-      {message}
-    </div>
+    <FormAlertDialog
+      alert={title ? { ...alert, title } : alert}
+      onDismiss={onDismiss}
+    />
   );
 }
 

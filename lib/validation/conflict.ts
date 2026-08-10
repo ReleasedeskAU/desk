@@ -22,7 +22,8 @@ export const CONFLICT_TYPES = ["Schedule", "Resource", "Application"] as const;
  */
 export const createConflictSchema = z
   .object({
-    status: z.enum(CONFLICT_STATUSES),
+    /** Validated against enabled conflict lifecycle labels in the route. */
+    status: z.string().trim().max(80).optional(),
     priority: z.string().trim().min(1).max(80),
     release1Code: z.string().trim().min(1).max(64),
     release2Code: z.string().trim().min(1).max(64),

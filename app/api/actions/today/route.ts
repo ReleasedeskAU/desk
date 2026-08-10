@@ -25,7 +25,13 @@ export async function GET(req: Request) {
   const sessionName = user?.name ?? "";
 
   const [inbox, releases, p1Issues, blockerRows] = await Promise.all([
-    buildInboxItemsCached({ period, filters, sessionName, prisma }),
+    buildInboxItemsCached({
+      period,
+      filters,
+      sessionName,
+      prisma,
+      clerkUserId: user?.id,
+    }),
     prisma.release.findMany({ include: releaseInclude }),
     prisma.p1Issue.findMany(),
     prisma.blocker.findMany({

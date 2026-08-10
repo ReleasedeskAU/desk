@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { riskWhere, sp } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createRiskRow } from "@/lib/org-compat";
+import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 
 async function nextRiskCode(): Promise<string> {
   const rows = await prisma.risk.findMany({ select: { riskCode: true } });
@@ -93,6 +95,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Risk owner not found" }, { status: 400 });
   }
 
+  let status = String(body.status ?? "").trim();
+  try {
+    const loaded = await loadRiskLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, status, "risk");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[risks-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Risk lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
+
   const row = await createRiskRow({
     riskCode: await nextRiskCode(),
     releaseId: body.releaseId,
@@ -105,7 +123,7 @@ export async function POST(req: Request) {
     affectedArea: body.affectedArea ?? null,
     mitigationStrategy: body.mitigationStrategy ?? null,
     riskOwnerId: body.riskOwnerId ?? null,
-    status: body.status ?? "Identified",
+    status,
     notes: body.notes ?? null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

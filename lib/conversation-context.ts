@@ -1,9 +1,33 @@
 import { NAV_SECTIONS } from "@/lib/navigation";
 import { prisma } from "@/lib/prisma";
+import { loadReleaseLifecycleConfig } from "@/lib/release-lifecycle-config-db";
+import { attentionStatusLabels } from "@/lib/release-lifecycle-status-ui";
 import { countByStatus } from "@/lib/unified-releases";
 import { getLiveState } from "@/lib/release-state-repo";
 
-export async function buildConversationContext(sessionName: string, currentPath?: string) {
+/**
+ * Build chat/copilot portfolio context for the session user.
+ * @param sessionName - Display name.
+ * @param currentPath - Optional UI path.
+ * @param clerkUserId - Optional; drives lifecycle-aware attention statuses.
+ */
+export async function buildConversationContext(
+  sessionName: string,
+  currentPath?: string,
+  clerkUserId?: string | null
+) {
+  let attentionLabels = ["Blocked", "Rolled Back"];
+  let lifecycleConfig = null;
+  if (clerkUserId) {
+    try {
+      lifecycleConfig = (await loadReleaseLifecycleConfig(clerkUserId)).config;
+      attentionLabels = attentionStatusLabels(lifecycleConfig);
+    } catch {
+      /* keep fallback */
+    }
+  }
+  if (attentionLabels.length === 0) attentionLabels = ["__none__"];
+
   const [
     releases,
     releaseTotal,
@@ -20,7 +44,7 @@ export async function buildConversationContext(sessionName: string, currentPath?
     upcomingReleases,
   ] = await Promise.all([
     prisma.release.findMany({
-      where: { status: { in: ["Blocked", "At Risk"] } },
+      where: { status: { in: attentionLabels } },
       include: { department: true },
       orderBy: { releaseDate: "asc" },
       take: 12,
@@ -53,7 +77,7 @@ export async function buildConversationContext(sessionName: string, currentPath?
   ]);
 
   const allForCounts = await prisma.release.findMany({ select: { status: true } });
-  const statusBuckets = countByStatus(allForCounts);
+  const statusBuckets = countByStatus(allForCounts, lifecycleConfig);
   const statusBreakdown = await prisma.release.groupBy({ by: ["status"], _count: true });
 
   return {

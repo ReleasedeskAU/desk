@@ -30,7 +30,8 @@ export const createDependencySchema = z
     releaseId: z.string().trim().min(1).max(64),
     dependsOnReleaseId: z.string().trim().min(1).max(64),
     dependencyType: z.enum(DEPENDENCY_TYPES),
-    status: z.enum(DEPENDENCY_STATUSES).default("Pending"),
+    /** Validated against enabled dependency lifecycle labels in the route. */
+    status: z.string().trim().max(80).optional(),
     impactIfBlocked: z.enum(DEPENDENCY_IMPACTS),
     notes: z.string().trim().max(4000).nullable().optional(),
   })

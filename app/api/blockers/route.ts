@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { blockerWhere, sp, str } from "@/lib/list-api-filters";
+import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 
 const dateOnly = (value: Date | null) => value?.toISOString().slice(0, 10) ?? null;
 
@@ -138,6 +140,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Blocker ${blockerCode} already exists` }, { status: 409 });
   }
 
+  let status = String(body.status ?? "").trim();
+  try {
+    const loaded = await loadBlockerLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, status, "blocker");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[blockers-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Blocker lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
+
   const raisedDate = body.raisedDate ? new Date(body.raisedDate) : new Date();
   const applicationName =
     String(body.applicationName ?? "").trim() ||
@@ -160,7 +178,7 @@ export async function POST(req: Request) {
       raisedDate,
       raisedBy: String(body.raisedBy ?? "").trim() || user!.name,
       assignedTo: body.assignedTo ? String(body.assignedTo).trim() : null,
-      status: String(body.status ?? "Open").trim() || "Open",
+      status,
       targetResolutionDate: body.targetResolutionDate ? new Date(body.targetResolutionDate) : null,
       actualResolutionDate: null,
       daysOpen: Number.isFinite(Number(body.daysOpen)) ? Number(body.daysOpen) : 0,

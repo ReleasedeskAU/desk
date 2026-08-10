@@ -27,6 +27,7 @@ import { ConflictFormModal } from "@/components/conflicts/ConflictFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type ConflictRow = {
   id: string;
@@ -45,12 +46,6 @@ type ConflictRow = {
   notes: string | null;
 };
 
-const STATUS_OPTIONS = [
-  "Detected",
-  "Under Review",
-  "Resolved",
-  "Dismissed",
-] as const;
 const PRIORITY_OPTIONS = ["P1 - Critical", "P2 - High", "P3 - Medium"] as const;
 
 type ConflictColumnKey = (typeof CONFLICT_COLUMNS)[number]["key"];
@@ -164,6 +159,15 @@ export default function ConflictQueueContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+  const lifecycle = useEntityLifecycleStatuses("/api/conflict-lifecycle-config");
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(conflicts.map((c) => c.status)),
+    [lifecycle, conflicts]
+  );
+  const openLabelSet = useMemo(
+    () => new Set(lifecycle.openLabels.map((l) => l.toLocaleLowerCase())),
+    [lifecycle.openLabels]
+  );
 
   const voiceVisibleRows = useMemo(
     () =>
@@ -202,14 +206,8 @@ export default function ConflictQueueContent() {
     [apps, values.departmentId]
   );
 
-  const openCount = conflicts.filter(
-    (c) =>
-      c.status === "Detected" ||
-      c.status === "Under Review" ||
-      c.status === "Open" ||
-      c.status === "Escalated" ||
-      c.status === "In Progress" ||
-      c.status === "Pending Review"
+  const openCount = conflicts.filter((c) =>
+    openLabelSet.has(c.status.toLocaleLowerCase())
   ).length;
 
   const conflictTypes = useMemo(
@@ -256,6 +254,8 @@ export default function ConflictQueueContent() {
         onClose={() => setModalOpen(false)}
         onCreated={refetch}
         conflictTypeOptions={conflictTypes}
+        statusOptions={lifecycle.createOptions}
+        defaultStatus={lifecycle.defaultStatus || "Detected"}
       />
 
       {!tablePending && (
@@ -283,7 +283,7 @@ export default function ConflictQueueContent() {
           {isFilterVisible("status") && (
             <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
               <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((s) => (
+              {statusOptions.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>

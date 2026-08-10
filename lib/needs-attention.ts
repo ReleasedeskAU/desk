@@ -1,5 +1,7 @@
 import { getReleaseBlockers } from "./blockers";
 import { computeLifecycleStages } from "./lifecycle";
+import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { attentionStatusLabels } from "@/lib/release-lifecycle-status-ui";
 import { demoToUnified } from "./unified-releases";
 import type { DeploymentPhase, Release, ReleaseDecision } from "./types";
 import { isApprovalOverdue } from "./utils";
@@ -21,10 +23,22 @@ export type NeedsAttentionItem = {
   lastActivity: string | null;
 };
 
-const ATTENTION_STATUSES = new Set(["Blocked", "At Risk"]);
-
-export function isNeedsAttentionStatus(status: string): boolean {
-  return ATTENTION_STATUSES.has(status);
+/**
+ * Whether a release status is an attention (interrupt) status.
+ * @param status - Stored release status label.
+ * @param attentionLabels - Optional lifecycle interrupt labels; defaults to Enterprise Default.
+ */
+export function isNeedsAttentionStatus(
+  status: string,
+  attentionLabels?: Iterable<string>
+): boolean {
+  const labels =
+    attentionLabels ??
+    attentionStatusLabels(createDefaultReleaseLifecycleConfig());
+  const set = new Set(
+    [...labels].map((label) => label.trim().toLocaleLowerCase()).filter(Boolean)
+  );
+  return set.has(status.trim().toLocaleLowerCase());
 }
 
 export function buildDemoAttentionItem(

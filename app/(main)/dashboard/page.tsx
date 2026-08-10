@@ -30,7 +30,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       await ensureDbAwake();
       initialData = await withDbRetry(async () => {
         const riskConfig = await loadRiskEngineConfig(userId);
-        return buildDashboardPayload(period, riskConfig);
+        return buildDashboardPayload(period, riskConfig, userId);
       }, {
         label: "dashboard-page",
         attempts: 5,

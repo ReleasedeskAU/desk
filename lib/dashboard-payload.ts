@@ -11,7 +11,7 @@ import {
   timestampFilter,
   type DashboardPeriod,
 } from "@/lib/dashboard-period";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getRiskLevel } from "@/lib/risk-level";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
@@ -19,8 +19,42 @@ import {
   type RiskEngineConfig,
   weightedRiskLevelLabel,
 } from "@/lib/risk-engine-config";
+import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { loadReleaseLifecycleConfig } from "@/lib/release-lifecycle-config-db";
+import {
+  attentionStatusLabels,
+  pipelineToneForKind,
+} from "@/lib/release-lifecycle-status-ui";
+
+/**
+ * Compact one-line error text for logs (Prisma messages are often multi-line).
+ * @param err - Thrown value from lifecycle load / DB.
+ */
+function formatLifecycleLoadError(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === "object" &&
+          err &&
+          "message" in err &&
+          typeof (err as { message: unknown }).message === "string"
+        ? (err as { message: string }).message
+        : String(err);
+  const oneLine = raw.replace(/\s+/g, " ").trim();
+  return oneLine.slice(0, 240) || "unknown";
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const PIPELINE_CHART_COLORS: Record<string, string> = {
+  rose: "#f43f5e",
+  violet: "#8b5cf6",
+  sky: "#0ea5e9",
+  emerald: "#10b981",
+  amber: "#f59e0b",
+  indigo: "#6366f1",
+  slate: "#94a3b8",
+};
 
 type TopIssueIcon = "Ban" | "ShieldAlert" | "Clock" | "Server" | "Users";
 type TopIssueSeverity = "rose" | "amber" | "sky";
@@ -68,21 +102,53 @@ function buildBriefing(
 /**
  * Builds Command Dashboard aggregates for period=today|week|month|all.
  * @param periodParam - Raw period query value (validated via parseDashboardPeriod).
+ * @param riskConfig - Weighted risk engine config.
+ * @param clerkUserId - Optional; when set, pipeline tiles use that user's lifecycle statuses.
  * @returns Plain JSON-serializable dashboard payload.
  * @throws Prisma/DB errors to the caller.
  */
 export async function buildDashboardPayload(
   periodParam: string | null,
-  riskConfig: RiskEngineConfig = DEFAULT_RISK_ENGINE_CONFIG
+  riskConfig: RiskEngineConfig = DEFAULT_RISK_ENGINE_CONFIG,
+  clerkUserId?: string | null
 ) {
   const period = parseDashboardPeriod(periodParam);
   const now = new Date();
   const range = dashboardPeriodRange(period, now);
   const releaseWhere = releaseDateFilter(range);
 
+  // Lifecycle shapes the pipeline tiles; fall back to Enterprise Default when
+  // Neon is cold/unreachable so the rest of the dashboard can still render.
+  let lifecycleConfig = createDefaultReleaseLifecycleConfig();
+  if (clerkUserId) {
+    try {
+      lifecycleConfig = await withDbRetry(
+        async () => (await loadReleaseLifecycleConfig(clerkUserId)).config,
+        {
+          label: "dashboard-lifecycle-config",
+          attempts: 3,
+          baseDelayMs: 600,
+        }
+      );
+    } catch (err) {
+      // Handled fallback — warn (not error) so Next.js does not surface a Console Error overlay.
+      console.warn(
+        `[dashboard-payload] lifecycle config load failed; using defaults: ${formatLifecycleLoadError(err)}`
+      );
+    }
+  }
+  const attentionLabels = attentionStatusLabels(lifecycleConfig);
+  const enabledStatuses = [...lifecycleConfig.statuses]
+    .filter((s) => s.enabled)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
   // --- 1. Hero ---
   const [blockedReleases, activeP1Incidents, appsDownProd] = await Promise.all([
-    prisma.release.count({ where: { status: "Blocked", ...releaseWhere } }),
+    attentionLabels.length
+      ? prisma.release.count({
+          where: { status: { in: attentionLabels }, ...releaseWhere },
+        })
+      : Promise.resolve(0),
     prisma.incident.count({
       where: {
         severity: "P1",
@@ -98,7 +164,7 @@ export async function buildDashboardPayload(
     }),
   ]);
 
-  // --- 2. Release Pipeline ---
+  // --- 2. Release Pipeline (driven by lifecycle-enabled statuses) ---
   const [totalReleases, releaseStatusCounts] = await Promise.all([
     prisma.release.count({ where: releaseWhere }),
     prisma.release.groupBy({ by: ["status"], where: releaseWhere, _count: true }),
@@ -106,13 +172,48 @@ export async function buildDashboardPayload(
   const countByStatus = (status: string) =>
     releaseStatusCounts.find((r) => r.status === status)?._count ?? 0;
 
+  const statusTiles = enabledStatuses.map((status) => {
+    const tone = pipelineToneForKind(status.kind);
+    return {
+      label: status.label,
+      value: countByStatus(status.label),
+      delta: null,
+      href: `/releases?status=${encodeURIComponent(status.label)}`,
+      tone,
+      color: PIPELINE_CHART_COLORS[tone] ?? PIPELINE_CHART_COLORS.slate!,
+    };
+  });
+
+  // Compact strip: Total + interrupt statuses + first five enabled mainline.
+  const compactStatuses = [
+    ...enabledStatuses.filter((s) => s.kind === "interrupt"),
+    ...enabledStatuses.filter((s) => s.kind === "mainline").slice(0, 5),
+  ];
+  const seenCompact = new Set<string>();
   const pipeline = [
-    { label: "Total Releases", value: totalReleases, delta: null, href: `/releases?period=${period}`, tone: "indigo" as const },
-    { label: "Blocked", value: countByStatus("Blocked"), delta: null, href: "/releases?status=Blocked", tone: "rose" as const },
-    { label: "Pending CAB", value: countByStatus("Pending CAB"), delta: null, href: "/releases?status=Pending+CAB", tone: "violet" as const },
-    { label: "In Testing", value: countByStatus("Testing"), delta: null, href: "/releases?status=Testing", tone: "sky" as const },
-    { label: "Approved", value: countByStatus("Approved"), delta: null, href: "/releases?status=Approved", tone: "emerald" as const },
-    { label: "Planning", value: countByStatus("Planning"), delta: null, href: "/releases?status=Planning", tone: "amber" as const },
+    {
+      label: "Total Releases",
+      value: totalReleases,
+      delta: null,
+      href: `/releases?period=${period}`,
+      tone: "indigo" as const,
+    },
+    ...compactStatuses
+      .filter((s) => {
+        if (seenCompact.has(s.key)) return false;
+        seenCompact.add(s.key);
+        return true;
+      })
+      .map((status) => {
+        const tone = pipelineToneForKind(status.kind);
+        return {
+          label: status.label,
+          value: countByStatus(status.label),
+          delta: null,
+          href: `/releases?status=${encodeURIComponent(status.label)}`,
+          tone,
+        };
+      }),
   ];
 
   // --- 3. Operations ---
@@ -227,7 +328,12 @@ export async function buildDashboardPayload(
   ];
 
   // --- Needs Your Decision ---
-  const releaseIssueWhere = { ...releaseWhere, status: "Blocked" as const };
+  const pendingCabLabel =
+    enabledStatuses.find((s) => s.key === "pending_cab")?.label ?? "Pending CAB";
+  const releaseIssueWhere =
+    attentionLabels.length > 0
+      ? { ...releaseWhere, status: { in: attentionLabels } }
+      : { ...releaseWhere, status: { in: ["__none__"] } };
   const [blockedList, severeRelease, pendingCabRelease, oldestPendingApproval, downProdApp] = await Promise.all([
     prisma.release.findMany({
       where: releaseIssueWhere,
@@ -246,7 +352,7 @@ export async function buildDashboardPayload(
         })
       : Promise.resolve(null),
     prisma.release.findFirst({
-      where: { status: "Pending CAB", ...releaseWhere },
+      where: { status: pendingCabLabel, ...releaseWhere },
       include: { department: true },
       orderBy: { cabDate: "asc" },
     }),
@@ -556,14 +662,12 @@ export async function buildDashboardPayload(
 
   const pipelineDetail = {
     total: totalReleases,
-    byStatus: [
-      { name: "Blocked", value: countByStatus("Blocked"), color: "#f43f5e", href: "/releases?status=Blocked" },
-      { name: "Pending CAB", value: countByStatus("Pending CAB"), color: "#8b5cf6", href: "/releases?status=Pending+CAB" },
-      { name: "Testing", value: countByStatus("Testing"), color: "#0ea5e9", href: "/releases?status=Testing" },
-      { name: "Approved", value: countByStatus("Approved"), color: "#10b981", href: "/releases?status=Approved" },
-      { name: "Planning", value: countByStatus("Planning"), color: "#f59e0b", href: "/releases?status=Planning" },
-      { name: "Draft", value: countByStatus("Draft"), color: "#94a3b8", href: "/releases?status=Draft" },
-    ],
+    byStatus: statusTiles.map((tile) => ({
+      name: tile.label,
+      value: tile.value,
+      color: tile.color,
+      href: tile.href,
+    })),
     byPriority: [
       { name: "P1", value: priorityBucket("P1"), color: "#f43f5e", href: "/releases?priority=P1" },
       { name: "P2", value: priorityBucket("P2"), color: "#f59e0b", href: "/releases?priority=P2" },

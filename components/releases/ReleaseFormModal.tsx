@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
+import { CheckCircle2, RefreshCw } from "lucide-react";
 import { SearchableMultiSelect, SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialog";
@@ -10,10 +10,16 @@ import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
 import { diffDraftChanges, type FieldChange } from "@/lib/detail-edit-diff";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import {
   buildReleaseFormSaveAlert,
   type ReleaseFormAlert,
 } from "@/lib/release-form-save-alert";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  defaultReleaseStatusLabel,
+  enabledReleaseStatusLabels,
+} from "@/lib/release-lifecycle-status-ui";
 
 /** Fields needed to create/update a release — not every table column. */
 export type ReleaseFormData = {
@@ -76,23 +82,6 @@ type CreatedSummary = {
   testEnvRequired: string;
 };
 
-const STATUSES = [
-  "Draft",
-  "Planning",
-  "Testing",
-  "UAT",
-  "Pending CAB",
-  "CAB Approved",
-  "Ready to deploy",
-  "Deploying",
-  "Deployed",
-  "Closed",
-  "Cancelled",
-  "Blocked",
-  "Rolled Back",
-  "Deferred",
-  "Rejected",
-];
 const PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium", "P4 - Low"];
 const IMPACTS = ["High", "Medium", "Low"];
 const RELEASE_SIZES = ["Small", "Medium", "Large"];
@@ -102,7 +91,7 @@ const EMPTY_FORM: ReleaseFormData = {
   name: "",
   programProject: "",
   owner: "",
-  status: "Draft",
+  status: "",
   releaseDate: "",
   priority: "P3 - Medium",
   impact: "Medium",
@@ -134,6 +123,7 @@ export function ReleaseFormModal({
   applications,
   environments = [],
   releases,
+  statusOptions: statusOptionsProp,
   onClose,
   onSaved,
 }: {
@@ -144,6 +134,8 @@ export function ReleaseFormModal({
   applications: AppOption[];
   environments?: EnvOption[];
   releases: Option[];
+  /** Enabled lifecycle status labels from parent (SSOT). */
+  statusOptions?: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -151,12 +143,24 @@ export function ReleaseFormModal({
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [loadedEnvs, setLoadedEnvs] = useState<EnvOption[]>([]);
+  const [lifecycleStatusOptions, setLifecycleStatusOptions] = useState<string[]>(
+    []
+  );
+  const [defaultStatusLabel, setDefaultStatusLabel] = useState("Draft");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof ReleaseFormData, string>>>({});
   const [formAlert, setFormAlert] = useState<ReleaseFormAlert | null>(null);
   const [created, setCreated] = useState<CreatedSummary | null>(null);
   const [editChanges, setEditChanges] = useState<FieldChange[] | null>(null);
   const editBaseline = useRef<ReleaseFormData | null>(null);
   const isEdit = Boolean(initial?.id);
+
+  const statusOptions = useMemo(() => {
+    const base =
+      statusOptionsProp && statusOptionsProp.length > 0
+        ? statusOptionsProp
+        : lifecycleStatusOptions;
+    return [...new Set([...base, form.status].filter(Boolean))];
+  }, [form.status, lifecycleStatusOptions, statusOptionsProp]);
 
   useEffect(() => {
     if (!open) return;
@@ -172,6 +176,24 @@ export function ReleaseFormModal({
       { label: "release-form-users" }
     );
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (statusOptionsProp && statusOptionsProp.length > 0) {
+      setDefaultStatusLabel(statusOptionsProp[0] ?? "Draft");
+      return;
+    }
+    return loadJsonEffect<{ config: ReleaseLifecycleConfig }>(
+      "/api/release-lifecycle-config",
+      (payload) => {
+        setLifecycleStatusOptions(enabledReleaseStatusLabels(payload.config));
+        setDefaultStatusLabel(
+          defaultReleaseStatusLabel(payload.config) || "Draft"
+        );
+      },
+      { label: "release-form-lifecycle-statuses" }
+    );
+  }, [open, statusOptionsProp]);
 
   useEffect(() => {
     if (!open || environments.length > 0) {
@@ -214,7 +236,7 @@ export function ReleaseFormModal({
       name: initial?.name ?? "",
       programProject: initial?.programProject ?? "",
       owner: initial?.owner ?? "",
-      status: initial?.status ?? "Planned",
+      status: initial?.status ?? defaultStatusLabel,
       releaseDate: dateInput(initial?.releaseDate),
       priority: initial?.priority ?? "P3 - Medium",
       impact: initial?.impact ?? "Medium",
@@ -232,7 +254,7 @@ export function ReleaseFormModal({
     if (initial?.id) next.id = initial.id;
     setForm(next);
     editBaseline.current = initial?.id ? { ...next } : null;
-  }, [open, initial, existingReleaseCodes, created, editChanges]);
+  }, [open, initial, existingReleaseCodes, created, editChanges, defaultStatusLabel]);
 
   const departmentName = useMemo(
     () => departments.find((d) => d.value === form.departmentId)?.label ?? "",
@@ -632,7 +654,7 @@ export function ReleaseFormModal({
               value={form.status}
               onChange={(e) => set("status", e.target.value)}
             >
-              {[...new Set([...STATUSES, form.status].filter(Boolean))].map((s) => (
+              {statusOptions.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -799,72 +821,7 @@ export function ReleaseFormModal({
         </div>
       </div>
 
-      <ReleaseFormAlertDialog alert={formAlert} onDismiss={() => setFormAlert(null)} />
-    </div>
-  );
-}
-
-/**
- * Modal popup for form/save warnings (e.g. illegal lifecycle transitions).
- * Renders above the edit form so the message is not buried in the scrollable body.
- */
-function ReleaseFormAlertDialog({
-  alert,
-  onDismiss,
-}: {
-  alert: ReleaseFormAlert | null;
-  onDismiss: () => void;
-}) {
-  if (!alert) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-      onClick={onDismiss}
-      role="presentation"
-    >
-      <div
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
-        onClick={(e) => e.stopPropagation()}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="release-form-alert-title"
-        aria-describedby="release-form-alert-message"
-      >
-        <div className="mb-4 flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">
-            <AlertTriangle className="h-5 w-5" aria-hidden />
-          </span>
-          <div>
-            <h2
-              id="release-form-alert-title"
-              className="text-lg font-semibold text-gray-900 dark:text-white"
-            >
-              {alert.title}
-            </h2>
-            <p
-              id="release-form-alert-message"
-              className="mt-1 text-sm text-gray-600 dark:text-white/70"
-            >
-              {alert.message}
-            </p>
-          </div>
-        </div>
-
-        {alert.details && alert.details.length > 0 && (
-          <ul className="mb-4 list-disc space-y-1 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 pl-8 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100">
-            {alert.details.map((detail) => (
-              <li key={detail}>{detail}</li>
-            ))}
-          </ul>
-        )}
-
-        <div className="flex justify-end">
-          <button type="button" className={taBtnPrimary} onClick={onDismiss}>
-            OK
-          </button>
-        </div>
-      </div>
+      <FormAlertDialog alert={formAlert} onDismiss={() => setFormAlert(null)} />
     </div>
   );
 }

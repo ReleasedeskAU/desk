@@ -791,12 +791,14 @@ export function ReleaseTimelineView({
   periodStart,
   periodEnd,
   period = "month",
+  lifecycleConfig = null,
 }: {
   releases: UnifiedRelease[];
   periodStart: Date;
   periodEnd: Date;
   /** When `year`, use minimal dot + stem markers instead of rectangular cards. */
   period?: Period;
+  lifecycleConfig?: import("@/lib/release-lifecycle-config").ReleaseLifecycleConfig | null;
 }) {
   const { scrollRef, canScrollLeft, canScrollRight, updateScrollState, scrollByPage } = useScrollNav(
     `${period}-${releases.length}`,
@@ -806,12 +808,22 @@ export function ReleaseTimelineView({
   const trackWidth = useDots ? yearTimelineTrackWidth(releases.length) : timelineTrackWidth(releases.length);
 
   const markers = useMemo(
-    () => (useDots ? layoutDotTimelineMarkers(releases, periodStart, periodEnd, trackWidth) : []),
-    [useDots, releases, periodStart, periodEnd, trackWidth],
+    () =>
+      useDots
+        ? layoutDotTimelineMarkers(releases, periodStart, periodEnd, trackWidth, {
+            lifecycleConfig,
+          })
+        : [],
+    [useDots, releases, periodStart, periodEnd, trackWidth, lifecycleConfig],
   );
   const milestones = useMemo(
-    () => (useDots ? [] : layoutTimelineMilestones(releases, periodStart, periodEnd, trackWidth)),
-    [useDots, releases, periodStart, periodEnd, trackWidth],
+    () =>
+      useDots
+        ? []
+        : layoutTimelineMilestones(releases, periodStart, periodEnd, trackWidth, {
+            lifecycleConfig,
+          }),
+    [useDots, releases, periodStart, periodEnd, trackWidth, lifecycleConfig],
   );
   const periods = useMemo(() => {
     if (useDots) {

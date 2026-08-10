@@ -443,6 +443,7 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
       saving={edit.saving}
       deleting={edit.deleting}
       editError={edit.error}
+      onClearEditError={() => edit.setError(null)}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}

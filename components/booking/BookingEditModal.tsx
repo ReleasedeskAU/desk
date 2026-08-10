@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -342,8 +344,6 @@ export function BookingEditModal({
             />
           </label>
 
-          {error && <p className="text-sm text-error-600 dark:text-rose-400">{error}</p>}
-
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
               Cancel
@@ -354,6 +354,15 @@ export function BookingEditModal({
           </div>
         </form>
       </div>
+
+      <FormAlertDialog
+        alert={
+          error
+            ? buildFormSaveAlert(null, error, { entityLabel: "booking" })
+            : null
+        }
+        onDismiss={() => setError(null)}
+      />
     </div>
   );
 }

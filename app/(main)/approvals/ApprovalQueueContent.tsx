@@ -26,6 +26,7 @@ import { ApprovalCreateModal } from "@/components/approvals/ApprovalCreateModal"
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type ApprovalRow = {
   id: string;
@@ -89,6 +90,11 @@ export default function ApprovalQueueContent() {
   const [allApprovals, setAllApprovals] = useState<ApprovalRow[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const lifecycle = useEntityLifecycleStatuses("/api/approval-lifecycle-config");
+  const decisionOptions = useMemo(
+    () => lifecycle.filterOptions(allApprovals.map((a) => a.decision)),
+    [lifecycle, allApprovals]
+  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -104,7 +110,6 @@ export default function ApprovalQueueContent() {
     return () => ac.abort();
   }, []);
 
-  const decisions = useMemo(() => [...new Set(allApprovals.map((a) => a.decision))].sort(), [allApprovals]);
   const types = useMemo(() => [...new Set(allApprovals.map((a) => a.approvalType))].sort(), [allApprovals]);
   const roles = useMemo(
     () => [...new Set(allApprovals.map((a) => a.approver.role).filter(Boolean))].sort(),
@@ -165,13 +170,15 @@ export default function ApprovalQueueContent() {
           });
         }}
         approvalTypes={types}
+        decisionOptions={lifecycle.createOptions}
+        defaultDecision={lifecycle.defaultStatus || "Pending"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("decision") && (
             <FilterSelect value={values.decision} onChange={(v) => setFilter("decision", v)}>
               <option value="">All decisions</option>
-              {decisions.map((d) => <option key={d} value={d}>{d}</option>)}
+              {decisionOptions.map((d) => <option key={d} value={d}>{d}</option>)}
             </FilterSelect>
           )}
           {isFilterVisible("approvalType") && (

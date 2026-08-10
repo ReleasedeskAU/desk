@@ -169,6 +169,30 @@ const ALLOWED_REQUIRED_FIELDS = new Set([
   "rollbackPlan",
 ]);
 
+/**
+ * Default field list when attaching "Required fields set" from the Gates UI.
+ * Security: only whitelist keys from ALLOWED_REQUIRED_FIELDS — never free-form paths.
+ */
+export const DEFAULT_REQUIRED_FIELDS_SET_FIELDS: readonly string[] = [
+  "owner",
+  "priority",
+  "releaseSize",
+];
+
+/**
+ * Optional default params when attaching a catalog gate from settings.
+ * @param gateType - Fixed catalog gate key.
+ * @returns Params object, or undefined when the gate takes none.
+ */
+export function defaultParamsForLifecycleGate(
+  gateType: ReleaseLifecycleGateType
+): Record<string, unknown> | undefined {
+  if (gateType === "required_fields_set") {
+    return { fields: [...DEFAULT_REQUIRED_FIELDS_SET_FIELDS] };
+  }
+  return undefined;
+}
+
 /** Return true only for gate keys implemented by the fixed catalog. */
 export function isReleaseLifecycleGateType(
   value: string
@@ -202,9 +226,9 @@ export function validateReleaseLifecycleGateParams(
       (field) => typeof field !== "string" || !ALLOWED_REQUIRED_FIELDS.has(field)
     )
   ) {
-    return "required_fields_set.fields must contain only approved Release fields";
+    return "Required fields set needs at least one approved Release field (owner, priority, release size, release date, or rollback plan).";
   }
   return new Set(fields).size === fields.length
     ? null
-    : "required_fields_set.fields must be unique";
+    : "Required fields set cannot list the same field twice.";
 }

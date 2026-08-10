@@ -30,7 +30,11 @@ export async function POST(req: Request) {
     if (!parsed.success) return zodErrorResponse(parsed.error);
 
     const { message, history, currentPath } = parsed.data;
-    const context = await buildConversationContext(user?.name ?? "", currentPath);
+    const context = await buildConversationContext(
+      user?.name ?? "",
+      currentPath,
+      user?.id
+    );
     const { text, provider } = await runConversationAgent({
       context,
       userMessage: message,

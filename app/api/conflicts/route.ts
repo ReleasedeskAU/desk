@@ -3,6 +3,8 @@ import { requireRole } from "@/lib/auth/api";
 import {
   filterSeedConflicts,
 } from "@/lib/conflict-view";
+import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
@@ -91,12 +93,28 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const parsed = createConflictSchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
+
+  let status: string;
+  try {
+    const loaded = await loadConflictLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, body.status, "conflict");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[conflicts-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Conflict lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
 
   const [release1, release2, maxOrder, releases] = await Promise.all([
     prisma.release.findUnique({
@@ -120,7 +138,7 @@ export async function POST(req: Request) {
   const row = await prisma.environmentConflict.create({
     data: {
       conflictCode: await nextConflictCode(),
-      status: body.status,
+      status,
       priority: body.priority,
       release1Code: body.release1Code,
       release2Code: body.release2Code,

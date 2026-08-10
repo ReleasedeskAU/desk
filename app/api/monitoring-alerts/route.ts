@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { monitoringAlertWhere, sp } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
+import { loadAlertLifecycleConfig } from "@/lib/alert-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 
 const alertInclude = { application: { select: { id: true, name: true } } } as const;
 
@@ -29,12 +31,28 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const parsed = createMonitoringAlertSchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
+
+  let status = String(body.status ?? "").trim();
+  try {
+    const loaded = await loadAlertLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, status, "alert");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[monitoring-alerts-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Alert lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
 
   const [application, maxOrder] = await Promise.all([
     prisma.application.findUnique({ where: { id: body.applicationId }, select: { id: true } }),
@@ -55,7 +73,7 @@ export async function POST(req: Request) {
       metric: body.metric,
       threshold: body.threshold ?? null,
       currentValue: body.currentValue ?? null,
-      status: body.status,
+      status,
       assignedTo: body.assignedTo ?? null,
       environmentName: body.environmentName,
       sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,

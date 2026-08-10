@@ -8,6 +8,11 @@ import {
   Rocket,
 } from "lucide-react";
 import type { UnifiedRelease } from "@/lib/unified-releases";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  findLifecycleStatusByLabel,
+  type ReleaseStatusDisplayTone,
+} from "@/lib/release-lifecycle-status-ui";
 
 export type TimelineTone = "rose" | "amber" | "emerald" | "indigo" | "violet";
 
@@ -56,39 +61,86 @@ export const TIMELINE_TONES: Record<
   },
 };
 
+/** Kind-based legend (lifecycle SSOT) — not hardcoded status names. */
 export const TIMELINE_LEGEND: { tone: TimelineTone; label: string }[] = [
-  { tone: "rose", label: "Blocked" },
-  { tone: "amber", label: "At Risk" },
-  { tone: "emerald", label: "Approved" },
-  { tone: "indigo", label: "In Testing" },
-  { tone: "violet", label: "Planning / CAB" },
+  { tone: "rose", label: "Interrupt" },
+  { tone: "amber", label: "Branch" },
+  { tone: "emerald", label: "Terminal" },
+  { tone: "indigo", label: "Mainline (mid)" },
+  { tone: "violet", label: "Mainline (early)" },
 ];
 
-/** Same semantic mapping as Dashboard pipeline tiles. */
-export function mapReleaseStatusToTimeline(status: string): {
+function displayToneToTimeline(tone: ReleaseStatusDisplayTone): TimelineTone {
+  switch (tone) {
+    case "bad":
+      return "rose";
+    case "warn":
+      return "amber";
+    case "good":
+      return "emerald";
+    case "info":
+      return "indigo";
+    default:
+      return "violet";
+  }
+}
+
+/**
+ * Map a release status to timeline tone/icon.
+ * When config is provided, uses lifecycle kind; otherwise falls back to legacy labels.
+ */
+export function mapReleaseStatusToTimeline(
+  status: string,
+  config?: ReleaseLifecycleConfig | null
+): {
   tone: TimelineTone;
   label: string;
   icon: LucideIcon;
 } {
+  const found = config ? findLifecycleStatusByLabel(config, status) : null;
+  if (found) {
+    if (found.kind === "interrupt") {
+      return { tone: "rose", label: found.label, icon: Ban };
+    }
+    if (found.kind === "branch") {
+      return { tone: "amber", label: found.label, icon: AlertTriangle };
+    }
+    if (found.kind === "terminal") {
+      return { tone: "emerald", label: found.label, icon: CheckCircle2 };
+    }
+    if (found.sortOrder <= 20 || found.key === "draft" || found.key === "planning") {
+      return { tone: "violet", label: found.label, icon: Rocket };
+    }
+    if (found.key === "pending_cab") {
+      return { tone: "violet", label: found.label, icon: Clock };
+    }
+    return { tone: "indigo", label: found.label, icon: Activity };
+  }
+
   switch (status) {
     case "Blocked":
       return { tone: "rose", label: "Blocked", icon: Ban };
     case "At Risk":
-      return { tone: "amber", label: "At Risk", icon: AlertTriangle };
+    case "Rolled Back":
+    case "Deferred":
+    case "Rejected":
+      return { tone: "amber", label: status, icon: AlertTriangle };
     case "Approved":
+    case "CAB Approved":
     case "Complete":
     case "Completed":
     case "Shipped":
-      return { tone: "emerald", label: status === "Approved" ? "Approved" : status, icon: CheckCircle2 };
+    case "Deployed":
+    case "Closed":
+      return { tone: "emerald", label: status, icon: CheckCircle2 };
     case "Testing":
+    case "UAT":
     case "In Testing":
     case "In Progress":
     case "Ready":
-      return {
-        tone: "indigo",
-        label: status === "Testing" ? "In Testing" : status,
-        icon: Activity,
-      };
+    case "Ready to deploy":
+    case "Deploying":
+      return { tone: "indigo", label: status, icon: Activity };
     case "Pending CAB":
       return { tone: "violet", label: "Pending CAB", icon: Clock };
     case "Planning":
@@ -97,7 +149,11 @@ export function mapReleaseStatusToTimeline(status: string): {
     case "Draft":
       return { tone: "violet", label: status, icon: Rocket };
     default:
-      return { tone: "violet", label: status, icon: Rocket };
+      return {
+        tone: displayToneToTimeline("neutral"),
+        label: status,
+        icon: Rocket,
+      };
   }
 }
 
@@ -195,8 +251,9 @@ function toMilestone(
   padding: number,
   side: "up" | "down",
   x?: number,
+  config?: ReleaseLifecycleConfig | null,
 ): TimelineMilestone {
-  const mapped = mapReleaseStatusToTimeline(r.status);
+  const mapped = mapReleaseStatusToTimeline(r.status, config);
   const _x = x ?? dateToX(r.date, periodStart, periodEnd, trackWidth, padding);
   return {
     id: r.id,
@@ -221,10 +278,13 @@ export function layoutTimelineMilestones(
   periodStart: Date,
   periodEnd: Date,
   trackWidth: number,
-  options?: LayoutTimelineOptions,
+  options?: LayoutTimelineOptions & {
+    lifecycleConfig?: ReleaseLifecycleConfig | null;
+  },
 ): TimelineMilestone[] {
   const padding = 90;
   const minGap = options?.minGap ?? DEFAULT_MIN_GAP;
+  const config = options?.lifecycleConfig ?? null;
   const sorted = [...releases].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
@@ -249,7 +309,16 @@ export function layoutTimelineMilestones(
     }
     x = Math.min(Math.max(x, padding), trackWidth - padding);
     placed.push({ x, side });
-    return toMilestone(r, periodStart, periodEnd, trackWidth, padding, side, x);
+    return toMilestone(
+      r,
+      periodStart,
+      periodEnd,
+      trackWidth,
+      padding,
+      side,
+      x,
+      config
+    );
   });
 }
 
@@ -264,10 +333,14 @@ export function layoutDotTimelineMarkers(
   periodStart: Date,
   periodEnd: Date,
   trackWidth: number,
-  options?: { labelMinGap?: number },
+  options?: {
+    labelMinGap?: number;
+    lifecycleConfig?: ReleaseLifecycleConfig | null;
+  },
 ): TimelineMarker[] {
   const padding = 64;
   const labelMinGap = options?.labelMinGap ?? DOT_LABEL_MIN_GAP;
+  const config = options?.lifecycleConfig ?? null;
   const sorted = [...releases].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
@@ -318,7 +391,16 @@ export function layoutDotTimelineMarkers(
 
   return merged.map((node, i) => {
     const members = node.members.map((r) =>
-      toMilestone(r, periodStart, periodEnd, trackWidth, padding, node.side, node.x),
+      toMilestone(
+        r,
+        periodStart,
+        periodEnd,
+        trackWidth,
+        padding,
+        node.side,
+        node.x,
+        config
+      ),
     );
     const stemHeight = stemHeights[i];
     if (members.length === 1) {

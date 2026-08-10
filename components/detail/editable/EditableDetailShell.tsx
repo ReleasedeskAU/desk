@@ -35,6 +35,8 @@ type EditableDetailShellProps = {
   /** @deprecated Prefer successChanges dialog; kept for transitional banners. */
   saveMessage?: string | null;
   editError?: string | null;
+  /** Clears editError when the error popup is dismissed (modal stays open). */
+  onClearEditError?: () => void;
   onEdit: () => void;
   onDiscard: () => void;
   onSave: () => void;
@@ -79,6 +81,7 @@ export function EditableDetailShell({
   deleting = false,
   saveMessage,
   editError,
+  onClearEditError,
   onEdit,
   onDiscard,
   onSave,
@@ -194,6 +197,7 @@ export function EditableDetailShell({
         lockedIdValue={entityCode}
         saving={saving}
         error={editError}
+        onClearError={onClearEditError}
         onCancel={onDiscard}
         onSave={onSave}
       >

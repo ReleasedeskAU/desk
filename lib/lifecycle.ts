@@ -1,6 +1,11 @@
 import type { DeploymentPhase, LifecycleStageView, Release, ReleaseDecision } from "./types";
 import { calcReadiness, getBlockers } from "./utils";
 
+/**
+ * Legacy demo/command-center stage rail (not the release-status lifecycle graph).
+ * Release status SSOT is UserReleaseLifecycleConfig — use ReleaseLifecycleStepper
+ * / release-lifecycle-config for configurable statuses.
+ */
 export const LIFECYCLE_STAGES: { id: LifecycleStageView["id"]; label: string }[] = [
   { id: "planning", label: "Planning" },
   { id: "scheduling", label: "Scheduling" },

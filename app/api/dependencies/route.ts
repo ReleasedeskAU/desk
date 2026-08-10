@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { filterSeedDependencies } from "@/lib/dependency-view";
+import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
 import { createDependencySchema } from "@/lib/validation/dependency";
@@ -77,13 +79,29 @@ export async function GET(req: Request) {
 
 /** Create a release dependency (editor+). */
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const parsed = createDependencySchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   const body = parsed.data;
+
+  let status: string;
+  try {
+    const loaded = await loadDependencyLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, body.status, "dependency");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[dependencies-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Dependency lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
 
   try {
     const [release, dependsOn] = await Promise.all([
@@ -117,7 +135,7 @@ export async function POST(req: Request) {
         releaseId: body.releaseId,
         dependsOnReleaseId: body.dependsOnReleaseId,
         dependencyType: body.dependencyType,
-        status: body.status,
+        status,
         impactIfBlocked: body.impactIfBlocked,
         notes: body.notes ?? null,
         sourceOrder,

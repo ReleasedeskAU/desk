@@ -74,6 +74,8 @@ export async function GET(
       status: release.status,
       currentKey: current?.key ?? null,
       currentLabel: current?.label ?? release.status,
+      currentKind: current?.kind ?? null,
+      currentEnabled: current?.enabled ?? false,
       unknownStatus: current == null,
       configPin: resolved.configPin,
       versionId: resolved.versionId,

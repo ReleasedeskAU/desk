@@ -8,6 +8,7 @@ import {
 } from "@/lib/db-release-command";
 import { predictDbRelease } from "@/lib/db-predictive";
 import { prisma } from "@/lib/prisma";
+import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
 
 const releaseInclude = {
   department: true,
@@ -18,7 +19,7 @@ const releaseInclude = {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   const release = await prisma.release.findUnique({
@@ -26,6 +27,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     include: releaseInclude,
   });
   if (!release) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  let lifecycleConfig = null;
+  try {
+    lifecycleConfig = (
+      await resolveLifecycleConfigForRelease(
+        user!.id,
+        release.lifecycleConfigVersionId
+      )
+    ).config;
+  } catch {
+    lifecycleConfig = null;
+  }
 
   const [p1Issues, liveBlockerRows] = await Promise.all([
     prisma.p1Issue.findMany({
@@ -46,10 +59,25 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   ]);
 
   const blockers = liveBlockersToCommandBlockers(liveBlockerRows);
-  const readiness = calcDbReadiness(release, p1Issues, blockers.length);
-  const stages = computeDbLifecycleStages(release, p1Issues, blockers);
-  const nextActions = getDbNextActions(release, blockers);
-  const prediction = predictDbRelease(release, p1Issues, blockers);
+  const readiness = calcDbReadiness(
+    release,
+    p1Issues,
+    blockers.length,
+    lifecycleConfig
+  );
+  const stages = computeDbLifecycleStages(
+    release,
+    p1Issues,
+    blockers,
+    lifecycleConfig
+  );
+  const nextActions = getDbNextActions(release, blockers, lifecycleConfig);
+  const prediction = predictDbRelease(
+    release,
+    p1Issues,
+    blockers,
+    lifecycleConfig
+  );
 
   return NextResponse.json({
     readiness,

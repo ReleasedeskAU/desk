@@ -1,16 +1,20 @@
 "use client";
 
 /**
- * Transitions panel — list edges grouped by from-status; toggle enable + enforcement.
+ * Transitions panel — Active / Inactive moves; toggle enable + enforcement.
  */
+import { useMemo } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import type {
+  ReleaseLifecycleConfig,
+  ReleaseLifecycleTransitionConfig,
+} from "@/lib/release-lifecycle-config";
 import {
-  groupTransitionsByFrom,
   releaseLifecycleTargetKey,
   transitionRemovalBlockReason,
   transitionTargetLabel,
 } from "@/lib/release-lifecycle-settings-ui";
+import { LifecycleSection } from "@/components/settings/lifecycle/LifecycleSection";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -31,8 +35,41 @@ export type TransitionsPanelProps = {
   enforcementWarning: string | null;
 };
 
+type FromGroup = {
+  fromKey: string;
+  fromLabel: string;
+  transitions: ReleaseLifecycleTransitionConfig[];
+};
+
+function groupByFrom(
+  transitions: ReleaseLifecycleTransitionConfig[],
+  config: ReleaseLifecycleConfig
+): FromGroup[] {
+  const statusOrder = new Map(
+    config.statuses.map((status) => [status.key, status.sortOrder] as const)
+  );
+  const labelByKey = new Map(
+    config.statuses.map((status) => [status.key, status.label] as const)
+  );
+  const byFrom = new Map<string, ReleaseLifecycleTransitionConfig[]>();
+  for (const transition of transitions) {
+    const list = byFrom.get(transition.fromKey) ?? [];
+    list.push(transition);
+    byFrom.set(transition.fromKey, list);
+  }
+  return [...byFrom.entries()]
+    .sort(
+      ([a], [b]) => (statusOrder.get(a) ?? 0) - (statusOrder.get(b) ?? 0)
+    )
+    .map(([fromKey, items]) => ({
+      fromKey,
+      fromLabel: labelByKey.get(fromKey) ?? fromKey,
+      transitions: items.sort((a, b) => a.sortOrder - b.sortOrder),
+    }));
+}
+
 /**
- * Render transition graph as grouped lists with enable/Required controls.
+ * Render Active and Inactive transition lists with enable/Required controls.
  */
 export function TransitionsPanel({
   config,
@@ -49,8 +86,118 @@ export function TransitionsPanel({
   onAdd,
   enforcementWarning,
 }: TransitionsPanelProps) {
-  const groups = groupTransitionsByFrom(config);
   const statusOptions = [...config.statuses].sort((a, b) => a.sortOrder - b.sortOrder);
+  const active = useMemo(
+    () => config.transitions.filter((t) => t.enabled),
+    [config.transitions]
+  );
+  const inactive = useMemo(
+    () => config.transitions.filter((t) => !t.enabled),
+    [config.transitions]
+  );
+  const activeGroups = useMemo(
+    () => groupByFrom(active, config),
+    [active, config]
+  );
+  const inactiveGroups = useMemo(
+    () => groupByFrom(inactive, config),
+    [inactive, config]
+  );
+
+  const renderGroups = (groups: FromGroup[]) => (
+    <div className="divide-y divide-slate-100 dark:divide-white/10">
+      {groups.map(({ fromKey, fromLabel, transitions }) => (
+        <div key={fromKey}>
+          <div className="bg-slate-50/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:bg-white/[0.02] dark:text-white/40">
+            From {fromLabel}
+          </div>
+          <ul className="divide-y divide-slate-100 dark:divide-white/10">
+            {transitions.map((transition) => {
+              const targetKey = releaseLifecycleTargetKey(transition);
+              const rowKey = `${transition.fromKey}:${targetKey}`;
+              const selected = selectedKey === rowKey;
+              const enabledGateCount = transition.gates.filter((g) => g.enabled).length;
+              const removeBlock = transitionRemovalBlockReason(transition);
+              return (
+                <li key={rowKey}>
+                  <div
+                    className={cn(
+                      "flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition-colors",
+                      selected
+                        ? "bg-brand-500/8 dark:bg-brand-500/15"
+                        : "hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+                    )}
+                    data-testid={`lifecycle-transition-row-${rowKey}`}
+                  >
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                      onClick={() => onSelect(transition.fromKey, targetKey)}
+                    >
+                      <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
+                        → {transitionTargetLabel(transition, config.statuses)}
+                        {!transition.isSystem ? (
+                          <span className="ml-2 rounded-full bg-brand-500/10 px-2 py-0.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300">
+                            Custom
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
+                        {enabledGateCount} gate{enabledGateCount === 1 ? "" : "s"} · click to
+                        open Gates for this move
+                      </p>
+                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <LifecycleToggle
+                        checked={transition.enabled}
+                        onCheckedChange={(enabled) =>
+                          onToggleEnabled(transition.fromKey, targetKey, enabled)
+                        }
+                        label={transition.enabled ? "On" : "Off"}
+                        disabled={!editing}
+                        title="When On, this move appears as a legal next status. Off hides it without deleting."
+                        aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} ${transition.enabled ? "On" : "Off"}`}
+                        data-testid={`lifecycle-transition-enabled-${rowKey}`}
+                      />
+                      <LifecycleToggle
+                        checked={transition.enforcement === "required"}
+                        onCheckedChange={(required) =>
+                          onToggleEnforcement(transition.fromKey, targetKey, required)
+                        }
+                        label={
+                          transition.enforcement === "required" ? "Required" : "Flexible"
+                        }
+                        disabled={!editing}
+                        title="Required = gates must pass (hard block). Flexible = override with a reason when gates fail."
+                        aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} enforcement`}
+                        data-testid={`lifecycle-transition-required-${rowKey}`}
+                      />
+                      {editing ? (
+                        <button
+                          type="button"
+                          className={cn(
+                            taBtnSecondary,
+                            "gap-1 px-2.5 py-1.5 text-[12px] text-rose-700 disabled:opacity-40 dark:text-rose-300"
+                          )}
+                          disabled={Boolean(removeBlock)}
+                          title={removeBlock ?? "Remove this transition"}
+                          onClick={() => onRemove(transition.fromKey, targetKey)}
+                          data-testid={`lifecycle-transition-remove-${rowKey}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-4" data-testid="lifecycle-transitions-panel">
@@ -64,102 +211,23 @@ export function TransitionsPanel({
         </div>
       ) : null}
 
-      <div className="space-y-3">
-        {groups.map(({ from, transitions }) => (
-          <div
-            key={from.key}
-            className="rounded-xl border border-slate-200 dark:border-[var(--border)]"
-          >
-            <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[12px] font-bold uppercase tracking-wide text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/50">
-              From {from.label}
-            </div>
-            <ul className="divide-y divide-slate-100 dark:divide-white/10">
-              {transitions.map((transition) => {
-                const targetKey = releaseLifecycleTargetKey(transition);
-                const rowKey = `${transition.fromKey}:${targetKey}`;
-                const selected = selectedKey === rowKey;
-                const enabledGateCount = transition.gates.filter((g) => g.enabled).length;
-                const removeBlock = transitionRemovalBlockReason(transition);
-                return (
-                  <li key={rowKey}>
-                    {/* Row is a div (not a button) so nested toggle/remove buttons stay valid HTML. */}
-                    <div
-                      className={cn(
-                        "flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition-colors",
-                        selected
-                          ? "bg-brand-500/8 dark:bg-brand-500/15"
-                          : "hover:bg-slate-50 dark:hover:bg-white/[0.04]"
-                      )}
-                      data-testid={`lifecycle-transition-row-${rowKey}`}
-                    >
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
-                        onClick={() => onSelect(transition.fromKey, targetKey)}
-                      >
-                        <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
-                          → {transitionTargetLabel(transition, config.statuses)}
-                          {!transition.isSystem ? (
-                            <span className="ml-2 rounded-full bg-brand-500/10 px-2 py-0.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300">
-                              Custom
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
-                          {enabledGateCount} gate{enabledGateCount === 1 ? "" : "s"} · click to
-                          manage gates
-                        </p>
-                      </button>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <LifecycleToggle
-                          checked={transition.enabled}
-                          onCheckedChange={(enabled) =>
-                            onToggleEnabled(transition.fromKey, targetKey, enabled)
-                          }
-                          label={transition.enabled ? "On" : "Off"}
-                          disabled={!editing}
-                          title="When On, this move appears as a legal next status. Off hides it without deleting."
-                          aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} ${transition.enabled ? "On" : "Off"}`}
-                          data-testid={`lifecycle-transition-enabled-${rowKey}`}
-                        />
-                        <LifecycleToggle
-                          checked={transition.enforcement === "required"}
-                          onCheckedChange={(required) =>
-                            onToggleEnforcement(transition.fromKey, targetKey, required)
-                          }
-                          label={
-                            transition.enforcement === "required" ? "Required" : "Flexible"
-                          }
-                          disabled={!editing}
-                          title="Required = gates must pass (hard block). Flexible = override with a reason when gates fail."
-                          aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} enforcement`}
-                          data-testid={`lifecycle-transition-required-${rowKey}`}
-                        />
-                        {editing ? (
-                          <button
-                            type="button"
-                            className={cn(
-                              taBtnSecondary,
-                              "gap-1 px-2.5 py-1.5 text-[12px] text-rose-700 disabled:opacity-40 dark:text-rose-300"
-                            )}
-                            disabled={Boolean(removeBlock)}
-                            title={removeBlock ?? "Remove this transition"}
-                            onClick={() => onRemove(transition.fromKey, targetKey)}
-                            data-testid={`lifecycle-transition-remove-${rowKey}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Remove
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </div>
+      <LifecycleSection
+        title="Active"
+        count={active.length}
+        emptyMessage="No active transitions — turn a move On below."
+        testId="lifecycle-transitions-active"
+      >
+        {active.length > 0 ? renderGroups(activeGroups) : null}
+      </LifecycleSection>
+
+      <LifecycleSection
+        title="Inactive"
+        count={inactive.length}
+        emptyMessage="No inactive transitions."
+        testId="lifecycle-transitions-inactive"
+      >
+        {inactive.length > 0 ? renderGroups(inactiveGroups) : null}
+      </LifecycleSection>
 
       {editing ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 dark:border-[var(--border)] dark:bg-white/[0.03]">

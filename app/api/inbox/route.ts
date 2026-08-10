@@ -29,6 +29,7 @@ export async function GET(req: Request) {
           filters,
           sessionName: user?.name ?? "",
           prisma,
+          clerkUserId: user?.id,
         }),
       { label: "inbox", attempts: 5, baseDelayMs: 800 }
     );

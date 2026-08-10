@@ -30,6 +30,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Drift / Alert / Approval create SSOT:** Drift dashboard, monitoring alerts, and approval queue list filters plus create modals read enabled labels from `/api/drift-lifecycle-config`, `/api/alert-lifecycle-config`, and `/api/approval-lifecycle-config`. `POST /api/drifts`, `POST /api/monitoring-alerts`, and `POST /api/approvals` reject status/decision values that are not enabled in the caller’s lifecycle config (approval `decision` uses the same create-guard helpers as status).
+- **Release status SSOT:** Releases filters/create form/table badges/detail chips, dashboard pipeline tiles, calendar status filter/timeline colors, needs-attention/inbox/voice attention queries, and command-center readiness/prediction buckets now read the caller’s release lifecycle config (`/api/release-lifecycle-config`) instead of hardcoded labels (`Approved`, `At Risk`, etc.). `POST /api/releases` rejects statuses that are not enabled in that config.
+- **Entity lifecycle SSOT:** Blockers, Risks, Incidents, Dependencies, Conflicts, Drifts, Monitoring Alerts, and Approvals list filters/create forms/POST create validation now use their per-entity lifecycle configs (same pattern as Releases). Sign-off filter options on the Releases page and “complete” chips on release detail use Sign-off Lifecycle (`countsAsComplete`). Shared helpers: `lib/entity-lifecycle-status-ui.ts`, `hooks/useEntityLifecycleStatuses.ts`, `lib/entity-lifecycle-create-guard.ts`.
 - Voice branding: end-user copy and spoken identity present as **Release Desk Voice** only. System prompts forbid naming Google/Gemini/other vendors; session API no longer returns the Live model id; public mint/WS errors are sanitized (no billing/provider URLs in Voice Log). Settings voice usage panel uses Release Desk wording.
 
 ### Fixed

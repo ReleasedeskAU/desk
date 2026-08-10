@@ -15,6 +15,7 @@ import {
   isAlwaysPassLifecycleGate,
   isHardBoundaryStatusKey,
   moveLifecycleStatus,
+  partitionTransitionGateCatalog,
   removeLifecycleStatus,
   removeLifecycleTransition,
   reorderLifecycleStatuses,
@@ -195,6 +196,43 @@ describe("gates panel helpers", () => {
       (t) => t.fromKey === "draft" && t.toKey === "planning"
     );
     assert.ok(edge?.gates.some((g) => g.gateType === "owner_set" && g.enabled));
+  });
+
+  it("attaches required_fields_set with default approved fields", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const on = toggleLifecycleGate(
+      config,
+      "draft",
+      "cancelled",
+      "required_fields_set",
+      true
+    );
+    assert.ok("config" in on);
+    const edge = on.config.transitions.find(
+      (t) => t.fromKey === "draft" && t.toKey === "cancelled"
+    );
+    const gate = edge?.gates.find((g) => g.gateType === "required_fields_set");
+    assert.ok(gate?.enabled);
+    assert.deepEqual(gate?.params?.fields, ["owner", "priority", "releaseSize"]);
+  });
+
+  it("hides an enabled check from Available on that move", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const before = config.transitions.find(
+      (t) => t.fromKey === "draft" && t.toKey === "cancelled"
+    )!;
+    assert.equal(partitionTransitionGateCatalog(before).attached.length, 0);
+    assert.equal(partitionTransitionGateCatalog(before).available.length, 18);
+
+    const on = toggleLifecycleGate(config, "draft", "cancelled", "owner_set", true);
+    assert.ok("config" in on);
+    const after = on.config.transitions.find(
+      (t) => t.fromKey === "draft" && t.toKey === "cancelled"
+    )!;
+    const { attached, available } = partitionTransitionGateCatalog(after);
+    assert.deepEqual(attached, ["owner_set"]);
+    assert.equal(available.length, 17);
+    assert.ok(!available.includes("owner_set"));
   });
 });
 

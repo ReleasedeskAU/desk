@@ -4,7 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { releaseListOrderBy, releaseListWhere, sp } from "@/lib/list-api-filters";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
 import { createReleaseRow } from "@/lib/org-compat";
-import { getLatestLifecycleConfigVersionId } from "@/lib/release-lifecycle-config-db";
+import {
+  getLatestLifecycleConfigVersionId,
+  loadReleaseLifecycleConfig,
+} from "@/lib/release-lifecycle-config-db";
+import {
+  defaultReleaseStatusLabel,
+  isEnabledReleaseStatusLabel,
+} from "@/lib/release-lifecycle-status-ui";
 
 function optionalString(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
@@ -61,15 +68,31 @@ export async function POST(req: Request) {
 
   // Pin new releases to the creator's latest lifecycle snapshot so mid-flight
   // config edits cannot re-route them. Existing rows stay unpinned until backfill.
+  // Status must be an enabled label in the creator's lifecycle config (SSOT).
   let lifecycleConfigVersionId: string | null = null;
+  let status = String(body.status ?? "").trim();
   try {
-    lifecycleConfigVersionId = await getLatestLifecycleConfigVersionId(user!.id);
+    const loaded = await loadReleaseLifecycleConfig(user!.id);
+    const defaultStatus = defaultReleaseStatusLabel(loaded.config) || "Draft";
+    if (!status) status = defaultStatus;
+    if (!isEnabledReleaseStatusLabel(loaded.config, status)) {
+      return NextResponse.json(
+        { error: "Status is not enabled in the release lifecycle configuration" },
+        { status: 400 }
+      );
+    }
+    lifecycleConfigVersionId =
+      loaded.latestVersionId ??
+      (await getLatestLifecycleConfigVersionId(user!.id));
   } catch (pinError) {
-    // Fail open on pin only — release create must not break if versioning is unavailable.
-    console.error("[release-create] lifecycle config pin failed", {
+    console.error("[release-create] lifecycle config load failed", {
       clerkUserId: user!.id,
       message: pinError instanceof Error ? pinError.message : "unknown",
     });
+    return NextResponse.json(
+      { error: "Release lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
   }
 
   const created = await createReleaseRow({
@@ -77,7 +100,7 @@ export async function POST(req: Request) {
       name: String(body.name ?? ""),
       programProject: normalizeProgramProject(body.programProject ?? "") ?? "N/A",
       owner: String(body.owner ?? "Unknown"),
-      status: String(body.status ?? "Draft"),
+      status,
       releaseDate,
       priority: String(body.priority ?? "P3 - Medium"),
       impact: String(body.impact ?? "Medium"),

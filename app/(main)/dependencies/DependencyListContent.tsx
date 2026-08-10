@@ -26,8 +26,9 @@ import { DependencyFormModal } from "@/components/dependencies/DependencyFormMod
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 import { taBtnPrimary } from "@/lib/styles";
-import { DEPENDENCY_IMPACTS, DEPENDENCY_STATUSES } from "@/lib/validation/dependency";
+import { DEPENDENCY_IMPACTS } from "@/lib/validation/dependency";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type DepRow = {
   id: string;
@@ -54,7 +55,6 @@ const TYPE_CLASSES: Record<string, string> = {
   Integration: "bg-cyan-100 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300",
 };
 
-const STATUS_OPTIONS = DEPENDENCY_STATUSES;
 const IMPACT_OPTIONS = DEPENDENCY_IMPACTS;
 
 function ReleaseLink({ code, dbId, name }: { code: string; dbId: string | null; name?: string }) {
@@ -141,6 +141,7 @@ export default function DependencyListContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const canEdit = sessionCanEdit(user);
   const [modalOpen, setModalOpen] = useState(false);
+  const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
 
   const {
     rows: deps,
@@ -170,6 +171,15 @@ export default function DependencyListContent() {
     },
   });
 
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(deps.map((d) => d.status)),
+    [lifecycle, deps]
+  );
+  const openLabelSet = useMemo(
+    () => new Set(lifecycle.openLabels.map((l) => l.toLocaleLowerCase())),
+    [lifecycle.openLabels]
+  );
+
   useEffect(() => {
     return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
       label: "dependencies-auth",
@@ -193,11 +203,8 @@ export default function DependencyListContent() {
     () => [...new Set(deps.map((d) => d.dependencyType).filter(Boolean))].sort(),
     [deps]
   );
-  const blockedCount = deps.filter(
-    (d) =>
-      d.status === "Blocked" ||
-      d.status === "At Risk" ||
-      d.status === "Pending"
+  const blockedCount = deps.filter((d) =>
+    openLabelSet.has(d.status.toLocaleLowerCase())
   ).length;
 
   const voiceVisibleRows = useMemo(
@@ -241,13 +248,15 @@ export default function DependencyListContent() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSaved={() => refetch()}
+        statusOptions={lifecycle.createOptions}
+        defaultStatus={lifecycle.defaultStatus || "Pending"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("status") && (
             <FilterPills
-              options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
-              value={(values.status as (typeof STATUS_OPTIONS)[number]) || ""}
+              options={statusOptions.map((s) => ({ value: s, label: s }))}
+              value={values.status || ""}
               onChange={(v) => setFilter("status", v)}
             />
           )}

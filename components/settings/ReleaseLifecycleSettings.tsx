@@ -4,7 +4,14 @@
  * Settings → Release Lifecycle — per-user statuses, transitions, and fixed-catalog gates.
  * Matches the Risk Engine settings pattern: section cards, Edit / Save / Cancel per page.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { CircleHelp, GitBranch, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultReleaseLifecycleConfig,
@@ -28,6 +35,8 @@ import type { ReleaseLifecycleGateType } from "@/lib/release-lifecycle-gates";
 import { StatusesPanel } from "@/components/settings/lifecycle/StatusesPanel";
 import { TransitionsPanel } from "@/components/settings/lifecycle/TransitionsPanel";
 import { GatesPanel } from "@/components/settings/lifecycle/GatesPanel";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import type { FormAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -53,16 +62,16 @@ const LIFECYCLE_TAB_HELP: Record<
       "On = people can pick this move. Off = the move is hidden.",
       "Flexible = if a gate fails, you can still proceed with a written reason.",
       "Required = if a gate fails, the move is blocked — no override.",
-      "“1 gate” means 1 homework check is attached to that move. Click the row to manage those checks.",
+      "“1 gate” means 1 homework check is attached. Click the row (or open the Gates tab) to manage checks.",
     ],
   },
   gates: {
     title: "Quick help · Gates",
     points: [
-      "Gates are homework checks on a specific move (booking exists, owner set, no blockers…).",
-      "“Active on this move” = the rules that actually run for the selected transition.",
-      "“Available checks” = the full menu. Turn Attached on to add a check to this move.",
-      "Whether a failed check blocks hard or allows an override is set on Transitions (Required vs Flexible).",
+      "Every allowed move is listed here — click a row (e.g. Draft → Planning) to open its checks.",
+      "Gates are homework checks on that move (booking exists, owner set, no blockers…).",
+      "Turn Attached on to add a check — it moves into Active and leaves Available for that move.",
+      "Hard block vs override is set on Transitions (Required vs Flexible).",
     ],
   },
 };
@@ -147,7 +156,7 @@ export function ReleaseLifecycleSettings() {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [alert, setAlert] = useState<FormAlert | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [enforcementWarning, setEnforcementWarning] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<PanelId>("statuses");
@@ -157,15 +166,21 @@ export function ReleaseLifecycleSettings() {
   const [addTo, setAddTo] = useState("");
   const [selectedFromKey, setSelectedFromKey] = useState<string | null>(null);
   const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   const selectedRowKey = useMemo(() => {
     if (!selectedFromKey || !selectedTargetKey) return null;
     return `${selectedFromKey}:${selectedTargetKey}`;
   }, [selectedFromKey, selectedTargetKey]);
 
+  const showAlert = useCallback((message: string, title = "Could not update lifecycle") => {
+    setAlert({ title, message });
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setAlert(null);
     try {
       const [configRes, usageRes] = await Promise.all([
         fetch("/api/release-lifecycle-config", { credentials: "same-origin" }),
@@ -193,15 +208,16 @@ export function ReleaseLifecycleSettings() {
         setUsage({});
       }
     } catch (loadError) {
-      setError(
+      showAlert(
         loadError instanceof Error
           ? loadError.message
-          : "Failed to load lifecycle config"
+          : "Failed to load lifecycle config",
+        "Could not load lifecycle"
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showAlert]);
 
   useEffect(() => {
     void load();
@@ -210,14 +226,14 @@ export function ReleaseLifecycleSettings() {
   const beginEdit = () => {
     setDraft(cloneLifecycleConfig(baseline));
     setEditing(true);
-    setError(null);
+    setAlert(null);
     setEnforcementWarning(null);
   };
 
   const cancelEdit = () => {
     setDraft(cloneLifecycleConfig(baseline));
     setEditing(false);
-    setError(null);
+    setAlert(null);
     setEnforcementWarning(null);
     setNewLabel("");
     setNewTerminal(false);
@@ -226,11 +242,11 @@ export function ReleaseLifecycleSettings() {
   const save = async () => {
     const validationError = validateReleaseLifecycleConfig(draft);
     if (validationError) {
-      setError(validationError);
+      showAlert(validationError, "Could not save lifecycle");
       return;
     }
     setSaving(true);
-    setError(null);
+    setAlert(null);
     try {
       const res = await fetch("/api/release-lifecycle-config", {
         method: "PUT",
@@ -258,20 +274,24 @@ export function ReleaseLifecycleSettings() {
         setUsage(usageBody.usage ?? {});
       }
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Save failed");
+      showAlert(
+        saveError instanceof Error ? saveError.message : "Save failed",
+        "Could not save lifecycle"
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const applyResult = (
-    result: { config: ReleaseLifecycleConfig } | { error: string }
+    result: { config: ReleaseLifecycleConfig } | { error: string },
+    errorTitle = "Could not update lifecycle"
   ) => {
     if ("error" in result) {
-      setError(result.error);
+      showAlert(result.error, errorTitle);
       return;
     }
-    setError(null);
+    setAlert(null);
     setDraft(result.config);
   };
 
@@ -342,15 +362,8 @@ export function ReleaseLifecycleSettings() {
           {warning}
         </div>
       ) : null}
-      {error ? (
-        <div
-          className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
-          data-testid="lifecycle-settings-error"
-          role="alert"
-        >
-          {error}
-        </div>
-      ) : null}
+
+      <FormAlertDialog alert={alert} onDismiss={() => setAlert(null)} />
 
       <div className="flex flex-wrap gap-2">
         {(
@@ -394,18 +407,30 @@ export function ReleaseLifecycleSettings() {
             onNewLabelChange={setNewLabel}
             onNewTerminalChange={setNewTerminal}
             onAdd={() => {
-              applyResult(addLifecycleStatus(draft, newLabel, newTerminal));
+              applyResult(
+                addLifecycleStatus(draftRef.current, newLabel, newTerminal),
+                "Could not add status"
+              );
               setNewLabel("");
               setNewTerminal(false);
             }}
             onRemove={(key) => {
-              applyResult(removeLifecycleStatus(draft, key, usage[key] ?? 0));
+              applyResult(
+                removeLifecycleStatus(draftRef.current, key, usage[key] ?? 0),
+                "Could not remove status"
+              );
             }}
             onToggleEnabled={(key, enabled) => {
-              applyResult(toggleLifecycleStatus(draft, key, enabled));
+              applyResult(
+                toggleLifecycleStatus(draftRef.current, key, enabled),
+                "Could not update status"
+              );
             }}
             onReorder={(orderedKeys) => {
-              applyResult(reorderLifecycleStatuses(draft, orderedKeys));
+              applyResult(
+                reorderLifecycleStatuses(draftRef.current, orderedKeys),
+                "Could not reorder statuses"
+              );
             }}
           />
         </SectionCard>
@@ -428,25 +453,31 @@ export function ReleaseLifecycleSettings() {
               setActivePanel("gates");
             }}
             onToggleEnabled={(fromKey, targetKey, enabled) => {
-              applyResult(toggleLifecycleTransition(draft, fromKey, targetKey, enabled));
+              applyResult(
+                toggleLifecycleTransition(draftRef.current, fromKey, targetKey, enabled),
+                "Could not update transition"
+              );
             }}
             onToggleEnforcement={(fromKey, targetKey, required) => {
               const result = setLifecycleTransitionEnforcement(
-                draft,
+                draftRef.current,
                 fromKey,
                 targetKey,
                 required ? "required" : "flexible"
               );
               if ("error" in result) {
-                setError(result.error);
+                showAlert(result.error, "Could not update transition");
                 return;
               }
-              setError(null);
+              setAlert(null);
               setDraft(result.config);
               setEnforcementWarning(result.warning);
             }}
             onRemove={(fromKey, targetKey) => {
-              applyResult(removeLifecycleTransition(draft, fromKey, targetKey));
+              applyResult(
+                removeLifecycleTransition(draftRef.current, fromKey, targetKey),
+                "Could not remove transition"
+              );
               if (
                 selectedFromKey === fromKey &&
                 selectedTargetKey === targetKey
@@ -460,7 +491,10 @@ export function ReleaseLifecycleSettings() {
             onAddFromChange={setAddFrom}
             onAddToChange={setAddTo}
             onAdd={() => {
-              applyResult(addLifecycleTransition(draft, addFrom, addTo));
+              applyResult(
+                addLifecycleTransition(draftRef.current, addFrom, addTo),
+                "Could not add transition"
+              );
               setAddFrom("");
               setAddTo("");
             }}
@@ -473,7 +507,7 @@ export function ReleaseLifecycleSettings() {
         <SectionCard
           step="3"
           title="Gates"
-          subtitle="Attach gates from the fixed catalog only. Unreliable deploy gates are labeled so they cannot be mistaken for real protection."
+          subtitle="Browse every transition and expand a row to attach checks. Unreliable deploy gates are labeled so they cannot be mistaken for real protection."
           help={LIFECYCLE_TAB_HELP.gates}
         >
           <GatesPanel
@@ -487,7 +521,17 @@ export function ReleaseLifecycleSettings() {
               gateType: ReleaseLifecycleGateType,
               enabled: boolean
             ) => {
-              applyResult(toggleLifecycleGate(draft, fromKey, targetKey, gateType, enabled));
+              // Always toggle against the latest draft so attached checks leave Available immediately.
+              applyResult(
+                toggleLifecycleGate(
+                  draftRef.current,
+                  fromKey,
+                  targetKey,
+                  gateType,
+                  enabled
+                ),
+                enabled ? "Could not attach check" : "Could not detach check"
+              );
             }}
           />
         </SectionCard>

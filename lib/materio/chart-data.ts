@@ -1,9 +1,19 @@
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { bucketReleaseStatusWithConfig } from "@/lib/release-lifecycle-status-ui";
+
 /** Build Materio-style weekly bar chart points from release dates. */
 export type WeeklyPoint = { label: string; releases: number; atRisk: number };
 
+/**
+ * Weekly release volume + attention bucket counts.
+ * @param releases - Rows with date/status.
+ * @param weeks - Number of weeks.
+ * @param config - Optional lifecycle config for status bucketing.
+ */
 export function buildWeeklyOverview(
   releases: { releaseDate?: string | Date | null; date?: string; status?: string }[],
-  weeks = 7
+  weeks = 7,
+  config?: ReleaseLifecycleConfig | null
 ): WeeklyPoint[] {
   const now = new Date();
   const buckets: WeeklyPoint[] = [];
@@ -26,7 +36,8 @@ export function buildWeeklyOverview(
       const d = new Date(raw);
       if (d >= start && d <= end) {
         count += 1;
-        if (r.status === "At Risk" || r.status === "Blocked") atRisk += 1;
+        const bucket = bucketReleaseStatusWithConfig(r.status ?? "", config);
+        if (bucket === "atRisk" || bucket === "blocked") atRisk += 1;
       }
     });
 
@@ -40,7 +51,8 @@ export type GrowthPoint = { month: string; total: number; shipped: number };
 
 export function buildGrowthSeries(
   releases: { releaseDate?: string | Date | null; date?: string; status?: string }[],
-  months = 6
+  months = 6,
+  config?: ReleaseLifecycleConfig | null
 ): GrowthPoint[] {
   const now = new Date();
   const buckets: GrowthPoint[] = [];
@@ -58,7 +70,9 @@ export function buildGrowthSeries(
       const rd = new Date(raw);
       if (rd >= d && rd <= end) {
         total += 1;
-        if (r.status === "Shipped" || r.status === "Complete") shipped += 1;
+        if (bucketReleaseStatusWithConfig(r.status ?? "", config) === "shipped") {
+          shipped += 1;
+        }
       }
     });
 
@@ -89,7 +103,8 @@ export type StackPoint = {
 /** Materio Total Profit-style stacked bars by month. */
 export function buildPortfolioStackSeries(
   releases: { releaseDate?: string | Date | null; date?: string; status?: string }[],
-  months = 7
+  months = 7,
+  config?: ReleaseLifecycleConfig | null
 ): StackPoint[] {
   const now = new Date();
   const buckets: StackPoint[] = [];
@@ -108,9 +123,10 @@ export function buildPortfolioStackSeries(
       if (!raw) return;
       const rd = new Date(raw);
       if (rd < start || rd > end) return;
-      const status = r.status ?? "";
-      if (status === "Shipped" || status === "Complete") shipped += 1;
-      else if (status === "In Progress" || status === "Ready") inProgress += 1;
+      const bucket = bucketReleaseStatusWithConfig(r.status ?? "", config);
+      if (bucket === "shipped") shipped += 1;
+      else if (bucket === "inProgress" || bucket === "blocked" || bucket === "atRisk")
+        inProgress += 1;
       else planned += 1;
     });
 

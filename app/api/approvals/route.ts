@@ -5,6 +5,9 @@ import { approvalWhere, sp } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createApprovalSchema } from "@/lib/validation/approval";
 import { createApprovalRow } from "@/lib/org-compat";
+import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
+import { defaultEntityStatusLabel } from "@/lib/entity-lifecycle-status-ui";
 
 async function nextApprovalCode(): Promise<string> {
   const rows = await prisma.approval.findMany({ select: { approvalCode: true } });
@@ -32,12 +35,40 @@ export async function GET(req: Request) {
 
 /** Creates an editor-authorized approval and derives its identity and release metadata server-side. */
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const parsed = createApprovalSchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
+
+  let decision = String(body.decision ?? "").trim();
+  try {
+    const loaded = await loadApprovalLifecycleConfig(user!.id);
+    // Decision labels are treated as lifecycle statuses for create validation.
+    const resolved = resolveCreateLifecycleStatus(loaded.config, decision, "approval");
+    if (!resolved.ok) return resolved.response;
+    decision = resolved.status;
+    const defaultDecision = defaultEntityStatusLabel(loaded.config);
+    // Non-default decisions require a decision date (same rule as the create form).
+    if (
+      decision.toLocaleLowerCase() !== defaultDecision.toLocaleLowerCase() &&
+      !body.decisionDate
+    ) {
+      return NextResponse.json(
+        { error: "Decision date is required when a decision has been made" },
+        { status: 400 }
+      );
+    }
+  } catch (err) {
+    console.error("[approvals-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Approval lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
 
   const release = await prisma.release.findUnique({
     where: { id: body.releaseId },
@@ -60,7 +91,7 @@ export async function POST(req: Request) {
     approverId: body.approverId,
     submittedDate: new Date(body.submittedDate),
     decisionDate: body.decisionDate ? new Date(body.decisionDate) : null,
-    decision: body.decision ?? "Pending",
+    decision,
     comments: body.comments ?? null,
     cabMeetingId: body.cabMeetingId ?? null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,

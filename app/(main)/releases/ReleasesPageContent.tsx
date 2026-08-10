@@ -5,9 +5,19 @@ import { useSearchParams } from "next/navigation";
 import { Plus, Package } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { TopBar } from "@/components/layout/TopBar";
-import { StatusBadge } from "@/components/badges/StatusBadge";
 import { NeedsAttentionPanel } from "@/components/dashboard/NeedsAttentionPanel";
 import { ReleaseFormModal, type ReleaseFormData } from "@/components/releases/ReleaseFormModal";
+import { ReleaseStatusBadge } from "@/components/releases/ReleaseStatusBadge";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  attentionStatusLabels,
+  enabledReleaseStatusLabels,
+  releaseStatusFilterOptions,
+} from "@/lib/release-lifecycle-status-ui";
+import {
+  entityStatusFilterOptions,
+  type EntityLifecycleConfigLike,
+} from "@/lib/entity-lifecycle-status-ui";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { ReleaseFiltersBar } from "@/components/releases/ReleaseFiltersBar";
@@ -155,6 +165,17 @@ export default function ReleasesPageContent() {
     trainingStatuses: [],
     conflictTypes: [],
   });
+  const [lifecycleConfig, setLifecycleConfig] =
+    useState<ReleaseLifecycleConfig | null>(null);
+  const createStatusOptions = useMemo(
+    () =>
+      lifecycleConfig ? enabledReleaseStatusLabels(lifecycleConfig) : [],
+    [lifecycleConfig]
+  );
+  const attentionStatuses = useMemo(
+    () => (lifecycleConfig ? attentionStatusLabels(lifecycleConfig) : ["Blocked"]),
+    [lifecycleConfig]
+  );
 
   useEffect(() => {
     type ApiRelease = ReleaseRow & {
@@ -180,39 +201,92 @@ export default function ReleasesPageContent() {
     const uniq = (vals: (string | null | undefined)[]) =>
       [...new Set(vals.map((v) => (v ?? "").trim()).filter(Boolean))].sort();
 
-    // Enum option lists only — Owner/Stakeholder are free-text against live User.name
-    // (no client-side name list; see releaseListWhere name contains).
-    return loadJsonEffect<ApiRelease[]>("/api/releases", (rows) => {
-      setFilterOptions({
-        statuses: uniq(rows.map((r) => r.status)),
-        priorities: uniq(rows.map((r) => r.priority)),
-        impacts: uniq(rows.map((r) => r.impact)),
-        approvalStatuses: uniq(rows.map((r) => r.approvalStatus)),
-        rollbackPlans: uniq(rows.map((r) => r.rollbackPlan)),
-        deploymentWindows: uniq(rows.map((r) => r.deploymentWindow)),
-        changeFreezes: uniq(rows.map((r) => r.changeFreeze)),
-        regulatories: uniq(rows.map((r) => r.regulatory)),
-        vendorMaintenances: uniq(rows.map((r) => r.vendorMaintenance)),
-        releaseSizes: uniq(rows.map((r) => r.releaseSize)),
-        releaseHealths: uniq(rows.map((r) => r.releaseHealth)),
-        devSignoffs: uniq(rows.map((r) => r.devSignoff)),
-        testSignoffs: uniq(rows.map((r) => r.testSignoff)),
-        uatSignoffs: uniq(rows.map((r) => r.uatSignoff)),
-        securityClearances: uniq(rows.map((r) => r.securityClearance)),
-        dressRehearsals: uniq(rows.map((r) => r.dressRehearsal)),
-        hypercarePlans: uniq(rows.map((r) => r.hypercarePlan)),
-        commsPlans: uniq(rows.map((r) => r.commsPlan)),
-        trainingStatuses: uniq(rows.map((r) => r.trainingStatus)),
+    let cancelled = false;
+    let releaseRows: ApiRelease[] = [];
+    let config: ReleaseLifecycleConfig | null = null;
+    let signoffConfig: EntityLifecycleConfigLike | null = null;
+
+    const signoffFilter = (present: (string | null | undefined)[]) =>
+      signoffConfig
+        ? entityStatusFilterOptions(
+            signoffConfig,
+            present.map((v) => v ?? "")
+          )
+        : uniq(present);
+
+    const apply = () => {
+      if (cancelled) return;
+      setFilterOptions((prev) => ({
+        ...prev,
+        statuses: config
+          ? releaseStatusFilterOptions(
+              config,
+              releaseRows.map((r) => r.status)
+            )
+          : uniq(releaseRows.map((r) => r.status)),
+        priorities: uniq(releaseRows.map((r) => r.priority)),
+        impacts: uniq(releaseRows.map((r) => r.impact)),
+        approvalStatuses: uniq(releaseRows.map((r) => r.approvalStatus)),
+        rollbackPlans: uniq(releaseRows.map((r) => r.rollbackPlan)),
+        deploymentWindows: uniq(releaseRows.map((r) => r.deploymentWindow)),
+        changeFreezes: uniq(releaseRows.map((r) => r.changeFreeze)),
+        regulatories: uniq(releaseRows.map((r) => r.regulatory)),
+        vendorMaintenances: uniq(releaseRows.map((r) => r.vendorMaintenance)),
+        releaseSizes: uniq(releaseRows.map((r) => r.releaseSize)),
+        releaseHealths: uniq(releaseRows.map((r) => r.releaseHealth)),
+        devSignoffs: signoffFilter(releaseRows.map((r) => r.devSignoff)),
+        testSignoffs: signoffFilter(releaseRows.map((r) => r.testSignoff)),
+        uatSignoffs: signoffFilter(releaseRows.map((r) => r.uatSignoff)),
+        securityClearances: signoffFilter(
+          releaseRows.map((r) => r.securityClearance)
+        ),
+        dressRehearsals: signoffFilter(releaseRows.map((r) => r.dressRehearsal)),
+        hypercarePlans: uniq(releaseRows.map((r) => r.hypercarePlan)),
+        commsPlans: uniq(releaseRows.map((r) => r.commsPlan)),
+        trainingStatuses: signoffFilter(releaseRows.map((r) => r.trainingStatus)),
         conflictTypes: uniq(
-          rows.flatMap((r) =>
+          releaseRows.flatMap((r) =>
             (r.conflictType ?? "")
               .split(/,\s*/)
               .map((v) => v.trim())
               .filter((v) => v && v !== "-")
           )
         ),
-      });
-    }, { label: "releases-filter-options" });
+      }));
+    };
+
+    const stopReleases = loadJsonEffect<ApiRelease[]>(
+      "/api/releases",
+      (rows) => {
+        releaseRows = rows;
+        apply();
+      },
+      { label: "releases-filter-options" }
+    );
+    const stopConfig = loadJsonEffect<{ config: ReleaseLifecycleConfig }>(
+      "/api/release-lifecycle-config",
+      (payload) => {
+        config = payload.config;
+        setLifecycleConfig(payload.config);
+        apply();
+      },
+      { label: "releases-lifecycle-config" }
+    );
+    const stopSignoff = loadJsonEffect<{ config: EntityLifecycleConfigLike }>(
+      "/api/signoff-lifecycle-config",
+      (payload) => {
+        signoffConfig = payload.config;
+        apply();
+      },
+      { label: "releases-signoff-lifecycle-config" }
+    );
+
+    return () => {
+      cancelled = true;
+      stopReleases();
+      stopConfig();
+      stopSignoff();
+    };
   }, []);
 
   useEffect(() => {
@@ -384,24 +458,20 @@ export default function ReleasesPageContent() {
             >
               All stuck
             </ProgressLink>
-            <ProgressLink
-              href={`/releases?attention=1&status=Blocked${filterQuery}`}
-              className={cn(
-                "inline-flex h-9 items-center rounded-lg border px-3 text-xs font-medium transition-colors",
-                attentionStatusFilter === "Blocked" ? "border-brand-500 bg-brand-500 text-white" : "border-gray-200 text-gray-600"
-              )}
-            >
-              Blocked
-            </ProgressLink>
-            <ProgressLink
-              href={`/releases?attention=1&status=At%20Risk${filterQuery}`}
-              className={cn(
-                "inline-flex h-9 items-center rounded-lg border px-3 text-xs font-medium transition-colors",
-                attentionStatusFilter === "At Risk" ? "border-brand-500 bg-brand-500 text-white" : "border-gray-200 text-gray-600"
-              )}
-            >
-              At risk
-            </ProgressLink>
+            {attentionStatuses.map((label) => (
+              <ProgressLink
+                key={label}
+                href={`/releases?attention=1&status=${encodeURIComponent(label)}${filterQuery}`}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-lg border px-3 text-xs font-medium transition-colors",
+                  attentionStatusFilter === label
+                    ? "border-brand-500 bg-brand-500 text-white"
+                    : "border-gray-200 text-gray-600"
+                )}
+              >
+                {label}
+              </ProgressLink>
+            ))}
           </>
         ) : (
           <ProgressLink
@@ -461,6 +531,7 @@ export default function ReleasesPageContent() {
                   row={r}
                   dbRow={dbRowById(r.id)}
                   isColumnVisible={isColumnVisible}
+                  lifecycleConfig={lifecycleConfig}
                 />
               ))
             )}
@@ -488,6 +559,7 @@ export default function ReleasesPageContent() {
           value: r.id,
           label: r.name ? `${r.releaseCode} — ${r.name}` : r.releaseCode,
         }))}
+        statusOptions={createStatusOptions}
         onClose={() => { setModalOpen(false); setFormPrefill(null); }}
         onSaved={refreshLookups}
       />
@@ -499,10 +571,12 @@ function UnifiedRow({
   row,
   dbRow,
   isColumnVisible,
+  lifecycleConfig,
 }: {
   row: UnifiedRelease;
   dbRow?: ReleaseRow;
   isColumnVisible: (key: string) => boolean;
+  lifecycleConfig: ReleaseLifecycleConfig | null;
 }) {
   const priority = dbRow?.priority ?? row.priority ?? "—";
   const impact = dbRow?.impact ?? row.impact ?? "—";
@@ -556,7 +630,11 @@ function UnifiedRow({
       {isColumnVisible("endDate") && <td className={`${tableCell} whitespace-nowrap text-gray-500`}>{formatDate(row.date)}</td>}
       {isColumnVisible("testEnvRequired") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.testEnvRequired ?? "—"}</td>}
       {isColumnVisible("uatEnvRequired") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.uatEnvRequired ?? "—"}</td>}
-      {isColumnVisible("status") && <td className={`${tableCell} whitespace-nowrap`}><StatusBadge status={row.status as "Ready"} /></td>}
+      {isColumnVisible("status") && (
+        <td className={`${tableCell} whitespace-nowrap`}>
+          <ReleaseStatusBadge status={row.status} config={lifecycleConfig} />
+        </td>
+      )}
       {isColumnVisible("releaseHealth") && <td className={`${tableCell} whitespace-nowrap`}>{row.releaseHealth ?? "—"}</td>}
       {isColumnVisible("conflictFlag") && <td className={`${tableCell} whitespace-nowrap font-medium text-error-600`}>{row.conflictFlag ? "⚠️ CONFLICT" : "—"}</td>}
       {isColumnVisible("conflictId") && (

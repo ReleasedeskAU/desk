@@ -7,28 +7,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Lock, RefreshCw } from "lucide-react";
 import { StatusChip, type ChipTone } from "@/components/detail/editable";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import type { LegalNextStatusView } from "@/lib/release-lifecycle-transition";
+import type { ReleaseLifecycleStatusKind } from "@/lib/release-lifecycle-config";
+import { toneForLifecycleKind } from "@/lib/release-lifecycle-status-ui";
 
 type LifecyclePayload = {
   status: string;
   currentLabel: string;
+  currentKind?: ReleaseLifecycleStatusKind | null;
+  currentEnabled?: boolean;
   unknownStatus: boolean;
   configPin: "pinned" | "latest-unpinned";
   next: LegalNextStatusView[];
 };
-
-function statusTone(status?: string | null): ChipTone {
-  const n = (status ?? "").toLowerCase();
-  if (n.includes("block") || n.includes("reject") || n.includes("cancel")) return "bad";
-  if (n.includes("defer") || n.includes("roll")) return "warn";
-  if (n.includes("deploy") || n.includes("closed") || n.includes("approved")) return "good";
-  if (n.includes("draft") || n.includes("plan") || n.includes("test") || n.includes("uat"))
-    return "info";
-  return "neutral";
-}
 
 export type ReleaseStatusPickerProps = {
   releaseId: string;
@@ -107,7 +103,15 @@ export function ReleaseStatusPicker({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <StatusChip tone={statusTone(status)} label={data?.currentLabel ?? status} />
+        <StatusChip
+          tone={toneForLifecycleKind(data?.currentKind ?? null) as ChipTone}
+          label={data?.currentLabel ?? status}
+        />
+        {data?.currentEnabled === false && !data?.unknownStatus ? (
+          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-200">
+            Off in lifecycle settings
+          </span>
+        ) : null}
         {data?.configPin === "latest-unpinned" && (
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
             Following latest config (unpinned)
@@ -227,12 +231,6 @@ export function ReleaseStatusPicker({
             </p>
           )}
 
-          {error && (
-            <p className="mb-3 text-sm text-rose-600 dark:text-rose-300" role="alert">
-              {error}
-            </p>
-          )}
-
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -257,6 +255,15 @@ export function ReleaseStatusPicker({
           </div>
         </div>
       )}
+
+      <FormAlertDialog
+        alert={
+          error
+            ? buildFormSaveAlert(null, error, { entityLabel: "release" })
+            : null
+        }
+        onDismiss={() => setError(null)}
+      />
     </div>
   );
 }

@@ -551,6 +551,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
       saving={edit.saving}
       deleting={edit.deleting}
       editError={edit.error}
+      onClearEditError={() => edit.setError(null)}
       onEdit={edit.startEdit}
       onDiscard={edit.discard}
       onSave={save}

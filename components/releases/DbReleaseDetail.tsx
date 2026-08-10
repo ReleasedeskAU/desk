@@ -37,6 +37,10 @@ import {
   dueTone,
   type DetailFact,
 } from "@/lib/detail-decision";
+import type { ReleaseLifecycleStatusKind } from "@/lib/release-lifecycle-config";
+import { toneForLifecycleKind } from "@/lib/release-lifecycle-status-ui";
+import { findEntityStatusByLabel } from "@/lib/entity-lifecycle-status-ui";
+import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
 import {
   AlertTriangle,
   Calendar,
@@ -148,7 +152,8 @@ function durationLabel(start?: string | null, end?: string | null): string {
   return `${days} day${days === 1 ? "" : "s"}`;
 }
 
-function statusTone(status?: string | null): ChipTone {
+/** Heuristic tone for non-lifecycle fields (approval, rollback, etc.). */
+function fieldStatusTone(status?: string | null): ChipTone {
   const normalized = (status ?? "").toLowerCase();
   if (normalized.includes("block")) return "bad";
   if (normalized.includes("risk") || normalized.includes("hold") || normalized.includes("progress")) return "warn";
@@ -161,6 +166,20 @@ function signalDone(value?: string | null): boolean {
   const normalized = (value ?? "").trim().toLowerCase();
   return ["yes", "done", "approved", "complete", "completed", "ready", "passed", "cleared"].some(
     (token) => normalized === token || normalized.startsWith(`${token} `)
+  );
+}
+
+/** Prefer sign-off lifecycle `countsAsComplete`; fall back to heuristic. */
+function signoffComplete(
+  value: string | null | undefined,
+  signoffConfig: SignoffLifecycleConfig | null
+): boolean {
+  if (!value?.trim()) return false;
+  if (!signoffConfig) return signalDone(value);
+  const found = findEntityStatusByLabel(signoffConfig, value);
+  if (!found) return signalDone(value);
+  return Boolean(
+    (found as { countsAsComplete?: boolean }).countsAsComplete
   );
 }
 
@@ -258,6 +277,13 @@ export function DbReleaseDetail({ id }: { id: string }) {
     environments: { id: string; name: string; applicationId: string }[];
     releases: { id: string; releaseCode: string; name: string }[];
   }>({ departments: [], applications: [], environments: [], releases: [] });
+  const [lifecycleStatus, setLifecycleStatus] = useState<{
+    label: string;
+    kind: ReleaseLifecycleStatusKind | null;
+    enabled: boolean;
+  } | null>(null);
+  const [signoffConfig, setSignoffConfig] =
+    useState<SignoffLifecycleConfig | null>(null);
 
   const load = useCallback(() => {
     void (async () => {
@@ -276,6 +302,32 @@ export function DbReleaseDetail({ id }: { id: string }) {
     setComputedReadiness(null);
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!release?.id) return;
+    return loadJsonEffect<{
+      currentLabel: string;
+      currentKind: ReleaseLifecycleStatusKind | null;
+      currentEnabled: boolean;
+    }>(
+      `/api/releases/${release.id}/lifecycle`,
+      (payload) =>
+        setLifecycleStatus({
+          label: payload.currentLabel,
+          kind: payload.currentKind ?? null,
+          enabled: payload.currentEnabled,
+        }),
+      { label: "release-detail-lifecycle-status" }
+    );
+  }, [release?.id, release?.status, commandRefreshKey]);
+
+  useEffect(() => {
+    return loadJsonEffect<{ config: SignoffLifecycleConfig }>(
+      "/api/signoff-lifecycle-config",
+      (payload) => setSignoffConfig(payload.config),
+      { label: "release-detail-signoff-lifecycle" }
+    );
+  }, []);
 
   // Keep blocker KPI updated independently of section mount order / list refresh.
   useEffect(() => {
@@ -423,7 +475,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
     release.uatSignoff,
     release.securityClearance,
     release.dressRehearsal,
-  ].filter(signalDone).length;
+  ].filter((v) => signoffComplete(v, signoffConfig)).length;
   const shipPct = commandData?.prediction?.shipProbability;
   const slipPct = commandData?.prediction?.delayRisk;
   const releaseDue = describeDue(release.releaseDate);
@@ -564,6 +616,25 @@ export function DbReleaseDetail({ id }: { id: string }) {
     </label>
   );
 
+  const headerStatusLabel = lifecycleStatus?.label ?? release.status;
+  // Match decision-header colors: interrupt/risk → rose, branch → amber,
+  // shipped/closed → emerald, mainline → indigo; cancelled stays neutral.
+  const headerStatusTone = ((): ChipTone => {
+    const label = headerStatusLabel.toLocaleLowerCase();
+    if (label.includes("cancel")) return "neutral";
+    if (lifecycleStatus?.kind === "interrupt" || label.includes("block")) return "bad";
+    if (
+      lifecycleStatus?.kind === "branch" ||
+      label.includes("risk") ||
+      label.includes("defer") ||
+      label.includes("reject") ||
+      label.includes("roll")
+    ) {
+      return "warn";
+    }
+    return toneForLifecycleKind(lifecycleStatus?.kind ?? null) as ChipTone;
+  })();
+
   return (
     <DetailPageShell
       entityCode={release.releaseCode}
@@ -573,6 +644,18 @@ export function DbReleaseDetail({ id }: { id: string }) {
       hideBack
       actions={
         <>
+          <span data-testid="release-detail-header-status">
+            <StatusChip
+              label={headerStatusLabel}
+              tone={headerStatusTone}
+              className="shrink-0 px-3.5 py-1.5 text-[12px] font-bold tracking-wide"
+            />
+          </span>
+          {lifecycleStatus && !lifecycleStatus.enabled ? (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700 dark:bg-rose-500/20 dark:text-rose-200">
+              Off
+            </span>
+          ) : null}
           {releaseSwitcher}
           {canEdit ? (
             <>
@@ -606,9 +689,13 @@ export function DbReleaseDetail({ id }: { id: string }) {
           { label: "Priority", value: release.priority },
         ]}
         status={{
-          label: release.status,
-          tone: statusTone(release.status),
-          caption: release.decision ? `Decision: ${release.decision}` : `Stage: ${activeStage}`,
+          label: lifecycleStatus?.label ?? release.status,
+          tone: toneForLifecycleKind(lifecycleStatus?.kind ?? null) as ChipTone,
+          caption: release.decision
+            ? `Decision: ${release.decision}`
+            : lifecycleStatus && !lifecycleStatus.enabled
+              ? "Off in lifecycle settings"
+              : `Stage: ${activeStage}`,
         }}
         signals={decisionSignals}
         canEdit={canEdit}
@@ -764,7 +851,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
                   value={
                     <StatusChip
                       label={String(dash(release.approvalStatus))}
-                      tone={statusTone(release.approvalStatus)}
+                      tone={fieldStatusTone(release.approvalStatus)}
                     />
                   }
                 />
@@ -774,7 +861,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
                   value={
                     <StatusChip
                       label={String(dash(release.rollbackPlan))}
-                      tone={statusTone(release.rollbackPlan)}
+                      tone={fieldStatusTone(release.rollbackPlan)}
                     />
                   }
                 />
@@ -782,27 +869,27 @@ export function DbReleaseDetail({ id }: { id: string }) {
               <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                 <SignoffChip
                   label="Dev sign-off"
-                  done={signalDone(release.devSignoff)}
+                  done={signoffComplete(release.devSignoff, signoffConfig)}
                   hint="Development team confirms build quality and code readiness for release."
                 />
                 <SignoffChip
                   label="Test sign-off"
-                  done={signalDone(release.testSignoff)}
+                  done={signoffComplete(release.testSignoff, signoffConfig)}
                   hint="QA confirms testing is complete and no open P1 defects remain."
                 />
                 <SignoffChip
                   label="UAT sign-off"
-                  done={signalDone(release.uatSignoff)}
+                  done={signoffComplete(release.uatSignoff, signoffConfig)}
                   hint="Business / UAT users accept the change in the UAT environment."
                 />
                 <SignoffChip
                   label="Security clearance"
-                  done={signalDone(release.securityClearance)}
+                  done={signoffComplete(release.securityClearance, signoffConfig)}
                   hint="Security / InfoSec has cleared the release for production deployment."
                 />
                 <SignoffChip
                   label="Dress rehearsal"
-                  done={signalDone(release.dressRehearsal)}
+                  done={signoffComplete(release.dressRehearsal, signoffConfig)}
                   hint="A practice run of the deployment (or dry-run) has been completed successfully."
                 />
               </div>

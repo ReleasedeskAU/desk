@@ -19,7 +19,12 @@ export async function GET(req: Request) {
     const { loadRiskEngineConfig } = await import("@/lib/risk-engine-config-db");
     const riskConfig = await loadRiskEngineConfig(user!.id);
     const payload = await withDbRetry(
-      () => buildDashboardPayload(url.searchParams.get("period"), riskConfig),
+      () =>
+        buildDashboardPayload(
+          url.searchParams.get("period"),
+          riskConfig,
+          user!.id
+        ),
       { label: "dashboard", attempts: 5, baseDelayMs: 800 }
     );
     return NextResponse.json(payload);

@@ -27,6 +27,7 @@ import { DriftFormModal } from "@/components/drifts/DriftFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type ReferenceDataRow = { id: string; category: string; value: string; sortOrder: number; active: boolean };
 
@@ -95,6 +96,11 @@ export default function DriftDashboardContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+  const lifecycle = useEntityLifecycleStatuses("/api/drift-lifecycle-config");
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(allDrifts.map((d) => d.status)),
+    [lifecycle, allDrifts]
+  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -115,7 +121,6 @@ export default function DriftDashboardContent() {
   }, []);
 
   const severities = useMemo(() => [...new Set(allDrifts.map((d) => d.severity))].sort(), [allDrifts]);
-  const statuses = useMemo(() => [...new Set(allDrifts.map((d) => d.status))].sort(), [allDrifts]);
   const environments = useMemo(
     () => [...new Set(allDrifts.map((d) => d.environmentName).filter(Boolean))].sort(),
     [allDrifts]
@@ -185,6 +190,8 @@ export default function DriftDashboardContent() {
           });
         }}
         categoryOptions={categories}
+        statusOptions={lifecycle.createOptions}
+        defaultStatus={lifecycle.defaultStatus || "Detected"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
@@ -203,7 +210,7 @@ export default function DriftDashboardContent() {
           {isFilterVisible("status") && (
             <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
               <option value="">All statuses</option>
-              {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+              {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </FilterSelect>
           )}
           {isFilterVisible("applicationId") && (

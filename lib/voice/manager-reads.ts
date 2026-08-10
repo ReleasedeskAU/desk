@@ -9,6 +9,8 @@ import {
   buildDbAttentionItem,
   sortAttentionItems,
 } from "@/lib/needs-attention";
+import { loadReleaseLifecycleConfig } from "@/lib/release-lifecycle-config-db";
+import { attentionStatusLabels } from "@/lib/release-lifecycle-status-ui";
 import { periodRange, type Period } from "@/lib/unified-releases";
 
 const OPEN_BLOCKER = {
@@ -149,18 +151,35 @@ export async function buildReleaseBundle(releaseCode: string) {
 }
 
 /**
- * Morning-style attention brief: at-risk/blocked releases + critical blockers + escalated conflicts.
+ * Morning-style attention brief: interrupt-status releases + critical blockers + escalated conflicts.
+ * @param period - Calendar period.
+ * @param clerkUserId - Optional lifecycle owner for attention status labels.
  */
-export async function buildAttentionBrief(period: Period = "month") {
+export async function buildAttentionBrief(
+  period: Period = "month",
+  clerkUserId?: string | null
+) {
   // Period follows product calendar buckets (month | quarter | year).
   const { start, end } = periodRange(period);
+
+  let attentionLabels = ["Blocked", "Rolled Back"];
+  if (clerkUserId) {
+    try {
+      attentionLabels = attentionStatusLabels(
+        (await loadReleaseLifecycleConfig(clerkUserId)).config
+      );
+    } catch {
+      /* keep fallback */
+    }
+  }
+  if (attentionLabels.length === 0) attentionLabels = ["__none__"];
 
   const [attentionRows, criticalBlockers, escalatedConflicts, pendingApprovals] =
     await Promise.all([
       prisma.release.findMany({
         where: {
           releaseDate: { gte: start, lte: end },
-          status: { in: ["Blocked", "At Risk"] },
+          status: { in: attentionLabels },
         },
         include: {
           department: true,

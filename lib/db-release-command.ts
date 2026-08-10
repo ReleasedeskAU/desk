@@ -1,5 +1,37 @@
 import { LIFECYCLE_STAGES } from "./lifecycle";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  attentionStatusLabels,
+  bucketReleaseStatusWithConfig,
+  findLifecycleStatusByLabel,
+} from "@/lib/release-lifecycle-status-ui";
+import { isNeedsAttentionStatus } from "@/lib/needs-attention";
 import type { LifecycleStageView } from "./types";
+
+function isAttentionStatus(
+  status: string,
+  config?: ReleaseLifecycleConfig | null
+): boolean {
+  return isNeedsAttentionStatus(
+    status,
+    config ? attentionStatusLabels(config) : undefined
+  );
+}
+
+function isTerminalShipped(
+  status: string,
+  config?: ReleaseLifecycleConfig | null
+): boolean {
+  return bucketReleaseStatusWithConfig(status, config) === "shipped";
+}
+
+function isRiskyDependencyStatus(
+  status: string,
+  config?: ReleaseLifecycleConfig | null
+): boolean {
+  const bucket = bucketReleaseStatusWithConfig(status, config);
+  return bucket === "blocked" || bucket === "atRisk";
+}
 
 export type DbReleaseCommandInput = {
   id: string;
@@ -63,19 +95,24 @@ function isOpenP1(issue: DbP1Issue): boolean {
   return s !== "closed" && s !== "done" && s !== "resolved";
 }
 
-export function getDbBlockers(release: DbReleaseCommandInput, p1Issues: DbP1Issue[]): DbBlocker[] {
+/**
+ * Derive command-center blockers using lifecycle interrupt/kind when config is provided.
+ */
+export function getDbBlockers(
+  release: DbReleaseCommandInput,
+  p1Issues: DbP1Issue[],
+  config?: ReleaseLifecycleConfig | null
+): DbBlocker[] {
   const blockers: DbBlocker[] = [];
   const daysUntil = daysUntilRelease(release);
+  const bucket = bucketReleaseStatusWithConfig(release.status, config);
 
-  if (release.status === "Blocked") {
+  if (bucket === "blocked") {
     blockers.push({ text: release.notes ?? "Release marked blocked — check audit trail" });
   }
 
   release.dependsOn
-    .filter(
-      (d) =>
-        d.dependsOnRelease.status === "Blocked" || d.dependsOnRelease.status === "At Risk"
-    )
+    .filter((d) => isRiskyDependencyStatus(d.dependsOnRelease.status, config))
     .forEach((d) => {
       blockers.push({
         text: `Dependency ${d.dependsOnRelease.releaseCode} is ${d.dependsOnRelease.status}`,
@@ -83,11 +120,11 @@ export function getDbBlockers(release: DbReleaseCommandInput, p1Issues: DbP1Issu
       });
     });
 
-  if (!release.bookings.length && release.status !== "Complete" && daysUntil <= 14) {
+  if (!release.bookings.length && !isTerminalShipped(release.status, config) && daysUntil <= 14) {
     blockers.push({ text: "No environment booking linked", href: "/booking" });
   }
 
-  if (!release.decision && release.status !== "Complete" && daysUntil <= 7) {
+  if (!release.decision && !isTerminalShipped(release.status, config) && daysUntil <= 7) {
     blockers.push({ text: "Go / No-Go decision not recorded before target date" });
   }
 
@@ -102,32 +139,41 @@ export function getDbBlockers(release: DbReleaseCommandInput, p1Issues: DbP1Issu
     });
   });
 
-  if (release.status === "At Risk" && !blockers.some((b) => b.text.includes("At Risk"))) {
-    blockers.push({ text: "Release flagged at risk — confirm env bookings and dependencies" });
+  if (
+    bucket === "atRisk" &&
+    !blockers.some((b) => /risk|roll|defer|reject/i.test(b.text))
+  ) {
+    blockers.push({
+      text: `Release in ${release.status} — confirm env bookings and dependencies`,
+    });
   }
 
   return blockers;
 }
 
+/**
+ * Score readiness; status penalties follow lifecycle buckets when config is set.
+ */
 export function calcDbReadiness(
   release: DbReleaseCommandInput,
   p1Issues: DbP1Issue[],
-  openLiveBlockerCount = 0
+  openLiveBlockerCount = 0,
+  config?: ReleaseLifecycleConfig | null
 ): number {
   let score = 100;
+  const bucket = bucketReleaseStatusWithConfig(release.status, config);
 
-  if (release.status === "Blocked") score -= 40;
-  else if (release.status === "At Risk") score -= 25;
-  else if (release.status === "Planned") score -= 10;
-  else if (release.status === "Complete") return 100;
+  if (bucket === "blocked") score -= 40;
+  else if (bucket === "atRisk") score -= 25;
+  else if (bucket === "planned") score -= 10;
+  else if (bucket === "shipped") return 100;
 
   if (!release.decision) score -= 15;
   if (!release.bookings.length) score -= 15;
   if (!release.applications.length) score -= 10;
 
-  const riskyDeps = release.dependsOn.filter(
-    (d) =>
-      d.dependsOnRelease.status === "Blocked" || d.dependsOnRelease.status === "At Risk"
+  const riskyDeps = release.dependsOn.filter((d) =>
+    isRiskyDependencyStatus(d.dependsOnRelease.status, config)
   ).length;
   score -= Math.min(20, riskyDeps * 10);
 
@@ -140,25 +186,35 @@ export function calcDbReadiness(
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+/**
+ * Legacy command-center stage strip (Planning→Deployment).
+ * Status branching uses lifecycle buckets when config is provided.
+ * Prefer ReleaseLifecycleStepper on the detail page for the real status rail.
+ */
 export function computeDbLifecycleStages(
   release: DbReleaseCommandInput,
   p1Issues: DbP1Issue[],
-  blockers: DbBlocker[] = []
+  blockers: DbBlocker[] = [],
+  config?: ReleaseLifecycleConfig | null
 ): LifecycleStageView[] {
-  const readiness = calcDbReadiness(release, p1Issues, blockers.length);
+  const readiness = calcDbReadiness(release, p1Issues, blockers.length, config);
   const daysUntil = daysUntilRelease(release);
   const hasBooking = release.bookings.length > 0;
   const hasApps = release.applications.length > 0;
+  const bucket = bucketReleaseStatusWithConfig(release.status, config);
+  const current = config
+    ? findLifecycleStatusByLabel(config, release.status)
+    : null;
 
   let activeIdx = 0;
 
-  if (release.status === "Complete") {
+  if (bucket === "shipped") {
     activeIdx = 5;
   } else if (release.decision?.startsWith("No-Go")) {
     activeIdx = 4;
   } else if (release.decision?.startsWith("Go")) {
-    activeIdx = release.status === "In Progress" ? 5 : 4;
-  } else if (blockers.length > 0 || readiness < 70) {
+    activeIdx = bucket === "inProgress" ? 5 : 4;
+  } else if (blockers.length > 0 || readiness < 70 || isAttentionStatus(release.status, config)) {
     activeIdx = 3;
   } else if (!hasBooking && daysUntil <= 14) {
     activeIdx = 1;
@@ -166,6 +222,8 @@ export function computeDbLifecycleStages(
     activeIdx = 3;
   } else if (hasApps) {
     activeIdx = 2;
+  } else if (current && current.sortOrder <= 20) {
+    activeIdx = 0;
   } else {
     activeIdx = 0;
   }
@@ -187,9 +245,9 @@ export function computeDbLifecycleStages(
         : `${readiness}% readiness`,
     managing: release.decision ?? "Awaiting Go / No-Go",
     deployment:
-      release.status === "Complete"
+      bucket === "shipped"
         ? "Released"
-        : release.status === "In Progress"
+        : bucket === "inProgress"
           ? "Deployment in progress"
           : "Ready to deploy",
   };
@@ -198,10 +256,11 @@ export function computeDbLifecycleStages(
     let status: LifecycleStageView["status"] = "pending";
     if (idx < activeIdx) status = "complete";
     else if (idx === activeIdx) {
-      if (release.status === "Blocked" && stage.id === "preparing") status = "blocked";
+      if (isAttentionStatus(release.status, config) && stage.id === "preparing")
+        status = "blocked";
       else status = "active";
     }
-    if (release.status === "Complete") status = "complete";
+    if (bucket === "shipped") status = "complete";
 
     return {
       id: stage.id,
@@ -212,14 +271,18 @@ export function computeDbLifecycleStages(
   });
 }
 
+/**
+ * Suggested next actions; attention statuses come from lifecycle interrupt kinds.
+ */
 export function getDbNextActions(
   release: DbReleaseCommandInput,
-  blockers: DbBlocker[]
+  blockers: DbBlocker[],
+  config?: ReleaseLifecycleConfig | null
 ): DbNextAction[] {
   const actions: DbNextAction[] = [];
   const daysUntil = daysUntilRelease(release);
 
-  if (release.status === "Blocked" || release.status === "At Risk") {
+  if (isAttentionStatus(release.status, config)) {
     actions.push({
       label: "Review blockers",
       href: `#blockers`,
@@ -227,11 +290,11 @@ export function getDbNextActions(
     });
   }
 
-  if (!release.bookings.length && release.status !== "Complete") {
+  if (!release.bookings.length && !isTerminalShipped(release.status, config)) {
     actions.push({ label: "Book environment", href: "/booking", detail: "Reserve TEST/UAT for this release" });
   }
 
-  if (!release.decision && daysUntil <= 14 && release.status !== "Complete") {
+  if (!release.decision && daysUntil <= 14 && !isTerminalShipped(release.status, config)) {
     actions.push({
       label: "Record Go / No-Go",
       href: `#go-nogo`,

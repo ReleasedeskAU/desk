@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { incidentWhere, sp } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createIncidentSchema } from "@/lib/validation/incident";
+import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 
 const incidentInclude = {
   application: { select: { id: true, name: true } },
@@ -69,7 +71,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const parsed = createIncidentSchema.safeParse(await req.json());
@@ -99,6 +101,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Release not found" }, { status: 400 });
   }
 
+  let status = String(body.status ?? "").trim();
+  try {
+    const loaded = await loadIncidentLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, status, "incident");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[incidents-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Incident lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
+
   const row = await prisma.incident.create({
     data: {
       incidentCode: await nextIncidentCode(),
@@ -107,7 +125,7 @@ export async function POST(req: Request) {
       departmentName: body.departmentName ?? application.department.name,
       severity: body.severity,
       title: body.title,
-      status: body.status,
+      status,
       impact: body.impact,
       assignedTo: body.assignedTo ?? null,
       relatedReleaseCode: body.relatedReleaseCode ?? null,

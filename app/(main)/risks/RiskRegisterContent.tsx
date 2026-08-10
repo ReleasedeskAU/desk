@@ -45,6 +45,7 @@ import { RISKS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { RiskFormModal } from "@/components/risks/RiskFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 /** Calendar days from today to prod/start date (can be negative if past). */
 function daysOutFrom(iso: string | null | undefined): number {
@@ -83,17 +84,6 @@ export type RiskRow = {
   notes: string | null;
 };
 
-type StatusFilter =
-  | "Identified"
-  | "Assessing"
-  | "Mitigating"
-  | "Mitigated"
-  | "Escalated"
-  | "Accepted"
-  | "Closed"
-  | "Open"
-  | "Monitoring"
-  | "In Progress";
 type HeatMapView = "matrix" | "bubble" | "density";
 
 /** Ownership is "concentrated" when one person owns more than half of owned risks. */
@@ -1189,6 +1179,18 @@ export default function RiskRegisterContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+  const lifecycle = useEntityLifecycleStatuses("/api/risk-lifecycle-config");
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(risks.map((r) => r.status)),
+    [lifecycle, risks]
+  );
+  const openLabelSet = useMemo(
+    () => new Set(lifecycle.openLabels.map((l) => l.toLocaleLowerCase())),
+    [lifecycle.openLabels]
+  );
+  const openCount = risks.filter((r) =>
+    openLabelSet.has(r.status.toLocaleLowerCase())
+  ).length;
 
   const voiceVisibleRows = useMemo(
     () =>
@@ -1217,15 +1219,6 @@ export default function RiskRegisterContent() {
   }, []);
 
   const categories = useMemo(() => [...new Set(allRisks.map((r) => r.category))].sort(), [allRisks]);
-  const statuses: StatusFilter[] = [
-    "Identified",
-    "Assessing",
-    "Mitigating",
-    "Mitigated",
-    "Escalated",
-    "Accepted",
-    "Closed",
-  ];
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "risks",
@@ -1266,7 +1259,13 @@ export default function RiskRegisterContent() {
           </div>
         }
         title="Risk"
-        subtitle={`${risks.length} risk${risks.length === 1 ? "" : "s"} across all releases`}
+        subtitle={
+          risks.length > 0
+            ? `${risks.length} risk${risks.length === 1 ? "" : "s"} across all releases${
+                openCount > 0 ? ` · ${openCount} open or in progress` : ""
+              }`
+            : "No risks recorded"
+        }
       />
       <RiskFormModal
         open={modalOpen}
@@ -1278,13 +1277,15 @@ export default function RiskRegisterContent() {
           });
         }}
         categoryOptions={categories}
+        statusOptions={lifecycle.createOptions}
+        defaultStatus={lifecycle.defaultStatus || "Identified"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("status") && (
             <FilterPills
-              options={statuses.map((s) => ({ value: s, label: s }))}
-              value={(values.status as StatusFilter) || ""}
+              options={statusOptions.map((s) => ({ value: s, label: s }))}
+              value={values.status || ""}
               onChange={(v) => setFilter("status", v)}
             />
           )}

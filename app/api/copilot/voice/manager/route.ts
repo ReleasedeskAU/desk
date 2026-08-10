@@ -43,7 +43,7 @@ const bodySchema = z.discriminatedUnion("op", [
 ]);
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   let json: unknown;
@@ -69,7 +69,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true, op: "release_bundle", bundle });
       }
       case "attention_brief": {
-        const brief = await buildAttentionBrief(parsed.data.period ?? "month");
+        const brief = await buildAttentionBrief(
+          parsed.data.period ?? "month",
+          user?.id
+        );
         return NextResponse.json({ ok: true, op: "attention_brief", brief });
       }
       case "calendar_window": {

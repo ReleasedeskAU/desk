@@ -33,6 +33,7 @@ import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type BlockerRow = {
   id: string;
@@ -60,7 +61,6 @@ type BlockerRow = {
 
 type BlockerColumnKey = (typeof BLOCKER_COLUMNS)[number]["key"];
 
-const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"] as const;
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const;
 const TYPE_OPTIONS = [
   "Business",
@@ -233,6 +233,18 @@ export default function BlockersContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+  const lifecycle = useEntityLifecycleStatuses(
+    "/api/blocker-lifecycle-config",
+    (s) => s.blocksReleaseReady === true
+  );
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(blockers.map((b) => b.status)),
+    [lifecycle, blockers]
+  );
+  const openLabelSet = useMemo(
+    () => new Set(lifecycle.openLabels.map((l) => l.toLocaleLowerCase())),
+    [lifecycle.openLabels]
+  );
 
   const voiceVisibleRows = useMemo(
     () =>
@@ -271,7 +283,9 @@ export default function BlockersContent() {
     [apps, values.departmentId]
   );
 
-  const openCount = blockers.filter((b) => b.status === "Open" || b.status === "In Progress").length;
+  const openCount = blockers.filter((b) =>
+    openLabelSet.has(b.status.toLocaleLowerCase())
+  ).length;
 
   const { visibleColumns, isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "blockers",
@@ -313,6 +327,7 @@ export default function BlockersContent() {
         onClose={() => setModalOpen(false)}
         onCreated={() => refetch()}
         raisedByDefault={user?.name ?? ""}
+        defaultStatus={lifecycle.defaultStatus || "Open"}
       />
 
       {!tablePending && (
@@ -320,7 +335,7 @@ export default function BlockersContent() {
           {isFilterVisible("status") && (
             <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
               <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((s) => (
+              {statusOptions.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>

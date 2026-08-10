@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import {
   DEPENDENCY_IMPACTS,
-  DEPENDENCY_STATUSES,
   DEPENDENCY_TYPES,
 } from "@/lib/validation/dependency";
 
@@ -18,7 +20,7 @@ export type DependencyFormValues = {
   releaseId: string;
   dependsOnReleaseId: string;
   dependencyType: (typeof DEPENDENCY_TYPES)[number];
-  status: (typeof DEPENDENCY_STATUSES)[number];
+  status: string;
   impactIfBlocked: (typeof DEPENDENCY_IMPACTS)[number];
   notes: string;
 };
@@ -43,21 +45,14 @@ type Props = {
   initial?: Partial<DependencyFormValues> | null;
   /** Shown in edit title, e.g. DEP-027 */
   depCode?: string | null;
+  /** Enabled lifecycle status labels from parent (SSOT). Falls back to hook. */
+  statusOptions?: string[];
+  /** Default create status from lifecycle config. */
+  defaultStatus?: string;
 };
 
 function coerceEnum<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
   return (allowed as readonly string[]).includes(value ?? "") ? (value as T) : fallback;
-}
-
-function emptyForm(): DependencyFormValues {
-  return {
-    releaseId: "",
-    dependsOnReleaseId: "",
-    dependencyType: "Hard",
-    status: "Pending",
-    impactIfBlocked: "Release Delay",
-    notes: "",
-  };
 }
 
 /**
@@ -71,20 +66,35 @@ export function DependencyFormModal({
   editId,
   initial,
   depCode,
+  statusOptions: statusOptionsProp,
+  defaultStatus: defaultStatusProp,
 }: Props) {
   const isEdit = Boolean(editId);
+  const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
+  const createOptions =
+    statusOptionsProp && statusOptionsProp.length > 0
+      ? statusOptionsProp
+      : lifecycle.createOptions;
+  const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Pending";
 
-  const defaults = useMemo<DependencyFormValues>(
-    () => ({
+  const defaults = useMemo<DependencyFormValues>(() => {
+    const statusFallback = defaultStatus;
+    const initialStatus = initial?.status?.trim();
+    return {
       releaseId: initial?.releaseId ?? "",
       dependsOnReleaseId: initial?.dependsOnReleaseId ?? "",
       dependencyType: coerceEnum(initial?.dependencyType, DEPENDENCY_TYPES, "Hard"),
-      status: coerceEnum(initial?.status, DEPENDENCY_STATUSES, "Pending"),
+      status:
+        initialStatus &&
+        (createOptions.length === 0 ||
+          createOptions.includes(initialStatus) ||
+          isEdit)
+          ? initialStatus
+          : statusFallback,
       impactIfBlocked: coerceEnum(initial?.impactIfBlocked, DEPENDENCY_IMPACTS, "Release Delay"),
       notes: initial?.notes ?? "",
-    }),
-    [initial]
-  );
+    };
+  }, [initial, defaultStatus, createOptions, isEdit]);
 
   const [form, setForm] = useState(defaults);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
@@ -92,6 +102,11 @@ export function DependencyFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedSummary | null>(null);
+
+  const statusSelectOptions = useMemo(() => {
+    const base = createOptions.length > 0 ? createOptions : [defaultStatus].filter(Boolean);
+    return [...new Set([...base, form.status].filter(Boolean))];
+  }, [createOptions, defaultStatus, form.status]);
 
   useEffect(() => {
     if (!open) {
@@ -121,6 +136,15 @@ export function DependencyFormModal({
     })();
     return () => ac.abort();
   }, [open, defaults]);
+
+  // When lifecycle options arrive after open, snap create form to the enabled default.
+  useEffect(() => {
+    if (!open || isEdit || createOptions.length === 0) return;
+    setForm((prev) => {
+      if (createOptions.includes(prev.status)) return prev;
+      return { ...prev, status: defaultStatus || createOptions[0]! };
+    });
+  }, [open, isEdit, createOptions, defaultStatus]);
 
   if (!open) return null;
 
@@ -234,7 +258,14 @@ export function DependencyFormModal({
               className={taBtnSecondary}
               onClick={() => {
                 setCreated(null);
-                setForm(emptyForm());
+                setForm({
+                  releaseId: "",
+                  dependsOnReleaseId: "",
+                  dependencyType: "Hard",
+                  status: defaultStatus,
+                  impactIfBlocked: "Release Delay",
+                  notes: "",
+                });
                 setError(null);
               }}
             >
@@ -322,7 +353,7 @@ export function DependencyFormModal({
                 onChange={(e) => set("status")(e.target.value)}
                 required
               >
-                {DEPENDENCY_STATUSES.map((s) => (
+                {statusSelectOptions.map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -357,8 +388,6 @@ export function DependencyFormModal({
             />
           </label>
 
-          {error && <p className="text-sm text-error-600 dark:text-rose-400">{error}</p>}
-
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
               Cancel
@@ -369,6 +398,15 @@ export function DependencyFormModal({
           </div>
         </form>
       </div>
+
+      <FormAlertDialog
+        alert={
+          error
+            ? buildFormSaveAlert(null, error, { entityLabel: "dependency" })
+            : null
+        }
+        onDismiss={() => setError(null)}
+      />
     </div>
   );
 }

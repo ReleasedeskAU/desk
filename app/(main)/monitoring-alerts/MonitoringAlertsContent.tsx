@@ -27,6 +27,7 @@ import { MonitoringAlertFormModal } from "@/components/monitoring-alerts/Monitor
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type AlertRow = {
   id: string;
@@ -86,6 +87,11 @@ export default function MonitoringAlertsContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+  const lifecycle = useEntityLifecycleStatuses("/api/alert-lifecycle-config");
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(allAlerts.map((a) => a.status)),
+    [lifecycle, allAlerts]
+  );
 
   useEffect(() => {
     return loadJsonEffect<{ id: string; name: string }[]>("/api/applications", setApps, { label: "applications" });
@@ -102,7 +108,6 @@ export default function MonitoringAlertsContent() {
   }, []);
 
   const severities = useMemo(() => [...new Set(allAlerts.map((a) => a.severity))].sort(), [allAlerts]);
-  const statuses = useMemo(() => [...new Set(allAlerts.map((a) => a.status))].sort(), [allAlerts]);
   const alertTypes = useMemo(() => [...new Set(allAlerts.map((a) => a.alertType))].sort(), [allAlerts]);
   const envs = useMemo(() => [...new Set(allAlerts.map((a) => a.environmentName))].sort(), [allAlerts]);
   const departments = useMemo(
@@ -168,6 +173,8 @@ export default function MonitoringAlertsContent() {
           });
         }}
         alertTypeOptions={alertTypes}
+        statusOptions={lifecycle.createOptions}
+        defaultStatus={lifecycle.defaultStatus || "Pending"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
@@ -180,7 +187,7 @@ export default function MonitoringAlertsContent() {
           {isFilterVisible("status") && (
             <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
               <option value="">All statuses</option>
-              {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+              {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </FilterSelect>
           )}
           {isFilterVisible("applicationId") && (

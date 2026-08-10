@@ -4,17 +4,16 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import type { ScheduleColumn } from "@/lib/calendar-schedule";
 import { columnIndexForDate } from "@/lib/calendar-schedule";
 import type { UnifiedRelease } from "@/lib/unified-releases";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { mapReleaseStatusToTimeline } from "@/lib/release-timeline";
 import { cn, formatDate } from "@/lib/utils";
 
-const STATUS_COLORS: Record<string, string> = {
-  Planned: "bg-blue-500",
-  Scheduled: "bg-blue-500",
-  "In Progress": "bg-brand-500",
-  Ready: "bg-brand-500",
-  Blocked: "bg-error-500",
-  "At Risk": "bg-amber-500",
-  Complete: "bg-success-500",
-  Shipped: "bg-success-500",
+const TIMELINE_TONE_BAR: Record<string, string> = {
+  rose: "bg-error-500",
+  amber: "bg-amber-500",
+  emerald: "bg-success-500",
+  indigo: "bg-brand-500",
+  violet: "bg-fuchsia-500",
 };
 
 type ViewMode = "calendar" | "timeline";
@@ -23,10 +22,12 @@ export function ReleaseScheduleGrid({
   releases,
   columns,
   mode,
+  lifecycleConfig = null,
 }: {
   releases: UnifiedRelease[];
   columns: ScheduleColumn[];
   mode: ViewMode;
+  lifecycleConfig?: ReleaseLifecycleConfig | null;
 }) {
   const sorted = [...releases].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
@@ -68,7 +69,11 @@ export function ReleaseScheduleGrid({
           {/* Release rows (Y axis) */}
           {sorted.map((release) => {
             const colIdx = columnIndexForDate(release.date, columns);
-            const barColor = STATUS_COLORS[release.status] ?? "bg-gray-400";
+            const { tone } = mapReleaseStatusToTimeline(
+              release.status,
+              lifecycleConfig
+            );
+            const barColor = TIMELINE_TONE_BAR[tone] ?? "bg-gray-400";
 
             return (
               <div

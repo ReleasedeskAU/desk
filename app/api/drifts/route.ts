@@ -5,6 +5,8 @@ import { driftWhere, sp } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createDriftSchema } from "@/lib/validation/drift";
 import { createDriftRow } from "@/lib/org-compat";
+import { loadDriftLifecycleConfig } from "@/lib/drift-lifecycle-config-db";
+import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 
 async function nextDriftCode(): Promise<string> {
   const rows = await prisma.drift.findMany({ select: { driftCode: true } });
@@ -31,7 +33,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const parsed = createDriftSchema.safeParse(await req.json());
@@ -45,6 +47,22 @@ export async function POST(req: Request) {
   });
   if (!validDriftType || !validDriftType.active) {
     return NextResponse.json({ error: "Invalid driftType — must be an active Drift Type reference value" }, { status: 400 });
+  }
+
+  let status = String(body.status ?? "").trim();
+  try {
+    const loaded = await loadDriftLifecycleConfig(user!.id);
+    const resolved = resolveCreateLifecycleStatus(loaded.config, status, "drift");
+    if (!resolved.ok) return resolved.response;
+    status = resolved.status;
+  } catch (err) {
+    console.error("[drifts-create] lifecycle config load failed", {
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Drift lifecycle configuration is temporarily unavailable" },
+      { status: 503 }
+    );
   }
 
   const [release, application, environment, maxOrder] = await Promise.all([
@@ -93,7 +111,7 @@ export async function POST(req: Request) {
     description: body.description,
     impactOnRelease: body.impactOnRelease ?? null,
     remediationAction: body.remediationAction ?? null,
-    status: body.status ?? "Detected",
+    status,
     etaToFix: body.etaToFix ? new Date(body.etaToFix) : null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

@@ -8,9 +8,10 @@ import { buildBookings, buildVersionMatrix } from "@/lib/db-environment-desk";
 import { toLegacyConnectorSummary } from "@/lib/connectors/public";
 import { prisma } from "@/lib/prisma";
 import { countByStatus, dbToUnified, periodRange, type Period } from "@/lib/unified-releases";
+import { loadReleaseLifecycleConfig } from "@/lib/release-lifecycle-config-db";
 
 export async function GET(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   const period = (new URL(req.url).searchParams.get("period") ?? "month") as Period;
@@ -62,9 +63,16 @@ export async function GET(req: Request) {
 
   const connectors = toLegacyConnectorSummary(connectorRows);
 
+  let lifecycleConfig = null;
+  try {
+    lifecycleConfig = (await loadReleaseLifecycleConfig(user!.id)).config;
+  } catch {
+    lifecycleConfig = null;
+  }
+
   const dbUnified = dbReleases.map(dbToUnified);
   const combined = dbUnified;
-  const combinedCounts = countByStatus(combined);
+  const combinedCounts = countByStatus(combined, lifecycleConfig);
   const dbCounts = combinedCounts;
   const versionMatrix = buildVersionMatrix(apps, versions, dbReleases);
   const driftApps = versionMatrix.filter((v) => v.drift).length;

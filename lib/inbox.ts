@@ -11,6 +11,8 @@ import {
   type NeedsAttentionItem,
 } from "./needs-attention";
 import { getLiveState } from "./release-state-repo";
+import { loadReleaseLifecycleConfig } from "./release-lifecycle-config-db";
+import { attentionStatusLabels } from "./release-lifecycle-status-ui";
 import { periodRange, type Period } from "./unified-releases";
 import type { ReleaseDecision } from "./types";
 import { isApprovalOverdue } from "./utils";
@@ -25,7 +27,7 @@ export function attentionToInboxItem(item: NeedsAttentionItem): InboxItem {
   return {
     id: `attention-${item.source}-${item.id}`,
     section: "attention",
-    priority: item.status === "Blocked" ? 0 : 1,
+    priority: isNeedsAttentionStatus(item.status) ? 0 : 1,
     title: `${item.code} — ${item.name}`,
     subtitle: `${item.group} · ${item.owner}`,
     reason: item.reason,
@@ -41,6 +43,7 @@ export type InboxBuildDeps = {
   filters: ReturnType<typeof parseReleaseFilters>;
   sessionName: string;
   prisma: typeof import("./prisma").prisma;
+  clerkUserId?: string | null;
 };
 
 export async function buildInboxItems(deps: InboxBuildDeps): Promise<{
@@ -50,8 +53,23 @@ export async function buildInboxItems(deps: InboxBuildDeps): Promise<{
   items: InboxItem[];
   attention: NeedsAttentionItem[];
 }> {
-  const { period, filters, sessionName, prisma } = deps;
+  const { period, filters, sessionName, prisma, clerkUserId } = deps;
   const { start, end } = periodRange(period);
+
+  let attentionLabels = ["Blocked", "Rolled Back"];
+  if (clerkUserId) {
+    try {
+      attentionLabels = attentionStatusLabels(
+        (await loadReleaseLifecycleConfig(clerkUserId)).config
+      );
+    } catch {
+      /* keep fallback */
+    }
+  }
+  if (attentionLabels.length === 0) attentionLabels = ["__none__"];
+  const attentionSet = new Set(
+    attentionLabels.map((l) => l.toLocaleLowerCase())
+  );
 
   const filterApp = filters.applicationId
     ? await prisma.application.findUnique({ where: { id: filters.applicationId } })
@@ -65,7 +83,7 @@ export async function buildInboxItems(deps: InboxBuildDeps): Promise<{
       prisma.release.findMany({
         where: prismaReleaseWhere(filters, {
           releaseDate: { gte: start, lte: end },
-          status: { in: ["Blocked", "At Risk"] },
+          status: { in: attentionLabels },
         }),
         include: {
           department: true,
@@ -183,10 +201,9 @@ export async function buildInboxItems(deps: InboxBuildDeps): Promise<{
           priority: 6,
           title: `${r.releaseCode} — ${r.name}`,
           subtitle: `${r.department.name} · ${r.status}`,
-          reason:
-            r.status === "Blocked" || r.status === "At Risk"
-              ? `Your release is ${r.status.toLowerCase()}`
-              : `Target ${r.releaseDate.toLocaleDateString("en-AU")}`,
+          reason: attentionSet.has(r.status.toLocaleLowerCase())
+            ? `Your release is ${r.status.toLowerCase()}`
+            : `Target ${r.releaseDate.toLocaleDateString("en-AU")}`,
           responsible: r.owner,
           href: `/releases/${r.id}`,
           date: r.releaseDate.toISOString(),

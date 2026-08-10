@@ -23,12 +23,13 @@ type TileConfig = {
   bg: string;
 };
 
+/** Coarse buckets from lifecycle kind mapping (not hardcoded status names). */
 const TILES: TileConfig[] = [
-  { key: "planned", label: "Planned", icon: Calendar, color: "#3b5bdb", bg: "rgba(59, 91, 219, 0.12)" },
-  { key: "blocked", label: "Blocked", icon: AlertTriangle, color: "#ba1a1a", bg: "rgba(186, 26, 26, 0.12)" },
-  { key: "shipped", label: "Shipped", icon: CheckCircle2, color: "#40c057", bg: "rgba(64, 192, 87, 0.12)" },
-  { key: "atRisk", label: "At Risk", icon: Flag, color: "#fab005", bg: "rgba(250, 176, 5, 0.14)" },
-  { key: "inProgress", label: "In Progress", icon: Package, color: "#228be6", bg: "rgba(34, 139, 230, 0.12)" },
+  { key: "planned", label: "Early / planned", icon: Calendar, color: "#3b5bdb", bg: "rgba(59, 91, 219, 0.12)" },
+  { key: "blocked", label: "Interrupt", icon: AlertTriangle, color: "#ba1a1a", bg: "rgba(186, 26, 26, 0.12)" },
+  { key: "shipped", label: "Shipped / closed", icon: CheckCircle2, color: "#40c057", bg: "rgba(64, 192, 87, 0.12)" },
+  { key: "atRisk", label: "Branch / risk", icon: Flag, color: "#fab005", bg: "rgba(250, 176, 5, 0.14)" },
+  { key: "inProgress", label: "In progress", icon: Package, color: "#228be6", bg: "rgba(34, 139, 230, 0.12)" },
 ];
 
 export function ReleaseStatusTiles({

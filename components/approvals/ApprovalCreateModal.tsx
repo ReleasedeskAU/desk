@@ -21,12 +21,12 @@ type CreatedApproval = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const emptyForm = () => ({
+const emptyForm = (defaultDecision = "Pending") => ({
   releaseId: "",
   approvalType: "Tech Review",
   approverId: "",
   submittedDate: today(),
-  decision: "Pending",
+  decision: defaultDecision,
   decisionDate: "",
   comments: "",
   cabMeetingId: "",
@@ -38,13 +38,23 @@ export function ApprovalCreateModal({
   onClose,
   onCreated,
   approvalTypes = [],
+  decisionOptions: decisionOptionsProp = [],
+  defaultDecision = "Pending",
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
   approvalTypes?: string[];
+  /** Enabled decision labels from approval lifecycle config. */
+  decisionOptions?: string[];
+  /** Enabled default decision from approval lifecycle config. */
+  defaultDecision?: string;
 }) {
-  const [form, setForm] = useState(emptyForm);
+  const decisionOptions = useMemo(
+    () => (decisionOptionsProp.length > 0 ? decisionOptionsProp : [...APPROVAL_DECISIONS]),
+    [decisionOptionsProp]
+  );
+  const [form, setForm] = useState(() => emptyForm(defaultDecision));
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -55,7 +65,7 @@ export function ApprovalCreateModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm());
+    setForm(emptyForm(defaultDecision || "Pending"));
     setErrors({});
     setError(null);
     setCreated(null);
@@ -73,7 +83,7 @@ export function ApprovalCreateModal({
       if (!releaseResult.ok || !userResult.ok) setError("Could not load required lookup data.");
     })();
     return () => ac.abort();
-  }, [open]);
+  }, [open, defaultDecision]);
 
   const typeOptions = useMemo(
     () => [...new Set([...APPROVAL_TYPES, ...approvalTypes].filter(Boolean))].sort(),
@@ -100,7 +110,12 @@ export function ApprovalCreateModal({
     if (!form.approvalType.trim()) nextErrors.approvalType = "Approval type is required";
     if (!form.approverId) nextErrors.approverId = "Approver is required";
     if (!form.submittedDate) nextErrors.submittedDate = "Submitted date is required";
-    if (form.decision !== "Pending" && !form.decisionDate) nextErrors.decisionDate = "Decision date is required";
+    if (
+      form.decision.toLocaleLowerCase() !== (defaultDecision || "Pending").toLocaleLowerCase() &&
+      !form.decisionDate
+    ) {
+      nextErrors.decisionDate = "Decision date is required";
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       setError("Please fill in the required fields highlighted below.");
@@ -140,7 +155,7 @@ export function ApprovalCreateModal({
         entity="Approval"
         viewHref={`/approvals/${created.id}`}
         onClose={onClose}
-        onCreateAnother={() => { setCreated(null); setForm(emptyForm()); setError(null); }}
+        onCreateAnother={() => { setCreated(null); setForm(emptyForm(defaultDecision || "Pending")); setError(null); }}
       >
         <SummaryRow label="Approval ID" value={created.approvalCode} mono />
         <SummaryRow label="Release" value={`${created.release.releaseCode} — ${created.release.name}`} />
@@ -201,11 +216,15 @@ export function ApprovalCreateModal({
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Decision<RequiredMark />
             <select className={cn(taInput, "mt-1")} value={form.decision} onChange={(e) => set("decision", e.target.value)}>
-              {APPROVAL_DECISIONS.map((decision) => <option key={decision} value={decision}>{decision}</option>)}
+              {decisionOptions.map((decision) => <option key={decision} value={decision}>{decision}</option>)}
             </select>
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-            Decision date{form.decision !== "Pending" ? <RequiredMark /> : null}
+            Decision date{
+              form.decision.toLocaleLowerCase() !== (defaultDecision || "Pending").toLocaleLowerCase()
+                ? <RequiredMark />
+                : null
+            }
             <input type="date" className={cn(taInput, "mt-1", errors.decisionDate && "border-rose-400")} value={form.decisionDate} onChange={(e) => set("decisionDate", e.target.value)} />
             <FieldError message={errors.decisionDate} />
           </label>

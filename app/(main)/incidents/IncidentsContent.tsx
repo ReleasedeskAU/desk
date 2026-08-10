@@ -27,6 +27,7 @@ import { IncidentFormModal } from "@/components/incidents/IncidentFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 type IncidentRow = {
   id: string;
@@ -84,6 +85,18 @@ export default function IncidentsContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
+  const lifecycle = useEntityLifecycleStatuses("/api/incident-lifecycle-config");
+  const statusOptions = useMemo(
+    () => lifecycle.filterOptions(incidents.map((i) => i.status)),
+    [lifecycle, incidents]
+  );
+  const openLabelSet = useMemo(
+    () => new Set(lifecycle.openLabels.map((l) => l.toLocaleLowerCase())),
+    [lifecycle.openLabels]
+  );
+  const openCount = incidents.filter((i) =>
+    openLabelSet.has(i.status.toLocaleLowerCase())
+  ).length;
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "incidents",
@@ -111,7 +124,6 @@ export default function IncidentsContent() {
   }, []);
 
   const severities = useMemo(() => [...new Set(incidents.map((i) => i.severity))].sort(), [incidents]);
-  const statuses = useMemo(() => [...new Set(incidents.map((i) => i.status))].sort(), [incidents]);
   const impacts = useMemo(() => [...new Set(incidents.map((i) => i.impact).filter(Boolean))].sort(), [incidents]);
   const envs = useMemo(() => [...new Set(incidents.map((i) => i.environmentName))].sort(), [incidents]);
   const departments = useMemo(
@@ -152,12 +164,20 @@ export default function IncidentsContent() {
           </div>
         }
         title="Incidents"
-        subtitle={`${incidents.length} incident${incidents.length === 1 ? "" : "s"} across all applications`}
+        subtitle={
+          incidents.length > 0
+            ? `${incidents.length} incident${incidents.length === 1 ? "" : "s"} across all applications${
+                openCount > 0 ? ` · ${openCount} open or in progress` : ""
+              }`
+            : "No incidents recorded"
+        }
       />
       <IncidentFormModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onCreated={() => refetch()}
+        statusOptions={lifecycle.createOptions}
+        defaultStatus={lifecycle.defaultStatus || "Open"}
       />
 
       {!tablePending && (
@@ -173,7 +193,7 @@ export default function IncidentsContent() {
           {isFilterVisible("status") && (
             <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
               <option value="">All statuses</option>
-              {statuses.map((s) => (
+              {statusOptions.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </FilterSelect>

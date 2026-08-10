@@ -14,7 +14,10 @@ import {
   type ReleaseLifecycleTransitionConfig,
 } from "@/lib/release-lifecycle-config";
 import {
+  defaultParamsForLifecycleGate,
   RELEASE_LIFECYCLE_GATE_CATALOG,
+  RELEASE_LIFECYCLE_GATE_TYPES,
+  validateReleaseLifecycleGateParams,
   type ReleaseLifecycleGateType,
 } from "@/lib/release-lifecycle-gates";
 
@@ -439,7 +442,33 @@ export function addLifecycleTransition(
 }
 
 /**
+ * Split the fixed gate catalog for one transition into Active vs Available.
+ * Enabled (attached) checks must not appear in Available suggestions.
+ *
+ * @param transition - Transition whose gate attachments to partition.
+ * @returns `attached` (enabled) then `available` (not enabled), catalog order.
+ */
+export function partitionTransitionGateCatalog(
+  transition: Pick<ReleaseLifecycleTransitionConfig, "gates">
+): {
+  attached: ReleaseLifecycleGateType[];
+  available: ReleaseLifecycleGateType[];
+} {
+  const enabledByType = new Map(
+    transition.gates.map((gate) => [gate.gateType, gate.enabled] as const)
+  );
+  const attached: ReleaseLifecycleGateType[] = [];
+  const available: ReleaseLifecycleGateType[] = [];
+  for (const gateType of RELEASE_LIFECYCLE_GATE_TYPES) {
+    if (enabledByType.get(gateType)) attached.push(gateType);
+    else available.push(gateType);
+  }
+  return { attached, available };
+}
+
+/**
  * Toggle a catalog gate on a transition (attach if missing when enabling).
+ * Attaching `required_fields_set` seeds approved default fields so validation passes.
  */
 export function toggleLifecycleGate(
   config: ReleaseLifecycleConfig,
@@ -459,13 +488,23 @@ export function toggleLifecycleGate(
   const existing = item.gates.find((gate) => gate.gateType === gateType);
   if (existing) {
     existing.enabled = enabled;
+    // Re-attach may revive a row saved without params — seed defaults before validate.
+    if (
+      enabled &&
+      validateReleaseLifecycleGateParams(gateType, existing.params) !== null
+    ) {
+      const defaults = defaultParamsForLifecycleGate(gateType);
+      if (defaults) existing.params = defaults;
+    }
   } else if (enabled) {
     const maxOrder = item.gates.reduce((max, gate) => Math.max(max, gate.sortOrder), 0);
+    const params = defaultParamsForLifecycleGate(gateType);
     item.gates.push({
       gateType,
       enabled: true,
       enforcement: "inherit",
       sortOrder: maxOrder + 10,
+      ...(params ? { params } : {}),
     });
   } else {
     return { config: next };

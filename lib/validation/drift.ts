@@ -38,7 +38,8 @@ export const createDriftSchema = z
     description: z.string().trim().min(1).max(4000),
     impactOnRelease: optionalNullableString,
     remediationAction: optionalNullableString,
-    status: z.enum(DRIFT_STATUSES).optional(),
+    /** Validated against the caller's drift lifecycle config on create. */
+    status: z.string().trim().min(1).max(80).optional(),
     etaToFix: z.union([dateInput, z.null()]).optional(),
   })
   .strict();

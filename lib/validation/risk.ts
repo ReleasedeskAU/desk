@@ -17,9 +17,9 @@ export function riskScoreDimSchema(max: number) {
 }
 
 /**
- * Canonical risk statuses for create / UI.
- * PATCH is validated by the risk lifecycle graph; legacy Open / Monitoring /
- * In Progress still resolve via aliases at enforce time.
+ * Default risk status labels (mirrors lifecycle seed).
+ * Create/UI options come from the caller's risk lifecycle config; this list is
+ * a fallback when config has not loaded. PATCH is validated by the lifecycle graph.
  */
 export const RISK_STATUSES = [
   "Identified",
@@ -50,7 +50,8 @@ export function createRiskSchemaForScale(likelihoodMax: number, impactMax: numbe
       affectedArea: z.string().trim().max(500).nullable().optional(),
       mitigationStrategy: z.string().trim().max(4000).nullable().optional(),
       riskOwnerId: z.string().trim().max(64).nullable().optional(),
-      status: z.enum(RISK_STATUSES).optional(),
+      /** Validated against the caller's risk lifecycle config on create. */
+      status: z.string().trim().min(1).max(64).optional(),
       notes: z.string().trim().max(4000).nullable().optional(),
     })
     .strict();

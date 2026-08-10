@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -59,6 +61,8 @@ type Props = {
   departmentName?: string;
   applicationName?: string;
   raisedByDefault?: string;
+  /** Enabled default status from blocker lifecycle config. */
+  defaultStatus?: string;
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -87,6 +91,7 @@ export function BlockerFormModal({
   departmentName: lockedDepartmentName = "",
   applicationName: lockedApplicationName = "",
   raisedByDefault = "",
+  defaultStatus = "Open",
 }: Props) {
   const scoped = Boolean(lockedReleaseCode);
 
@@ -203,7 +208,7 @@ export function BlockerFormModal({
         escalationLevel: form.escalationLevel,
         rootCause: form.rootCause || null,
         impactOnRelease: form.impactOnRelease.trim(),
-        status: "Open",
+        status: defaultStatus || "Open",
         daysOpen: 0,
       }),
       label: "create-blocker",
@@ -228,7 +233,7 @@ export function BlockerFormModal({
       releaseName: data.releaseName || lockedReleaseName || selectedRelease?.name || "—",
       blockerType: data.blockerType || form.blockerType,
       severity: data.severity || form.severity,
-      status: data.status || "Open",
+      status: data.status || defaultStatus || "Open",
       impactOnRelease: data.impactOnRelease || form.impactOnRelease,
     });
   };
@@ -459,7 +464,6 @@ export function BlockerFormModal({
             />
           </label>
 
-          {error && <p className="text-sm text-error-600 dark:text-rose-400">{error}</p>}
         </form>
 
         <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
@@ -476,6 +480,15 @@ export function BlockerFormModal({
           </button>
         </div>
       </div>
+
+      <FormAlertDialog
+        alert={
+          error
+            ? buildFormSaveAlert(null, error, { entityLabel: "blocker" })
+            : null
+        }
+        onDismiss={() => setError(null)}
+      />
     </div>
   );
 }

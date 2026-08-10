@@ -4,9 +4,14 @@ import { requireRole } from "@/lib/auth/api";
 import { buildBookings, buildTimeline, buildVersionMatrix } from "@/lib/db-environment-desk";
 import { prisma } from "@/lib/prisma";
 import { environmentVersionOrderBy, sp, str, dateTextRange } from "@/lib/list-api-filters";
+import { loadReleaseLifecycleConfig } from "@/lib/release-lifecycle-config-db";
+import {
+  attentionStatusLabels,
+  bucketReleaseStatusWithConfig,
+} from "@/lib/release-lifecycle-status-ui";
 
 export async function GET(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   const params = sp(req);
@@ -67,10 +72,33 @@ export async function GET(req: Request) {
     prisma.department.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
+  let lifecycleConfig = null;
+  let attentionLabels: string[] = [];
+  try {
+    lifecycleConfig = (await loadReleaseLifecycleConfig(user!.id)).config;
+    attentionLabels = attentionStatusLabels(lifecycleConfig);
+  } catch {
+    attentionLabels = ["Blocked", "Rolled Back"];
+  }
+  const attentionSet = new Set(
+    attentionLabels.map((l) => l.toLocaleLowerCase())
+  );
+
   const versionMatrix = buildVersionMatrix(apps, versions, releases);
   const timeline = buildTimeline(releases);
   const bookingRows = buildBookings(bookings);
   const driftCount = versionMatrix.filter((v) => v.drift).length;
+  const activeReleases = releases.filter((r) => {
+    const bucket = bucketReleaseStatusWithConfig(r.status, lifecycleConfig);
+    return (
+      bucket === "inProgress" ||
+      bucket === "blocked" ||
+      bucket === "atRisk"
+    );
+  }).length;
+  const attentionCount = releases.filter((r) =>
+    attentionSet.has(r.status.toLocaleLowerCase())
+  ).length;
 
   return NextResponse.json({
     versionMatrix,
@@ -82,7 +110,7 @@ export async function GET(req: Request) {
     applications: apps,
     departments,
     stats: {
-      activeReleases: releases.filter((r) => r.status === "In Progress" || r.status === "At Risk").length,
+      activeReleases,
       bookedEnvs: bookings.length,
       driftApps: driftCount,
       mappingEdges: edges.length,
@@ -98,13 +126,13 @@ export async function GET(req: Request) {
             actionLabel: "View matrix",
           }]
         : []),
-      ...(releases.some((r) => r.status === "At Risk")
+      ...(attentionCount > 0
         ? [{
-            id: "at-risk",
+            id: "attention",
             severity: "high" as const,
-            title: "Release at risk",
-            detail: "One or more releases flagged At Risk in the current train.",
-            href: "/releases",
+            title: "Release needs attention",
+            detail: `${attentionCount} release(s) in interrupt status (${attentionLabels.join(", ") || "none"}).`,
+            href: "/releases?attention=1",
             actionLabel: "View releases",
           }]
         : []),

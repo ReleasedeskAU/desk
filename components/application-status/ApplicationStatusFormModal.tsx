@@ -197,7 +197,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
       <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
         Fields marked <RequiredMark /> are required. One row per application × environment — existing rows are updated.
       </p>
-      {formError ? <FormError message={formError} /> : null}
+      {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
       <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
         <SelectField
           label="Application"

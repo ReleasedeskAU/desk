@@ -16,6 +16,11 @@ import { useReleaseFilters } from "@/context/ReleaseFiltersContext";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  enabledReleaseStatusLabels,
+  releaseStatusFilterOptions,
+} from "@/lib/release-lifecycle-status-ui";
 import {
   CALENDAR_DEFAULT_HIDDEN_FILTER_KEYS,
   CALENDAR_FILTER_FIELDS,
@@ -81,7 +86,15 @@ export default function CalendarPage() {
   const [mounted, setMounted] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [lifecycleConfig, setLifecycleConfig] =
+    useState<ReleaseLifecycleConfig | null>(null);
   const canEdit = sessionCanEdit(user);
+
+  const statusOptions = useMemo(() => {
+    if (!lifecycleConfig) return [];
+    const present = (dbRows as { status?: string }[]).map((r) => r.status ?? "");
+    return releaseStatusFilterOptions(lifecycleConfig, present);
+  }, [lifecycleConfig, dbRows]);
 
   useEffect(() => {
     setMounted(true);
@@ -91,6 +104,14 @@ export default function CalendarPage() {
     return loadJsonEffect<{ user: SessionUser }>("/api/auth/me", (data) => setUser(data.user), {
       label: "calendar-auth",
     });
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ config: ReleaseLifecycleConfig }>(
+      "/api/release-lifecycle-config",
+      (payload) => setLifecycleConfig(payload.config),
+      { label: "calendar-lifecycle-config" }
+    );
   }, []);
 
   const { start: periodStart, end: periodEnd } = useMemo(
@@ -178,6 +199,13 @@ export default function CalendarPage() {
           showListFilters
           manageFilters={filterPicker}
           isFilterVisible={isFilterVisible}
+          statusOptions={
+            statusOptions.length > 0
+              ? statusOptions
+              : lifecycleConfig
+                ? enabledReleaseStatusLabels(lifecycleConfig)
+                : undefined
+          }
         >
           {/* Calendar-only controls — not part of shared ReleaseFiltersBar defaults */}
           {isFilterVisible("eventType") && (
@@ -353,6 +381,7 @@ export default function CalendarPage() {
               periodStart={periodStart}
               periodEnd={periodEnd}
               period={period}
+              lifecycleConfig={lifecycleConfig}
             />
           ) : (
             <CalendarTableView events={filteredEvents} dataLoading={loading} />
