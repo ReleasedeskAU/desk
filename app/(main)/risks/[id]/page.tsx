@@ -9,23 +9,19 @@ import {
   List,
   Package,
   Shield,
-  ShieldAlert,
   User,
-  Zap,
 } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
   TintedCallout,
   ScoreBar,
   RiskMatrix,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
@@ -40,6 +36,15 @@ import {
   simpleRiskLevelLabel,
   scaleAxisValues,
 } from "@/lib/risk-engine-config";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { riskWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type RiskDetail = {
   id: string;
@@ -142,15 +147,15 @@ function formatScale(n: number, map: Record<number, string>) {
 function riskLevelFromScore(
   score: number,
   config?: import("@/lib/risk-engine-config").RiskEngineConfig
-): { label: string; tone: ChipTone; hero: "emerald" | "amber" | "rose" } {
+): { label: string; tone: ChipTone } {
   const cfg = config ?? DEFAULT_RISK_ENGINE_CONFIG;
   const level = getRiskLevel(score, cfg);
   const label = simpleRiskLevelLabel(level, cfg);
   const idx = cfg.simpleBands.findIndex((b) => b.id === level);
   const last = cfg.simpleBands.length - 1;
-  if (idx <= 0) return { label, tone: "good", hero: "emerald" };
-  if (idx >= last) return { label, tone: "bad", hero: "rose" };
-  return { label, tone: "warn", hero: "amber" };
+  if (idx <= 0) return { label, tone: "good" };
+  if (idx >= last) return { label, tone: "bad" };
+  return { label, tone: "warn" };
 }
 
 function statusTone(status: string): ChipTone {
@@ -204,6 +209,9 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, deptList, appList, releaseList, userList, me] = await Promise.all([
@@ -387,6 +395,30 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * The API re-validates the status and enforces the editor role — this button
+   * is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/risks/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: step.status }),
+      label: "risk-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this risk to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -411,7 +443,6 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const impactNum = Number(v.impact) || 0;
   const liveScore = likelihoodNum * impactNum;
   const maxScore = riskConfig.likelihoodMax * riskConfig.impactMax;
-  const scorePct = Math.max(0, Math.min(100, (liveScore / maxScore) * 100));
   const level = riskLevelFromScore(liveScore, riskConfig);
   const openish = !/accept|closed|resolv/i.test(v.status);
   const leaveMatch = v.notes.match(/LV-\d+/i)?.[0];
@@ -419,6 +450,88 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const selectedApp = applications.find((a) => a.id === v.applicationId);
   const selectedDept = departments.find((dept) => dept.id === v.departmentId);
   const selectedOwner = users.find((u) => u.id === v.riskOwnerId) ?? row.riskOwner;
+  const releaseDue = describeDue(row.release.releaseDate);
+  const workflow = riskWorkflow(v.status);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "escalated",
+      when: /escalat/i.test(v.status),
+      tone: "critical",
+      label: "Escalated for management decision",
+      detail: "Someone above the delivery team needs to rule on this exposure.",
+    },
+    {
+      id: "high-exposure",
+      when: openish && level.tone === "bad",
+      tone: "critical",
+      label: `${level.label} exposure still open`,
+      detail: "Score is in the top band and the risk has not been mitigated or accepted.",
+    },
+    {
+      id: "no-mitigation",
+      when: openish && !v.mitigationStrategy.trim(),
+      tone: "warning",
+      label: "No mitigation strategy",
+      detail: "Nothing is recorded about how this exposure will be reduced.",
+    },
+    {
+      id: "no-owner",
+      when: openish && !selectedOwner,
+      tone: "warning",
+      label: "No risk owner",
+      detail: "Unowned risks are rarely mitigated before go-live.",
+    },
+    {
+      id: "release-near",
+      when: openish && (releaseDue.state === "soon" || releaseDue.state === "today"),
+      tone: "warning",
+      label: `Release goes live ${releaseDue.label.toLowerCase()}`,
+      detail: "There is little time left to reduce this exposure before deployment.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Score",
+      value: `${liveScore}/${maxScore}`,
+      tone: chipToneToFactTone(level.tone),
+      hint: `Likelihood × impact. Currently in the ${level.label} band.`,
+    },
+    { label: "Likelihood", value: formatScale(likelihoodNum, LIKELIHOOD) },
+    { label: "Impact", value: formatScale(impactNum, IMPACT) },
+  ];
+
+  const timing: DetailFact[] = [
+    {
+      label: "Release go-live",
+      value: formatDate(row.release.releaseDate),
+      tone: openish ? dueTone(releaseDue.state) : "neutral",
+      hint: releaseDue.label,
+    },
+    { label: "Time left", value: releaseDue.label, tone: openish ? dueTone(releaseDue.state) : "neutral" },
+  ];
+
+  const scope: DetailFact[] = [
+    {
+      label: "Release",
+      value: selectedRelease?.releaseCode ?? row.release.releaseCode,
+      href: `/releases/${v.releaseId || row.release.id}`,
+      hint: row.release.name,
+    },
+    { label: "Application", value: selectedApp?.name ?? v.applicationName ?? "—" },
+    { label: "Department", value: selectedDept?.name ?? v.departmentName ?? "—" },
+    { label: "Affected area", value: v.affectedArea || "—" },
+  ];
 
   return (
     <EditableDetailShell
@@ -585,52 +698,27 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: Zap,
-          label: "Status",
-          value: v.status,
-          tone: openish ? "amber" : "emerald",
+      <DetailDecisionHeader
+        identity={[
+          { label: "Owner", value: selectedOwner?.name ?? "Unassigned" },
+          { label: "Category", value: v.category || "—" },
+          { label: "Application", value: selectedApp?.name ?? v.applicationName ?? "—" },
+        ]}
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
+          caption: openish ? `${level.label} exposure, open` : "Contained",
         }}
-        secondary={{
-          icon: AlertTriangle,
-          label: "Category",
-          value: v.category || "—",
-        }}
-        metric={{
-          icon: ShieldAlert,
-          label: "Risk Score",
-          percent: scorePct,
-          caption: `${liveScore}/25 · ${level.label}`,
-          tone: level.hero,
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="This risk is owned, mitigated and within tolerance"
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={ShieldAlert}
-        tone="rose"
-        title="Risk status"
-        description="Current exposure band and whether this item still needs active mitigation."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={openish ? "⚠️ OPEN EXPOSURE" : "✓ CONTAINED"}
-            tone={openish ? "bad" : "good"}
-          />
-          <StatusChip label={level.label} tone={level.tone} />
-          <StatusChip label={v.status} tone={statusTone(v.status)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Risk ID" value={row.riskCode} />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
-          />
-          <EditableField label="Category" value={v.category} editing={false} />
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={AlertTriangle}

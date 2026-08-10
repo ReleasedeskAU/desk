@@ -7,7 +7,7 @@ import { DepartmentsBrowse } from "@/components/master-data/browse/DepartmentsBr
 export default function DepartmentsPage() {
   return (
     <Suspense fallback={<TablePageSuspenseFallback />}>
-      <div className="max-w-[1400px] font-sans pb-24">
+      <div className="w-full font-sans pb-24">
         <DepartmentsBrowse />
       </div>
     </Suspense>

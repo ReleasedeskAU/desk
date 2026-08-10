@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 export default function HistoryPage() {
   return (
-    <div className="max-w-[1000px] font-sans pb-12">
+    <div className="w-full font-sans pb-12">
       {/* Header Section */}
       <div className="flex items-start justify-between mb-10 mt-2">
         <div>

@@ -2,28 +2,16 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Activity,
-  AlertTriangle,
-  AppWindow,
-  Bell,
-  Gauge,
-  List,
-  User,
-  Zap,
-} from "lucide-react";
+import { Activity, AlertTriangle, Gauge, List } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
-  TintedCallout,
   ThresholdVisual,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -31,6 +19,13 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { alertWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type AlertDetail = {
   id: string;
@@ -125,13 +120,20 @@ function statusTone(status: string): ChipTone {
   return "neutral";
 }
 
-function heroToneFromSeverity(severity: string): "rose" | "amber" | "emerald" | "sky" {
-  const t = severityTone(severity);
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  if (t === "good") return "emerald";
-  return "sky";
+/** Nobody has looked at the alert yet — distinct from "open but being worked". */
+function isUnacknowledged(status: string): boolean {
+  const s = status.toLowerCase();
+  return /open|firing|active/.test(s) || !s.trim();
 }
+
+function daysSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+/** An alert still firing after this long has become a standing problem. */
+const STALE_ALERT_DAYS = 3;
 
 function toDraft(row: AlertDetail): AlertDraft {
   return {
@@ -162,6 +164,9 @@ export default function MonitoringAlertDetailPage({
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, appList, me] = await Promise.all([
@@ -272,6 +277,30 @@ export default function MonitoringAlertDetailPage({
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * The API re-validates the status and enforces the editor role — this button
+   * is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/monitoring-alerts/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: step.status }),
+      label: "alert-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this alert to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -294,9 +323,90 @@ export default function MonitoringAlertDetailPage({
 
   const openish = !/resolv|closed|clear/i.test(v.status);
   const selectedApp = applications.find((a) => a.id === v.applicationId);
+  const appName = selectedApp?.name ?? row.application.name;
   const currentMetric = numericValue(v.currentValue);
   const thresholdMetric = numericValue(v.threshold);
   const showThreshold = currentMetric != null && thresholdMetric != null;
+  const overThreshold = showThreshold && currentMetric > thresholdMetric;
+  const daysOpen = daysSince(v.timestamp || row.timestamp);
+  const highSeverity = severityTone(v.severity) === "bad";
+  const assignee = v.assignedTo.trim();
+  const workflow = alertWorkflow(v.status);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "unacknowledged",
+      when: openish && isUnacknowledged(v.status),
+      tone: highSeverity ? "critical" : "warning",
+      label: `${v.severity || "Alert"} firing on ${appName}, not acknowledged`,
+      detail: "Nobody has confirmed they have seen this alert.",
+    },
+    {
+      id: "unassigned",
+      when: openish && !assignee,
+      tone: highSeverity ? "critical" : "warning",
+      label: "No owner assigned",
+      detail: "Unowned alerts are how a metric breach becomes an incident.",
+    },
+    {
+      id: "over-threshold",
+      when: openish && overThreshold,
+      tone: highSeverity ? "critical" : "warning",
+      label: `${v.metric || "Metric"} is above threshold`,
+      detail: `Reading ${v.currentValue} against a threshold of ${v.threshold}.`,
+    },
+    {
+      id: "stale",
+      when: openish && daysOpen > STALE_ALERT_DAYS,
+      tone: "warning",
+      label: `Firing ${daysOpen} days`,
+      detail: "A long-running alert is either a real problem or a threshold that needs retuning.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Severity",
+      value: v.severity || "—",
+      tone: chipToneToFactTone(severityTone(v.severity)),
+    },
+    {
+      label: "Reading",
+      value: v.currentValue || "—",
+      tone: openish && overThreshold ? "bad" : "neutral",
+      hint: v.threshold ? `Threshold ${v.threshold}` : "No threshold recorded",
+    },
+    {
+      label: "Owner",
+      value: assignee || "Unassigned",
+      tone: assignee ? "neutral" : "warn",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    { label: "Triggered", value: v.timestamp ? formatDate(v.timestamp) : "—" },
+    {
+      label: "Firing for",
+      value: `${daysOpen} day${daysOpen === 1 ? "" : "s"}`,
+      tone: !openish ? "neutral" : daysOpen > STALE_ALERT_DAYS ? "bad" : "warn",
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Application", value: appName },
+    { label: "Environment", value: v.environmentName || "—" },
+    { label: "Department", value: v.departmentName || "—" },
+    { label: "Alert type", value: v.alertType || "—" },
+  ];
 
   return (
     <EditableDetailShell
@@ -430,87 +540,24 @@ export default function MonitoringAlertDetailPage({
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: Bell,
-          label: "Severity",
-          value: v.severity,
-          tone: heroToneFromSeverity(v.severity),
+      <DetailDecisionHeader
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
+          caption: openish
+            ? `Firing on ${v.environmentName || "this environment"}${assignee ? ` with ${assignee}` : ", unowned"}`
+            : "Alert cleared",
         }}
-        secondary={{
-          icon: Zap,
-          label: "Status",
-          value: v.status,
-        }}
-        metric={{
-          icon: Gauge,
-          label: "Alert Type",
-          percent: openish ? (severityTone(v.severity) === "bad" ? 90 : 55) : 100,
-          caption: v.alertType || "—",
-          tone: openish ? heroToneFromSeverity(v.severity) : "emerald",
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="Alert cleared — the metric is back within threshold"
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={Bell}
-        tone="rose"
-        title="Alert status"
-        description="How urgent this breach is and whether ops has cleared it yet."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={openish ? "⚠️ ALERT OPEN" : "✓ CLEARED"}
-            tone={openish ? "bad" : "good"}
-          />
-          <StatusChip label={v.severity} tone={severityTone(v.severity)} />
-          <StatusChip label={v.status} tone={statusTone(v.status)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Alert ID" value={row.alertCode} />
-          <EditableField
-            label="Severity"
-            value={v.severity}
-            editing={false}
-            display={<StatusChip label={v.severity} tone={severityTone(v.severity)} />}
-          />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
-          />
-          <EditableField label="Alert Type" value={v.alertType} editing={false} />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={AppWindow}
-        tone="sky"
-        title="Application & environment"
-        description="Where the breach fired — application, department, and environment."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Application"
-            value={v.applicationId}
-            editing={false}
-            display={selectedApp?.name ?? row.application.name}
-          />
-          <EditableField label="Department" value={v.departmentName} editing={false} />
-          <EditableField
-            label="Environment"
-            value={v.environmentName}
-            editing={false}
-            mono
-          />
-          <EditableField
-            label="Triggered"
-            value={v.timestamp}
-            editing={false}
-            display={v.timestamp ? formatDate(v.timestamp) : "—"}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={Gauge}
@@ -526,22 +573,6 @@ export default function MonitoringAlertDetailPage({
         {showThreshold && (
           <div className="mt-5 rounded-xl bg-slate-50 p-4 dark:bg-white/5">
             <ThresholdVisual current={currentMetric} threshold={thresholdMetric} />
-          </div>
-        )}
-      </DetailSection>
-
-      <DetailSection
-        icon={User}
-        tone="emerald"
-        title="Assignment"
-        description="Who owns clearing this alert before it escalates to an incident."
-      >
-        <EditableFieldGrid>
-          <EditableField label="Assigned To" value={v.assignedTo} editing={false} />
-        </EditableFieldGrid>
-        {!v.assignedTo.trim() && (
-          <div className="mt-3">
-            <TintedCallout tone="amber">No owner assigned yet.</TintedCallout>
           </div>
         )}
       </DetailSection>

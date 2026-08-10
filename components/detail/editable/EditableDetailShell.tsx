@@ -56,6 +56,10 @@ type EditableDetailShellProps = {
 /**
  * Shared chrome for editable detail pages.
  * Edit opens a modal; save success shows a confirmation of changed fields.
+ * Entity switcher sits beside the heading so it does not consume a full card row.
+ *
+ * @param props - Page chrome, select switcher, edit/delete controls, and body.
+ * @returns Detail page shell.
  */
 export function EditableDetailShell({
   pageTitle,
@@ -92,11 +96,11 @@ export function EditableDetailShell({
   useNavHistoryLabel(entityCode);
 
   return (
-    <div className="space-y-5">
+    <div className="w-full min-w-0 space-y-5">
       <TopBar title={pageTitle} highlight />
 
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-[22px] font-bold tracking-tight text-[#1B2559] dark:text-white md:text-[26px]">
               {entityName ?? entityCode}
@@ -104,6 +108,29 @@ export function EditableDetailShell({
             <span className="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] font-bold text-slate-500 dark:bg-white/10 dark:text-white/60">
               {entityCode}
             </span>
+            <label className="flex min-w-0 items-center gap-2 text-sm text-slate-700 dark:text-white/80">
+              <span className="hidden text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45 sm:inline">
+                {selectLabel}
+              </span>
+              <select
+                aria-label={selectLabel}
+                className={cn(
+                  taInput,
+                  "min-w-0 max-w-[160px] rounded-xl py-1.5 font-mono text-xs sm:max-w-[200px]"
+                )}
+                value={selectValue}
+                disabled={editing}
+                onChange={(e) => onSelectChange(e.target.value)}
+              >
+                {(selectOptions.length ? selectOptions : [{ value: selectValue, label: entityCode }]).map(
+                  (o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  )
+                )}
+              </select>
+            </label>
           </div>
           {pageDescription ? (
             <p className="mt-2 max-w-3xl text-[13.5px] leading-relaxed text-slate-500 dark:text-white/60">
@@ -147,34 +174,16 @@ export function EditableDetailShell({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-[22px] bg-white px-4 py-3 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)]">
-        <label className="min-w-0 w-full text-sm text-slate-700 dark:text-white/80 sm:w-auto">
-          <span className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-            {selectLabel}
-          </span>
-          <select
-            className={cn(taInput, "w-full min-w-0 max-w-full font-mono text-sm sm:w-auto sm:min-w-[200px]")}
-            value={selectValue}
-            disabled={editing}
-            onChange={(e) => onSelectChange(e.target.value)}
-          >
-            {(selectOptions.length ? selectOptions : [{ value: selectValue, label: entityCode }]).map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
       {children}
 
-      {relatedLinks && (
-        <section className="rounded-[22px] bg-white p-6 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)]">
-          <h3 className="mb-3 text-[14px] font-bold text-slate-800 dark:text-white">Related</h3>
-          <div className="flex flex-wrap gap-2">{relatedLinks}</div>
-        </section>
-      )}
+      {relatedLinks ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+            Related
+          </span>
+          {relatedLinks}
+        </div>
+      ) : null}
 
       <p className="pb-2 text-center text-[11px] text-slate-400 dark:text-white/40">{footer}</p>
 

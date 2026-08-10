@@ -2,19 +2,18 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, GitBranch, List, Package, ShieldAlert, Zap } from "lucide-react";
+import { FileText, GitBranch, List, Package } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
   StatusChip,
-  HeroStatusRow,
   TintedCallout,
   EntityConnection,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -26,6 +25,13 @@ import {
   DEPENDENCY_STATUSES,
   DEPENDENCY_TYPES,
 } from "@/lib/validation/dependency";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { dependencyWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type DependencyDetail = {
   id: string;
@@ -86,31 +92,6 @@ function impactTone(impact: string): ChipTone {
   return "neutral";
 }
 
-function statusHeroTone(status: string): "rose" | "amber" | "emerald" | "indigo" {
-  const t = statusTone(status);
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  if (t === "good") return "emerald";
-  return "indigo";
-}
-
-/** Rough clearance progress from dependency status for the hero ring. */
-function statusPercent(status: string): number {
-  const s = status.toLowerCase();
-  if (
-    s.includes("met") ||
-    s.includes("waiv") ||
-    s.includes("remov") ||
-    s.includes("resolv") ||
-    s.includes("clear")
-  ) {
-    return 100;
-  }
-  if (s.includes("risk")) return 45;
-  if (s.includes("block") || s === "pending") return 15;
-  return 35;
-}
-
 function withCurrentOption(
   options: { value: string; label: string }[],
   current: string | undefined
@@ -140,6 +121,9 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, releaseList, me] = await Promise.all([
@@ -248,6 +232,30 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * The API re-validates the status against the dependency enum and enforces
+   * the editor role — this button is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/dependencies/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: step.status }),
+      label: "dependency-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this dependency to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -275,7 +283,86 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const upstreamRelease =
     releases.find((r) => r.id === v.dependsOnReleaseId) ??
     (v.dependsOnReleaseId === row.dependsOnRelease.id ? row.dependsOnRelease : null);
+  // Pending is a live lifecycle state (not cleared) — treat like blocked/at-risk for attention.
   const blockedish = /block|risk|pending/i.test(v.status);
+  const workflow = dependencyWorkflow(v.status);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "blocked",
+      when: /block/i.test(v.status),
+      tone: "critical",
+      label: `${sourceRelease?.releaseCode ?? "Source"} is blocked by ${upstreamRelease?.releaseCode ?? "upstream"}`,
+      detail: "The dependent release cannot proceed until the upstream link clears.",
+    },
+    {
+      id: "at-risk",
+      when: /risk/i.test(v.status),
+      tone: "warning",
+      label: "Upstream link at risk",
+      detail: "The upstream release may slip and take the dependent release with it.",
+    },
+    {
+      id: "hard-and-blocked",
+      when: blockedish && /hard/i.test(v.dependencyType),
+      tone: "critical",
+      label: "Hard dependency, not clear",
+      detail: "A hard dependency has no workaround — the upstream release must land first.",
+    },
+    {
+      id: "severe-impact",
+      when: blockedish && impactTone(v.impactIfBlocked) === "bad",
+      tone: "critical",
+      label: v.impactIfBlocked,
+      detail: "This is the consequence if the link stays blocked.",
+    },
+    {
+      id: "no-notes",
+      when: blockedish && !v.notes.trim(),
+      tone: "warning",
+      label: "No mitigation notes",
+      detail: "Nothing is recorded about how the two teams plan to unblock this.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Type",
+      value: v.dependencyType || "—",
+      tone: /hard/i.test(v.dependencyType) ? "bad" : "neutral",
+      hint: "Hard dependencies must land first; soft ones have a workaround.",
+    },
+    {
+      label: "If blocked",
+      value: v.impactIfBlocked || "—",
+      tone: chipToneToFactTone(impactTone(v.impactIfBlocked)),
+      hint: "What happens to the dependent release if this link never clears.",
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    {
+      label: "Waiting release",
+      value: sourceRelease?.releaseCode ?? "—",
+      href: sourceRelease ? `/releases/${sourceRelease.id}` : undefined,
+      hint: sourceRelease?.name,
+    },
+    {
+      label: "Upstream release",
+      value: upstreamRelease?.releaseCode ?? "—",
+      href: upstreamRelease ? `/releases/${upstreamRelease.id}` : undefined,
+      hint: upstreamRelease?.name,
+    },
+  ];
 
   return (
     <EditableDetailShell
@@ -390,25 +477,21 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: ShieldAlert,
-          label: "Status",
-          value: v.status,
-          tone: statusHeroTone(v.status),
+      <DetailDecisionHeader
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
+          caption: `${sourceRelease?.releaseCode ?? "—"} waits on ${upstreamRelease?.releaseCode ?? "—"}`,
         }}
-        secondary={{
-          icon: Zap,
-          label: "Type",
-          value: v.dependencyType,
-        }}
-        metric={{
-          icon: GitBranch,
-          label: "Impact if blocked",
-          percent: statusPercent(v.status),
-          caption: v.impactIfBlocked || "impact not set",
-          tone: blockedish ? "amber" : "emerald",
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="This link is clear — the upstream release is not holding anything up"
+        timing={[]}
+        scope={scope}
       />
 
       <DetailSection
@@ -444,91 +527,6 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
           }
           caption={`${sourceRelease?.name ?? "Source"} depends on ${upstreamRelease?.name ?? "upstream"} · ${v.dependencyType} dependency`}
         />
-      </DetailSection>
-
-      <DetailSection
-        icon={Package}
-        tone="sky"
-        title="Linked releases"
-        description="Pick which release depends on which — IDs stay stable; codes come from the release register."
-      >
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Dependency ID" value={code} />
-          <EditableField
-            label="Source Release"
-            value={v.releaseId}
-            editing={false}
-            display={
-              sourceRelease ? (
-                <ProgressLink
-                  href={`/releases/${sourceRelease.id}`}
-                  className="font-mono text-[13.5px] font-semibold text-indigo-600 hover:underline dark:text-indigo-300"
-                >
-                  {sourceRelease.releaseCode}
-                </ProgressLink>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <EditableField
-            label="Source Name"
-            value={sourceRelease?.name ?? ""}
-            editing={false}
-            display={sourceRelease?.name ?? "—"}
-          />
-          <EditableField
-            label="Depends On (Upstream)"
-            value={v.dependsOnReleaseId}
-            editing={false}
-            display={
-              upstreamRelease ? (
-                <ProgressLink
-                  href={`/releases/${upstreamRelease.id}`}
-                  className="font-mono text-[13.5px] font-semibold text-sky-600 hover:underline dark:text-sky-300"
-                >
-                  {upstreamRelease.releaseCode}
-                </ProgressLink>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <EditableField
-            label="Upstream Name"
-            value={upstreamRelease?.name ?? ""}
-            editing={false}
-            display={upstreamRelease?.name ?? "—"}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={ShieldAlert}
-        tone="rose"
-        title="Dependency details"
-        description="Type, clearance status, and what happens if the upstream link stays blocked."
-      >
-        <EditableFieldGrid cols={3}>
-          <EditableField
-            label="Dependency Type"
-            value={v.dependencyType}
-            editing={false}
-            display={<StatusChip label={v.dependencyType} tone="neutral" />}
-          />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
-          />
-          <EditableField
-            label="Impact if Blocked"
-            value={v.impactIfBlocked}
-            editing={false}
-            display={<StatusChip label={v.impactIfBlocked} tone={impactTone(v.impactIfBlocked)} />}
-          />
-        </EditableFieldGrid>
       </DetailSection>
 
       <DetailSection

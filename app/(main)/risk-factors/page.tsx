@@ -7,7 +7,7 @@ import { RiskFactorsBrowse } from "@/components/master-data/browse/RiskFactorsBr
 export default function RiskFactorsPage() {
   return (
     <Suspense fallback={<TablePageSuspenseFallback />}>
-      <div className="max-w-[1400px] font-sans pb-24">
+      <div className="w-full font-sans pb-24">
         <RiskFactorsBrowse />
       </div>
     </Suspense>

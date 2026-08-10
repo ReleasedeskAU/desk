@@ -10,21 +10,17 @@ import {
   List,
   Package,
   Server,
-  ShieldAlert,
-  Zap,
 } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
   TintedCallout,
   EntityTimeline,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -32,6 +28,12 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailFact,
+} from "@/lib/detail-decision";
 
 type BookingDetail = {
   id: string;
@@ -129,18 +131,40 @@ function windowFilled(start: string, end: string): boolean {
   return Boolean(start.trim() && end.trim());
 }
 
-/** Share of Test / UAT / Pre-Prod windows that have both start and end. */
-function readinessPercent(draft: BookingDraft): number {
-  const filled = [
+/** Count of Test / UAT / Pre-Prod windows that have both start and end. */
+function bookedWindows(draft: BookingDraft): number {
+  return [
     windowFilled(draft.testStart, draft.testEnd),
     windowFilled(draft.uatStart, draft.uatEnd),
     windowFilled(draft.preProdStart, draft.preProdEnd),
   ].filter(Boolean).length;
-  return Math.round((filled / 3) * 100);
 }
+
+const TOTAL_WINDOWS = 3;
 
 function conflictTone(flag: boolean): ChipTone {
   return flag ? "bad" : "good";
+}
+
+/**
+ * Environment windows must all finish before the production date, otherwise the
+ * release would go live on testing that has not happened yet.
+ *
+ * @param draft - Current booking values.
+ * @returns Phase names whose end date falls after the production date.
+ */
+function windowsAfterProd(draft: BookingDraft): string[] {
+  const prod = draft.prodReleaseDate;
+  if (!prod) return [];
+  return (
+    [
+      ["Test", draft.testEnd],
+      ["UAT", draft.uatEnd],
+      ["Pre-Prod", draft.preProdEnd],
+    ] as const
+  )
+    .filter(([, end]) => end && end > prod)
+    .map(([label]) => label);
 }
 
 function toDraft(row: BookingDetail): BookingDraft {
@@ -328,8 +352,119 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
 
   const code = row.bookingCode ?? row.id;
   const hasConflict = v.conflictFlag === "true";
-  const readyPct = readinessPercent(v);
+  const windowsBooked = bookedWindows(v);
   const selectedRelease = releases.find((r) => r.id === v.releaseId) ?? row.release;
+  const openConflicts = row.conflicts.filter((c) => !/resolv|closed/i.test(c.status));
+  const firstConflict = openConflicts[0] ?? row.conflicts[0];
+  const lateWindows = windowsAfterProd(v);
+  const prodDue = describeDue(v.prodReleaseDate);
+  const cabDue = describeDue(v.cabDate);
+  const shipped = prodDue.state === "overdue";
+
+  const attention = collectAttention([
+    {
+      id: "open-conflicts",
+      when: openConflicts.length > 0,
+      tone: "critical",
+      label: `${openConflicts.length} unresolved environment conflict${openConflicts.length === 1 ? "" : "s"}`,
+      detail: "Another booking overlaps these windows and neither can proceed until it is settled.",
+      href: firstConflict ? `/conflicts/${firstConflict.id}` : undefined,
+    },
+    {
+      id: "conflict-flag",
+      when: hasConflict && openConflicts.length === 0,
+      tone: "warning",
+      label: "Conflict flag set with no open conflict record",
+      detail: "Either the flag is stale or the clash was never logged.",
+    },
+    {
+      id: "late-windows",
+      when: lateWindows.length > 0,
+      tone: "critical",
+      label: `${lateWindows.join(" and ")} end after the production date`,
+      detail: "The release would go live before that testing finishes.",
+    },
+    {
+      id: "windows-missing",
+      when: !shipped && windowsBooked < TOTAL_WINDOWS,
+      tone: windowsBooked === 0 ? "critical" : "warning",
+      label: `${TOTAL_WINDOWS - windowsBooked} of ${TOTAL_WINDOWS} windows not booked`,
+      detail: "Unbooked windows cannot be protected from other teams.",
+    },
+    {
+      id: "no-prod-date",
+      when: !v.prodReleaseDate,
+      tone: "warning",
+      label: "No production date",
+      detail: "Without a target date the windows cannot be checked for order.",
+    },
+    {
+      id: "no-cab-date",
+      when: !shipped && !v.cabDate,
+      tone: "warning",
+      label: "No CAB date",
+    },
+    {
+      id: "no-release",
+      when: !selectedRelease,
+      tone: "warning",
+      label: "No release linked",
+      detail: "An unlinked booking holds an environment for work nobody can trace.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Windows",
+      value: `${windowsBooked}/${TOTAL_WINDOWS}`,
+      tone: windowsBooked === TOTAL_WINDOWS ? "good" : windowsBooked === 0 ? "bad" : "warn",
+      hint: "How many of Test, UAT and Pre-Prod have both a start and end date booked.",
+    },
+    {
+      label: "Size",
+      value: v.releaseSize.trim() || "—",
+      hint: "Relative size of the release this booking supports (S / M / L).",
+    },
+    {
+      label: "Conflicts",
+      value: String(openConflicts.length),
+      tone: openConflicts.length ? "bad" : "neutral",
+      hint: "Open clashes with other bookings — settle these before trusting the windows.",
+      href: firstConflict ? `/conflicts/${firstConflict.id}` : undefined,
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    {
+      label: "CAB",
+      value: displayDate(v.cabDate),
+      tone: shipped ? "neutral" : dueTone(cabDue.state),
+      hint: !shipped && v.cabDate ? cabDue.label : undefined,
+    },
+    {
+      label: "Production",
+      value: displayDate(v.prodReleaseDate),
+      tone: shipped ? "neutral" : dueTone(prodDue.state),
+      hint: !shipped && v.prodReleaseDate ? prodDue.label : undefined,
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    {
+      label: "Release",
+      value: selectedRelease?.releaseCode ?? "Not linked",
+      href: selectedRelease ? `/releases/${selectedRelease.id}` : undefined,
+      tone: selectedRelease ? "neutral" : "warn",
+    },
+    { label: "Application", value: row.application.name },
+    { label: "Department", value: row.departmentName ?? "—" },
+    {
+      label: "Environments",
+      value:
+        [v.testEnvCode, v.uatEnvCode, v.preProdEnvCode].map((c) => c.trim()).filter(Boolean).join(", ") ||
+        "None recorded",
+    },
+  ];
 
   return (
     <EditableDetailShell
@@ -533,37 +668,28 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: ShieldAlert,
-          label: "Conflict Flag",
-          value: hasConflict ? "Yes — conflict" : "No conflict",
-          tone: hasConflict ? "rose" : "emerald",
+      <DetailDecisionHeader
+        status={{
+          label: hasConflict || openConflicts.length ? "Conflict" : "Clear",
+          tone: conflictTone(hasConflict || openConflicts.length > 0),
+          caption: `${row.application.name}${selectedRelease ? ` · ${selectedRelease.releaseCode}` : ""}`,
         }}
-        secondary={{
-          icon: Zap,
-          label: "Application",
-          value: row.application.name,
-        }}
-        metric={{
-          icon: CalendarCheck,
-          label: "Window readiness",
-          percent: readyPct,
-          caption:
-            readyPct === 100
-              ? "Test, UAT & Pre-Prod set"
-              : readyPct === 0
-                ? "no phase windows yet"
-                : "some windows still open",
-          tone: readyPct === 100 ? "emerald" : readyPct > 0 ? "amber" : "rose",
-        }}
+        signals={signals}
+        canEdit={canEdit}
+        attention={attention}
+        attentionClearLabel="Windows are booked and no other team is clashing with them"
+        timing={timing}
+        timingDescription="CAB and production dates this booking must finish before. If a window ends after production, the release would go live on unfinished testing."
+        scope={scope}
+        scopeDescription="Which release owns this booking, which application and department, and which environments are reserved."
       />
 
       <DetailSection
         icon={CalendarCheck}
         tone="sky"
         title="Environment journey"
-        description="Test → UAT → Pre-Prod → CAB path derived from the booked windows."
+        description="Full Test → UAT → Pre-Prod → CAB path at a glance."
+        detail="Each stage shows the booked dates and duration. A filled stage has both a start and end date. Use this to spot gaps before CAB reviews the release."
       >
         <EntityTimeline
           phases={[
@@ -596,82 +722,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       </DetailSection>
 
       <DetailSection
-        icon={Package}
-        tone="indigo"
-        title="Release & booking identity"
-        description="Which release owns this booking, and how large / dependent it is."
-      >
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Booking ID" value={code} />
-          <EditableField
-            label="Release"
-            value={v.releaseId}
-            editing={false}
-            display={
-              selectedRelease ? (
-                <ProgressLink
-                  href={`/releases/${selectedRelease.id}`}
-                  className="font-mono text-[13.5px] font-semibold text-indigo-600 hover:underline dark:text-indigo-300"
-                >
-                  {selectedRelease.releaseCode}
-                </ProgressLink>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <EditableField
-            label="Application"
-            value={row.application.name}
-            editing={false}
-            display={row.application.name}
-          />
-          <EditableField
-            label="Department"
-            value={row.departmentName ?? ""}
-            editing={false}
-            display={row.departmentName ?? "—"}
-          />
-          <EditableField
-            label="Release Size"
-            value={v.releaseSize}
-            editing={false}
-          />
-          <EditableField
-            label="Dependencies"
-            value={v.dependencies}
-            editing={false}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={Calendar}
-        tone="violet"
-        title="Key dates"
-        description="CAB and production targets that the env windows must land before."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Prod Release Date"
-            value={v.prodReleaseDate}
-            editing={false}
-              display={displayDate(v.prodReleaseDate)}
-          />
-          <EditableField
-            label="CAB Date"
-            value={v.cabDate}
-            editing={false}
-              display={displayDate(v.cabDate)}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
         icon={Server}
         tone="sky"
         title="Test environment"
-        description="First shared window — overlaps here usually raise the conflict flag."
+        description="QA window — the first shared slot, and the one that most often clashes."
+        detail="Environment code plus start/end dates for Test. Overlaps with another booking on the same Test env usually raise the conflict flag above."
       >
         <EditableFieldGrid cols={3}>
           <EditableField
@@ -706,6 +761,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         tone="violet"
         title="UAT environment"
         description="Business acceptance window after Test clears."
+        detail="Environment code and dates for User Acceptance Testing. Business users sign off here before Pre-Prod and CAB."
       >
         <EditableFieldGrid cols={3}>
           <EditableField
@@ -739,7 +795,8 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         icon={Server}
         tone="amber"
         title="Pre-Prod environment"
-        description="Final dress rehearsal before CAB / production."
+        description="Final dress rehearsal before CAB and production."
+        detail="Environment code and dates for the last non-production run. This window should finish before the production date in Timing."
       >
         <EditableFieldGrid cols={3}>
           <EditableField
@@ -770,51 +827,44 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       </DetailSection>
 
       <DetailSection
-        icon={AlertTriangle}
-        tone="rose"
-        title="Conflict & purpose"
-        description="Overlap flags and the booking note CAB / env owners use when reshuffling."
+        icon={FileText}
+        tone="amber"
+        title="Purpose & dependencies"
+        description="Why this booking exists and what it waits on."
+        detail="CAB and environment owners read these notes when reshuffling clashes. Dependencies list other work this booking cannot proceed without."
       >
         <EditableFieldGrid>
           <EditableField
-            label="Conflict Flag"
-            value={v.conflictFlag}
+            label="Dependencies"
+            value={v.dependencies}
             editing={false}
-            display={
-              <StatusChip
-                label={hasConflict ? "⚠️ CONFLICT" : "Clear"}
-                tone={conflictTone(hasConflict)}
-              />
-            }
-          />
-          <EditableField
-            label="Environment Conflict ID"
-            value={v.environmentConflictId}
-            editing={false}
-            mono
-            display={
-              <ConflictLinks raw={v.environmentConflictId || null} conflicts={row.conflicts} />
-            }
+            display={v.dependencies.trim() || "None recorded"}
           />
         </EditableFieldGrid>
         <div className="mt-4">
           <TintedCallout tone="amber">
-            <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-              Purpose / Notes
-            </span>
             {v.purpose.trim() ? v.purpose : "No purpose notes recorded yet."}
           </TintedCallout>
         </div>
       </DetailSection>
 
       <DetailSection
-        icon={FileText}
-        tone="indigo"
+        icon={AlertTriangle}
+        tone="rose"
         title="Linked conflicts"
-        description="Conflicts already tied to this booking from the environment conflict register."
+        description="Conflict records that must be settled before these windows are reliable."
+        detail="Each chip opens the conflict detail page. Unresolved conflicts mean another booking overlaps this one — coordinate or reschedule before relying on the dates above."
       >
         {row.conflicts.length === 0 ? (
-          <p className="text-[13px] text-slate-500 dark:text-white/55">No linked conflicts.</p>
+          <div className="space-y-2">
+            <p className="text-[13px] text-slate-500 dark:text-white/55">No linked conflicts.</p>
+            {v.environmentConflictId.trim() ? (
+              <p className="text-[13px] text-slate-500 dark:text-white/55">
+                Referenced codes:{" "}
+                <ConflictLinks raw={v.environmentConflictId} conflicts={row.conflicts} />
+              </p>
+            ) : null}
+          </div>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {row.conflicts.map((c) => (

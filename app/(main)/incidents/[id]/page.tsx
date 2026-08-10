@@ -2,30 +2,18 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Activity,
-  AlertTriangle,
-  AppWindow,
-  FileText,
-  List,
-  Package,
-  ShieldAlert,
-  User,
-  Zap,
-} from "lucide-react";
+import { Activity, FileText, List, Package } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
-  TintedCallout,
+  EmptyHint,
   EntityTimeline,
   EntityConnection,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -33,6 +21,13 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { incidentWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type IncidentDetail = {
   id: string;
@@ -138,37 +133,23 @@ function impactTone(impact: string): ChipTone {
   return "neutral";
 }
 
-function heroToneFromSeverity(severity: string): "rose" | "amber" | "emerald" | "sky" {
-  const t = severityTone(severity);
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  if (t === "good") return "emerald";
-  return "sky";
-}
-
-/** Rough clearance progress from status for the hero ring. */
-function statusPercent(status: string): number {
-  const s = status.toLowerCase();
-  if (s.includes("closed")) return 100;
-  if (s === "resolved" || s.endsWith("resolved")) return 90;
-  if (s.includes("resolving") || s.includes("mitigat")) return 70;
-  if (s.includes("escalat") || s.includes("reopen")) return 55;
-  if (s.includes("investigat")) return 45;
-  if (s.includes("active") || s === "open") return 20;
-  return 35;
-}
-
-function impactPercent(impact: string): number {
-  const t = impactTone(impact);
-  if (t === "bad") return 90;
-  if (t === "warn") return 55;
-  if (t === "good") return 25;
-  return 40;
-}
-
 function isResolved(status: string): boolean {
   return /resolved|closed/i.test(status);
 }
+
+/** Whether anyone has taken containment action beyond simply logging the incident. */
+function isUntriaged(status: string): boolean {
+  return /active|open/i.test(status) || !status.trim();
+}
+
+function daysSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+/** A P1/P2 still unowned after this long is an escalation, not a queue item. */
+const UNASSIGNED_ESCALATION_DAYS = 1;
 
 function toDraft(row: IncidentDetail): IncidentDraft {
   return {
@@ -195,6 +176,9 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, appList, releaseList, me] = await Promise.all([
@@ -326,6 +310,30 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * The API re-validates the status and enforces the editor role — this button
+   * is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/incidents/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: step.status }),
+      label: "incident-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this incident to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -351,6 +359,101 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const appName = selectedApp?.name ?? row.application.name;
   const relatedCode = v.relatedReleaseCode.trim();
   const showConnection = Boolean(relatedCode);
+  // Only link out when the loaded release still matches the code on screen; an
+  // unsaved edit to relatedReleaseCode would otherwise point at the old release.
+  const releaseHref =
+    row.relatedRelease && row.relatedRelease.releaseCode === relatedCode
+      ? `/releases/${row.relatedRelease.id}`
+      : undefined;
+  const daysOpen = daysSince(v.timestamp || row.timestamp);
+  const highSeverity = severityTone(v.severity) === "bad";
+  const assignee = v.assignedTo.trim();
+  const workflow = incidentWorkflow(v.status);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "untriaged",
+      when: !resolved && isUntriaged(v.status),
+      tone: "critical",
+      label: `${v.severity || "Incident"} still active on ${appName}`,
+      detail: "Nobody has started investigating — containment has not begun.",
+    },
+    {
+      id: "unassigned",
+      when: !resolved && !assignee,
+      tone: highSeverity && daysOpen >= UNASSIGNED_ESCALATION_DAYS ? "critical" : "warning",
+      label: "No owner assigned",
+      detail: "An unowned incident has nobody accountable for driving it to resolution.",
+    },
+    {
+      id: "release-exposed",
+      when: !resolved && Boolean(relatedCode),
+      tone: highSeverity ? "critical" : "warning",
+      label: `${relatedCode} is exposed`,
+      detail: "This release should not proceed while the incident is open.",
+      href: releaseHref,
+    },
+    {
+      id: "high-impact",
+      when: !resolved && impactTone(v.impact) === "bad",
+      tone: "critical",
+      label: `${v.impact} impact`,
+    },
+    {
+      id: "ageing",
+      when: !resolved && highSeverity && daysOpen > UNASSIGNED_ESCALATION_DAYS,
+      tone: "warning",
+      label: `Open ${daysOpen} days`,
+      detail: "A high-severity incident running this long warrants escalation.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Severity",
+      value: v.severity || "—",
+      tone: chipToneToFactTone(severityTone(v.severity)),
+    },
+    {
+      label: "Impact",
+      value: v.impact || "—",
+      tone: chipToneToFactTone(impactTone(v.impact)),
+    },
+    {
+      label: "Owner",
+      value: assignee || "Unassigned",
+      tone: assignee ? "neutral" : "warn",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    { label: "Raised", value: v.timestamp ? formatDate(v.timestamp) : "—" },
+    {
+      label: "Age",
+      value: `${daysOpen} day${daysOpen === 1 ? "" : "s"}`,
+      tone: resolved ? "neutral" : highSeverity && daysOpen > UNASSIGNED_ESCALATION_DAYS ? "bad" : "warn",
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Application", value: appName },
+    { label: "Environment", value: v.environmentName || "—" },
+    { label: "Department", value: v.departmentName || "—" },
+    {
+      label: "Related release",
+      value: relatedCode || "None",
+      href: releaseHref,
+    },
+  ];
 
   return (
     <EditableDetailShell
@@ -484,65 +587,24 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: ShieldAlert,
-          label: "Severity",
-          value: v.severity,
-          tone: heroToneFromSeverity(v.severity),
+      <DetailDecisionHeader
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
+          caption: resolved
+            ? "Incident cleared"
+            : `Open ${daysOpen} day${daysOpen === 1 ? "" : "s"}${assignee ? ` with ${assignee}` : ", unowned"}`,
         }}
-        secondary={{
-          icon: Zap,
-          label: "Status",
-          value: v.status,
-        }}
-        metric={{
-          icon: AlertTriangle,
-          label: "Impact",
-          percent: resolved ? 100 : impactPercent(v.impact),
-          caption: v.impact || "impact not set",
-          tone: resolved ? "emerald" : heroToneFromSeverity(v.severity),
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="Incident cleared — no release is being held by this"
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={AlertTriangle}
-        tone="rose"
-        title="Incident status"
-        description="How severe this outage is and whether it has cleared enough for related releases to proceed."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={resolved ? "✓ CLEARED" : "⚠️ INCIDENT OPEN"}
-            tone={resolved ? "good" : "bad"}
-          />
-          <StatusChip label={v.severity} tone={severityTone(v.severity)} />
-          <StatusChip label={v.status} tone={statusTone(v.status)} />
-          <StatusChip label={v.impact} tone={impactTone(v.impact)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Incident ID" value={row.incidentCode} />
-          <EditableField
-            label="Severity"
-            value={v.severity}
-            editing={false}
-            display={<StatusChip label={v.severity} tone={severityTone(v.severity)} />}
-          />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
-          />
-          <EditableField
-            label="Impact"
-            value={v.impact}
-            editing={false}
-            display={<StatusChip label={v.impact} tone={impactTone(v.impact)} />}
-          />
-          <EditableField label="Title" value={v.title} editing={false} />
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={FileText}
@@ -567,45 +629,14 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             },
             {
               label: "Resolution",
-              detail: resolved ? "Marked resolved" : `Clearance ${statusPercent(v.status)}%`,
+              detail: resolved
+                ? "Marked resolved"
+                : (workflow.primary?.label ?? "Awaiting next step"),
               complete: resolved,
               tone: "emerald",
             },
           ]}
         />
-        <div className="mt-4">
-          <EditableFieldGrid>
-            <EditableField
-              label="Created"
-              value={v.timestamp}
-              editing={false}
-              display={v.timestamp ? formatDate(v.timestamp) : "—"}
-            />
-          </EditableFieldGrid>
-        </div>
-      </DetailSection>
-
-      <DetailSection
-        icon={AppWindow}
-        tone="sky"
-        title="Application & environment"
-        description="Where the incident hit — application, department, and environment."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Application"
-            value={v.applicationId}
-            editing={false}
-            display={appName}
-          />
-          <EditableField label="Department" value={v.departmentName} editing={false} />
-          <EditableField
-            label="Environment"
-            value={v.environmentName}
-            editing={false}
-            mono
-          />
-        </EditableFieldGrid>
       </DetailSection>
 
       <DetailSection
@@ -638,44 +669,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             />
           </div>
         )}
-        <EditableFieldGrid>
-          <EditableField
-            label="Related Release"
-            value={v.relatedReleaseCode}
-            editing={false}
-            mono
-            display={
-              row.relatedRelease && row.relatedRelease.releaseCode === relatedCode ? (
-                <ProgressLink
-                  href={`/releases/${row.relatedRelease.id}`}
-                  className="font-mono text-[13.5px] font-semibold text-indigo-600 hover:underline dark:text-indigo-300"
-                >
-                  {relatedCode}
-                </ProgressLink>
-              ) : relatedCode ? (
-                relatedCode
-              ) : (
-                "—"
-              )
-            }
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={User}
-        tone="emerald"
-        title="Assignment"
-        description="Who owns clearing this incident before related releases can proceed."
-      >
-        <EditableFieldGrid>
-          <EditableField label="Assigned To" value={v.assignedTo} editing={false} />
-        </EditableFieldGrid>
-        {!v.assignedTo.trim() && (
-          <div className="mt-3">
-            <TintedCallout tone="amber">No owner assigned yet.</TintedCallout>
-          </div>
-        )}
+        {!showConnection && <EmptyHint>No release is linked to this incident.</EmptyHint>}
       </DetailSection>
     </EditableDetailShell>
   );
