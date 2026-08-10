@@ -346,7 +346,18 @@ const PAGES: readonly VoicePageExplain[] = [
       "Review preferences",
       "Check voice usage ceilings if available",
     ],
-    nextSteps: ["Users", "Reference Data"],
+    nextSteps: ["Lifecycle Settings", "Users", "Reference Data"],
+  },
+  {
+    path: "/lifecycle",
+    title: "Lifecycle Settings",
+    purpose:
+      "Configure release lifecycle statuses, transitions, and gates for this workspace.",
+    canDo: [
+      "Review status vocabulary and transition rules",
+      "Open via navigate_to after lookup_navigation if unsure of the URL",
+    ],
+    nextSteps: ["Releases", "Settings", "Approval Queue"],
   },
   {
     path: "/templates",

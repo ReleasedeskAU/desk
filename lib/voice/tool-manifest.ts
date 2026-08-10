@@ -25,16 +25,32 @@ const ENTITY_TYPE_ENUM = SEARCH_ENTITY_TYPES.join(" | ");
  */
 export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
+    name: "lookup_navigation",
+    description:
+      "Navigation agent — resolve any sidebar tab, nested settings URL, or detail-shaped path to a real href. Call this FIRST when you are unsure of a page URL or when navigate_to fails with unknown page. Never invent paths like /settings/lifecycle; ask this tool, then call navigate_to with the returned href.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Spoken tab name (lifecycle settings), guessed path (/settings/lifecycle), or synonym (env booking).",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "navigate_to",
     description:
-      "REQUIRED to change pages. Navigate the Release Desk UI. path may be a real href (/blockers, /booking, /calendar) OR a spoken sidebar name (blockers, env booking, calendar tab). Always call this tool to open a tab — never only say you navigated. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes. For filtering a list, use apply_list_filters instead of stuffing query strings into path.",
+      "REQUIRED to change pages. Navigate the Release Desk UI. path may be a real href (/blockers, /booking, /lifecycle) OR a spoken sidebar name (blockers, env booking, lifecycle settings). If unsure of the URL, call lookup_navigation first. Always call this tool to open a tab — never only say you navigated. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes. For filtering a list, use apply_list_filters instead of stuffing query strings into path.",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
           description:
-            "Full path from search_entity/get_summary path fields, or a sidebar name (env booking, calendar tab). Never invent detail URLs — use candidate.path.",
+            "Full path from lookup_navigation/search_entity/get_summary, or a sidebar name (env booking, lifecycle settings). Never invent detail URLs — use candidate.path / href.",
         },
         label: {
           type: "string",

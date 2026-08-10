@@ -16,11 +16,18 @@ import {
 } from "./resolve-nav-path";
 
 describe("isAllowedVoicePath", () => {
-  it("allows dashboard and risk list from nav, and release detail patterns", () => {
+  it("allows dashboard, lifecycle, risk list from nav, and release detail patterns", () => {
     assert.equal(isAllowedVoicePath("/dashboard"), true);
+    assert.equal(isAllowedVoicePath("/lifecycle"), true);
     assert.equal(isAllowedVoicePath("/risks"), true);
     assert.ok(VOICE_STATIC_ROUTES.includes("/risks"));
+    assert.ok(VOICE_STATIC_ROUTES.includes("/lifecycle"));
     assert.equal(isAllowedVoicePath("/releases/REL-001"), true);
+  });
+
+  it("normalizes double-slash invents before allowlist", () => {
+    assert.equal(normalizeVoicePath("//lifecycle"), "/lifecycle");
+    assert.equal(isAllowedVoicePath("//lifecycle"), true);
   });
 
   it("rejects hallucinated and unsafe paths", () => {

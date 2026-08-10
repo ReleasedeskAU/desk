@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Voice **navigation agent** (`lookup_navigation`): sidebar tabs/URLs derive from `lib/nav-data.ts` (single source with the UI sidebar) plus live `data-voice-nav` DOM sync. The Live LLM looks up pages instead of inventing paths; `navigate_to` allowlist is derived from the same registry. Lifecycle Settings (`/lifecycle`) included.
+
 ### Fixed
 
 - Voice session continuity: store Gemini resumption handles only when `resumable !== false` (avoid wiping a good handle mid-tool-call); proactive audio remint at ~8 min before the typical ~10 min Live WebSocket cut; quiet planned refresh (no false “network outage” apology); local transcript digest bridge when resume fails; reconnect remints no longer invalidate pending `propose_action` rows.

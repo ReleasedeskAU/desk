@@ -102,6 +102,8 @@ export function voiceToolWaitNotice(toolName: string | undefined): string | null
   switch (toolName) {
     case "search_entity":
       return "Searching… please wait";
+    case "lookup_navigation":
+      return "Checking navigation… please wait";
     case "navigate_to":
       return "Navigating… please wait";
     case "apply_list_filters":

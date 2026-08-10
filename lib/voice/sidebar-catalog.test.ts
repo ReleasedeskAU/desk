@@ -50,6 +50,7 @@ describe("voiceSidebarCatalogBrief", () => {
     for (const label of [
       "System Mapping",
       "Versions & Config",
+      "Lifecycle Settings",
       "Executive",
       "Compare",
       "Knowledge Graph",
@@ -60,6 +61,7 @@ describe("voiceSidebarCatalogBrief", () => {
     }
     assert.match(brief, /\/system-mapping/);
     assert.match(brief, /\/environments/);
+    assert.match(brief, /\/lifecycle/);
     assert.match(brief, /\/executive/);
     assert.match(brief, /\/compare/);
     assert.match(brief, /\/knowledge-graph/);
@@ -73,6 +75,7 @@ describe("resolveVoiceNavTarget missing-from-brief tabs", () => {
   it("resolves spoken names for tabs the truncated brief used to omit", () => {
     assert.equal(resolveVoiceNavTarget("system mapping")?.path, "/system-mapping");
     assert.equal(resolveVoiceNavTarget("versions and config")?.path, "/environments");
+    assert.equal(resolveVoiceNavTarget("lifecycle settings")?.path, "/lifecycle");
     assert.equal(resolveVoiceNavTarget("executive")?.path, "/executive");
     assert.equal(resolveVoiceNavTarget("compare")?.path, "/compare");
     assert.equal(resolveVoiceNavTarget("knowledge graph")?.path, "/knowledge-graph");

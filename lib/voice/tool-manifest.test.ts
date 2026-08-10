@@ -22,6 +22,7 @@ const EXPECTED = [
   "get_page_context",
   "get_release_bundle",
   "get_summary",
+  "lookup_navigation",
   "navigate_to",
   "open_entity",
   "propose_action",

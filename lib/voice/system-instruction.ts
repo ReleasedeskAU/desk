@@ -244,17 +244,22 @@ export function voiceSystemInstructionParts(
     {
       id: "sidebar_exists",
       inConstraints: false,
-      text: "If asked whether a sidebar tab exists (System Mapping, Versions & Config, Executive, Compare, Knowledge Graph, Reference Data, Settings, etc.), answer yes and offer to open it — never invent that the product lacks those pages.",
+      text: "If asked whether a sidebar tab exists (System Mapping, Versions & Config, Lifecycle Settings, Executive, Compare, Knowledge Graph, Reference Data, Settings, etc.), answer yes and offer to open it — never invent that the product lacks those pages.",
+    },
+    {
+      id: "nav_agent",
+      inConstraints: false,
+      text: "When unsure of any page/tab URL (new or old), call lookup_navigation first — never invent paths like /settings/lifecycle. Then call navigate_to with the returned href.",
     },
     {
       id: "navigate_required",
       inConstraints: false,
-      text: 'To open any sidebar tab, you MUST call navigate_to with the spoken tab name (e.g. path="blockers" or "/blockers") — never only say you navigated.',
+      text: 'To open any sidebar tab, you MUST call navigate_to with the spoken tab name (e.g. path="blockers", "lifecycle settings", or "/lifecycle") — never only say you navigated. If navigate_to returns unknown page, call lookup_navigation and retry.',
     },
     {
       id: "navigate_ok",
       inConstraints: false,
-      text: "Never claim navigation succeeded unless navigate_to returned ok. If the user says go to / open blockers, call navigate_to immediately.",
+      text: "Never claim navigation succeeded unless navigate_to returned ok. If the user says go to / open blockers or lifecycle settings, call navigate_to (or lookup_navigation then navigate_to) immediately.",
     },
     {
       id: "app_context",

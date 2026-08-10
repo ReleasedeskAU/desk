@@ -1,3 +1,7 @@
+/**
+ * Product sidebar — icons for UI; href/label/section live in lib/nav-data.ts
+ * (shared with the voice navigation agent).
+ */
 import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
@@ -29,7 +33,9 @@ import {
   Bell,
   HeartPulse,
   CalendarClock,
+  SlidersHorizontal,
 } from "lucide-react";
+import { NAV_DATA_SECTIONS, type NavDataItem } from "@/lib/nav-data";
 
 export type NavItem = {
   href: string;
@@ -43,73 +49,56 @@ export type NavSection = {
   items: NavItem[];
 };
 
-export const NAV_SECTIONS: NavSection[] = [
-  {
-    items: [
-      { href: "/inbox", label: "Morning Inbox", icon: Inbox, pulse: true },
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    title: "Release Desk",
-    items: [
-      { href: "/releases", label: "Releases", icon: Package },
-      { href: "/calendar", label: "Calendar", icon: Calendar },
-      { href: "/booking", label: "Env Booking", icon: CalendarCheck },
-      { href: "/dependencies", label: "Dependencies", icon: Network },
-      { href: "/conflicts", label: "Conflicts", icon: AlertOctagon },
-      { href: "/blockers", label: "Blockers", icon: Ban },
-      { href: "/system-mapping", label: "System Mapping", icon: GitBranch },
-      { href: "/integration-flows", label: "Integration Flows", icon: Workflow },
-      { href: "/environments", label: "Versions & Config", icon: Server },
-    ],
-  },
-  {
-    title: "Governance",
-    items: [
-      { href: "/risks", label: "Risk", icon: AlertTriangle },
-      { href: "/drifts", label: "Drift Dashboard", icon: GitCompareArrows },
-      { href: "/approvals", label: "Approval Queue", icon: ClipboardCheck },
-      { href: "/leaves", label: "Leave Calendar", icon: CalendarOff },
-    ],
-  },
-  {
-    title: "Monitoring",
-    items: [
-      { href: "/monitoring-alerts", label: "Monitoring Alerts", icon: Bell },
-      { href: "/incidents", label: "Incidents", icon: AlertOctagon },
-      { href: "/application-status", label: "Application Status", icon: HeartPulse },
-      { href: "/planned-maintenance", label: "Planned Maintenance", icon: CalendarClock },
-    ],
-  },
-  {
-    title: "Portfolio",
-    items: [
-      { href: "/executive", label: "Executive", icon: Briefcase },
-      { href: "/compare", label: "Compare", icon: Columns2 },
-      { href: "/insights", label: "Insights", icon: LineChart },
-    ],
-  },
-  {
-    title: "Master Data",
-    items: [
-      { href: "/departments", label: "Departments", icon: Building2 },
-      { href: "/applications", label: "Applications", icon: Package },
-      { href: "/users", label: "Users", icon: UserCircle },
-      { href: "/risk-factors", label: "Risk Factors", icon: AlertTriangle },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      { href: "/knowledge-graph", label: "Knowledge Graph", icon: Share2 },
-      { href: "/agents", label: "Agents", icon: Bot, pulse: true },
-      { href: "/history", label: "History Log", icon: History },
-      { href: "/connectors", label: "Connectors", icon: Plug },
-      { href: "/admin/reference-data", label: "Reference Data", icon: Database },
-      { href: "/settings", label: "Settings", icon: Settings },
-    ],
-  },
-];
+/** Icons keyed by href — only place that maps routes to Lucide icons. */
+const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
+  "/inbox": Inbox,
+  "/dashboard": LayoutDashboard,
+  "/releases": Package,
+  "/calendar": Calendar,
+  "/booking": CalendarCheck,
+  "/dependencies": Network,
+  "/conflicts": AlertOctagon,
+  "/blockers": Ban,
+  "/system-mapping": GitBranch,
+  "/integration-flows": Workflow,
+  "/environments": Server,
+  "/risks": AlertTriangle,
+  "/drifts": GitCompareArrows,
+  "/approvals": ClipboardCheck,
+  "/leaves": CalendarOff,
+  "/monitoring-alerts": Bell,
+  "/incidents": AlertOctagon,
+  "/application-status": HeartPulse,
+  "/planned-maintenance": CalendarClock,
+  "/executive": Briefcase,
+  "/compare": Columns2,
+  "/insights": LineChart,
+  "/departments": Building2,
+  "/applications": Package,
+  "/users": UserCircle,
+  "/risk-factors": AlertTriangle,
+  "/lifecycle": SlidersHorizontal,
+  "/knowledge-graph": Share2,
+  "/agents": Bot,
+  "/history": History,
+  "/connectors": Plug,
+  "/admin/reference-data": Database,
+  "/settings": Settings,
+};
+
+function withIcon(item: NavDataItem): NavItem {
+  const icon = NAV_ICONS[item.href] ?? Settings;
+  return {
+    href: item.href,
+    label: item.label,
+    icon,
+    ...(item.pulse ? { pulse: true } : {}),
+  };
+}
+
+export const NAV_SECTIONS: NavSection[] = NAV_DATA_SECTIONS.map((section) => ({
+  title: section.title,
+  items: section.items.map(withIcon),
+}));
 
 export const NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);

@@ -17,6 +17,7 @@ import {
   VOICE_USAGE_HEARTBEAT_MS,
 } from "@/lib/voice/usage";
 import { resolveVoiceNavTarget } from "@/lib/voice/sidebar-catalog";
+import { syncSidebarFromDom } from "@/lib/voice/nav-agent";
 import {
   clearVoiceSessionMemory,
   formatVoiceSessionMemoryHint,
@@ -403,6 +404,8 @@ export class VoiceLiveClient {
    * @returns true if WebSocket reached "connected".
    */
   async connect(): Promise<boolean> {
+    // Keep the nav agent aligned with whatever tabs the shell currently renders.
+    syncSidebarFromDom();
     this.intentionalClose = false;
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
