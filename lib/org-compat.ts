@@ -2,12 +2,23 @@ import { prisma } from "./prisma";
 
 let cachedOrgId: string | null | undefined;
 
-/** v2 Neon DB has Organization FK columns not in v1 Prisma schema */
+/**
+ * Returns the default Organization id for live Neon writes.
+ *
+ * Not multi-tenant routing — only satisfies NOT NULL organizationId columns left
+ * from the July 2026 tenancy era. Local/v1 DBs without Organization return null
+ * and callers fall back to plain Prisma creates.
+ *
+ * @returns Organization id, or null when the table/row is unavailable.
+ */
 export async function getDefaultOrganizationId(): Promise<string | null> {
   if (cachedOrgId !== undefined) return cachedOrgId;
   try {
-    const rows = await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "Organization" LIMIT 1`;
-    cachedOrgId = rows[0]?.id ?? null;
+    const row = await prisma.organization.findFirst({
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    cachedOrgId = row?.id ?? null;
   } catch {
     cachedOrgId = null;
   }
@@ -474,6 +485,11 @@ export type CreateReleaseInput = {
   goLiveChecklistPercent?: number | null;
   deploymentWindow?: string | null;
   releaseOwnerId?: string | null;
+  /**
+   * Pin to the creator's latest lifecycle config version. Null leaves the
+   * release as latest-unpinned (legacy path / pin unavailable).
+   */
+  lifecycleConfigVersionId?: string | null;
 };
 
 /** Creates a Release in both local v1 and organization-aware live v2 schemas. */
@@ -483,6 +499,7 @@ export async function createReleaseRow(data: CreateReleaseInput) {
     async (orgId) => {
       const id = newId();
       const now = new Date();
+      // Include lifecycle pin when present so org-compat inserts match Prisma creates.
       await prisma.$executeRaw`
         INSERT INTO "Release" (
           id, "organizationId", "releaseCode", name, "programProject", owner,
@@ -491,7 +508,8 @@ export async function createReleaseRow(data: CreateReleaseInput) {
           "uatEnvRequired", "conflictFlag", "conflictId", "readinessPercent",
           blockers, "vendorMaintenance", "changeFreeze", regulatory,
           "approvalStatus", "rollbackPlan", "goLiveChecklistPercent",
-          "deploymentWindow", "releaseOwnerId", "createdAt", "updatedAt"
+          "deploymentWindow", "releaseOwnerId", "lifecycleConfigVersionId",
+          "createdAt", "updatedAt"
         ) VALUES (
           ${id}, ${orgId}, ${data.releaseCode}, ${data.name}, ${data.programProject ?? null},
           ${data.owner}, ${data.status}, ${data.releaseDate}, ${data.priority},
@@ -504,7 +522,8 @@ export async function createReleaseRow(data: CreateReleaseInput) {
           ${data.changeFreeze ?? null}, ${data.regulatory ?? null},
           ${data.approvalStatus ?? null}, ${data.rollbackPlan ?? null},
           ${data.goLiveChecklistPercent ?? null}, ${data.deploymentWindow ?? null},
-          ${data.releaseOwnerId ?? null}, ${now}, ${now}
+          ${data.releaseOwnerId ?? null}, ${data.lifecycleConfigVersionId ?? null},
+          ${now}, ${now}
         )
       `;
       return prisma.release.findUniqueOrThrow({ where: { id } });

@@ -54,7 +54,7 @@ function emptyForm(): DependencyFormValues {
     releaseId: "",
     dependsOnReleaseId: "",
     dependencyType: "Hard",
-    status: "Clear",
+    status: "Pending",
     impactIfBlocked: "Release Delay",
     notes: "",
   };
@@ -79,7 +79,7 @@ export function DependencyFormModal({
       releaseId: initial?.releaseId ?? "",
       dependsOnReleaseId: initial?.dependsOnReleaseId ?? "",
       dependencyType: coerceEnum(initial?.dependencyType, DEPENDENCY_TYPES, "Hard"),
-      status: coerceEnum(initial?.status, DEPENDENCY_STATUSES, "Clear"),
+      status: coerceEnum(initial?.status, DEPENDENCY_STATUSES, "Pending"),
       impactIfBlocked: coerceEnum(initial?.impactIfBlocked, DEPENDENCY_IMPACTS, "Release Delay"),
       notes: initial?.notes ?? "",
     }),

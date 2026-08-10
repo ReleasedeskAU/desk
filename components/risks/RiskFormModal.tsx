@@ -61,7 +61,7 @@ const EMPTY_FORM: FormValues = {
   affectedArea: "",
   mitigationStrategy: "",
   riskOwnerId: "",
-  status: "Open",
+  status: "Identified",
   notes: "",
 };
 

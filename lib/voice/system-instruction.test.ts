@@ -64,4 +64,24 @@ describe("buildVoiceSystemInstruction", () => {
     assert.match(constraints, /Follow \[SESSION\]/);
     assert.match(constraints, /confirm_action accept=false/);
   });
+
+  it("allows mirroring the user language without blocking English tools/codes", () => {
+    const constraints = buildVoiceSystemInstruction({ detail: "constraints" });
+    const full = buildVoiceSystemInstruction({ detail: "full" });
+    for (const text of [constraints, full]) {
+      assert.match(text, /same language the user is speaking/i);
+      assert.match(text, /never refuse|can only speak English/i);
+      assert.match(text, /REL\/BLK\/CNF/);
+      assert.match(text, /READY\/BLOCKED\/AT RISK/);
+    }
+    const parts = voiceSystemInstructionParts(false);
+    assert.ok(parts.some((p) => p.id === "language" && p.inConstraints));
+  });
+
+  it("brands identity as Release Desk Voice and forbids naming vendors in speech", () => {
+    const constraints = buildVoiceSystemInstruction({ detail: "constraints" });
+    assert.match(constraints, /Release Desk Voice/);
+    assert.match(constraints, /Release Desk Team/);
+    assert.match(constraints, /Never name Google, Gemini/);
+  });
 });

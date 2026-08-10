@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchDriftSchema } from "@/lib/validation/drift";
+import { loadDriftLifecycleConfig } from "@/lib/drift-lifecycle-config-db";
+import { deniedDriftEditFields } from "@/lib/drift-lifecycle-edit-policy";
+import { validateDriftTransition } from "@/lib/drift-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,9 +40,10 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * Updates allowlisted drift fields. driftCode is immutable (schema.strict).
+ * Enforces lifecycle edit policy and status transitions (config-driven).
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -51,6 +55,56 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven).
+  try {
+    const { config } = await loadDriftLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedDriftEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This drift is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.status !== undefined && String(body.status) !== existing.status) {
+      const transition = validateDriftTransition({
+        config,
+        fromStatus: existing.status,
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[drifts PATCH] lifecycle enforcement failed", {
+      driftId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Drift lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const detectedDate = parseDate(body.detectedDate);

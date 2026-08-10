@@ -44,7 +44,16 @@ function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam && VALID_TABS.has(tabParam) ? tabParam : "team";
+
+  // Release Lifecycle moved to the dedicated Lifecycle sidebar page.
+  useEffect(() => {
+    if (tabParam === "release-lifecycle") {
+      router.replace("/lifecycle");
+    }
+  }, [tabParam, router]);
+
+  const initialTab =
+    tabParam && VALID_TABS.has(tabParam) ? tabParam : "team";
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
@@ -82,7 +91,7 @@ function SettingsPageInner() {
   const masterDataTabs = new Set(["departments", "applications", "environments", "users"]);
 
   return (
-    <div className="max-w-[1200px] pb-24 font-sans">
+    <div className="w-full pb-24 font-sans">
       <div className="mb-10 mt-2">
         <h1 className="mb-2 text-[32px] font-bold tracking-tight text-gray-900 dark:text-white">Settings</h1>
         <p className="text-[15px] font-medium leading-relaxed text-gray-500 dark:text-gray-300">

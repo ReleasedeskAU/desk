@@ -14,7 +14,13 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 
 const ALERT_SEVERITIES = ["Critical", "Warning"] as const;
-const ALERT_STATUSES = ["Active", "Acknowledged", "Resolved"] as const;
+const ALERT_STATUSES = [
+  "Pending",
+  "Acknowledged",
+  "Actioned",
+  "Dismissed",
+  "Expired",
+] as const;
 
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId: string };
@@ -66,7 +72,7 @@ const emptyForm = (): FormValues => ({
   metric: "",
   threshold: "",
   currentValue: "",
-  status: "Active",
+  status: "Pending",
   assignedTo: "",
 });
 

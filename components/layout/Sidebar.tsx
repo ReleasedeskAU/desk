@@ -8,10 +8,9 @@ import {
   useSidebar,
 } from "@/context/SidebarContext";
 import { useHoverCapable } from "@/hooks/useHoverCapable";
-import { ChevronsLeft, ChevronsRight, Sparkles } from "lucide-react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SentinelLogo } from "@/components/brand/SentinelLogo";
-import { QUICK_START_TEMPLATES } from "@/lib/quick-start-templates";
 import { NAV_SECTIONS } from "@/lib/navigation";
 
 const FOCUSABLE =
@@ -264,25 +263,6 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
-
-      {isWide && (
-        <div className="shrink-0 border-t border-[var(--border)] px-3 py-4">
-          <ProgressLink
-            href="/templates"
-            data-voice-nav="/templates"
-            onClick={handleNavClick}
-            className="block rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-4 shadow-sm transition-all hover:border-brand-400 dark:hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-white/10"
-          >
-            <p className="flex items-center gap-2 text-sm font-bold text-brand-700 dark:text-brand-300">
-              <Sparkles className="h-4 w-4 text-brand-500 dark:text-brand-400" />
-              Templates
-            </p>
-            <p className="mt-1 text-xs text-gray-600 dark:text-white/70 font-medium">
-              {QUICK_START_TEMPLATES.length} guided demo scenarios
-            </p>
-          </ProgressLink>
-        </div>
-      )}
     </aside>
   );
 }

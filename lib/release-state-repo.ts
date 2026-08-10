@@ -1,8 +1,4 @@
-import {
-  computeLiveDeploymentState,
-  createIncidentDeployState,
-  startedAtForRollout,
-} from "./deployment-sim";
+import { computeLiveDeploymentState } from "./deployment-sim";
 import { getAllHistory, releases } from "./dummy-data";
 import { getDefaultOrganizationId } from "./org-compat";
 import { prisma, withDbRetry } from "./prisma";
@@ -14,7 +10,7 @@ import type {
   ReleaseDecision,
   ReleaseDecisionRecord,
 } from "./types";
-import type { ReleaseStoreState, QuickStartSeedId } from "./release-store";
+import type { ReleaseStoreState } from "./release-store";
 import { emptyReleaseStore } from "./release-store";
 
 const DEFAULT_NOTIFICATIONS: Omit<AppNotification, "id">[] = [
@@ -458,90 +454,6 @@ export async function getGlobalHistoryMerged(): Promise<
       return true;
     })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}
-
-export async function resetDemoState() {
-  await prisma.releaseDecisionState.deleteMany();
-  await prisma.deploymentState.deleteMany();
-  await prisma.releaseHistoryEvent.deleteMany();
-  await prisma.appNotificationRow.deleteMany();
-  await prisma.agentPauseState.deleteMany();
-  await ensureDefaultNotifications();
-}
-
-export async function applyQuickStartSeed(seedId: QuickStartSeedId, actor: string) {
-  await resetDemoState();
-  if (seedId === "reset") return;
-
-  const rel2140 = releases.find((r) => r.id === "rel-v2140");
-  const rel2141 = releases.find((r) => r.id === "rel-v2141");
-  const now = new Date();
-
-  switch (seedId) {
-    case "go-v2141":
-      if (rel2141) {
-        await recordDecision(rel2141.id, rel2141.version, "Go", {
-          rationale: "All gates green — low-risk mobile patch ready for production.",
-          actor,
-        });
-      }
-      break;
-    case "green-path-v2141":
-      if (rel2141) {
-        await recordDecision(rel2141.id, rel2141.version, "Go", {
-          rationale: "All gates green — low-risk mobile patch ready for production.",
-          actor,
-        });
-        await prisma.deploymentState.create({
-          data: { releaseId: rel2141.id, phase: "Verified" },
-        });
-      }
-      break;
-    case "deploy-mid-v2140":
-      if (rel2140) {
-        await recordDecision(rel2140.id, rel2140.version, "Go", {
-          rationale: "Conditional Go — proceed with canary and auto-rollback guardrails.",
-          overridden: true,
-          actor,
-        });
-        await prisma.deploymentState.create({
-          data: {
-            releaseId: rel2140.id,
-            phase: "In Progress",
-            startedAt: startedAtForRollout(rel2140, 48, now),
-          },
-        });
-      }
-      break;
-    case "deploy-incident-v2140":
-      if (rel2140) {
-        await recordDecision(rel2140.id, rel2140.version, "Go", {
-          rationale: "Go with heightened monitoring during payments rollout.",
-          overridden: true,
-          actor,
-        });
-        const incident = createIncidentDeployState(rel2140);
-        await prisma.deploymentState.create({
-          data: {
-            releaseId: rel2140.id,
-            phase: "In Progress",
-            startedAt: startedAtForRollout(rel2140, incident.rolloutPct, now),
-          },
-        });
-      }
-      break;
-    case "deploy-verified-v2141":
-      if (rel2141) {
-        await recordDecision(rel2141.id, rel2141.version, "Go", {
-          rationale: "Standard green-path promotion to production.",
-          actor,
-        });
-        await prisma.deploymentState.create({
-          data: { releaseId: rel2141.id, phase: "Verified" },
-        });
-      }
-      break;
-  }
 }
 
 /** Aggregated live state for the release store context. */

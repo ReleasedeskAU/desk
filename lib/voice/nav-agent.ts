@@ -85,7 +85,6 @@ const VOICE_NAV_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
   "/connectors": ["connectors"],
   "/admin/reference-data": ["reference data"],
   "/settings": ["settings", "preferences"],
-  "/templates": ["templates", "guided demo", "demo scenarios"],
 };
 
 /** Common wrong / alternate paths → canonical sidebar href. */
@@ -112,16 +111,8 @@ export const VOICE_PATH_ALIASES: Readonly<Record<string, string>> = {
   "/release-lifecycle": "/lifecycle",
 };
 
-/** Shell extras not always in NAV_DATA (e.g. bottom Templates link). */
-const EXTRA_SIDEBAR: readonly NavRegistryEntry[] = [
-  {
-    href: "/templates",
-    label: "Templates",
-    section: "Bottom",
-    kind: "extra",
-    synonyms: VOICE_NAV_SYNONYMS["/templates"] ?? [],
-  },
-];
+/** Shell extras not always in NAV_DATA (reserved for non-NAV_DATA shell links). */
+const EXTRA_SIDEBAR: readonly NavRegistryEntry[] = [];
 
 /** Runtime DOM-discovered tabs (merged on sync). */
 let domExtras: NavRegistryEntry[] = [];

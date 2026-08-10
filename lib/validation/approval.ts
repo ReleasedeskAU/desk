@@ -4,7 +4,16 @@ const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).
 const optionalNullableDate = z.union([z.string().trim().min(1).max(40), z.null()]).optional();
 
 export const APPROVAL_TYPES = ["Business Sign-off", "CAB Approval", "Compliance", "Security Review", "Tech Review"] as const;
-export const APPROVAL_DECISIONS = ["Pending", "Approved", "Approved with Conditions", "Rejected"] as const;
+/** Create-time allowlist; PATCH decisions are validated by the approval lifecycle graph. */
+export const APPROVAL_DECISIONS = [
+  "Pending",
+  "Approved",
+  "Approved with Conditions",
+  "Rejected",
+  "Deferred",
+  "Expired",
+  "Withdrawn",
+] as const;
 
 /** POST /api/approvals — create fields only; IDs and derived release metadata are rejected. */
 export const createApprovalSchema = z
@@ -42,6 +51,8 @@ export const patchApprovalSchema = z
     decision: z.string().trim().min(1).max(80).optional(),
     comments: optionalNullableString,
     cabMeetingId: optionalNullableString,
+    /** Optional override note for Flexible lifecycle edges. */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 

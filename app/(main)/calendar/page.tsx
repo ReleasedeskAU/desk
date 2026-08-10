@@ -165,7 +165,7 @@ export default function CalendarPage() {
   if (!mounted) return null;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="w-full space-y-4">
       {/* One connected control cluster: filters + view/nav */}
       <section
         className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-theme-sm dark:border-[var(--border)] dark:bg-[var(--card)]"

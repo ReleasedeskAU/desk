@@ -106,7 +106,10 @@ export function buildDependencyImpact(
   const downstreamRows = collectDownstream(release.id, byId);
   const downstream = downstreamRows.map(toNode);
   const atRiskDownstream = downstream.filter(
-    (d) => d.status === "Blocked" || d.status === "At Risk"
+    (d) =>
+      d.status === "Blocked" ||
+      d.status === "At Risk" ||
+      d.status === "Pending"
   ).length;
 
   const appNames = new Set(release.applications.map((a) => a.application.name));
@@ -140,7 +143,10 @@ export function buildDependencyImpact(
   });
 
   const blockedUpstream = upstream.filter(
-    (u) => u.status === "Blocked" || u.status === "At Risk"
+    (u) =>
+      u.status === "Blocked" ||
+      u.status === "At Risk" ||
+      u.status === "Pending"
   );
 
   let summary = `${downstream.length} downstream release(s) depend on ${release.releaseCode}.`;
@@ -187,7 +193,7 @@ export function summarizeWorkItems(
   items.forEach((i) => {
     byType[i.itemType] = (byType[i.itemType] ?? 0) + 1;
     if (doneStatuses.has(i.status)) done += 1;
-    if (i.status === "Blocked") blocked += 1;
+    if (i.status === "Blocked" || i.status === "Pending") blocked += 1;
   });
 
   return {

@@ -2,33 +2,24 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeftRight,
-  Database,
-  FileText,
-  List,
-  Network,
-  Plug,
-  Zap,
-} from "lucide-react";
+import { Database, FileText, List, Network, Plug } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
   TintedCallout,
   EntityConnection,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnSecondary } from "@/lib/styles";
+import { collectAttention, type DetailFact } from "@/lib/detail-decision";
 
 type FlowDetail = {
   id: string;
@@ -67,22 +58,6 @@ function typeTone(integrationType: string): ChipTone {
   if (t.includes("batch") || t.includes("file")) return "neutral";
   if (t.includes("event") || t.includes("stream")) return "warn";
   return "neutral";
-}
-
-function typeHeroTone(integrationType: string): "indigo" | "sky" | "violet" | "amber" {
-  const t = typeTone(integrationType);
-  if (t === "info") return "sky";
-  if (t === "warn") return "amber";
-  return "indigo";
-}
-
-/** Rough connectivity weight from how many distinct systems the flow touches. */
-function systemsPercent(source: string, target: string): number {
-  const names = [source.trim(), target.trim()].filter(Boolean);
-  if (names.length === 0) return 0;
-  const unique = new Set(names.map((n) => n.toLowerCase()));
-  if (unique.size >= 2) return 100;
-  return 50;
 }
 
 function toDraft(row: FlowDetail): FlowDraft {
@@ -214,12 +189,83 @@ export default function IntegrationFlowDetailPage({
     return <p className="text-slate-500 dark:text-white/60">Integration flow not found.</p>;
   }
 
+  const sourceSystem = v.sourceSystem.trim();
+  const targetSystem = v.targetSystem.trim();
+  const integrationType = v.integrationType.trim();
+  const frequency = v.frequency.trim();
   const uniqueSystems = new Set(
-    [v.sourceSystem.trim(), v.targetSystem.trim()]
-      .filter(Boolean)
-      .map((n) => n.toLowerCase())
+    [sourceSystem, targetSystem].filter(Boolean).map((n) => n.toLowerCase())
   ).size;
-  const systemsPct = systemsPercent(v.sourceSystem, v.targetSystem);
+
+  // A flow with no lifecycle is judged on whether the system map can be trusted
+  // during a release, so every gap that would break impact analysis is flagged.
+  const attention = collectAttention([
+    {
+      id: "incomplete-path",
+      when: !sourceSystem || !targetSystem,
+      tone: "critical",
+      label: "Data path incomplete",
+      detail: "Without both endpoints this flow cannot be traced during release impact analysis.",
+    },
+    {
+      id: "same-system",
+      when: uniqueSystems === 1 && Boolean(sourceSystem && targetSystem),
+      tone: "warning",
+      label: "Source and target are the same system",
+    },
+    {
+      id: "no-type",
+      when: !integrationType,
+      tone: "warning",
+      label: "Integration type not recorded",
+      detail: "Type decides whether an outage stalls the flow or silently drops data.",
+    },
+    { id: "no-frequency", when: !frequency, tone: "warning", label: "Frequency not recorded" },
+    {
+      id: "no-data-elements",
+      when: !v.dataElements.trim(),
+      tone: "warning",
+      label: "No data elements recorded",
+    },
+    {
+      id: "no-purpose",
+      when: !v.businessPurpose.trim(),
+      tone: "warning",
+      label: "No business purpose recorded",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Type",
+      value: integrationType || "—",
+      tone: integrationType ? "neutral" : "warn",
+      hint: "How data moves — API, batch, event, or file.",
+    },
+    {
+      label: "Frequency",
+      value: frequency || "—",
+      tone: frequency ? "neutral" : "warn",
+      hint: "How often this path runs (real-time, daily, etc.).",
+    },
+    {
+      label: "Systems",
+      value: String(uniqueSystems),
+      tone: uniqueSystems >= 2 ? "good" : "warn",
+      hint: "Distinct systems on this path. Need two for a real data path.",
+    },
+    {
+      label: "Data elements",
+      value: v.dataElements.trim() ? "Recorded" : "Missing",
+      tone: v.dataElements.trim() ? "good" : "warn",
+      hint: "Whether the payload fields that matter for release impact are documented.",
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Source", value: sourceSystem || "Not recorded", tone: sourceSystem ? "neutral" : "warn" },
+    { label: "Target", value: targetSystem || "Not recorded", tone: targetSystem ? "neutral" : "warn" },
+  ];
 
   return (
     <EditableDetailShell
@@ -322,30 +368,22 @@ export default function IntegrationFlowDetailPage({
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: ArrowLeftRight,
-          label: "Type",
-          value: v.integrationType.trim() || "—",
-          tone: typeHeroTone(v.integrationType),
-        }}
-        secondary={{
-          icon: Zap,
-          label: "Frequency",
-          value: v.frequency.trim() || "—",
-        }}
-        metric={{
-          icon: Network,
-          label: "Systems",
-          percent: systemsPct,
+      <DetailDecisionHeader
+        status={{
+          label: integrationType || "Type not set",
+          tone: integrationType ? typeTone(integrationType) : "warn",
           caption:
-            uniqueSystems === 0
-              ? "no systems recorded"
-              : uniqueSystems === 1
-                ? "1 system recorded"
-                : `${uniqueSystems} systems linked`,
-          tone: uniqueSystems >= 2 ? "emerald" : "amber",
+            sourceSystem && targetSystem
+              ? `${sourceSystem} → ${targetSystem}`
+              : "Endpoints incomplete",
         }}
+        signals={signals}
+        canEdit={canEdit}
+        attention={attention}
+        attentionClearLabel="Path fully described — release impact can be traced through this flow"
+        timing={[]}
+        scope={scope}
+        scopeDescription="Endpoints on this path — if either side is down during a release, this flow stops."
       />
 
       <DetailSection
@@ -355,36 +393,10 @@ export default function IntegrationFlowDetailPage({
         description="Directional link between systems — if either side is down, this flow stops."
       >
         <EntityConnection
-          source={v.sourceSystem.trim() || "—"}
-          target={v.targetSystem.trim() || "—"}
-          caption={`${v.integrationType.trim() || "Type n/a"} · ${v.frequency.trim() || "Frequency n/a"}`}
+          source={sourceSystem || "—"}
+          target={targetSystem || "—"}
+          caption={`${integrationType || "Type n/a"} · ${frequency || "Frequency n/a"}`}
         />
-      </DetailSection>
-
-      <DetailSection
-        icon={Plug}
-        tone="indigo"
-        title="Systems"
-        description="Source and target endpoints for this integration."
-      >
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Integration ID" value={row.flowCode} />
-          <EditableField label="Source System" value={v.sourceSystem} editing={false} />
-          <EditableField label="Target System" value={v.targetSystem} editing={false} />
-          <EditableField
-            label="Integration Type"
-            value={v.integrationType}
-            editing={false}
-            display={
-              v.integrationType.trim() ? (
-                <StatusChip label={v.integrationType} tone={typeTone(v.integrationType)} />
-              ) : (
-                "—"
-              )
-            }
-          />
-          <EditableField label="Frequency" value={v.frequency} editing={false} />
-        </EditableFieldGrid>
       </DetailSection>
 
       <DetailSection

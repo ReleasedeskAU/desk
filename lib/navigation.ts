@@ -33,7 +33,6 @@ import {
   Bell,
   HeartPulse,
   CalendarClock,
-  SlidersHorizontal,
 } from "lucide-react";
 import { NAV_DATA_SECTIONS, type NavDataItem } from "@/lib/nav-data";
 
@@ -77,7 +76,7 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/applications": Package,
   "/users": UserCircle,
   "/risk-factors": AlertTriangle,
-  "/lifecycle": SlidersHorizontal,
+  "/lifecycle": GitBranch,
   "/knowledge-graph": Share2,
   "/agents": Bot,
   "/history": History,

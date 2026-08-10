@@ -28,6 +28,8 @@ export const patchBlockerSchema = z
     targetResolutionDate: optionalNullableDate,
     actualResolutionDate: optionalNullableDate,
     daysOpen: optionalNullableInt,
+    /** Required when a Flexible lifecycle edge needs an override (min length enforced in transition). */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 

@@ -49,7 +49,7 @@ export default function ComparePage() {
   const activeReleases = releases.filter((r) => r.status !== "Shipped");
 
   return (
-    <div className="space-y-8 max-w-[1400px] mx-auto pb-24">
+    <div className="w-full space-y-8 pb-24">
       <TopBar
         title="Release Comparison"
         subtitle="Side-by-side readiness, blockers, and ML forecasts — good vs bad"

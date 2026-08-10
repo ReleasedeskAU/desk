@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchApprovalSchema } from "@/lib/validation/approval";
+import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
+import { deniedApprovalEditFields } from "@/lib/approval-lifecycle-edit-policy";
+import { validateApprovalTransition } from "@/lib/approval-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,9 +40,10 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * Updates allowlisted approval fields. approvalCode is immutable (schema.strict).
+ * Decision transitions and edit policy are enforced from the caller's approval lifecycle config.
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -51,6 +55,57 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + decision transitions (config-driven).
+  try {
+    const { config } = await loadApprovalLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedApprovalEditFields(
+      config,
+      existing.decision,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This approval is ${mode.replaceAll("_", "-")} in decision "${existing.decision}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.decision !== undefined && String(body.decision) !== existing.decision) {
+      const transition = validateApprovalTransition({
+        config,
+        fromStatus: existing.decision,
+        toStatus: String(body.decision),
+        overrideReason: body.overrideReason ?? null,
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      // Persist the lifecycle-canonical label (not the raw client string).
+      body.decision = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[approvals PATCH] lifecycle enforcement failed", {
+      approvalId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Approval lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const submittedDate = parseDate(body.submittedDate);

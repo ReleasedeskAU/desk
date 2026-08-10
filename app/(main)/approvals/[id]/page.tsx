@@ -2,28 +2,18 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Calendar,
-  CheckCircle2,
-  ClipboardCheck,
-  List,
-  MessageSquare,
-  Package,
-  User,
-  Zap,
-} from "lucide-react";
+import { Calendar, ClipboardCheck, List, MessageSquare, Package } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
   StatusChip,
-  HeroStatusRow,
   TintedCallout,
   EntityTimeline,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -31,6 +21,14 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { approvalWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type ApprovalDetail = {
   id: string;
@@ -79,7 +77,14 @@ const APPROVAL_FIELD_LABELS: Partial<Record<keyof ApprovalDraft, string>> = {
   cabMeetingId: "CAB Meeting",
 };
 
-const DECISION_OPTIONS = ["Pending", "Approved", "Rejected", "Deferred"].map((v) => ({
+const DECISION_OPTIONS = [
+  "Pending",
+  "Approved",
+  "Rejected",
+  "Deferred",
+  "Expired",
+  "Withdrawn",
+].map((v) => ({
   value: v,
   label: v,
 }));
@@ -98,23 +103,14 @@ function decisionTone(decision: string): ChipTone {
   return "neutral";
 }
 
-function heroToneFromDecision(decision: string): "emerald" | "rose" | "amber" | "sky" {
-  const t = decisionTone(decision);
-  if (t === "good") return "emerald";
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  return "sky";
+function daysSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return Math.max(0, Math.floor(ms / 86_400_000));
 }
 
-/** Rough CAB clearance progress from decision state for the hero ring. */
-function decisionPercent(decision: string): number {
-  const d = decision.toLowerCase();
-  if (d.includes("approv") || d.includes("reject") || d.includes("denied")) return 100;
-  if (d.includes("defer")) return 70;
-  if (d.includes("review")) return 55;
-  if (d.includes("pending")) return 30;
-  return 40;
-}
+/** A gate sitting unread this long has missed at least one CAB cycle. */
+const STALE_APPROVAL_DAYS = 14;
 
 function toDraft(row: ApprovalDetail): ApprovalDraft {
   return {
@@ -141,6 +137,9 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, releaseList, userList, me] = await Promise.all([
@@ -250,6 +249,36 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
     await load();
   };
 
+  /**
+   * Record a CAB decision from the header. Approving or rejecting stamps
+   * today's decision date and reopening clears it, so the date always matches
+   * the decision. The API re-validates and enforces the editor role.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/approvals/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision: step.status,
+        ...(step.stampsResolution
+          ? { decisionDate: new Date().toISOString().slice(0, 10) }
+          : {}),
+        ...(step.clearsResolution ? { decisionDate: null } : {}),
+      }),
+      label: "approval-decision-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t record a ${step.status} decision. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -271,10 +300,109 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
   if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Approval not found.</p>;
 
   const pendingish = /pending|review/i.test(v.decision);
+  const deferred = /defer/i.test(v.decision);
+  const rejected = /reject|denied/i.test(v.decision);
   const decided = Boolean(v.decisionDate) || !pendingish;
+  const undecided = pendingish || deferred;
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
   const selectedApprover = users.find((u) => u.id === v.approverId) ?? row.approver;
-  const pct = decisionPercent(v.decision);
+  const releaseCode = selectedRelease?.releaseCode ?? row.release.releaseCode;
+  const releaseHref = `/releases/${v.releaseId || row.release.id}`;
+  const releaseDue = describeDue(row.release.releaseDate);
+  const waitingDays = v.submittedDate ? daysSince(v.submittedDate) : 0;
+  const workflow = approvalWorkflow(v.decision);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "rejected",
+      when: rejected,
+      tone: "critical",
+      label: `CAB rejected this gate for ${releaseCode}`,
+      detail: "The release cannot clear governance until the gate is resubmitted.",
+      href: releaseHref,
+    },
+    {
+      id: "gate-blocking",
+      when: undecided && (releaseDue.state === "overdue" || releaseDue.state === "today" || releaseDue.state === "soon"),
+      tone: "critical",
+      label: `${releaseCode} goes live ${releaseDue.label.toLowerCase()} with no decision`,
+      detail: "An undecided gate this close to go-live blocks the release.",
+      href: releaseHref,
+    },
+    {
+      id: "deferred",
+      when: deferred,
+      tone: "warning",
+      label: "Deferred to a later CAB",
+      detail: "No decision was taken at the last meeting.",
+    },
+    {
+      id: "no-cab-meeting",
+      when: undecided && !v.cabMeetingId.trim(),
+      tone: "warning",
+      label: "Not on a CAB agenda",
+      detail: "No meeting is linked, so this gate has nowhere to be decided.",
+    },
+    {
+      id: "stale",
+      when: undecided && waitingDays > STALE_APPROVAL_DAYS,
+      tone: "warning",
+      label: `Waiting ${waitingDays} days`,
+    },
+    {
+      id: "missing-decision-date",
+      when: !undecided && !v.decisionDate,
+      tone: "warning",
+      label: "Decision recorded without a date",
+      detail: "Governance audits need the date the decision was taken.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    { label: "Gate", value: v.approvalType || "—" },
+    { label: "Approver", value: selectedApprover?.name ?? "Unassigned", tone: selectedApprover ? "neutral" : "warn" },
+    {
+      label: "Waiting",
+      value: undecided ? `${waitingDays}d` : "—",
+      tone: undecided && waitingDays > STALE_APPROVAL_DAYS ? "bad" : "neutral",
+      hint: "Days since the gate was submitted for decision.",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    { label: "Submitted", value: v.submittedDate ? formatDate(v.submittedDate) : "—" },
+    {
+      label: "Decided",
+      value: v.decisionDate ? formatDate(v.decisionDate) : "Not yet",
+      tone: !undecided && !v.decisionDate ? "warn" : "neutral",
+    },
+    {
+      label: "Release date",
+      value: row.release.releaseDate ? formatDate(row.release.releaseDate) : "—",
+      tone: undecided ? dueTone(releaseDue.state) : "neutral",
+      hint: undecided ? releaseDue.label : undefined,
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Release", value: releaseCode, href: releaseHref, hint: row.release.name },
+    { label: "Application", value: v.applicationName || "—" },
+    { label: "Department", value: v.departmentName || "—" },
+    {
+      label: "CAB meeting",
+      value: v.cabMeetingId.trim() || "Not linked",
+      tone: v.cabMeetingId.trim() ? "neutral" : "warn",
+    },
+  ];
 
   return (
     <EditableDetailShell
@@ -409,25 +537,23 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: CheckCircle2,
-          label: "Decision",
-          value: v.decision,
-          tone: heroToneFromDecision(v.decision),
+      <DetailDecisionHeader
+        status={{
+          label: v.decision,
+          tone: decisionTone(v.decision),
+          caption: undecided
+            ? `${v.approvalType || "Gate"} on ${releaseCode} · awaiting decision`
+            : `${v.approvalType || "Gate"} on ${releaseCode}`,
         }}
-        secondary={{
-          icon: ClipboardCheck,
-          label: "Approval Type",
-          value: v.approvalType || "—",
-        }}
-        metric={{
-          icon: Zap,
-          label: "Progress",
-          percent: pct,
-          caption: pendingish ? "awaiting CAB decision" : "decision recorded",
-          tone: heroToneFromDecision(v.decision),
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="Gate cleared — governance is not holding this release"
+        timing={timing}
+        scope={scope}
       />
 
       <DetailSection
@@ -469,79 +595,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
       </DetailSection>
 
       <DetailSection
-        icon={CheckCircle2}
-        tone="indigo"
-        title="Decision status"
-        description="Current CAB outcome and the approval type that gates this release."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={pendingish ? "⚠️ AWAITING DECISION" : "✓ DECISION RECORDED"}
-            tone={pendingish ? "warn" : decisionTone(v.decision)}
-          />
-          <StatusChip label={v.decision} tone={decisionTone(v.decision)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Approval ID" value={row.approvalCode} />
-          <EditableField
-            label="Decision"
-            value={v.decision}
-            editing={false}
-            display={<StatusChip label={v.decision} tone={decisionTone(v.decision)} />}
-          />
-          <EditableField
-            label="Approval Type"
-            value={v.approvalType}
-            editing={false}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={Package}
-        tone="sky"
-        title="Release information"
-        description="Which release this sign-off covers and the org context around it."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Release"
-            value={v.releaseId}
-            editing={false}
-            display={
-              <ProgressLink
-                href={`/releases/${v.releaseId || row.release.id}`}
-                className="font-mono text-[13.5px] font-semibold text-sky-600 hover:underline dark:text-sky-300"
-              >
-                {selectedRelease?.releaseCode ?? row.release.releaseCode}
-              </ProgressLink>
-            }
-          />
-          <EditableField
-            label="Release Name"
-            value={row.release.name}
-            editing={false}
-            display={
-              v.releaseId === row.releaseId
-                ? row.release.name
-                : (selectedRelease?.releaseCode ?? "—")
-            }
-          />
-          <EditableField
-            label="Application"
-            value={v.applicationName}
-            editing={false}
-          />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={false}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={User}
+        icon={ClipboardCheck}
         tone="emerald"
         title="Approver details"
         description="Who owns the CAB decision for this release."
@@ -566,34 +620,6 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
             value={row.approver.role}
             editing={false}
             display={v.approverId === row.approverId ? (row.approver.role ?? "—") : "—"}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={Calendar}
-        tone="amber"
-        title="Timeline & CAB"
-        description="Submission and decision dates, plus the linked CAB meeting when available."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Submitted Date"
-            value={v.submittedDate}
-            editing={false}
-            display={v.submittedDate ? formatDate(v.submittedDate) : "—"}
-          />
-          <EditableField
-            label="Decision Date"
-            value={v.decisionDate}
-            editing={false}
-            display={v.decisionDate ? formatDate(v.decisionDate) : "—"}
-          />
-          <EditableField
-            label="CAB Meeting"
-            value={v.cabMeetingId}
-            editing={false}
-            mono
           />
         </EditableFieldGrid>
       </DetailSection>

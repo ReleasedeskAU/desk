@@ -83,7 +83,17 @@ export type RiskRow = {
   notes: string | null;
 };
 
-type StatusFilter = "Open" | "Monitoring" | "Mitigating" | "In Progress" | "Escalated" | "Accepted";
+type StatusFilter =
+  | "Identified"
+  | "Assessing"
+  | "Mitigating"
+  | "Mitigated"
+  | "Escalated"
+  | "Accepted"
+  | "Closed"
+  | "Open"
+  | "Monitoring"
+  | "In Progress";
 type HeatMapView = "matrix" | "bubble" | "density";
 
 /** Ownership is "concentrated" when one person owns more than half of owned risks. */
@@ -1207,7 +1217,15 @@ export default function RiskRegisterContent() {
   }, []);
 
   const categories = useMemo(() => [...new Set(allRisks.map((r) => r.category))].sort(), [allRisks]);
-  const statuses: StatusFilter[] = ["Open", "Monitoring", "Mitigating", "In Progress", "Escalated", "Accepted"];
+  const statuses: StatusFilter[] = [
+    "Identified",
+    "Assessing",
+    "Mitigating",
+    "Mitigated",
+    "Escalated",
+    "Accepted",
+    "Closed",
+  ];
 
   const { isColumnVisible, columnPicker, filterPicker, isFilterVisible, prefsLoaded } = useTablePagePreferences(
     "risks",

@@ -2,30 +2,17 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  AppWindow,
-  Calendar,
-  CheckCircle2,
-  FileText,
-  List,
-  Package,
-  User,
-  Wrench,
-} from "lucide-react";
+import { Calendar, FileText, List, Package } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
   TintedCallout,
   EntityTimeline,
-  EntityConnection,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -33,6 +20,15 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { maintenanceWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type MaintenanceDetail = {
   id: string;
@@ -139,31 +135,11 @@ function impactTone(impact: string): ChipTone {
   return "neutral";
 }
 
-function heroToneFromApproval(status: string): "rose" | "amber" | "emerald" | "sky" {
-  const t = approvalTone(status);
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  if (t === "good") return "emerald";
-  return "sky";
-}
-
-function impactPercent(impact: string): number {
-  const t = impactTone(impact);
-  if (t === "bad") return 90;
-  if (t === "warn") return 55;
-  if (t === "good") return 25;
-  return 40;
-}
-
-function approvalPercent(status: string): number {
-  const s = status.toLowerCase();
-  if (s.includes("complete")) return 100;
-  if (s.includes("approv") || s.includes("progress")) return 70;
-  if (s.includes("schedul")) return 50;
-  if (s.includes("pending")) return 30;
-  if (s.includes("cancel") || s.includes("reject")) return 0;
-  return 40;
-}
+/**
+ * A window this close to its slot must already be approved — CAB cannot
+ * realistically turn it around inside this many days.
+ */
+const APPROVAL_CUTOFF_DAYS = 3;
 
 function toDraft(row: MaintenanceDetail): MaintenanceDraft {
   return {
@@ -190,6 +166,9 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, appList, me] = await Promise.all([
@@ -298,6 +277,30 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
     await load();
   };
 
+  /**
+   * Apply a one-click approval/execution transition from the decision header.
+   * The API re-validates the value and enforces the editor role — this button
+   * is convenience, not the approval authority itself.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/planned-maintenance/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvalStatus: step.status }),
+      label: "maintenance-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this window to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -322,10 +325,105 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
 
   const selectedApp = applications.find((a) => a.id === v.applicationId);
   const appName = selectedApp?.name ?? row.application?.name ?? null;
-  const showConnection = Boolean(v.applicationId && appName);
   const windowActive = /approv|schedul|progress/i.test(v.approvalStatus);
   const windowDone = /complete/i.test(v.approvalStatus);
   const cancelled = /cancel|reject/i.test(v.approvalStatus);
+  const awaitingApproval = /pending/i.test(v.approvalStatus);
+  const slot = describeDue(v.scheduledDate);
+  const upcoming = !windowDone && !cancelled;
+  const workflow = maintenanceWorkflow(v.approvalStatus);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  // A pending window inside the CAB turnaround is an escalation; further out
+  // it is only a reminder. The two are mutually exclusive so they never stack.
+  const approvalLate =
+    awaitingApproval && upcoming && slot.days != null && slot.days <= APPROVAL_CUTOFF_DAYS;
+
+  const attention = collectAttention([
+    {
+      id: "approval-late",
+      when: approvalLate,
+      tone: "critical",
+      label: `Slot is ${slot.label.toLowerCase()} and still unapproved`,
+      detail: "CAB has not signed off a window that is about to start.",
+    },
+    {
+      id: "awaiting-approval",
+      when: awaitingApproval && upcoming && !approvalLate,
+      tone: "warning",
+      label: "Awaiting CAB approval",
+    },
+    {
+      id: "high-impact",
+      when: upcoming && impactTone(v.impact) === "bad",
+      tone: "warning",
+      label: `${v.impact} impact on ${v.environmentName || "this environment"}`,
+      detail: "Releases should not be scheduled into this window.",
+    },
+    {
+      id: "no-times",
+      when: upcoming && !(v.startTime && v.endTime),
+      tone: "warning",
+      label: "Window times incomplete",
+      detail: "Without a start and end time, other teams cannot plan around this slot.",
+    },
+    {
+      id: "no-requestor",
+      when: upcoming && !v.requestor.trim(),
+      tone: "warning",
+      label: "No requestor recorded",
+    },
+    {
+      id: "cancelled",
+      when: cancelled,
+      tone: "warning",
+      label: `Window ${v.approvalStatus.toLowerCase()}`,
+      detail: "This slot is not happening — anything planned around it needs rechecking.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Impact",
+      value: v.impact || "—",
+      tone: windowDone || cancelled ? "neutral" : chipToneToFactTone(impactTone(v.impact)),
+    },
+    { label: "Type", value: v.type || "—" },
+    {
+      label: "Requestor",
+      value: v.requestor.trim() || "Not recorded",
+      tone: v.requestor.trim() ? "neutral" : "warn",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    {
+      label: "Scheduled",
+      value: v.scheduledDate ? formatDate(v.scheduledDate) : "—",
+      tone: upcoming ? dueTone(slot.state) : "neutral",
+      hint: upcoming && v.scheduledDate ? slot.label : undefined,
+    },
+    {
+      label: "Window",
+      value: v.startTime && v.endTime ? `${v.startTime} – ${v.endTime}` : "Not set",
+      tone: v.startTime && v.endTime ? "neutral" : "warn",
+      hint: v.startTime && v.endTime ? durationLabel(v.startTime, v.endTime) : undefined,
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Application", value: appName ?? "All applications" },
+    { label: "Environment", value: v.environmentName || "—" },
+    { label: "Department", value: v.departmentName || "—" },
+  ];
 
   return (
     <EditableDetailShell
@@ -462,76 +560,30 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: CheckCircle2,
-          label: "Approval",
-          value: v.approvalStatus,
-          tone: heroToneFromApproval(v.approvalStatus),
-        }}
-        secondary={{
-          icon: Wrench,
-          label: "Type",
-          value: v.type || "—",
-        }}
-        metric={{
-          icon: AlertTriangle,
-          label: "Impact",
-          percent: cancelled ? 0 : windowDone ? 100 : impactPercent(v.impact),
-          caption: v.impact || "impact not set",
-          tone: cancelled
-            ? "rose"
+      <DetailDecisionHeader
+        status={{
+          label: v.approvalStatus,
+          tone: approvalTone(v.approvalStatus),
+          caption: cancelled
+            ? "Slot will not run"
             : windowDone
-              ? "emerald"
-              : impactTone(v.impact) === "bad"
-                ? "rose"
-                : impactTone(v.impact) === "warn"
-                  ? "amber"
-                  : "sky",
+              ? "Window complete"
+              : `${v.type || "Maintenance"} on ${v.environmentName || "this environment"} · ${slot.label.toLowerCase()}`,
         }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel={
+          windowDone
+            ? "Window complete — nothing outstanding"
+            : "Window is approved and fully specified"
+        }
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={Wrench}
-        tone="amber"
-        title="Maintenance status"
-        description="Approval state, type, and impact — whether releases should avoid this slot."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={
-              cancelled
-                ? "✗ CANCELLED"
-                : windowDone
-                  ? "✓ COMPLETE"
-                  : windowActive
-                    ? "📅 SCHEDULED"
-                    : v.approvalStatus.toUpperCase()
-            }
-            tone={approvalTone(v.approvalStatus)}
-          />
-          <StatusChip label={v.approvalStatus} tone={approvalTone(v.approvalStatus)} />
-          <StatusChip label={v.impact} tone={impactTone(v.impact)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Maintenance ID" value={row.maintenanceCode} />
-          <EditableField
-            label="Approval Status"
-            value={v.approvalStatus}
-            editing={false}
-            display={
-              <StatusChip label={v.approvalStatus} tone={approvalTone(v.approvalStatus)} />
-            }
-          />
-          <EditableField label="Type" value={v.type} editing={false} />
-          <EditableField
-            label="Impact"
-            value={v.impact}
-            editing={false}
-            display={<StatusChip label={v.impact} tone={impactTone(v.impact)} />}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={Calendar}
@@ -562,86 +614,6 @@ export default function MaintenanceDetailPage({ params }: { params: Promise<{ id
             },
           ]}
         />
-        <div className="mt-4">
-          <EditableFieldGrid cols={3}>
-            <EditableField
-              label="Scheduled Date"
-              value={v.scheduledDate}
-              editing={false}
-              display={v.scheduledDate ? formatDate(v.scheduledDate) : "—"}
-            />
-            <EditableField
-              label="Start Time"
-              value={v.startTime}
-              editing={false}
-              mono
-            />
-            <EditableField
-              label="End Time"
-              value={v.endTime}
-              editing={false}
-              mono
-            />
-            <EditableField
-              label="Duration"
-              value={durationLabel(v.startTime, v.endTime)}
-              editing={false}
-              display={durationLabel(v.startTime, v.endTime)}
-            />
-          </EditableFieldGrid>
-        </div>
-      </DetailSection>
-
-      <DetailSection
-        icon={AppWindow}
-        tone="sky"
-        title="Affected systems"
-        description="Application and environment this outage window covers."
-      >
-        {showConnection && appName && (
-          <div className="mb-4">
-            <EntityConnection
-              source={appName}
-              target={v.environmentName || "—"}
-              caption={
-                approvalPercent(v.approvalStatus) === 100
-                  ? "Window complete"
-                  : `Approval · ${v.approvalStatus}`
-              }
-            />
-          </div>
-        )}
-        <EditableFieldGrid>
-          <EditableField
-            label="Application"
-            value={v.applicationId}
-            editing={false}
-            display={appName ?? "—"}
-          />
-          <EditableField
-            label="Environment"
-            value={v.environmentName}
-            editing={false}
-            mono
-          />
-          <EditableField label="Department" value={v.departmentName} editing={false} />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={User}
-        tone="emerald"
-        title="Requestor"
-        description="Who requested this maintenance window."
-      >
-        <EditableFieldGrid>
-          <EditableField label="Requestor" value={v.requestor} editing={false} />
-        </EditableFieldGrid>
-        {!v.requestor.trim() && (
-          <div className="mt-3">
-            <TintedCallout tone="amber">No requestor recorded yet.</TintedCallout>
-          </div>
-        )}
       </DetailSection>
 
       <DetailSection

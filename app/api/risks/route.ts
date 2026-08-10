@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     affectedArea: body.affectedArea ?? null,
     mitigationStrategy: body.mitigationStrategy ?? null,
     riskOwnerId: body.riskOwnerId ?? null,
-    status: body.status ?? "Open",
+    status: body.status ?? "Identified",
     notes: body.notes ?? null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

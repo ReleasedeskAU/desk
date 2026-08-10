@@ -170,7 +170,7 @@ export default function ConnectorsPageContent() {
   };
 
   return (
-    <div className="max-w-[1200px] font-sans pb-24 relative">
+    <div className="w-full font-sans pb-24 relative">
       <div className="mb-8 mt-2">
         <div className="flex items-center text-[13px] text-gray-500 font-medium mb-3">
           <span className="hover:text-gray-800 cursor-pointer">Settings</span>

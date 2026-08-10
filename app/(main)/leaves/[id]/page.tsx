@@ -2,21 +2,18 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarOff, List, Package, ShieldAlert, User, Zap } from "lucide-react";
+import { List, Package, ShieldAlert, User } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
   EmptyHint,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
   StatusChip,
-  ScoreBar,
-  HeroStatusRow,
-  TintedCallout,
   SignoffChip,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -24,6 +21,14 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
 
 type LeaveDetail = {
   id: string;
@@ -72,18 +77,24 @@ function scoreBand(score: number): { label: string; tone: ChipTone } {
 function coverageFromRisk(riskImpact: string | null, riskScore: number) {
   const text = (riskImpact ?? "").toLowerCase();
   if (text.includes("covered") && !text.includes("uncovered")) {
-    return { label: "Covered", tone: "good" as const, hero: "emerald" as const };
+    return { label: "Covered", tone: "good" as const };
   }
   if (text.includes("partial") || text.includes("backup")) {
-    return { label: "Partial", tone: "warn" as const, hero: "amber" as const };
+    return { label: "Partial", tone: "warn" as const };
   }
   if (text.includes("uncover") || text.includes("no cover") || text.includes("unavailable")) {
-    return { label: "Uncovered", tone: "bad" as const, hero: "rose" as const };
+    return { label: "Uncovered", tone: "bad" as const };
   }
-  if (riskScore <= 3) return { label: "Covered", tone: "good" as const, hero: "emerald" as const };
-  if (riskScore <= 6) return { label: "Partial", tone: "warn" as const, hero: "amber" as const };
-  return { label: "Uncovered", tone: "bad" as const, hero: "rose" as const };
+  if (riskScore <= 3) return { label: "Covered", tone: "good" as const };
+  if (riskScore <= 6) return { label: "Partial", tone: "warn" as const };
+  return { label: "Uncovered", tone: "bad" as const };
 }
+
+/** Score at or above which the absence needs a named cover, not just a note. */
+const HIGH_LEAVE_RISK_SCORE = 7;
+
+/** An absence this long stops being a gap and becomes a reassignment. */
+const LONG_ABSENCE_DAYS = 10;
 
 function toDraft(row: LeaveDetail): LeaveDraft {
   return {
@@ -207,8 +218,104 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
   const coverage = coverageFromRisk(v.riskImpact || null, riskScoreNum);
   const band = scoreBand(riskScoreNum);
   const firstRelease = row.affectedReleases[0]?.release;
-  // Invert score for ring: low risk = high "safety"
-  const safetyPct = Math.max(0, Math.min(100, ((10 - riskScoreNum) / 10) * 100));
+  const affectedCount = row.affectedReleases.length;
+  const startDue = describeDue(v.leaveStart);
+  const endDue = describeDue(v.leaveEnd);
+  // A finished absence can no longer be planned around, so its gaps stop being
+  // actionable — only live and upcoming leave raises attention.
+  const finished = endDue.state === "overdue";
+  const inProgress = !finished && startDue.days != null && startDue.days <= 0;
+  const releaseLabel = affectedCount === 1 ? firstRelease?.releaseCode : `${affectedCount} releases`;
+
+  const attention = collectAttention([
+    {
+      id: "uncovered",
+      when: !finished && coverage.label === "Uncovered",
+      tone: affectedCount > 0 ? "critical" : "warning",
+      label: affectedCount
+        ? `Uncovered absence across ${releaseLabel}`
+        : "Uncovered absence",
+      detail: "No backup is recorded for the work this person owns.",
+      href: affectedCount === 1 && firstRelease ? `/releases/${firstRelease.id}` : undefined,
+    },
+    {
+      id: "partial",
+      when: !finished && coverage.label === "Partial" && affectedCount > 0,
+      tone: "warning",
+      label: `Partial cover across ${releaseLabel}`,
+    },
+    {
+      id: "high-score",
+      when: !finished && riskScoreNum >= HIGH_LEAVE_RISK_SCORE,
+      tone: "warning",
+      label: `Risk score ${riskScoreNum}/10`,
+      detail: "Scored as a significant delivery risk while this person is away.",
+    },
+    {
+      id: "not-assessed",
+      when: !finished && !v.riskImpact.trim(),
+      tone: "warning",
+      label: "Coverage impact not assessed",
+      detail: "Nobody has recorded what this absence means for delivery.",
+    },
+    {
+      id: "long-absence",
+      when: !finished && Number(v.days) >= LONG_ABSENCE_DAYS && affectedCount > 0,
+      tone: "warning",
+      label: `${v.days}-day absence during active releases`,
+      detail: "Long absences usually need work reassigned rather than covered.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    { label: "Coverage", value: coverage.label, tone: chipToneToFactTone(coverage.tone) },
+    {
+      label: "Risk",
+      value: `${riskScoreNum}/10`,
+      tone: chipToneToFactTone(band.tone),
+      hint: `${band.label} delivery risk while this person is away.`,
+    },
+    {
+      label: "Releases",
+      value: String(affectedCount),
+      tone: affectedCount > 0 && coverage.label !== "Covered" ? "warn" : "neutral",
+      hint: "Releases linked to this absence.",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    {
+      label: "Start",
+      value: v.leaveStart ? formatDate(v.leaveStart) : "—",
+      tone: finished ? "neutral" : dueTone(startDue.state),
+      hint: finished || !v.leaveStart ? undefined : startDue.label,
+    },
+    { label: "End", value: v.leaveEnd ? formatDate(v.leaveEnd) : "—" },
+    { label: "Duration", value: `${v.days} day${v.days === "1" ? "" : "s"}` },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Employee ID", value: row.user.userId },
+    { label: "Role", value: row.user.role },
+    { label: "Department", value: row.user.department },
+    {
+      label: "Affected releases",
+      value: affectedCount ? (releaseLabel ?? String(affectedCount)) : "None",
+      href: affectedCount === 1 && firstRelease ? `/releases/${firstRelease.id}` : undefined,
+    },
+  ];
+
+  // The only genuine next step on a leave record is checking the release it
+  // threatens; there is no status to advance.
+  const primaryAction: DetailAction | null =
+    firstRelease && !finished && coverage.label !== "Covered"
+      ? {
+          id: "review-release",
+          label: `Review ${firstRelease.releaseCode}`,
+          href: `/releases/${firstRelease.id}`,
+          hint: "Check whether this absence puts the release at risk.",
+        }
+      : null;
 
   return (
     <EditableDetailShell
@@ -307,91 +414,22 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: ShieldAlert,
-          label: "Coverage Status",
-          value: coverage.label,
-          tone: coverage.hero,
+      <DetailDecisionHeader
+        status={{
+          label: coverage.label,
+          tone: coverage.tone,
+          caption: finished
+            ? `${v.leaveType || "Leave"} · completed`
+            : `${v.leaveType || "Leave"} · ${inProgress ? "in progress" : startDue.label.toLowerCase()}`,
         }}
-        secondary={{
-          icon: Zap,
-          label: "Leave Type",
-          value: v.leaveType || "—",
-        }}
-        metric={{
-          icon: ShieldAlert,
-          label: "Risk Safety",
-          percent: safetyPct,
-          caption: `${band.label} risk (score ${riskScoreNum}/10)`,
-          tone: coverage.hero === "emerald" ? "emerald" : coverage.hero === "amber" ? "amber" : "rose",
-        }}
+        signals={signals}
+        primaryAction={primaryAction}
+        canEdit={canEdit}
+        attention={attention}
+        attentionClearLabel="Absence is covered and no release is exposed"
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={CalendarOff}
-        tone="violet"
-        title="Leave identity"
-        description="What kind of absence this is, and the permanent leave ID."
-      >
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Leave ID" value={row.leaveCode} />
-          <EditableField
-            label="Leave Type"
-            value={v.leaveType}
-            editing={false}
-            display={<StatusChip label={v.leaveType || "—"} tone="info" />}
-          />
-          <EditableField
-            label="Coverage"
-            value={coverage.label}
-            editing={false}
-            display={<StatusChip label={coverage.label} tone={coverage.tone} />}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={User}
-        tone="indigo"
-        title="Employee information"
-        description="Who is away — identity comes from the linked user record (read-only here)."
-      >
-        <EditableFieldGrid>
-          <EditableField label="Employee ID" value={row.user.userId} editing={false} mono />
-          <EditableField label="Employee Name" value={row.user.name} editing={false} />
-          <EditableField label="Role" value={row.user.role} editing={false} />
-          <EditableField label="Department" value={row.user.department} editing={false} />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={CalendarOff}
-        tone="violet"
-        title="Leave period"
-        description="When the person is out and how many working days are covered."
-      >
-        <EditableFieldGrid cols={3}>
-          <EditableField
-            label="Start Date"
-            value={v.leaveStart}
-            editing={false}
-            display={formatDate(v.leaveStart)}
-          />
-          <EditableField
-            label="End Date"
-            value={v.leaveEnd}
-            editing={false}
-            display={formatDate(v.leaveEnd)}
-          />
-          <EditableField
-            label="Duration (days)"
-            value={v.days}
-            editing={false}
-            display={`${v.days} Day${v.days === "1" ? "" : "s"}`}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={ShieldAlert}
@@ -426,19 +464,8 @@ export default function LeaveDetailPage({ params }: { params: Promise<{ id: stri
             label="Risk Impact"
             value={v.riskImpact}
             editing={false}
+            display={v.riskImpact.trim() || "Not assessed"}
           />
-          <div>
-            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-              Risk Score
-            </p>
-            <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-              <ScoreBar
-                value={riskScoreNum}
-                max={10}
-                label={`${band.label} risk`}
-              />
-            </div>
-          </div>
         </EditableFieldGrid>
       </DetailSection>
 

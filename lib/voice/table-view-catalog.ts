@@ -247,7 +247,7 @@ export function voiceTableViewBrief(): string {
   return [
     "configure_table_view: show/hide Manage Columns and Manage Filters fields (same as the UI pickers). Actions: show_columns, hide_columns, show_all_columns, show_filters, hide_filters, show_all_filters, list.",
     "Sort with apply_list_filters using sort + dir (e.g. sort=conflictCode, dir=asc).",
-    "scroll_page: scroll the main content (up/down/top) while explaining — no screen share needed.",
+    "scroll_page: scroll the current page (up/down/top/bottom) while explaining — works on any page, no screen share needed.",
     "Open a row with navigate_to using search_entity.path (e.g. /conflicts/CNF-0001).",
   ].join(" ");
 }

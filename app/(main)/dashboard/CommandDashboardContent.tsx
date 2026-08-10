@@ -252,7 +252,7 @@ export default function CommandDashboardContent({
       className="-mx-4 -mt-6 min-h-screen bg-[#F4F7FE] px-4 pb-9 pt-6 dark:bg-[var(--background)] md:-mx-6 md:px-6 md:pt-9 lg:-mx-8 lg:px-8"
       style={{ fontFamily: "'Plus Jakarta Sans','DM Sans',ui-sans-serif,system-ui,sans-serif" }}
     >
-      <div className="mx-auto max-w-[1380px]">
+      <div className="w-full">
         <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-[24px] font-bold tracking-tight text-[#1B2559] dark:text-white sm:text-[30px]">Command Dashboard</h1>

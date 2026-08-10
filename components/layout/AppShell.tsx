@@ -45,7 +45,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         >
           <AppHeader />
           <NavigationHistoryTrail />
-          <main className="materio-main min-w-0 flex-1 px-4 pb-6 pt-6 md:px-6 lg:px-8">
+          <main className="materio-main w-full min-w-0 flex-1 px-4 pb-6 pt-6 md:px-6 lg:px-8">
             {children}
           </main>
           <ChatPanel />

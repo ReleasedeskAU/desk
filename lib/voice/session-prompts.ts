@@ -34,8 +34,8 @@ export function voiceSessionPromptText(
     return [
       "[SESSION]",
       "New voice session just started.",
-      "Greet the user in one short friendly sentence as their Release Desk release manager",
-      "(you were built by the Release Desk Team — never say Google).",
+      "Greet the user in one short friendly sentence as Release Desk Voice",
+      "(built by the Release Desk Team — never name Google, Gemini, or any other AI vendor).",
       "Ask how you can help (walkthrough, find a release, check readiness, navigate, or explain a page).",
       "Do not call any tools yet.",
     ].join(" ");

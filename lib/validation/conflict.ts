@@ -3,12 +3,26 @@ import { z } from "zod";
 const optionalNullableString = z.union([z.string().trim().max(2000), z.null()]).optional();
 
 /**
+ * Canonical conflict statuses for create / UI.
+ * PATCH is validated by the conflict lifecycle graph; legacy Open / In Progress /
+ * Escalated still resolve via aliases at enforce time.
+ */
+export const CONFLICT_STATUSES = [
+  "Detected",
+  "Under Review",
+  "Resolved",
+  "Dismissed",
+] as const;
+
+export const CONFLICT_TYPES = ["Schedule", "Resource", "Application"] as const;
+
+/**
  * POST /api/conflicts body. Rejects unknown fields and never accepts a client-provided Conflict ID.
  * Release code existence is validated by the API.
  */
 export const createConflictSchema = z
   .object({
-    status: z.string().trim().min(1).max(80),
+    status: z.enum(CONFLICT_STATUSES),
     priority: z.string().trim().min(1).max(80),
     release1Code: z.string().trim().min(1).max(64),
     release2Code: z.string().trim().min(1).max(64),
@@ -39,6 +53,8 @@ export const patchConflictSchema = z
     environmentConflictType: z.string().trim().min(1).max(120).optional(),
     assignedTo: optionalNullableString,
     notes: optionalNullableString,
+    /** Required when Flexible soft-gates are unmet (e.g. Dismiss without notes). */
+    overrideReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 

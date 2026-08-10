@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { ReadinessGauge } from "@/components/gauges/ReadinessGauge";
-import { ReleaseLifecycleStrip } from "@/components/releases/ReleaseLifecycleStrip";
+import { ReleaseLifecycleStepper } from "@/components/releases/ReleaseLifecycleStepper";
 import { DbPredictiveNudge } from "@/components/releases/DbPredictiveNudge";
 import { EmptyHint, ScoreBar } from "@/components/detail/editable";
 import type { DbNextAction } from "@/lib/db-release-command";
@@ -57,51 +57,67 @@ export function useReleaseCommandCenter({
 }
 
 type ReadinessLifecycleContentProps = {
+  releaseId: string;
   data: CommandCenterData;
   storedReadiness?: number | null;
   checklistPercent?: number | null;
+  /** Bumps the config-driven lifecycle stepper after status / readiness changes. */
+  refreshKey?: number;
+  /**
+   * When true, omit headline scores and nav CTAs already shown in the decision
+   * header (live readiness gauge, ship/slip nudge, System mapping).
+   */
+  breakdownOnly?: boolean;
 };
 
+/** Sidebar destinations — not release-page next steps. */
+const SIDEBAR_ACTION_HREFS = new Set(["/system-mapping"]);
+
 /**
- * Full Readiness & Lifecycle tile body: predictive nudge, 6-stage strip,
- * readiness signal breakdown, and next-best-actions list.
+ * Readiness & Lifecycle body: config-driven lifecycle stepper, planning signals,
+ * and optional headline scores / next-best-actions.
  *
  * @param props - Command-center data plus stored/checklist readiness signals.
- * @returns Expanded tile content (existing intelligence, repositioned).
+ * @returns Expanded section content.
  */
 export function ReadinessLifecycleContent({
+  releaseId,
   data,
   storedReadiness,
   checklistPercent,
+  refreshKey = 0,
+  breakdownOnly = false,
 }: ReadinessLifecycleContentProps) {
+  const actions = breakdownOnly
+    ? data.nextActions.filter((action) => !SIDEBAR_ACTION_HREFS.has(action.href))
+    : data.nextActions;
+
   return (
     <div className="space-y-5">
-      {data.prediction && <DbPredictiveNudge prediction={data.prediction} />}
+      {!breakdownOnly && data.prediction ? <DbPredictiveNudge prediction={data.prediction} /> : null}
 
       <div>
         <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
           Release lifecycle
         </p>
-        <ReleaseLifecycleStrip stages={data.stages} embedded />
+        <ReleaseLifecycleStepper
+          releaseId={releaseId}
+          refreshKey={refreshKey}
+          readinessPercent={storedReadiness ?? data.readiness}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className={cnBreakdown(breakdownOnly)}>
         <div className="rounded-xl bg-slate-50/80 p-4 dark:bg-white/5">
           <p className="mb-3 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-            Readiness signals
+            Planning signals
           </p>
-          <div className="grid items-center gap-5 sm:grid-cols-[140px_1fr]">
-            <div className="flex flex-col items-center">
-              <ReadinessGauge value={data.readiness} size={132} />
-              <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Computed live
-              </span>
-            </div>
+          {breakdownOnly ? (
             <div className="space-y-3">
               <ScoreBar
                 value={storedReadiness ?? 0}
                 asPercent
-                label={storedReadiness == null ? "Stored readiness not set" : "Stored readiness"}
+                label={storedReadiness == null ? "Team estimate not set" : "Team estimate"}
               />
               <ScoreBar
                 value={checklistPercent ?? 0}
@@ -109,64 +125,103 @@ export function ReadinessLifecycleContent({
                 label={checklistPercent == null ? "Go-live checklist not set" : "Go-live checklist"}
               />
               <p className="text-[11px] leading-relaxed text-slate-400 dark:text-white/45">
-                Computed readiness uses status, bookings, dependencies, decision, open blockers, and P1
-                issues. Stored values remain visible as separate planning signals.
+                Live readiness, slip risk and ship chance are in the decision header. These are the
+                planning inputs that feed that score.
               </p>
             </div>
-          </div>
+          ) : (
+            <div className="grid items-center gap-5 sm:grid-cols-[140px_1fr]">
+              <div className="flex flex-col items-center">
+                <ReadinessGauge value={data.readiness} size={132} />
+                <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Computed live
+                </span>
+              </div>
+              <div className="space-y-3">
+                <ScoreBar
+                  value={storedReadiness ?? 0}
+                  asPercent
+                  label={storedReadiness == null ? "Stored readiness not set" : "Stored readiness"}
+                />
+                <ScoreBar
+                  value={checklistPercent ?? 0}
+                  asPercent
+                  label={checklistPercent == null ? "Go-live checklist not set" : "Go-live checklist"}
+                />
+                <p className="text-[11px] leading-relaxed text-slate-400 dark:text-white/45">
+                  Computed readiness uses status, bookings, dependencies, decision, open blockers, and P1
+                  issues. Stored values remain visible as separate planning signals.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div>
-          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-            Next best actions
-          </p>
-          {data.nextActions.length ? (
-            <ul className="space-y-2">
-              {data.nextActions.map((action) => (
-                <li key={`${action.href}-${action.label}`}>
-                  {action.href.startsWith("#") ? (
-                    <a
-                      href={action.href}
-                      className="group flex items-start gap-2 rounded-xl bg-amber-50/70 px-3 py-2.5 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/15"
-                    >
-                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 opacity-60 group-hover:opacity-100" />
-                      <span>
-                        <span className="font-semibold">{action.label}</span>
-                        {action.detail && (
-                          <span className="mt-0.5 block text-xs opacity-70">{action.detail}</span>
-                        )}
-                      </span>
-                    </a>
-                  ) : (
-                    <ProgressLink
-                      href={action.href}
-                      className="group flex items-start gap-2 rounded-xl bg-amber-50/70 px-3 py-2.5 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/15"
-                    >
-                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 opacity-60 group-hover:opacity-100" />
-                      <span>
-                        <span className="font-semibold">{action.label}</span>
-                        {action.detail && (
-                          <span className="mt-0.5 block text-xs opacity-70">{action.detail}</span>
-                        )}
-                      </span>
-                    </ProgressLink>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyHint>No urgent actions are currently recommended.</EmptyHint>
-          )}
-          {data.p1Issues.length > 0 && (
-            <p className="mt-3 text-[11px] font-semibold text-rose-600 dark:text-rose-300">
-              {data.p1Issues.length} linked P1 issue{data.p1Issues.length === 1 ? "" : "s"} included in
-              readiness.
-            </p>
-          )}
-        </div>
+        {!breakdownOnly || actions.length > 0 || data.p1Issues.length > 0 ? (
+          <div>
+            {!breakdownOnly ? (
+              <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+                Next best actions
+              </p>
+            ) : actions.length > 0 ? (
+              <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+                Suggested on this release
+              </p>
+            ) : null}
+            {actions.length ? (
+              <ul className="space-y-2">
+                {actions.map((action) => (
+                  <li key={`${action.href}-${action.label}`}>
+                    {action.href.startsWith("#") ? (
+                      <a
+                        href={action.href}
+                        className="group flex items-start gap-2 rounded-xl bg-amber-50/70 px-3 py-2.5 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/15"
+                      >
+                        <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 opacity-60 group-hover:opacity-100" />
+                        <span>
+                          <span className="font-semibold">{action.label}</span>
+                          {action.detail && (
+                            <span className="mt-0.5 block text-xs opacity-70">{action.detail}</span>
+                          )}
+                        </span>
+                      </a>
+                    ) : (
+                      <ProgressLink
+                        href={action.href}
+                        className="group flex items-start gap-2 rounded-xl bg-amber-50/70 px-3 py-2.5 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/15"
+                      >
+                        <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 opacity-60 group-hover:opacity-100" />
+                        <span>
+                          <span className="font-semibold">{action.label}</span>
+                          {action.detail && (
+                            <span className="mt-0.5 block text-xs opacity-70">{action.detail}</span>
+                          )}
+                        </span>
+                      </ProgressLink>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : !breakdownOnly ? (
+              <EmptyHint>No urgent actions are currently recommended.</EmptyHint>
+            ) : null}
+            {data.p1Issues.length > 0 && (
+              <p className="mt-3 text-[11px] font-semibold text-rose-600 dark:text-rose-300">
+                {data.p1Issues.length} linked P1 issue{data.p1Issues.length === 1 ? "" : "s"} included in
+                readiness.
+              </p>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function cnBreakdown(breakdownOnly: boolean): string {
+  return breakdownOnly
+    ? "grid grid-cols-1 gap-4"
+    : "grid grid-cols-1 gap-4 lg:grid-cols-2";
 }
 
 /** @deprecated Prefer composing tiles with `useReleaseCommandCenter` + `ReadinessLifecycleContent`. */
@@ -189,9 +244,11 @@ export function DbReleaseCommandCenter({
   }
   return (
     <ReadinessLifecycleContent
+      releaseId={releaseId}
       data={data}
       storedReadiness={storedReadiness}
       checklistPercent={checklistPercent}
+      refreshKey={refreshKey}
     />
   );
 }

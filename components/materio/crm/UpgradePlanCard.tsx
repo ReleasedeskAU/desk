@@ -16,10 +16,10 @@ type UpgradePlanCardProps = {
 };
 
 export function UpgradePlanCard({
-  title = "Quick Start scenarios",
-  description = "Load demo releases, agents, and command-center data in one click — perfect for stakeholder walkthroughs.",
-  ctaLabel = "Browse templates",
-  ctaHref = "/templates",
+  title = "Explore releases",
+  description = "Open the release portfolio to review status, readiness, and blockers from your seeded workspace data.",
+  ctaLabel = "Browse releases",
+  ctaHref = "/releases",
 }: UpgradePlanCardProps) {
   const theme = useTheme();
 

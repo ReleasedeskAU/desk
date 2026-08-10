@@ -17,7 +17,15 @@ type Environment = { id: string; name: string; applicationId: string };
 type Release = { id: string; releaseCode: string; name: string };
 
 const SEVERITIES = ["P1", "P2", "P3"] as const;
-const STATUSES = ["Active", "Investigating", "Mitigated", "Resolved", "Closed"] as const;
+const STATUSES = [
+  "Open",
+  "Investigating",
+  "Escalated",
+  "Resolving",
+  "Resolved",
+  "Closed",
+  "Reopened",
+] as const;
 const IMPACTS = ["Down", "Degraded", "Partial"] as const;
 
 type FormValues = {
@@ -58,7 +66,7 @@ const emptyForm = (): FormValues => ({
   timestamp: nowLocal(),
   severity: "P2",
   title: "",
-  status: "Active",
+  status: "Open",
   impact: "Degraded",
   relatedReleaseCode: "",
   assignedTo: "",

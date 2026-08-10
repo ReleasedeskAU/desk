@@ -193,7 +193,12 @@ export default function DependencyListContent() {
     () => [...new Set(deps.map((d) => d.dependencyType).filter(Boolean))].sort(),
     [deps]
   );
-  const blockedCount = deps.filter((d) => d.status === "Blocked" || d.status === "At Risk").length;
+  const blockedCount = deps.filter(
+    (d) =>
+      d.status === "Blocked" ||
+      d.status === "At Risk" ||
+      d.status === "Pending"
+  ).length;
 
   const voiceVisibleRows = useMemo(
     () =>

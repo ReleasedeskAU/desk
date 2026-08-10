@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { cn, formatDate } from "@/lib/utils";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 
+
 type LivePayload = {
   counts: Record<string, number>;
   departments: { id: string; name: string; head: string }[];

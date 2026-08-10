@@ -82,7 +82,6 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
     related: [
       { label: "Calendar", href: "/calendar" },
       { label: "Env Booking", href: "/booking" },
-      { label: "Quick Start demos", href: "/templates" },
     ],
   },
   "/calendar": {
@@ -285,21 +284,6 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
     tips: ["Sign in role (Admin/Editor/Read only) is chosen at login."],
     related: [{ label: "Sign in", href: "/sign-in" }],
   },
-  "/templates": {
-    key: "templates",
-    title: "Quick Start Templates",
-    description:
-      "Guided demo scenarios — blocked release, canary deploy, CAB review, and more. Optional one-click seeding of live command-center state.",
-    dataSource: "demo",
-    tips: [
-      "Use before screen recordings to load a consistent story.",
-      "Reset demo state from this page when scenarios overlap.",
-    ],
-    related: [
-      { label: "Demo releases", href: "/releases?view=demo" },
-      { label: "Agents", href: "/agents" },
-    ],
-  },
 };
 
 function releaseDetailGuide(pathname: string): PageGuideEntry {
@@ -314,8 +298,8 @@ function releaseDetailGuide(pathname: string): PageGuideEntry {
     workflowStep: 2,
     tips: isDemo
       ? [
-          "Try Quick Start templates to seed interesting states.",
           "Go/No-Go and deployment persist via live-state API.",
+          "Compare with related releases or open Dependencies for impact.",
         ]
       : [
           "Check AI risk analysis and predictive nudge at the top.",
@@ -386,7 +370,7 @@ export const LOGIN_GUIDE: PageGuideEntry = {
   ],
   related: [
     { label: "Morning Inbox", href: "/inbox" },
-    { label: "Quick Start demos", href: "/templates" },
+    { label: "Releases", href: "/releases" },
   ],
 };
 

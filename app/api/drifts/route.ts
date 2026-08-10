@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     description: body.description,
     impactOnRelease: body.impactOnRelease ?? null,
     remediationAction: body.remediationAction ?? null,
-    status: body.status ?? "Open",
+    status: body.status ?? "Detected",
     etaToFix: body.etaToFix ? new Date(body.etaToFix) : null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

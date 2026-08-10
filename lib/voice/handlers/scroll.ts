@@ -1,7 +1,11 @@
 /**
  * scroll_page tool — scroll main content while explaining (no screen share).
  */
-import { parseScrollDirection, voiceScrollMain } from "@/lib/voice/guide-ui";
+import {
+  parseScrollDirection,
+  voiceScrollMain,
+  type VoiceScrollDirection,
+} from "@/lib/voice/guide-ui";
 
 export type ScrollPageArgs = {
   direction?: unknown;
@@ -10,15 +14,15 @@ export type ScrollPageArgs = {
 export type ScrollPageResult = {
   ok: boolean;
   tool: "scroll_page";
-  direction?: "up" | "down" | "top";
+  direction?: VoiceScrollDirection;
   reason?: string;
   instruction: string;
   actionLine: string;
 };
 
 /**
- * Scroll the main Release Desk content area.
- * @param args - direction: up | down | top (default down).
+ * Scroll the current Release Desk page (any route, not just tables).
+ * @param args - direction: up | down | top | bottom (default down).
  */
 export async function handleScrollPage(
   args: ScrollPageArgs
@@ -26,8 +30,8 @@ export async function handleScrollPage(
   const raw =
     typeof args.direction === "string" ? args.direction.trim().toLowerCase() : "down";
 
-  let direction: "up" | "down" | "top";
-  if (raw === "up" || raw === "down" || raw === "top") {
+  let direction: VoiceScrollDirection;
+  if (raw === "up" || raw === "down" || raw === "top" || raw === "bottom") {
     direction = raw;
   } else {
     direction = parseScrollDirection(raw);
@@ -52,8 +56,10 @@ export async function handleScrollPage(
     actionLine:
       direction === "top"
         ? "Scrolled to top"
-        : direction === "up"
-          ? "Scrolled up"
-          : "Scrolled down",
+        : direction === "bottom"
+          ? "Scrolled to bottom"
+          : direction === "up"
+            ? "Scrolled up"
+            : "Scrolled down",
   };
 }

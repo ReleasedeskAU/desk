@@ -1,0 +1,571 @@
+/**
+ * Pure release-status transition validation against a lifecycle config.
+ *
+ * Flexible unmet gates require a non-empty overrideReason. Required unmet
+ * gates hard-block with no override path. Runtime gate facts are supplied by
+ * the caller (PATCH loads them from the DB).
+ */
+import {
+  RELEASE_LIFECYCLE_GATE_CATALOG,
+  type ReleaseLifecycleGateType,
+} from "@/lib/release-lifecycle-gates";
+import type {
+  ReleaseLifecycleConfig,
+  ReleaseLifecycleEnforcement,
+  ReleaseLifecycleGateAttachment,
+  ReleaseLifecycleStatusConfig,
+  ReleaseLifecycleTransitionConfig,
+} from "@/lib/release-lifecycle-config";
+
+export const MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH = 3;
+
+/** Facts the gate evaluators can inspect without free-form queries. */
+export type ReleaseLifecycleGateFacts = {
+  owner: string | null | undefined;
+  releaseSize: string | null | undefined;
+  priority: string | null | undefined;
+  releaseDate: Date | string | null | undefined;
+  rollbackPlan: string | null | undefined;
+  /** Release notes — used for reactivation / rework / root-cause proxies. */
+  notes: string | null | undefined;
+  goLiveChecklistPercent: number | null | undefined;
+  /** Count of blockers still open for this release. */
+  openBlockerCount: number;
+  /** True when a UAT-purpose environment booking exists. */
+  hasUatBooking: boolean;
+  /** True when a deploy-purpose (or any active) deploy booking exists. */
+  hasDeployBooking: boolean;
+  /** True when all hard dependencies are Clear/Resolved. */
+  hardDependenciesMet: boolean;
+  /** True when required sign-off fields look complete. */
+  signoffsComplete: boolean;
+  /** Optional field bag for required_fields_set. */
+  fields?: Record<string, unknown>;
+};
+
+export type TransitionResult =
+  | {
+      allowed: true;
+      overridden: false;
+      fromKey: string;
+      toKey: string;
+      canonicalStatus: string;
+    }
+  | {
+      allowed: true;
+      overridden: true;
+      fromKey: string;
+      toKey: string;
+      canonicalStatus: string;
+      ruleIds: string[];
+      unmetReasons: string[];
+      overrideReason: string;
+    }
+  | {
+      allowed: false;
+      code:
+        | "UNKNOWN_STATUS"
+        | "ILLEGAL_TRANSITION"
+        | "TRANSITION_NEEDS_OVERRIDE"
+        | "TRANSITION_BLOCKED";
+      reason: string;
+      ruleIds?: string[];
+      unmetReasons?: string[];
+      fromKey?: string;
+      toKey?: string;
+    };
+
+function isPresent(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (value instanceof Date) return !Number.isNaN(value.getTime());
+  return true;
+}
+
+/**
+ * Resolve a client/DB status string to a config status (key or label, case-insensitive label).
+ * No legacy alias map — unmatched values return null.
+ */
+export function resolveLifecycleStatusRef(
+  config: ReleaseLifecycleConfig,
+  raw: string | null | undefined
+): ReleaseLifecycleStatusConfig | null {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  // Prefer enabled matches, but still resolve disabled statuses so releases
+  // already sitting on a toggled-off stage remain enforceable / displayable.
+  const byKeyEnabled = config.statuses.find((s) => s.key === trimmed && s.enabled);
+  if (byKeyEnabled) return byKeyEnabled;
+  const lower = trimmed.toLocaleLowerCase();
+  const byLabelEnabled = config.statuses.find(
+    (s) => s.enabled && s.label.trim().toLocaleLowerCase() === lower
+  );
+  if (byLabelEnabled) return byLabelEnabled;
+  const byKeyAny = config.statuses.find((s) => s.key === trimmed);
+  if (byKeyAny) return byKeyAny;
+  return (
+    config.statuses.find(
+      (s) => s.label.trim().toLocaleLowerCase() === lower
+    ) ?? null
+  );
+}
+
+function effectiveGateEnforcement(
+  transition: ReleaseLifecycleTransitionConfig,
+  gate: ReleaseLifecycleGateAttachment
+): ReleaseLifecycleEnforcement {
+  if (gate.enforcement === "inherit") return transition.enforcement;
+  return gate.enforcement;
+}
+
+type GateEval = {
+  gateType: ReleaseLifecycleGateType;
+  passed: boolean;
+  reason: string;
+  ruleIds: string[];
+  enforcement: ReleaseLifecycleEnforcement;
+};
+
+/**
+ * Evaluate one catalog gate against provided facts.
+ * Missing/partial reliability still evaluates best-effort — unmet when unproven.
+ */
+export function evaluateLifecycleGate(
+  gate: ReleaseLifecycleGateAttachment,
+  facts: ReleaseLifecycleGateFacts,
+  transition: ReleaseLifecycleTransitionConfig
+): GateEval {
+  const def = RELEASE_LIFECYCLE_GATE_CATALOG[gate.gateType];
+  const enforcement = effectiveGateEnforcement(transition, gate);
+  const base = {
+    gateType: gate.gateType,
+    ruleIds: [...def.ruleIds],
+    enforcement,
+  };
+
+  const fail = (reason: string): GateEval => ({
+    ...base,
+    passed: false,
+    reason,
+  });
+  const pass = (): GateEval => ({
+    ...base,
+    passed: true,
+    reason: def.label,
+  });
+
+  if (!gate.enabled) return pass();
+
+  switch (gate.gateType) {
+    case "owner_set":
+      return isPresent(facts.owner) ? pass() : fail("Owner is not set");
+    case "size_set":
+      return isPresent(facts.releaseSize) ? pass() : fail("Release size is not set");
+    case "priority_set":
+      return isPresent(facts.priority) ? pass() : fail("Priority is not set");
+    case "go_live_date_set":
+      return isPresent(facts.releaseDate)
+        ? pass()
+        : fail("Go-live date is not set");
+    case "rollback_plan_documented":
+      return isPresent(facts.rollbackPlan)
+        ? pass()
+        : fail("Rollback plan is not documented");
+    case "no_open_blockers":
+    case "blocker_resolved":
+      return facts.openBlockerCount === 0
+        ? pass()
+        : fail(
+            `${facts.openBlockerCount} open blocker${facts.openBlockerCount === 1 ? "" : "s"} remain`
+          );
+    case "uat_environment_booked":
+      return facts.hasUatBooking
+        ? pass()
+        : fail("No UAT environment booking on record");
+    case "environment_booked_for_deploy":
+      return facts.hasDeployBooking
+        ? pass()
+        : fail("No deployment environment booking on record");
+    case "hard_dependencies_met":
+      return facts.hardDependenciesMet
+        ? pass()
+        : fail("Hard dependencies are not all clear");
+    case "signoffs_complete":
+      return facts.signoffsComplete
+        ? pass()
+        : fail("Required sign-offs are incomplete");
+    case "pre_deployment_checklist_complete":
+      return typeof facts.goLiveChecklistPercent === "number" &&
+        facts.goLiveChecklistPercent >= 100
+        ? pass()
+        : fail("Pre-deployment checklist is not complete");
+    case "required_fields_set": {
+      const fields = gate.params?.fields;
+      if (!Array.isArray(fields) || fields.length === 0) {
+        return fail("required_fields_set has no approved fields configured");
+      }
+      const bag = facts.fields ?? {};
+      const missing = fields.filter(
+        (field) => typeof field === "string" && !isPresent(bag[field])
+      );
+      return missing.length === 0
+        ? pass()
+        : fail(`Required fields missing: ${missing.join(", ")}`);
+    }
+    case "scope_unchanged_since_cab":
+      // Data reliability: missing — cannot prove; treat unmet until snapshot exists.
+      return fail(
+        "Scope-unchanged-since-CAB cannot be verified yet (no CAB scope snapshot)"
+      );
+    case "post_deployment_validation_complete":
+      // Best-effort until a dedicated validation record exists.
+      return typeof facts.goLiveChecklistPercent === "number" &&
+        facts.goLiveChecklistPercent >= 100
+        ? pass()
+        : fail("Post-deployment validation is not complete (checklist must be 100%)");
+    case "root_cause_documented":
+      return isPresent(facts.notes) || isPresent(facts.rollbackPlan)
+        ? pass()
+        : fail("Root cause is not documented (add notes or a rollback plan)");
+    case "reactivation_decision_recorded":
+      return isPresent(facts.notes)
+        ? pass()
+        : fail("Reactivation decision is not recorded (add notes before leaving Deferred)");
+    case "rework_acknowledged":
+      return isPresent(facts.notes)
+        ? pass()
+        : fail("Rework is not acknowledged (add notes before returning to Planning)");
+    default:
+      return fail(`Unhandled gate type: ${String(gate.gateType)}`);
+  }
+}
+
+function findEnabledTransition(
+  config: ReleaseLifecycleConfig,
+  fromKey: string,
+  toKey: string,
+  isPreviousStatus: boolean
+): ReleaseLifecycleTransitionConfig | null {
+  return (
+    config.transitions.find((item) => {
+      if (!item.enabled || item.fromKey !== fromKey) return false;
+      if (isPreviousStatus) return item.isPreviousStatus;
+      return !item.isPreviousStatus && item.toKey === toKey;
+    }) ?? null
+  );
+}
+
+/**
+ * Validate a status transition against the supplied lifecycle config.
+ *
+ * @param args.fromStatus - Current Release.status (key or label)
+ * @param args.toStatus - Requested next status (key or label)
+ * @param args.previousStatus - Prior status for `__previous__` interrupt returns
+ * @param args.overrideReason - Required when Flexible gates are unmet
+ * @param args.gateFacts - Evaluated checklist facts for attached gates
+ */
+export function validateReleaseTransition(args: {
+  config: ReleaseLifecycleConfig;
+  fromStatus: string;
+  toStatus: string;
+  previousStatus?: string | null;
+  overrideReason?: string | null;
+  gateFacts: ReleaseLifecycleGateFacts;
+}): TransitionResult {
+  const from = resolveLifecycleStatusRef(args.config, args.fromStatus);
+  const toRequested = resolveLifecycleStatusRef(args.config, args.toStatus);
+
+  if (!from || !toRequested) {
+    const which = !from && !toRequested
+      ? `current ("${args.fromStatus}") and requested ("${args.toStatus}")`
+      : !from
+        ? `current ("${args.fromStatus}")`
+        : `requested ("${args.toStatus}")`;
+    return {
+      allowed: false,
+      code: "UNKNOWN_STATUS",
+      reason: `Status ${which} is not in the lifecycle configuration. No legacy alias map is applied — migrate labels or use a configured status key/label.`,
+    };
+  }
+
+  if (from.key === toRequested.key) {
+    return {
+      allowed: true,
+      overridden: false,
+      fromKey: from.key,
+      toKey: toRequested.key,
+      canonicalStatus: toRequested.label,
+    };
+  }
+
+  // Disabled targets stay in the catalog for history, but are not selectable.
+  if (!toRequested.enabled) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: `Status "${toRequested.label}" is turned off in the lifecycle configuration`,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  if (from.terminal) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: `Status "${from.label}" is terminal — no further transitions are allowed`,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  const previous = resolveLifecycleStatusRef(args.config, args.previousStatus);
+  const isPreviousReturn =
+    Boolean(previous) && previous!.key === toRequested.key;
+
+  const transition =
+    findEnabledTransition(
+      args.config,
+      from.key,
+      toRequested.key,
+      false
+    ) ??
+    (isPreviousReturn
+      ? findEnabledTransition(args.config, from.key, toRequested.key, true)
+      : null);
+
+  if (!transition) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: `Transition from "${from.label}" to "${toRequested.label}" is not allowed by the lifecycle configuration`,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  const enabledGates = transition.gates.filter((g) => g.enabled);
+  const evaluations = enabledGates.map((gate) =>
+    evaluateLifecycleGate(gate, args.gateFacts, transition)
+  );
+  const unmet = evaluations.filter((e) => !e.passed);
+  if (unmet.length === 0) {
+    return {
+      allowed: true,
+      overridden: false,
+      fromKey: from.key,
+      toKey: toRequested.key,
+      canonicalStatus: toRequested.label,
+    };
+  }
+
+  const requiredUnmet = unmet.filter((e) => e.enforcement === "required");
+  const flexibleUnmet = unmet.filter((e) => e.enforcement === "flexible");
+  const unmetReasons = unmet.map((e) => e.reason);
+  const ruleIds = [...new Set(unmet.flatMap((e) => e.ruleIds))];
+
+  if (requiredUnmet.length > 0) {
+    return {
+      allowed: false,
+      code: "TRANSITION_BLOCKED",
+      reason:
+        "Transition blocked by required gate(s); override is not permitted",
+      unmetReasons: requiredUnmet.map((e) => e.reason),
+      ruleIds: [...new Set(requiredUnmet.flatMap((e) => e.ruleIds))],
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  const reasonText = (args.overrideReason ?? "").trim();
+  if (reasonText.length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH) {
+    return {
+      allowed: false,
+      code: "TRANSITION_NEEDS_OVERRIDE",
+      reason:
+        "Transition has unmet flexible gate(s). Provide overrideReason (min 3 characters) to proceed.",
+      unmetReasons,
+      ruleIds,
+      fromKey: from.key,
+      toKey: toRequested.key,
+    };
+  }
+
+  return {
+    allowed: true,
+    overridden: true,
+    fromKey: from.key,
+    toKey: toRequested.key,
+    canonicalStatus: toRequested.label,
+    ruleIds,
+    unmetReasons,
+    overrideReason: reasonText,
+  };
+}
+
+/** Empty facts for unit tests / transitions with no gates. */
+export function emptyLifecycleGateFacts(
+  overrides: Partial<ReleaseLifecycleGateFacts> = {}
+): ReleaseLifecycleGateFacts {
+  return {
+    owner: null,
+    releaseSize: null,
+    priority: null,
+    releaseDate: null,
+    rollbackPlan: null,
+    notes: null,
+    goLiveChecklistPercent: null,
+    openBlockerCount: 0,
+    hasUatBooking: false,
+    hasDeployBooking: false,
+    hardDependenciesMet: true,
+    signoffsComplete: false,
+    fields: {},
+    ...overrides,
+  };
+}
+
+export type LegalNextGateView = {
+  gateType: ReleaseLifecycleGateType;
+  label: string;
+  passed: boolean;
+  enforcement: ReleaseLifecycleEnforcement;
+  reason: string;
+  /** Flexible unmet — warn / needs override. */
+  soft: boolean;
+  /** Required unmet — hard block. */
+  hard: boolean;
+};
+
+export type LegalNextStatusView = {
+  key: string;
+  label: string;
+  kind: ReleaseLifecycleStatusConfig["kind"];
+  isPreviousStatus: boolean;
+  transitionEnforcement: ReleaseLifecycleEnforcement;
+  gates: LegalNextGateView[];
+  outcome: "allowed" | "needs_override" | "blocked";
+};
+
+/**
+ * List legal next statuses from the current status with inline gate feedback.
+ * Does not consume overrideReason — used by the status picker preview.
+ */
+export function listLegalNextStatuses(args: {
+  config: ReleaseLifecycleConfig;
+  fromStatus: string;
+  previousStatus?: string | null;
+  gateFacts: ReleaseLifecycleGateFacts;
+}): LegalNextStatusView[] {
+  const from = resolveLifecycleStatusRef(args.config, args.fromStatus);
+  if (!from || from.terminal) return [];
+
+  const previous = resolveLifecycleStatusRef(args.config, args.previousStatus);
+  const statusByKey = new Map(args.config.statuses.map((s) => [s.key, s]));
+  const edges = args.config.transitions.filter(
+    (item) => item.enabled && item.fromKey === from.key
+  );
+
+  const results: LegalNextStatusView[] = [];
+  for (const edge of edges) {
+    let to: ReleaseLifecycleStatusConfig | null = null;
+    if (edge.isPreviousStatus) {
+      if (!previous || previous.key === from.key) continue;
+      to = previous;
+    } else if (edge.toKey) {
+      to = statusByKey.get(edge.toKey) ?? null;
+    }
+    if (!to || !to.enabled) continue;
+
+    const evaluations = edge.gates
+      .filter((g) => g.enabled)
+      .map((gate) => evaluateLifecycleGate(gate, args.gateFacts, edge));
+    const gates: LegalNextGateView[] = evaluations.map((e) => ({
+      gateType: e.gateType,
+      label: RELEASE_LIFECYCLE_GATE_CATALOG[e.gateType].label,
+      passed: e.passed,
+      enforcement: e.enforcement,
+      reason: e.reason,
+      soft: !e.passed && e.enforcement === "flexible",
+      hard: !e.passed && e.enforcement === "required",
+    }));
+    const hasHard = gates.some((g) => g.hard);
+    const hasSoft = gates.some((g) => g.soft);
+    results.push({
+      key: to.key,
+      label: to.label,
+      kind: to.kind,
+      isPreviousStatus: edge.isPreviousStatus,
+      transitionEnforcement: edge.enforcement,
+      gates,
+      outcome: hasHard ? "blocked" : hasSoft ? "needs_override" : "allowed",
+    });
+  }
+
+  return results.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Build the mainline rail + interrupt panel model for the detail stepper. */
+export function buildLifecycleStepperModel(args: {
+  config: ReleaseLifecycleConfig;
+  currentStatus: string;
+}): {
+  currentKey: string | null;
+  currentLabel: string;
+  mainline: {
+    key: string;
+    label: string;
+    state: "complete" | "current" | "upcoming";
+  }[];
+  interruptPanels: {
+    key: string;
+    label: string;
+    kind: ReleaseLifecycleStatusConfig["kind"];
+    active: boolean;
+  }[];
+} {
+  const current = resolveLifecycleStatusRef(args.config, args.currentStatus);
+  // Show every enabled status in configured order; keep the current stage
+  // visible even if it was toggled off after the release landed there.
+  const enabled = args.config.statuses
+    .filter((s) => s.enabled || (current != null && s.key === current.key))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+
+  const mainlineStatuses = enabled.filter(
+    (s) => s.kind === "mainline" || (s.kind === "terminal" && s.key === "closed")
+  );
+  const interruptStatuses = enabled.filter(
+    (s) =>
+      s.kind === "interrupt" ||
+      s.kind === "branch" ||
+      (s.kind === "terminal" && s.key !== "closed")
+  );
+
+  const currentIdx = current
+    ? mainlineStatuses.findIndex((s) => s.key === current.key)
+    : -1;
+  const onMainline = currentIdx >= 0;
+
+  return {
+    currentKey: current?.key ?? null,
+    currentLabel: current?.label ?? args.currentStatus,
+    mainline: mainlineStatuses.map((s, idx) => ({
+      key: s.key,
+      label: s.label,
+      state: !onMainline
+        ? ("upcoming" as const)
+        : idx < currentIdx
+          ? ("complete" as const)
+          : idx === currentIdx
+            ? ("current" as const)
+            : ("upcoming" as const),
+    })),
+    interruptPanels: interruptStatuses.map((s) => ({
+      key: s.key,
+      label: s.label,
+      kind: s.kind,
+      active: current?.key === s.key,
+    })),
+  };
+}

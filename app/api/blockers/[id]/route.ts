@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { patchBlockerSchema } from "@/lib/validation/blocker";
+import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
+import { deniedBlockerEditFields } from "@/lib/blocker-lifecycle-edit-policy";
+import { validateBlockerTransition } from "@/lib/blocker-lifecycle-transition";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -75,7 +78,7 @@ export async function GET(_req: Request, { params }: Params) {
  * rejected by patchBlockerSchema.strict() if present in the body.
  */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -87,6 +90,57 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  // Lifecycle: edit policy + status transitions (config-driven).
+  try {
+    const { config } = await loadBlockerLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
+    const { mode, denied } = deniedBlockerEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This blocker is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+    if (body.status !== undefined && String(body.status) !== existing.status) {
+      const transition = validateBlockerTransition({
+        config,
+        fromStatus: existing.status,
+        toStatus: String(body.status),
+        overrideReason: body.overrideReason ?? null,
+      });
+      if (!transition.allowed) {
+        return NextResponse.json(
+          {
+            error: transition.reason,
+            code: transition.code,
+            transition,
+          },
+          { status: 422 }
+        );
+      }
+      // Persist the lifecycle-canonical label (not the raw client string).
+      body.status = transition.canonicalStatus;
+    }
+  } catch (err) {
+    console.error("[blockers PATCH] lifecycle enforcement failed", {
+      blockerId: existing.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Blocker lifecycle validation is temporarily unavailable" },
+      { status: 500 }
+    );
   }
 
   const raisedDate = parseDate(body.raisedDate);

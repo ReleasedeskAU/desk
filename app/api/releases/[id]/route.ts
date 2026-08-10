@@ -7,6 +7,12 @@ import {
   summarizeReleaseFieldEdits,
 } from "@/lib/release-audit";
 import { normalizeProgramProject } from "@/lib/release-id";
+import { deniedReleaseEditFields } from "@/lib/release-lifecycle-edit-policy";
+import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
+import { enforceReleaseStatusChange } from "@/lib/release-lifecycle-status-patch";
+import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
+import { enforceSignoffFieldChanges } from "@/lib/signoff-lifecycle-enforce";
+import { SIGNOFF_RELEASE_FIELDS } from "@/lib/signoff-lifecycle-config";
 
 const releaseInclude = {
   department: true,
@@ -65,12 +71,138 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const realId = existing.id;
 
+  // Editable? column — deny non-status field writes based on current status.
+  try {
+    const { config } = await resolveLifecycleConfigForRelease(
+      user!.id,
+      existing.lifecycleConfigVersionId
+    );
+    const proposedKeys = Object.keys(body).filter((key) => body[key] !== undefined);
+    const { mode, denied } = deniedReleaseEditFields(
+      config,
+      existing.status,
+      proposedKeys
+    );
+    if (denied.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This release is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          code: "EDIT_POLICY_DENIED",
+          mode,
+          denied,
+        },
+        { status: 409 }
+      );
+    }
+  } catch (err) {
+    console.error("[releases PATCH] edit policy resolve failed", {
+      releaseId: realId,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Release edit policy is temporarily unavailable" },
+      { status: 500 }
+    );
+  }
+
   const data: Record<string, unknown> = {};
-  for (const key of ["name", "owner", "status", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
+  for (const key of ["name", "owner", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
     if (body[key] !== undefined) data[key] = body[key];
   }
   if (body.programProject !== undefined) {
     data.programProject = normalizeProgramProject(body.programProject) ?? "N/A";
+  }
+
+  // Sign-off checklist fields — config-driven transitions + immutability.
+  const signoffKeysInBody = SIGNOFF_RELEASE_FIELDS.filter((key) => body[key] !== undefined);
+  if (signoffKeysInBody.length > 0) {
+    try {
+      const { config: signoffConfig } = await loadSignoffLifecycleConfig(user!.id);
+      const signoffResult = enforceSignoffFieldChanges({
+        config: signoffConfig,
+        existing: {
+          devSignoff: existing.devSignoff,
+          testSignoff: existing.testSignoff,
+          uatSignoff: existing.uatSignoff,
+          securityClearance: existing.securityClearance,
+          dressRehearsal: existing.dressRehearsal,
+          trainingStatus: existing.trainingStatus,
+          supportBriefed: existing.supportBriefed,
+        },
+        body,
+      });
+      if (!signoffResult.ok) {
+        return NextResponse.json(signoffResult.body, {
+          status: signoffResult.httpStatus,
+        });
+      }
+      for (const [key, value] of Object.entries(signoffResult.canonical)) {
+        data[key] = value;
+      }
+    } catch (err) {
+      console.error("[releases PATCH] sign-off lifecycle enforcement failed", {
+        releaseId: realId,
+        message: err instanceof Error ? err.message : "unknown",
+      });
+      return NextResponse.json(
+        { error: "Sign-off lifecycle validation is temporarily unavailable" },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Status changes go through lifecycle enforcement (pinned or latest-unpinned config).
+  let statusOverrideAudit: string | null = null;
+  if (body.status !== undefined) {
+    const requestedStatus = String(body.status);
+    if (requestedStatus !== existing.status) {
+      let enforcement;
+      try {
+        enforcement = await enforceReleaseStatusChange({
+          clerkUserId: user!.id,
+          release: {
+            id: existing.id,
+            releaseCode: existing.releaseCode,
+            status: existing.status,
+            owner: existing.owner,
+            releaseSize: existing.releaseSize,
+            priority: existing.priority,
+            releaseDate: existing.releaseDate,
+            rollbackPlan: existing.rollbackPlan,
+            notes: existing.notes,
+            goLiveChecklistPercent: existing.goLiveChecklistPercent,
+            lifecycleConfigVersionId: existing.lifecycleConfigVersionId,
+            devSignoff: existing.devSignoff,
+            testSignoff: existing.testSignoff,
+            uatSignoff: existing.uatSignoff,
+            securityClearance: existing.securityClearance,
+          },
+          requestedStatus,
+          overrideReason:
+            typeof body.overrideReason === "string" ? body.overrideReason : null,
+          previousStatusHint:
+            typeof body.previousStatus === "string" ? body.previousStatus : null,
+        });
+      } catch (err) {
+        console.error("[releases PATCH] lifecycle enforcement failed", {
+          releaseId: realId,
+          message: err instanceof Error ? err.message : "unknown",
+        });
+        return NextResponse.json(
+          { error: "Release status validation is temporarily unavailable" },
+          { status: 500 }
+        );
+      }
+      if (!enforcement.ok) {
+        return NextResponse.json(enforcement.body, {
+          status: enforcement.httpStatus,
+        });
+      }
+      data.status = enforcement.canonicalStatus;
+      if (enforcement.result.overridden) {
+        statusOverrideAudit = `overrideReason=${enforcement.result.overrideReason}; unmet=${enforcement.result.unmetReasons.join("|")}`;
+      }
+    }
   }
 
   for (const key of [
@@ -202,14 +334,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       !body.dependsOnReleaseIds &&
       !body.stakeholderIds;
 
+    const statusDetail = statusOnly
+      ? `Status changed to ${String(data.status)}${
+          statusOverrideAudit ? ` (${statusOverrideAudit})` : ""
+        }`
+      : [
+          ...auditParts,
+          ...(statusOverrideAudit
+            ? [`Status override: ${statusOverrideAudit}`]
+            : []),
+        ].join(" · ");
+
     await prisma.releaseAuditEvent.create({
       data: {
         releaseId: realId,
         action: statusOnly ? "status_change" : "edit",
         actor: auditActorName(user!),
-        detail: statusOnly
-          ? `Status changed to ${String(data.status)}`
-          : auditParts.join(" · "),
+        detail: statusDetail,
       },
     });
   }

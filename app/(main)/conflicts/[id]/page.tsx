@@ -2,34 +2,31 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Calendar,
-  CalendarCheck,
-  FileText,
-  List,
-  Package,
-  Server,
-  ShieldAlert,
-  Zap,
-} from "lucide-react";
+import { Calendar, CalendarCheck, FileText, List, Package, Server } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
+  EmptyHint,
   StatusChip,
-  HeroStatusRow,
   TintedCallout,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { conflictWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type ConflictDetail = {
   id: string;
@@ -46,6 +43,17 @@ type ConflictDetail = {
   conflictingEnvironment: string;
   environmentConflictType: string;
   notes: string | null;
+  /** Env bookings tagged with this conflict code — the rows that actually clash. */
+  relatedBookings?: RelatedBooking[];
+};
+
+type RelatedBooking = {
+  id: string;
+  bookingCode: string | null;
+  application: string;
+  department: string;
+  conflictFlag: boolean;
+  release: { id: string; releaseCode: string } | null;
 };
 
 type ConflictOption = { id: string; conflictCode: string };
@@ -76,7 +84,12 @@ const CONFLICT_FIELD_LABELS: Partial<Record<keyof ConflictDraft, string>> = {
   notes: "Notes",
 };
 
-const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"].map((v) => ({
+const STATUS_OPTIONS = [
+  "Detected",
+  "Under Review",
+  "Resolved",
+  "Dismissed",
+].map((v) => ({
   value: v,
   label: v,
 }));
@@ -102,15 +115,6 @@ function statusTone(status: string): ChipTone {
   return "neutral";
 }
 
-/** Rough resolution progress from status for the hero ring. */
-function statusPercent(status: string): number {
-  const s = status.toLowerCase();
-  if (s.includes("closed") || s.includes("resolv")) return 100;
-  if (s.includes("progress")) return 55;
-  if (s.includes("open")) return 20;
-  return 35;
-}
-
 function toDraft(row: ConflictDetail): ConflictDraft {
   return {
     status: row.status,
@@ -134,6 +138,9 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, me] = await Promise.all([
@@ -193,6 +200,30 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * The API re-validates the status and enforces the editor role — this button
+   * is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/conflicts/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: step.status }),
+      label: "conflict-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this conflict to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -214,6 +245,81 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Conflict not found.</p>;
 
   const openish = !/resolv|closed/i.test(v.status);
+  const workflow = conflictWorkflow(v.status);
+  const bookings = row.relatedBookings ?? [];
+  const flaggedBookings = bookings.filter((b) => b.conflictFlag);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "p1-open",
+      when: openish && priorityTone(v.priority) === "bad",
+      tone: "critical",
+      label: `${v.priority} conflict still open`,
+      detail: "Two releases are competing for the same environment window at top priority.",
+    },
+    {
+      id: "flagged-bookings",
+      when: openish && flaggedBookings.length > 0,
+      tone: "critical",
+      label: `${flaggedBookings.length} booking${flaggedBookings.length === 1 ? "" : "s"} flagged as clashing`,
+      detail: "These environment bookings overlap and one of them has to move.",
+    },
+    {
+      id: "unassigned",
+      when: openish && !v.assignedTo.trim(),
+      tone: "warning",
+      label: "No owner assigned",
+      detail: "Nobody is coordinating the reschedule between the two releases.",
+    },
+    {
+      id: "no-notes",
+      when: openish && !v.notes.trim(),
+      tone: "warning",
+      label: "No resolution notes",
+      detail: "Nothing is recorded about how the two teams plan to share the window.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Priority",
+      value: v.priority || "—",
+      tone: chipToneToFactTone(priorityTone(v.priority)),
+      hint: "How urgently this clash needs clearing. P1 blocks both releases.",
+    },
+    {
+      label: "Bookings",
+      value: String(bookings.length),
+      tone: flaggedBookings.length > 0 ? "bad" : "neutral",
+      hint: "Environment bookings tagged with this conflict code.",
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    {
+      label: "Release 1",
+      value: v.release1Code,
+      href: row.release1 ? `/releases/${row.release1.id}` : undefined,
+      hint: row.release1?.name,
+    },
+    {
+      label: "Release 2",
+      value: v.release2Code,
+      href: row.release2 ? `/releases/${row.release2.id}` : undefined,
+      hint: row.release2?.name,
+    },
+    { label: "Environment", value: v.conflictingEnvironment || "—" },
+    { label: "Clash type", value: v.environmentConflictType || "—" },
+  ];
 
   return (
     <EditableDetailShell
@@ -351,68 +457,29 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: ShieldAlert,
-          label: "Priority",
-          value: v.priority,
-          tone: priorityTone(v.priority) === "bad" ? "rose" : priorityTone(v.priority) === "warn" ? "amber" : "indigo",
+      <DetailDecisionHeader
+        identity={[
+          { label: "Assigned to", value: v.assignedTo || "Unassigned" },
+          { label: "Applications", value: v.application || "—" },
+          { label: "Departments", value: v.department || "—" },
+        ]}
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
+          caption: openish
+            ? `${v.release1Code} vs ${v.release2Code}`
+            : "Window clash cleared",
         }}
-        secondary={{
-          icon: Zap,
-          label: "Status",
-          value: v.status,
-        }}
-        metric={{
-          icon: AlertTriangle,
-          label: "Resolution",
-          percent: statusPercent(v.status),
-          caption: openish ? "still needs clearing" : "cleared / closed",
-          tone: openish ? "amber" : "emerald",
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="No outstanding clash between these two releases"
+        timing={[]}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={AlertTriangle}
-        tone="rose"
-        title="Conflict status"
-        description="Anything actively blocking these releases from sharing the same env window."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={openish ? "⚠️ CONFLICT OPEN" : "✓ CLEARED"}
-            tone={openish ? "bad" : "good"}
-          />
-          <span className="text-[12px] text-slate-500 dark:text-white/50">between</span>
-          <span className="font-mono text-[12px] font-bold text-indigo-600 dark:text-indigo-300">
-            {v.release1Code}
-          </span>
-          <span className="text-[12px] text-slate-400">&</span>
-          <span className="font-mono text-[12px] font-bold text-indigo-600 dark:text-indigo-300">
-            {v.release2Code}
-          </span>
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Conflict ID" value={row.conflictCode} />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
-          />
-          <EditableField
-            label="Priority"
-            value={v.priority}
-            editing={false}
-            display={<StatusChip label={v.priority} tone={priorityTone(v.priority)} />}
-          />
-          <EditableField
-            label="Assigned To"
-            value={v.assignedTo}
-            editing={false}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={Package}
@@ -501,6 +568,46 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
             editing={false}
           />
         </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={CalendarCheck}
+        tone="violet"
+        title="Clashing bookings"
+        description="Environment bookings tagged with this conflict — the rows that have to move or be shared."
+      >
+        {bookings.length ? (
+          <ul className="space-y-2">
+            {bookings.map((booking) => (
+              <li
+                key={booking.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5"
+              >
+                <div className="min-w-0">
+                  <p className="font-mono text-[12.5px] font-bold text-slate-700 dark:text-white/80">
+                    {booking.bookingCode ?? "—"}
+                  </p>
+                  <p className="text-[12px] text-slate-500 dark:text-white/55">
+                    {booking.application} · {booking.department}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {booking.release ? (
+                    <ProgressLink
+                      href={`/releases/${booking.release.id}`}
+                      className="font-mono text-[12.5px] font-semibold text-indigo-600 hover:underline dark:text-indigo-300"
+                    >
+                      {booking.release.releaseCode}
+                    </ProgressLink>
+                  ) : null}
+                  {booking.conflictFlag ? <StatusChip label="Clashing" tone="bad" /> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyHint>No environment bookings are tagged with this conflict code.</EmptyHint>
+        )}
       </DetailSection>
 
       <DetailSection

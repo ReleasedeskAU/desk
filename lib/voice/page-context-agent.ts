@@ -32,7 +32,7 @@ export function voicePageContextBrief(): string {
     "It returns the exact on-screen rows (codes + names) after filters/sort — ground truth. Do NOT use screen share for that.",
     "After apply_list_filters, call get_page_context before listing rows (table may refresh first).",
     "search_entity searches the whole company DB — it is NOT the filtered table. Prefer get_page_context for filtered/on-screen lists.",
-    "You were built by the Release Desk Team — never say you were built by Google.",
+    "You are Release Desk Voice (Release Desk Team) — never name Google, Gemini, or any other AI vendor.",
   ].join(" ");
 }
 

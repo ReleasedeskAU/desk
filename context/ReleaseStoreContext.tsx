@@ -18,7 +18,6 @@ import {
   getMergedHistory,
   isAgentPaused,
   unreadCount,
-  type QuickStartSeedId,
   type ReleaseStoreState,
 } from "@/lib/release-store";
 import type { DeploymentLiveState, HistoryEntry, Release, ReleaseDecision } from "@/lib/types";
@@ -45,8 +44,6 @@ interface ReleaseStoreContextValue {
   dismissNotification: (id: string) => void;
   dismissAllNotifications: () => void;
   unreadNotifications: number;
-  applySeed: (seedId: QuickStartSeedId) => void;
-  resetDemoState: () => void;
   setAgentPaused: (agentId: string, paused: boolean) => void;
   isAgentPaused: (agentId: string) => boolean;
   getGlobalHistory: () => ReturnType<typeof getGlobalHistory>;
@@ -178,16 +175,6 @@ export function ReleaseStoreProvider({ children }: { children: ReactNode }) {
         void afterMutation(() => postJson("/api/notifications/read-all"));
       },
       unreadNotifications: unreadCount(state),
-      applySeed: (seedId) => {
-        void afterMutation(() =>
-          seedId === "reset"
-            ? postJson("/api/quick-start/reset")
-            : postJson(`/api/quick-start/${seedId}`)
-        );
-      },
-      resetDemoState: () => {
-        void afterMutation(() => postJson("/api/quick-start/reset"));
-      },
       setAgentPaused: (agentId, paused) => {
         void afterMutation(() => postJson(`/api/agents/${agentId}/pause`, { paused }));
       },

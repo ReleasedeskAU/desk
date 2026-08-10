@@ -45,19 +45,13 @@ export function resolveVoiceNavTarget(
 ): { path: string; label: string; section: string } | null {
   const hit = resolveNavTarget(raw);
   if (!hit) return null;
-  // Keep prior behavior: unknown non-detail chatter → null (resolveNavTarget
-  // may return weak detail-shaped paths for allowlisted recovery in navigate_to).
-  if (
-    hit.kind === "detail" &&
-    !hit.href.startsWith("/") // unreachable; defensive
-  ) {
-    return null;
-  }
-  // For bare phrases that did not match, resolveNavTarget returns null.
-  // For path-shaped unknown URLs it returns kind detail — navigate_to still
-  // allowlists those. Spoken unknown chatter stays null.
+  // Spoken unknown chatter stays null; path-shaped unknowns may pass through
+  // as detail for navigate_to allowlist recovery.
   if (!raw.trim().startsWith("/") && !/^https?:\/\//i.test(raw.trim())) {
-    if (hit.kind === "detail" && !listNavRegistry().some((e) => e.href === hit.href)) {
+    if (
+      hit.kind === "detail" &&
+      !listNavRegistry().some((e) => e.href === hit.href)
+    ) {
       return null;
     }
   }

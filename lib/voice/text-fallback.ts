@@ -135,10 +135,11 @@ export function parseVoiceTextCommand(
   }
 
   // Scroll main content
-  if (/^(?:scroll(?:\s+(?:the\s+)?page)?(?:\s+(up|down|to\s+top|top))?|page\s+(?:up|down))\b/i.test(lower)) {
+  if (/^(?:scroll(?:\s+(?:the\s+)?page)?(?:\s+(up|down|to\s+top|top|to\s+bottom|bottom))?|page\s+(?:up|down))\b/i.test(lower)) {
     let direction = "down";
     if (/\bup\b/i.test(lower) && !/\bdown\b/i.test(lower)) direction = "up";
     if (/\btop\b/i.test(lower)) direction = "top";
+    if (/\bbottom\b/i.test(lower)) direction = "bottom";
     return {
       ok: true,
       calls: [
