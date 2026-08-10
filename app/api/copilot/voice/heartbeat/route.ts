@@ -10,6 +10,7 @@ import {
   recordVoiceSessionHeartbeat,
   VOICE_USAGE_HEARTBEAT_MS,
 } from "@/lib/voice/usage";
+import { checkVoiceUserAccess } from "@/lib/voice/policy";
 
 const bodySchema = z
   .object({
@@ -36,5 +37,26 @@ export async function POST(req: Request) {
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   const usage = recordVoiceSessionHeartbeat(user!.id, parsed.data.deltaMs);
-  return NextResponse.json({ ok: true, usage });
+
+  let forceDisconnect = false;
+  let accessCode: string | undefined;
+  let accessReason: string | undefined;
+  try {
+    const access = await checkVoiceUserAccess(user!.id);
+    if (!access.allowed) {
+      forceDisconnect = true;
+      accessCode = access.code;
+      accessReason = access.reason;
+    }
+  } catch {
+    // Pre-migration / DB blip — keep heartbeat telemetry flowing.
+  }
+
+  return NextResponse.json({
+    ok: true,
+    usage,
+    forceDisconnect,
+    code: accessCode,
+    reason: accessReason,
+  });
 }

@@ -1193,14 +1193,35 @@ export class VoiceLiveClient {
     }, remaining);
 
     this.heartbeatTimer = setInterval(() => {
-      void fetch("/api/copilot/voice/heartbeat", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deltaMs: VOICE_USAGE_HEARTBEAT_MS }),
-      }).catch(() => {
-        /* best-effort usage; ignore network blips */
-      });
+      void (async () => {
+        try {
+          const res = await fetch("/api/copilot/voice/heartbeat", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deltaMs: VOICE_USAGE_HEARTBEAT_MS }),
+          });
+          const json = (await res.json().catch(() => ({}))) as {
+            forceDisconnect?: boolean;
+            reason?: string;
+          };
+          if (json.forceDisconnect) {
+            this.intentionalClose = true;
+            this.clearWatchdogs();
+            this.teardownSocketOnly();
+            this.teardownAudio();
+            this.hardFail(
+              json.reason ??
+                "Voice access ended — daily limit reached or account disabled",
+              json.reason?.toLowerCase().includes("ban")
+                ? "session_denied"
+                : "session_ceiling"
+            );
+          }
+        } catch {
+          /* best-effort usage; ignore network blips */
+        }
+      })();
     }, VOICE_USAGE_HEARTBEAT_MS);
   }
 

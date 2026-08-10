@@ -84,6 +84,7 @@ const VOICE_NAV_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
   "/history": ["history", "history log"],
   "/connectors": ["connectors"],
   "/admin/reference-data": ["reference data"],
+  "/admin-voice": ["voice admin", "voice usage admin", "admin voice"],
   "/settings": ["settings", "preferences"],
 };
 

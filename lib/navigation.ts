@@ -33,6 +33,7 @@ import {
   Bell,
   HeartPulse,
   CalendarClock,
+  Mic,
 } from "lucide-react";
 import { NAV_DATA_SECTIONS, type NavDataItem } from "@/lib/nav-data";
 
@@ -82,6 +83,7 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/history": History,
   "/connectors": Plug,
   "/admin/reference-data": Database,
+  "/admin-voice": Mic,
   "/settings": Settings,
 };
 

@@ -371,6 +371,18 @@ const PAGES: readonly VoicePageExplain[] = [
     nextSteps: ["Settings", "Connectors"],
   },
   {
+    path: "/admin-voice",
+    title: "Voice Admin",
+    purpose:
+      "Super-admin console for Release Desk Voice — per-user usage, daily minute limits, and bans. Restricted to the voice super-admin mailbox.",
+    canDo: [
+      "Review today’s voice minutes and sessions",
+      "Set or clear a daily minutes limit",
+      "Ban or unban voice for a user",
+    ],
+    nextSteps: ["Settings → Integrations", "Users"],
+  },
+  {
     path: "/settings",
     title: "Settings",
     purpose:
