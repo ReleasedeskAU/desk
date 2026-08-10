@@ -38,6 +38,7 @@ type AdminVoiceResponse = {
     maxSessionsPerUserPerDay: number;
   };
   error?: string;
+  detail?: string;
 };
 
 type PolicyPatch = {
@@ -80,7 +81,8 @@ function AdminVoicePageInner() {
       const res = await fetch("/api/admin/voice", { credentials: "same-origin" });
       const json = (await res.json().catch(() => ({}))) as AdminVoiceResponse;
       if (!res.ok) {
-        setError(json.error ?? `Failed to load (${res.status})`);
+        const detail = json.detail ? ` — ${json.detail}` : "";
+        setError(`${json.error ?? `Failed to load (${res.status})`}${detail}`);
         return;
       }
       setData(json);

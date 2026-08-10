@@ -61,14 +61,11 @@ export async function GET() {
       policies = await listVoiceUserPolicies();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Policy load failed";
-      // Table/columns missing on this DATABASE_URL — page still loads with empty list.
-      if (isVoicePolicyStorageError(message)) {
-        policyWarning =
-          "VoiceUserPolicy table is not available on this database — run prisma migrate deploy for voice_user_policy";
-        console.error("admin.voice.list.policy", message);
-      } else {
-        throw err;
-      }
+      // Never hard-fail the admin page for policy/DB blips — show empty + warning.
+      policyWarning = isVoicePolicyStorageError(message)
+        ? "VoiceUserPolicy table is not available on this database — run prisma migrate deploy for voice_user_policy"
+        : `Could not load voice policies (${message.slice(0, 160)})`;
+      console.error("admin.voice.list.policy", message);
     }
 
     const usage = listVoiceUsageToday();
@@ -176,18 +173,15 @@ export async function GET() {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load voice admin";
     console.error("admin.voice.list", message);
-    if (isVoicePolicyStorageError(message)) {
-      return NextResponse.json(
-        {
-          error:
-            "VoiceUserPolicy table is not available — run prisma migrate deploy (voice_user_policy)",
-        },
-        { status: 503 }
-      );
-    }
+    // Super-admin-only endpoint: surface a short detail so Production debugging is possible.
     return NextResponse.json(
-      { error: "Failed to load voice admin data" },
-      { status: 500 }
+      {
+        error: isVoicePolicyStorageError(message)
+          ? "VoiceUserPolicy table is not available — run prisma migrate deploy (voice_user_policy)"
+          : "Failed to load voice admin data",
+        detail: message.slice(0, 240),
+      },
+      { status: isVoicePolicyStorageError(message) ? 503 : 500 }
     );
   }
 }
