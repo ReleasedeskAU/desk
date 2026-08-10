@@ -53,12 +53,18 @@ function mapPolicy(row: {
   };
 }
 
+/** Minimal policy fields needed to resolve the daily minutes cap. */
+export type VoiceMinutesPolicyInput = {
+  unlimitedUsage?: boolean;
+  dailyMinutesLimit?: number | null;
+} | null;
+
 /**
  * Effective daily minutes cap for a policy.
  * @returns null when unlimited; otherwise a non-negative minute count.
  */
 export function effectiveDailyMinutes(
-  policy: Pick<VoicePolicyRow, "unlimitedUsage" | "dailyMinutesLimit"> | null
+  policy: VoiceMinutesPolicyInput
 ): number | null {
   if (policy?.unlimitedUsage) return null;
   if (
@@ -209,7 +215,10 @@ export function evaluateVoiceAccess(
   const banned = policy?.banned ?? false;
   const unlimitedUsage = policy?.unlimitedUsage ?? false;
   const dailyMinutesLimit = policy?.dailyMinutesLimit ?? null;
-  const effective = effectiveDailyMinutes(policy);
+  const effective = effectiveDailyMinutes({
+    unlimitedUsage,
+    dailyMinutesLimit,
+  });
   const approvalRequested = Boolean(policy?.minutesApprovalRequestedAt);
 
   if (banned) {
