@@ -1,12 +1,15 @@
 /**
  * Wipe and regenerate the vendored Prisma client before Next.js typecheck/build.
  * Vercel build cache can otherwise leave an outdated generated client (missing
- * models like Service / UserRiskEngineConfig) that fails `next build` typecheck
- * even when prisma generate appears to succeed.
+ * models) that fails `next build` typecheck or runtime (`undefined.findMany`).
+ *
+ * With `npm install --install-links`, `@releasedesk/database` is often a *copy*
+ * under node_modules — regenerating only vendor/ leaves that copy stale. After
+ * generate we sync vendor/generated → node_modules/@releasedesk/database/generated.
  *
  * Usage: node scripts/clean-and-generate-prisma.mjs
  */
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, readFileSync, cpSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -21,6 +24,11 @@ const schemaPath = resolve(
   sentinelRoot,
   "vendor/releasedesk-database/prisma/schema.prisma"
 );
+const nmPackageDir = resolve(
+  sentinelRoot,
+  "node_modules/@releasedesk/database"
+);
+const nmGeneratedDir = resolve(nmPackageDir, "generated");
 
 if (!existsSync(schemaPath)) {
   console.error("clean-and-generate-prisma: missing", schemaPath);
@@ -65,8 +73,7 @@ if (!existsSync(serviceMarker)) {
   process.exit(1);
 }
 
-// Fail fast if the new Copilot models are missing from types (stale/wrong schema).
-const { readFileSync } = await import("node:fs");
+// Fail fast if required models are missing from types (stale/wrong schema).
 const dts = readFileSync(serviceMarker, "utf8");
 for (const needle of [
   "get service()",
@@ -75,6 +82,7 @@ for (const needle of [
   "get userReleaseLifecycleTransition()",
   "get userReleaseLifecycleGate()",
   "get deploymentBlocker()",
+  "get voiceUserPolicy()",
 ]) {
   if (!dts.includes(needle)) {
     console.error(
@@ -84,6 +92,21 @@ for (const needle of [
   }
 }
 
+// Keep runtime resolution (@releasedesk/database → node_modules copy) in sync.
+if (existsSync(nmPackageDir)) {
+  console.log(
+    "clean-and-generate-prisma: syncing generated client → node_modules/@releasedesk/database"
+  );
+  if (existsSync(nmGeneratedDir)) {
+    rmSync(nmGeneratedDir, { recursive: true, force: true });
+  }
+  cpSync(generatedDir, nmGeneratedDir, { recursive: true });
+} else {
+  console.warn(
+    "clean-and-generate-prisma: node_modules/@releasedesk/database missing — skip sync"
+  );
+}
+
 console.log(
-  "clean-and-generate-prisma: OK (Service + risk/lifecycle config models present)"
+  "clean-and-generate-prisma: OK (Service + risk/lifecycle + VoiceUserPolicy present)"
 );

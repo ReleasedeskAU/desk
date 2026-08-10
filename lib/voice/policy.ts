@@ -77,6 +77,37 @@ export function effectiveDailyMinutes(
   return VOICE_DEFAULT_DAILY_MINUTES;
 }
 
+type VoiceUserPolicyRecord = Parameters<typeof mapPolicy>[0];
+
+type VoiceUserPolicyDelegate = {
+  findUnique: (args: {
+    where: { clerkUserId: string };
+  }) => Promise<VoiceUserPolicyRecord | null>;
+  findMany: (args: {
+    orderBy: { updatedAt: "desc" };
+  }) => Promise<VoiceUserPolicyRecord[]>;
+  upsert: (args: {
+    where: { clerkUserId: string };
+    create: Record<string, unknown>;
+    update: Record<string, unknown>;
+  }) => Promise<VoiceUserPolicyRecord>;
+};
+
+/**
+ * Prisma delegate for VoiceUserPolicy — throws a clear error if the generated
+ * client is stale (vendor/ regenerated but node_modules/@releasedesk/database not synced).
+ */
+function voiceUserPolicyDelegate(): VoiceUserPolicyDelegate {
+  const delegate = (prisma as unknown as { voiceUserPolicy?: VoiceUserPolicyDelegate })
+    .voiceUserPolicy;
+  if (!delegate?.findMany || !delegate?.findUnique || !delegate?.upsert) {
+    throw new Error(
+      "VoiceUserPolicy model missing from Prisma client — regenerate @releasedesk/database (clean-and-generate-prisma)"
+    );
+  }
+  return delegate;
+}
+
 /**
  * Load a single policy by Clerk user id.
  * @param clerkUserId - Clerk user id.
@@ -84,7 +115,7 @@ export function effectiveDailyMinutes(
 export async function getVoiceUserPolicy(
   clerkUserId: string
 ): Promise<VoicePolicyRow | null> {
-  const row = await prisma.voiceUserPolicy.findUnique({
+  const row = await voiceUserPolicyDelegate().findUnique({
     where: { clerkUserId },
   });
   if (!row) return null;
@@ -95,7 +126,7 @@ export async function getVoiceUserPolicy(
  * List all stored voice policies.
  */
 export async function listVoiceUserPolicies(): Promise<VoicePolicyRow[]> {
-  const rows = await prisma.voiceUserPolicy.findMany({
+  const rows = await voiceUserPolicyDelegate().findMany({
     orderBy: { updatedAt: "desc" },
   });
   return rows.map(mapPolicy);
@@ -117,7 +148,7 @@ export async function upsertVoiceUserPolicy(
     clearMinutesApproval?: boolean;
   }
 ): Promise<VoicePolicyRow> {
-  const row = await prisma.voiceUserPolicy.upsert({
+  const row = await voiceUserPolicyDelegate().upsert({
     where: { clerkUserId },
     create: {
       clerkUserId,
@@ -156,7 +187,7 @@ export async function touchVoiceUserPolicyEmail(
 ): Promise<void> {
   const trimmed = (email ?? "").trim();
   if (!trimmed) return;
-  await prisma.voiceUserPolicy.upsert({
+  await voiceUserPolicyDelegate().upsert({
     where: { clerkUserId },
     create: {
       clerkUserId,
@@ -180,7 +211,7 @@ export async function requestVoiceMinutesApproval(
   email: string | null | undefined
 ): Promise<VoicePolicyRow> {
   const trimmed = (email ?? "").trim() || null;
-  const row = await prisma.voiceUserPolicy.upsert({
+  const row = await voiceUserPolicyDelegate().upsert({
     where: { clerkUserId },
     create: {
       clerkUserId,
