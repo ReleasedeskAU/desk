@@ -14,22 +14,27 @@ import {
 /**
  * Keep voice [APP_CONTEXT] in sync with the rows shown on this list page.
  * @param page - Pathname (e.g. /releases).
- * @param entityType - Canonical search entity kind.
- * @param rows - Visible rows in display order.
+ * @param entityType - Canonical search entity kind (or null for generic tables).
+ * @param rows - Full filtered rows in display order (sample is capped inside the store).
  * @param note - Optional filter/sort hint.
+ * @param totalCount - Optional override when rows is already a sample; defaults to rows.length.
  */
 export function useVoiceListContext(
   page: string,
-  entityType: SearchEntityType,
+  entityType: SearchEntityType | null,
   rows: VoiceVisibleRow[],
-  note?: string
+  note?: string,
+  totalCount?: number
 ): void {
   const signature = rows.map((r) => `${r.code}:${r.path}`).join("|");
+  const resolvedTotal =
+    typeof totalCount === "number" ? totalCount : rows.length;
   useEffect(() => {
     setVoiceAppContext({
       page,
       entityType,
       visible: rows,
+      totalCount: resolvedTotal,
       note,
     });
     return () => {
@@ -37,5 +42,5 @@ export function useVoiceListContext(
     };
     // signature stands in for rows content; rows read from latest closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
-  }, [page, entityType, note, signature]);
+  }, [page, entityType, note, signature, resolvedTotal]);
 }

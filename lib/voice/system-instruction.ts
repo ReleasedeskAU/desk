@@ -91,7 +91,7 @@ export function voiceSystemInstructionParts(
     {
       id: "page_context_list",
       inConstraints: true,
-      text: "When the user asks what THIS page is showing / filtered releases / names and ids on the current list: call get_page_context and speak ONLY those rows. Do not ask for screen share.",
+      text: "When the user asks what THIS page is showing / how many rows / filtered names and ids: call get_page_context. Answer how-many from totalCount (never invent 40/80). Sample rows are for naming/opening only. Do not ask for screen share.",
     },
     {
       id: "manager_reads",
@@ -146,12 +146,12 @@ export function voiceSystemInstructionParts(
     {
       id: "explain_vs_context",
       inConstraints: false,
-      text: "When asked what this page is for / what can I do here (product help): call explain_page. When asked what rows/data are showing: call get_page_context.",
+      text: "When asked what this page is for / what can I do here / Settings tabs (product help): call explain_page. When asked what rows/data or how many: call get_page_context (use totalCount).",
     },
     {
       id: "walkthrough",
       inConstraints: false,
-      text: "When asked for a walkthrough / show me how / morning check: call run_walkthrough with the matching tour.",
+      text: "When asked for a walkthrough of THIS page / Settings tabs / show me this page: call run_walkthrough with tour=current_page (scrolls + explains sections). For morning check / critical blockers / readiness: use the matching named tour.",
     },
     {
       id: "filters_required",
@@ -271,7 +271,7 @@ export function voiceSystemInstructionParts(
     {
       id: "app_context",
       inConstraints: false,
-      text: "When [APP_CONTEXT] or [PAGE_UPDATE] is present, treat visible[] as the ground-truth on-screen table. Prefer get_page_context before speaking a full list.",
+      text: "When [APP_CONTEXT] or [PAGE_UPDATE] is present, totalCount is the real table count; visible[] is a sample. Prefer get_page_context before speaking counts or a full list.",
     },
     {
       id: "nav_ux",

@@ -29,6 +29,7 @@ describe("voicePageContextBrief", () => {
   it("mentions get_page_context and Release Desk branding", () => {
     const brief = voicePageContextBrief();
     assert.match(brief, /get_page_context/);
+    assert.match(brief, /totalCount/);
     assert.match(brief, /Release Desk/);
     assert.doesNotMatch(brief, /built by Google/i);
   });
@@ -71,11 +72,40 @@ describe("handleGetPageContext", () => {
     );
 
     assert.equal(result.ok, true);
+    assert.equal(result.totalCount, 2);
     assert.equal(result.count, 2);
     assert.equal(result.rows?.[0]?.code, "REL-0001");
     assert.match(result.query ?? "", /hasBlockers=1/);
     assert.match(result.instruction, /REL-0001/);
     assert.match(result.instruction, /do not invent/i);
+  });
+
+  it("reports totalCount from the page even when the sample is capped", async () => {
+    const many = Array.from({ length: 80 }, (_, i) => {
+      const n = String(i + 1).padStart(4, "0");
+      return {
+        code: `REL-${n}`,
+        label: `REL-${n} — Item`,
+        path: `/releases/REL-${n}`,
+      };
+    });
+    setVoiceAppContext({
+      page: "/releases",
+      entityType: "release",
+      visible: many,
+      totalCount: 80,
+    });
+    const result = await handleGetPageContext(
+      {},
+      { push: () => {}, getCurrentHref: () => "/releases" }
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.totalCount, 80);
+    assert.equal(result.count, 80);
+    assert.equal(result.sampleCount, 40);
+    assert.equal(result.rows?.length, 40);
+    assert.match(result.actionLine ?? "", /80 total/);
+    assert.match(result.instruction, /totalCount=80/);
   });
 
   it("reports empty table without inventing rows", async () => {
@@ -84,23 +114,25 @@ describe("handleGetPageContext", () => {
       entityType: "release",
       note: "filtered",
       visible: [],
+      totalCount: 0,
     });
     const result = await handleGetPageContext(
       {},
       { push: () => {}, getCurrentHref: () => "/releases?dept=x" }
     );
     assert.equal(result.ok, true);
-    assert.equal(result.count, 0);
+    assert.equal(result.totalCount, 0);
     assert.match(result.instruction, /empty/i);
   });
 });
 
 describe("formatPageContextSpeechInstruction", () => {
-  it("includes exact codes", () => {
+  it("includes exact codes and totalCount", () => {
     const text = formatPageContextSpeechInstruction({
       page: "/releases",
       href: "/releases",
       entityType: "release",
+      totalCount: 1,
       count: 1,
       rows: [
         {
@@ -114,6 +146,7 @@ describe("formatPageContextSpeechInstruction", () => {
       updatedAt: Date.now(),
     });
     assert.match(text, /REL-0001/);
+    assert.match(text, /totalCount=1/);
     assert.match(text, /hasBlockers=1/);
   });
 });

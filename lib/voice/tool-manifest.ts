@@ -222,7 +222,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "run_walkthrough",
     description:
-      "Run a multi-step guided tour (navigates + applies filters + returns a spoken script). Use for walkthrough, show me how, morning check, tour of blockers/approvals/conflicts/readiness. Tours: critical_blockers, release_readiness, pending_approvals, env_conflicts, morning_check.",
+      "Run a multi-step guided tour (navigates + applies filters + scrolls + returns a spoken script). Use for walkthrough / show me how / morning check. For the page you are already on (including Settings tabs), pass tour=current_page (or this page). Named tours: critical_blockers, release_readiness, pending_approvals, env_conflicts, morning_check.",
     parameters: {
       type: "object",
       properties: {
@@ -286,7 +286,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "get_page_context",
     description:
-      "REQUIRED to read what the current page/table is showing — filtered/on-screen row codes and names (ground truth). Use when the user asks what is filtered, list the releases/ids/names, how many rows, or what am I looking at on this list. Call after apply_list_filters before listing rows. No screen share. Do NOT use search_entity for the filtered table (that searches the whole DB).",
+      "REQUIRED to read what the current page/table is showing — returns totalCount (real page/table count) plus a sample of row codes/names. Use when the user asks what is filtered, list ids/names, how many rows, or what am I looking at. For how many, speak totalCount (never the sample size). Call after apply_list_filters before listing rows. No screen share. Do NOT use search_entity for the filtered table (that searches the whole DB).",
     parameters: {
       type: "object",
       properties: {

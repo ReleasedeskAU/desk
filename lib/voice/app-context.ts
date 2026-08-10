@@ -3,10 +3,13 @@
  * List pages publish the rows the user currently sees; the Live client pushes
  * [APP_CONTEXT] alongside spoken queries, and search_entity prefers this order
  * for on-page ordinals.
+ *
+ * `totalCount` is the real filtered table length on the page.
+ * `visible` is a speech/nav sample (capped) — never use visible.length as the count.
  */
 import type { SearchEntityType } from "@/lib/search-entity-types";
 
-/** Max visible rows published (covers typical list pages + "10th"/"20th" ordinals). */
+/** Max sample rows published for speech / ordinals (not the page total). */
 export const VOICE_APP_CONTEXT_MAX_ROWS = 40;
 
 export type VoiceVisibleRow = {
@@ -21,7 +24,13 @@ export type VoiceVisibleRow = {
 export type VoiceAppContextPacket = {
   page: string;
   entityType: SearchEntityType | null;
+  /** Sample rows in display order (capped). */
   visible: VoiceVisibleRow[];
+  /**
+   * True filtered/on-page row count from the UI table.
+   * Always prefer this over visible.length for “how many?” answers.
+   */
+  totalCount: number;
   /** Optional filter/sort hint for the model (non-PII). */
   note?: string;
   updatedAt: number;
@@ -51,20 +60,36 @@ export function subscribeVoiceAppContext(listener: Listener): () => void {
   };
 }
 
+export type VoiceAppContextInput = {
+  page: string;
+  entityType: SearchEntityType | null;
+  visible: VoiceVisibleRow[];
+  /** Defaults to visible.length when omitted. */
+  totalCount?: number;
+  note?: string;
+};
+
 /**
  * Publish visible rows for the active list page (or clear with null).
  * @param packet - Context or null when leaving the page.
  */
-export function setVoiceAppContext(
-  packet: Omit<VoiceAppContextPacket, "updatedAt"> | null
-): void {
-  current = packet
-    ? {
-        ...packet,
-        visible: packet.visible.slice(0, VOICE_APP_CONTEXT_MAX_ROWS),
-        updatedAt: Date.now(),
-      }
-    : null;
+export function setVoiceAppContext(packet: VoiceAppContextInput | null): void {
+  if (!packet) {
+    current = null;
+  } else {
+    const total =
+      typeof packet.totalCount === "number" && Number.isFinite(packet.totalCount)
+        ? Math.max(0, Math.floor(packet.totalCount))
+        : packet.visible.length;
+    current = {
+      page: packet.page,
+      entityType: packet.entityType,
+      visible: packet.visible.slice(0, VOICE_APP_CONTEXT_MAX_ROWS),
+      totalCount: total,
+      note: packet.note,
+      updatedAt: Date.now(),
+    };
+  }
   for (const listener of listeners) listener(current);
 }
 
@@ -87,12 +112,19 @@ export function formatVoiceAppContextHint(
           })
           .join("; ");
   const note = packet.note ? ` note=${packet.note}` : "";
-  const n = packet.visible.length;
+  const sampleN = packet.visible.length;
+  const total = packet.totalCount;
+  const sampleNote =
+    total > sampleN
+      ? ` sample=${sampleN} of ${total}`
+      : ` sample=${sampleN}`;
   return [
     `[APP_CONTEXT] page=${packet.page}`,
     `entityType=${packet.entityType ?? "none"}`,
-    `count=${n}`,
+    `totalCount=${total}`,
+    `${sampleNote}`,
     `visible=[${vis}]${note}.`,
+    `When asked how many, answer totalCount=${total} (not the sample size).`,
     `On-screen ordinals: "10th ${packet.entityType ?? "item"}" / "first" map to visible[N] codes — call search_entity with the spoken query; never invent IDs.`,
   ].join(" ");
 }

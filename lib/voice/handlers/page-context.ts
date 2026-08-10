@@ -20,7 +20,12 @@ export type GetPageContextResult = {
   href?: string;
   entityType?: string | null;
   note?: string;
+  /** Real page/table count (use for “how many?”). */
+  totalCount?: number;
+  /** Alias of totalCount for older prompts. */
   count?: number;
+  /** Capped sample of rows for speech / ordinals. */
+  sampleCount?: number;
   rows?: Array<{ index: number; code: string; label: string; path: string }>;
   query?: string;
   reason?: string;
@@ -45,7 +50,7 @@ export async function handleGetPageContext(
 
   const snap = buildVoicePageSnapshot(href);
 
-  if (!snap.updatedAt && snap.count === 0 && !snap.page.startsWith("/")) {
+  if (!snap.updatedAt && snap.totalCount === 0 && !snap.page.startsWith("/")) {
     return {
       ok: false,
       tool: "get_page_context",
@@ -62,13 +67,17 @@ export async function handleGetPageContext(
     href: snap.href,
     entityType: snap.entityType,
     note: snap.note,
-    count: snap.count,
+    totalCount: snap.totalCount,
+    count: snap.totalCount,
+    sampleCount: snap.rows.length,
     rows: snap.rows,
     query: snap.query || undefined,
     instruction: formatPageContextSpeechInstruction(snap),
     actionLine:
-      snap.count === 0
+      snap.totalCount === 0
         ? `Page context: 0 rows on ${snap.page}`
-        : `Page context: ${snap.count} row(s) on ${snap.page}`,
+        : snap.rows.length < snap.totalCount
+          ? `Page context: ${snap.totalCount} total (${snap.rows.length} sampled) on ${snap.page}`
+          : `Page context: ${snap.totalCount} row(s) on ${snap.page}`,
   };
 }

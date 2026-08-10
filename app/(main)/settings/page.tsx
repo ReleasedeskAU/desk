@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { TablePageSuspenseFallback } from "@/components/ui/TableSkeleton";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
 import {
   Users,
   Bell,
@@ -25,20 +26,21 @@ import { ApplicationsTab } from "@/components/settings/master-data/ApplicationsT
 import { EnvironmentsTab } from "@/components/settings/master-data/EnvironmentsTab";
 import { UsersTab } from "@/components/settings/master-data/UsersTab";
 import { VoiceUsagePanel } from "@/components/settings/VoiceUsagePanel";
+import { SETTINGS_TAB_IDS, SETTINGS_TABS } from "@/lib/settings-tabs";
 
-const VALID_TABS = new Set([
-  "general",
-  "appearance",
-  "risk-engine",
-  "team",
-  "departments",
-  "applications",
-  "environments",
-  "users",
-  "notifications",
-  "integrations",
-  "security",
-]);
+const SETTINGS_TAB_ICONS: Readonly<Record<string, LucideIcon>> = {
+  general: SettingsIcon,
+  appearance: Palette,
+  "risk-engine": Gauge,
+  team: Users,
+  departments: Building2,
+  applications: Package,
+  environments: Server,
+  users: UserCircle,
+  notifications: Bell,
+  integrations: Plug,
+  security: Shield,
+};
 
 function SettingsPageInner() {
   const router = useRouter();
@@ -53,11 +55,11 @@ function SettingsPageInner() {
   }, [tabParam, router]);
 
   const initialTab =
-    tabParam && VALID_TABS.has(tabParam) ? tabParam : "team";
+    tabParam && SETTINGS_TAB_IDS.has(tabParam) ? tabParam : "team";
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
-    if (tabParam && VALID_TABS.has(tabParam) && tabParam !== activeTab) {
+    if (tabParam && SETTINGS_TAB_IDS.has(tabParam) && tabParam !== activeTab) {
       setActiveTab(tabParam);
     }
   }, [tabParam, activeTab]);
@@ -74,26 +76,28 @@ function SettingsPageInner() {
     router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
   };
 
-  const sidebarNav = [
-    { id: "general", label: "General", icon: SettingsIcon },
-    { id: "appearance", label: "Appearance", icon: Palette },
-    { id: "risk-engine", label: "Risk Engine", icon: Gauge },
-    { id: "team", label: "Team Members", icon: Users },
-    { id: "departments", label: "Departments", icon: Building2 },
-    { id: "applications", label: "Applications", icon: Package },
-    { id: "environments", label: "Environments", icon: Server },
-    { id: "users", label: "Users", icon: UserCircle },
-    { id: "notifications", label: "Notifications", icon: Bell },
-    { id: "integrations", label: "Integrations", icon: Plug },
-    { id: "security", label: "Security", icon: Shield },
-  ];
+  const sidebarNav = useMemo(
+    () =>
+      SETTINGS_TABS.map((tab) => ({
+        ...tab,
+        icon: SETTINGS_TAB_ICONS[tab.id] ?? SettingsIcon,
+      })),
+    []
+  );
 
-  const masterDataTabs = new Set(["departments", "applications", "environments", "users"]);
+  const masterDataTabs = new Set([
+    "departments",
+    "applications",
+    "environments",
+    "users",
+  ]);
 
   return (
     <div className="w-full pb-24 font-sans">
       <div className="mb-10 mt-2">
-        <h1 className="mb-2 text-[32px] font-bold tracking-tight text-gray-900 dark:text-white">Settings</h1>
+        <h1 className="mb-2 text-[32px] font-bold tracking-tight text-gray-900 dark:text-white">
+          Settings
+        </h1>
         <p className="text-[15px] font-medium leading-relaxed text-gray-500 dark:text-gray-300">
           Manage your account settings, team configuration, and master data ingestion.
         </p>
@@ -141,16 +145,19 @@ function SettingsPageInner() {
             activeTab !== "appearance" &&
             activeTab !== "risk-engine" &&
             activeTab !== "integrations" && (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50 py-24 text-center dark:border-[var(--border)] dark:bg-white/[0.025]">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
-                <SettingsIcon className="h-6 w-6 text-gray-400 dark:text-gray-300" />
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50/50 py-24 text-center dark:border-[var(--border)] dark:bg-white/[0.025]">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
+                  <SettingsIcon className="h-6 w-6 text-gray-400 dark:text-gray-300" />
+                </div>
+                <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                  Module Coming Soon
+                </h3>
+                <p className="mt-1 max-w-sm text-[14px] text-gray-500 dark:text-gray-300">
+                  This configuration section is currently under development. Please check back
+                  later.
+                </p>
               </div>
-              <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">Module Coming Soon</h3>
-              <p className="mt-1 max-w-sm text-[14px] text-gray-500 dark:text-gray-300">
-                This configuration section is currently under development. Please check back later.
-              </p>
-            </div>
-          )}
+            )}
         </div>
       </div>
     </div>
