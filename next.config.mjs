@@ -55,14 +55,26 @@ const zodPackageDir = resolveHoistedPackageDir("zod");
  * ships Windows/Darwin engines and WASM (~40MB+) into every function and can
  * fail the "Deploying outputs" step with a generic Vercel error.
  */
-// Use the real vendor path only — node_modules/@releasedesk/database is a
-// file: symlink and Vercel rejects serverless packages that contain symlinks.
+// Trace both locations:
+// - vendor/… — canonical generate output (and preferred when resolvable)
+// - node_modules/@releasedesk/database/… — runtime target with `npm install --install-links`
+//   (a real directory copy on Vercel, not a symlink). If only vendor is traced,
+//   serverless can load a client JS from node_modules without its query engine /
+//   matching generated models → every Prisma call breaks (tools/nav/APIs).
+const PRISMA_CLIENT_GLOBS = [
+  "**/*.js",
+  "**/*.mjs",
+  "**/*.json",
+  "**/*.prisma",
+  "libquery_engine-rhel-openssl-3.0.x.so.node",
+];
 const PRISMA_TRACE_INCLUDES = [
-  "./vendor/releasedesk-database/generated/client/**/*.js",
-  "./vendor/releasedesk-database/generated/client/**/*.mjs",
-  "./vendor/releasedesk-database/generated/client/**/*.json",
-  "./vendor/releasedesk-database/generated/client/**/*.prisma",
-  "./vendor/releasedesk-database/generated/client/libquery_engine-rhel-openssl-3.0.x.so.node",
+  ...PRISMA_CLIENT_GLOBS.map(
+    (g) => `./vendor/releasedesk-database/generated/client/${g}`
+  ),
+  ...PRISMA_CLIENT_GLOBS.map(
+    (g) => `./node_modules/@releasedesk/database/generated/client/${g}`
+  ),
 ];
 
 /** Platform engines / types that must never be packaged into Vercel functions. */

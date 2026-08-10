@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   let canRequestApproval = false;
   let approvalRequested = false;
   try {
-    const access = await checkVoiceUserAccess(user!.id);
+    const access = await checkVoiceUserAccess(user!.id, user!.email);
     if (!access.allowed) {
       forceDisconnect = true;
       accessCode = access.code;

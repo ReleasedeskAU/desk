@@ -5,7 +5,10 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getVoiceUserUsage } from "@/lib/voice/usage";
-import { VOICE_SUPER_ADMIN_EMAIL } from "@/lib/voice/admin-gate-constants";
+import {
+  isVoiceSuperAdminEmail,
+  VOICE_SUPER_ADMIN_EMAIL,
+} from "@/lib/voice/admin-gate-constants";
 import { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
 
 export { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
@@ -94,13 +97,25 @@ type VoiceUserPolicyDelegate = {
 };
 
 /**
- * Prisma delegate for VoiceUserPolicy — throws a clear error if the generated
- * client is stale (vendor/ regenerated but node_modules/@releasedesk/database not synced).
+ * Prisma delegate for VoiceUserPolicy, or null when the generated client is stale.
+ * Callers that can degrade (mint/heartbeat) treat null as “no durable policy row”.
  */
-function voiceUserPolicyDelegate(): VoiceUserPolicyDelegate {
+function voiceUserPolicyDelegateOrNull(): VoiceUserPolicyDelegate | null {
   const delegate = (prisma as unknown as { voiceUserPolicy?: VoiceUserPolicyDelegate })
     .voiceUserPolicy;
   if (!delegate?.findMany || !delegate?.findUnique || !delegate?.upsert) {
+    return null;
+  }
+  return delegate;
+}
+
+/**
+ * Prisma delegate for VoiceUserPolicy — throws when the client is missing the model.
+ * @throws Error when VoiceUserPolicy is not on the Prisma client.
+ */
+function voiceUserPolicyDelegate(): VoiceUserPolicyDelegate {
+  const delegate = voiceUserPolicyDelegateOrNull();
+  if (!delegate) {
     throw new Error(
       "VoiceUserPolicy model missing from Prisma client — regenerate @releasedesk/database (clean-and-generate-prisma)"
     );
@@ -115,7 +130,10 @@ function voiceUserPolicyDelegate(): VoiceUserPolicyDelegate {
 export async function getVoiceUserPolicy(
   clerkUserId: string
 ): Promise<VoicePolicyRow | null> {
-  const row = await voiceUserPolicyDelegate().findUnique({
+  const delegate = voiceUserPolicyDelegateOrNull();
+  // Stale Prisma client — behave as “no policy row” so mint/heartbeat can degrade.
+  if (!delegate) return null;
+  const row = await delegate.findUnique({
     where: { clerkUserId },
   });
   if (!row) return null;
@@ -126,7 +144,13 @@ export async function getVoiceUserPolicy(
  * List all stored voice policies.
  */
 export async function listVoiceUserPolicies(): Promise<VoicePolicyRow[]> {
-  const rows = await voiceUserPolicyDelegate().findMany({
+  const delegate = voiceUserPolicyDelegateOrNull();
+  if (!delegate) {
+    throw new Error(
+      "VoiceUserPolicy model missing from Prisma client — regenerate @releasedesk/database (clean-and-generate-prisma)"
+    );
+  }
+  const rows = await delegate.findMany({
     orderBy: { updatedAt: "desc" },
   });
   return rows.map(mapPolicy);
@@ -308,10 +332,25 @@ export function evaluateVoiceAccess(
 /**
  * Whether the user may start/continue voice given ban + daily minutes.
  * @param clerkUserId - Clerk user id.
+ * @param email - Optional session email; voice super-admin is always unlimited.
  */
 export async function checkVoiceUserAccess(
-  clerkUserId: string
+  clerkUserId: string,
+  email?: string | null
 ): Promise<VoiceAccessCheck> {
+  // Super-admin mailbox is never blocked by the default 10-minute ceiling.
+  if (isVoiceSuperAdminEmail(email)) {
+    const usage = getVoiceUserUsage(clerkUserId);
+    return evaluateVoiceAccess(
+      {
+        banned: false,
+        unlimitedUsage: true,
+        dailyMinutesLimit: null,
+        minutesApprovalRequestedAt: null,
+      },
+      usage.durationMs / 60_000
+    );
+  }
   const policy = await getVoiceUserPolicy(clerkUserId);
   const usage = getVoiceUserUsage(clerkUserId);
   const minutesUsed = usage.durationMs / 60_000;

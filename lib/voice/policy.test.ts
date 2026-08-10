@@ -9,6 +9,7 @@ import {
   evaluateVoiceAccess,
   VOICE_DEFAULT_DAILY_MINUTES,
 } from "./policy";
+import { VOICE_SUPER_ADMIN_EMAIL } from "./admin-gate-constants";
 
 describe("effectiveDailyMinutes", () => {
   it("defaults to 10 when no policy", () => {

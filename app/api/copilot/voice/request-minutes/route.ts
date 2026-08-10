@@ -22,7 +22,7 @@ export async function POST() {
   if (error) return error;
 
   try {
-    const access = await checkVoiceUserAccess(user!.id);
+    const access = await checkVoiceUserAccess(user!.id, user!.email);
     if (access.banned) {
       return NextResponse.json(
         { error: "Voice access is disabled for this account", code: "voice_banned" },

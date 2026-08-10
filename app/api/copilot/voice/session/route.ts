@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
   // Ban + per-user daily minutes (durable). Checked on cold start and reconnect.
   try {
-    const access = await checkVoiceUserAccess(user!.id);
+    const access = await checkVoiceUserAccess(user!.id, user!.email);
     if (!access.allowed) {
       return NextResponse.json(
         {
