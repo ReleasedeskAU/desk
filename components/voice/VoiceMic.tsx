@@ -55,6 +55,9 @@ export function VoiceMic() {
   const [screenShareBusy, setScreenShareBusy] = useState(false);
   /** Pulse share CTA when the agent needs eyes for explain-page intents. */
   const [sharePromptReason, setSharePromptReason] = useState<string | null>(null);
+  /** Shown after daily minutes cap — user can ping Voice Admin for more time. */
+  const [minutesApprovalBusy, setMinutesApprovalBusy] = useState(false);
+  const [minutesApprovalSent, setMinutesApprovalSent] = useState(false);
 
   const guidedPush = useCallback(
     async (href: string) => {
@@ -109,6 +112,10 @@ export function VoiceMic() {
       onError: (m) => {
         setError(m);
         setPanelOpen(true);
+        setLogsExpanded(true);
+        if (/daily voice limit|Ask your admin|waiting on admin approval/i.test(m)) {
+          setMinutesApprovalSent(/waiting on admin approval/i.test(m));
+        }
       },
       onPendingActionChange: (actionId) => setPendingActionId(actionId),
       onPendingActionsInvalidated: () => {
@@ -213,6 +220,7 @@ export function VoiceMic() {
     if (state !== "idle" && state !== "error" && state !== "disconnected") {
       client.disconnect();
       setError(null);
+      setMinutesApprovalSent(false);
       setShowTextFallback(false);
       clearPendingProposal();
       setLines([]);
@@ -230,6 +238,7 @@ export function VoiceMic() {
       client.disconnect();
     }
     setError(null);
+    setMinutesApprovalSent(false);
     setLines([]);
     setShowTextFallback(false);
     setFallbackHint(null);
@@ -512,12 +521,64 @@ export function VoiceMic() {
           ) : null}
 
           {error ? (
-            <p
+            <div
               className="border-t border-red-100 px-3 py-2 text-[12px] text-red-600 dark:border-red-500/20 dark:text-red-400"
               data-testid="voice-error"
             >
-              {error}
-            </p>
+              <p>{error}</p>
+              {/daily voice limit|Ask your admin|waiting on admin approval/i.test(
+                error
+              ) ? (
+                <button
+                  type="button"
+                  disabled={minutesApprovalBusy || minutesApprovalSent}
+                  data-testid="voice-request-minutes"
+                  onClick={() => {
+                    void (async () => {
+                      setMinutesApprovalBusy(true);
+                      try {
+                        const res = await fetch(
+                          "/api/copilot/voice/request-minutes",
+                          {
+                            method: "POST",
+                            credentials: "same-origin",
+                          }
+                        );
+                        const json = (await res.json().catch(() => ({}))) as {
+                          error?: string;
+                          message?: string;
+                          approvalRequested?: boolean;
+                        };
+                        if (!res.ok) {
+                          setError(json.error ?? "Could not send approval request");
+                          return;
+                        }
+                        setMinutesApprovalSent(true);
+                        setError(
+                          json.message ??
+                            "Request sent — waiting on admin approval for more voice minutes."
+                        );
+                      } catch (err) {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : "Could not send approval request"
+                        );
+                      } finally {
+                        setMinutesApprovalBusy(false);
+                      }
+                    })();
+                  }}
+                  className="mt-2 rounded-md bg-[var(--theme-accent,#2548C9)] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"
+                >
+                  {minutesApprovalSent
+                    ? "Approval requested"
+                    : minutesApprovalBusy
+                      ? "Sending…"
+                      : "Ask admin for more minutes"}
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           {showTextFallback || hasPropose ? (

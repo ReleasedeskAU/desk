@@ -1,15 +1,22 @@
 /**
  * Durable VoiceUserPolicy helpers — ban + daily minutes quota.
- * Enforced on session mint (and optionally heartbeat).
+ * Default: every user gets 10 minutes/day unless admin grants more or unlimited.
+ * After the cap, users can request admin approval for more time.
  */
 import { prisma } from "@/lib/prisma";
 import { getVoiceUserUsage } from "@/lib/voice/usage";
+import { VOICE_SUPER_ADMIN_EMAIL } from "@/lib/voice/admin-gate";
+import { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
+
+export { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
 
 export type VoicePolicyRow = {
   clerkUserId: string;
   email: string | null;
   banned: boolean;
+  unlimitedUsage: boolean;
   dailyMinutesLimit: number | null;
+  minutesApprovalRequestedAt: Date | null;
   updatedAt: Date;
 };
 
@@ -18,9 +25,51 @@ export type VoiceAccessCheck = {
   code?: "voice_banned" | "daily_minutes_ceiling";
   reason?: string;
   banned: boolean;
+  unlimitedUsage: boolean;
+  /** Effective cap for today (null only when unlimited). */
+  effectiveDailyMinutes: number | null;
   dailyMinutesLimit: number | null;
   minutesUsed: number;
+  approvalRequested: boolean;
 };
+
+function mapPolicy(row: {
+  clerkUserId: string;
+  email: string | null;
+  banned: boolean;
+  unlimitedUsage: boolean;
+  dailyMinutesLimit: number | null;
+  minutesApprovalRequestedAt: Date | null;
+  updatedAt: Date;
+}): VoicePolicyRow {
+  return {
+    clerkUserId: row.clerkUserId,
+    email: row.email,
+    banned: row.banned,
+    unlimitedUsage: row.unlimitedUsage,
+    dailyMinutesLimit: row.dailyMinutesLimit,
+    minutesApprovalRequestedAt: row.minutesApprovalRequestedAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Effective daily minutes cap for a policy.
+ * @returns null when unlimited; otherwise a non-negative minute count.
+ */
+export function effectiveDailyMinutes(
+  policy: Pick<VoicePolicyRow, "unlimitedUsage" | "dailyMinutesLimit"> | null
+): number | null {
+  if (policy?.unlimitedUsage) return null;
+  if (
+    policy?.dailyMinutesLimit != null &&
+    Number.isFinite(policy.dailyMinutesLimit) &&
+    policy.dailyMinutesLimit >= 0
+  ) {
+    return Math.floor(policy.dailyMinutesLimit);
+  }
+  return VOICE_DEFAULT_DAILY_MINUTES;
+}
 
 /**
  * Load a single policy by Clerk user id.
@@ -33,13 +82,7 @@ export async function getVoiceUserPolicy(
     where: { clerkUserId },
   });
   if (!row) return null;
-  return {
-    clerkUserId: row.clerkUserId,
-    email: row.email,
-    banned: row.banned,
-    dailyMinutesLimit: row.dailyMinutesLimit,
-    updatedAt: row.updatedAt,
-  };
+  return mapPolicy(row);
 }
 
 /**
@@ -49,17 +92,11 @@ export async function listVoiceUserPolicies(): Promise<VoicePolicyRow[]> {
   const rows = await prisma.voiceUserPolicy.findMany({
     orderBy: { updatedAt: "desc" },
   });
-  return rows.map((row) => ({
-    clerkUserId: row.clerkUserId,
-    email: row.email,
-    banned: row.banned,
-    dailyMinutesLimit: row.dailyMinutesLimit,
-    updatedAt: row.updatedAt,
-  }));
+  return rows.map(mapPolicy);
 }
 
 /**
- * Upsert ban / daily minutes / email for a Clerk user.
+ * Upsert ban / minutes / unlimited / email / clear approval for a Clerk user.
  * @param clerkUserId - Target Clerk user id.
  * @param patch - Fields to update (undefined = leave unchanged on existing row).
  */
@@ -68,7 +105,10 @@ export async function upsertVoiceUserPolicy(
   patch: {
     email?: string | null;
     banned?: boolean;
+    unlimitedUsage?: boolean;
     dailyMinutesLimit?: number | null;
+    /** When true, clears a pending minutes-approval request. */
+    clearMinutesApproval?: boolean;
   }
 ): Promise<VoicePolicyRow> {
   const row = await prisma.voiceUserPolicy.upsert({
@@ -77,28 +117,30 @@ export async function upsertVoiceUserPolicy(
       clerkUserId,
       email: patch.email ?? null,
       banned: patch.banned ?? false,
+      unlimitedUsage: patch.unlimitedUsage ?? false,
       dailyMinutesLimit:
         patch.dailyMinutesLimit === undefined ? null : patch.dailyMinutesLimit,
+      minutesApprovalRequestedAt: null,
     },
     update: {
       ...(patch.email !== undefined ? { email: patch.email } : {}),
       ...(patch.banned !== undefined ? { banned: patch.banned } : {}),
+      ...(patch.unlimitedUsage !== undefined
+        ? { unlimitedUsage: patch.unlimitedUsage }
+        : {}),
       ...(patch.dailyMinutesLimit !== undefined
         ? { dailyMinutesLimit: patch.dailyMinutesLimit }
         : {}),
+      ...(patch.clearMinutesApproval
+        ? { minutesApprovalRequestedAt: null }
+        : {}),
     },
   });
-  return {
-    clerkUserId: row.clerkUserId,
-    email: row.email,
-    banned: row.banned,
-    dailyMinutesLimit: row.dailyMinutesLimit,
-    updatedAt: row.updatedAt,
-  };
+  return mapPolicy(row);
 }
 
 /**
- * Remember the user's email on the policy row (best-effort, non-blocking callers).
+ * Remember the user's email on the policy row (best-effort).
  * @param clerkUserId - Clerk user id.
  * @param email - Session email.
  */
@@ -114,10 +156,40 @@ export async function touchVoiceUserPolicyEmail(
       clerkUserId,
       email: trimmed,
       banned: false,
+      unlimitedUsage: false,
       dailyMinutesLimit: null,
+      minutesApprovalRequestedAt: null,
     },
     update: { email: trimmed },
   });
+}
+
+/**
+ * User asks admin for more voice minutes after hitting the default/custom cap.
+ * @param clerkUserId - Clerk user id.
+ * @param email - Session email (stored for admin list).
+ */
+export async function requestVoiceMinutesApproval(
+  clerkUserId: string,
+  email: string | null | undefined
+): Promise<VoicePolicyRow> {
+  const trimmed = (email ?? "").trim() || null;
+  const row = await prisma.voiceUserPolicy.upsert({
+    where: { clerkUserId },
+    create: {
+      clerkUserId,
+      email: trimmed,
+      banned: false,
+      unlimitedUsage: false,
+      dailyMinutesLimit: null,
+      minutesApprovalRequestedAt: new Date(),
+    },
+    update: {
+      ...(trimmed ? { email: trimmed } : {}),
+      minutesApprovalRequestedAt: new Date(),
+    },
+  });
+  return mapPolicy(row);
 }
 
 /**
@@ -126,11 +198,19 @@ export async function touchVoiceUserPolicyEmail(
  * @param minutesUsed - Connected minutes today from heartbeats.
  */
 export function evaluateVoiceAccess(
-  policy: Pick<VoicePolicyRow, "banned" | "dailyMinutesLimit"> | null,
+  policy: {
+    banned?: boolean;
+    unlimitedUsage?: boolean;
+    dailyMinutesLimit?: number | null;
+    minutesApprovalRequestedAt?: Date | null;
+  } | null,
   minutesUsed: number
 ): VoiceAccessCheck {
   const banned = policy?.banned ?? false;
+  const unlimitedUsage = policy?.unlimitedUsage ?? false;
   const dailyMinutesLimit = policy?.dailyMinutesLimit ?? null;
+  const effective = effectiveDailyMinutes(policy);
+  const approvalRequested = Boolean(policy?.minutesApprovalRequestedAt);
 
   if (banned) {
     return {
@@ -138,31 +218,50 @@ export function evaluateVoiceAccess(
       code: "voice_banned",
       reason: "Voice access is disabled for this account",
       banned: true,
+      unlimitedUsage,
+      effectiveDailyMinutes: effective,
       dailyMinutesLimit,
       minutesUsed,
+      approvalRequested,
     };
   }
 
-  if (
-    dailyMinutesLimit != null &&
-    dailyMinutesLimit >= 0 &&
-    minutesUsed >= dailyMinutesLimit
-  ) {
+  if (unlimitedUsage || effective == null) {
+    return {
+      allowed: true,
+      banned: false,
+      unlimitedUsage: true,
+      effectiveDailyMinutes: null,
+      dailyMinutesLimit,
+      minutesUsed,
+      approvalRequested,
+    };
+  }
+
+  if (minutesUsed >= effective) {
     return {
       allowed: false,
       code: "daily_minutes_ceiling",
-      reason: `Daily voice minutes limit reached (${dailyMinutesLimit} min/day)`,
+      reason: approvalRequested
+        ? `Daily voice limit reached (${effective} min). Your request for more time is waiting on admin approval (${VOICE_SUPER_ADMIN_EMAIL}).`
+        : `Daily voice limit reached (${effective} min). Ask your admin (${VOICE_SUPER_ADMIN_EMAIL}) to approve more minutes, or open Voice Admin if you are the admin.`,
       banned: false,
+      unlimitedUsage: false,
+      effectiveDailyMinutes: effective,
       dailyMinutesLimit,
       minutesUsed,
+      approvalRequested,
     };
   }
 
   return {
     allowed: true,
     banned: false,
+    unlimitedUsage: false,
+    effectiveDailyMinutes: effective,
     dailyMinutesLimit,
     minutesUsed,
+    approvalRequested,
   };
 }
 

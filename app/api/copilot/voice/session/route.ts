@@ -49,8 +49,12 @@ export async function POST(req: Request) {
           error: access.reason,
           code: access.code,
           banned: access.banned,
+          unlimitedUsage: access.unlimitedUsage,
           dailyMinutesLimit: access.dailyMinutesLimit,
+          effectiveDailyMinutes: access.effectiveDailyMinutes,
           minutesUsed: Math.round(access.minutesUsed * 10) / 10,
+          approvalRequested: access.approvalRequested,
+          canRequestApproval: access.code === "daily_minutes_ceiling",
         },
         { status: access.code === "voice_banned" ? 403 : 429 }
       );

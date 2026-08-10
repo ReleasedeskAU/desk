@@ -1,9 +1,12 @@
 /**
  * PATCH /api/admin/voice/[clerkUserId]
- * Voice super-admin: set ban and/or daily minutes limit for one user.
+ * Voice super-admin: set ban, daily minutes, unlimited usage, or clear approval.
  *
  * Auth: requireVoiceSuperAdmin.
- * Body (Zod strict): { banned?: boolean, dailyMinutesLimit?: number|null, email?: string }
+ * Body (Zod strict): {
+ *   banned?, dailyMinutesLimit?, unlimitedUsage?, clearMinutesApproval?, email?
+ * }
+ * Semantics: null dailyMinutesLimit + unlimitedUsage=false → default 10 min/day.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -14,8 +17,17 @@ import { zodErrorResponse } from "@/lib/api-errors";
 const patchSchema = z
   .object({
     banned: z.boolean().optional(),
-    /** null clears the per-user minutes cap. */
-    dailyMinutesLimit: z.number().int().min(0).max(24 * 60).nullable().optional(),
+    /** Custom daily minutes. Null = use default 10 (unless unlimitedUsage). */
+    dailyMinutesLimit: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60)
+      .nullable()
+      .optional(),
+    unlimitedUsage: z.boolean().optional(),
+    /** Clear a pending “need more minutes” request after approving. */
+    clearMinutesApproval: z.boolean().optional(),
     email: z.string().trim().email().max(320).optional(),
   })
   .strict();
@@ -47,19 +59,52 @@ export async function PATCH(req: Request, context: RouteContext) {
   const parsed = patchSchema.safeParse(json);
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
+  const {
+    banned,
+    dailyMinutesLimit,
+    unlimitedUsage,
+    clearMinutesApproval,
+    email,
+  } = parsed.data;
+
   if (
-    parsed.data.banned === undefined &&
-    parsed.data.dailyMinutesLimit === undefined &&
-    parsed.data.email === undefined
+    banned === undefined &&
+    dailyMinutesLimit === undefined &&
+    unlimitedUsage === undefined &&
+    clearMinutesApproval === undefined &&
+    email === undefined
   ) {
     return NextResponse.json(
-      { error: "Provide banned, dailyMinutesLimit, and/or email" },
+      {
+        error:
+          "Provide banned, dailyMinutesLimit, unlimitedUsage, clearMinutesApproval, and/or email",
+      },
       { status: 400 }
     );
   }
 
+  // Only clear a pending request when admin grants more access (not on reset-to-default).
+  const shouldClearApproval =
+    clearMinutesApproval === true ||
+    unlimitedUsage === true ||
+    (typeof dailyMinutesLimit === "number" &&
+      Number.isFinite(dailyMinutesLimit));
+
   try {
-    const policy = await upsertVoiceUserPolicy(clerkUserId, parsed.data);
+    const policy = await upsertVoiceUserPolicy(clerkUserId, {
+      ...(banned !== undefined ? { banned } : {}),
+      ...(dailyMinutesLimit !== undefined ? { dailyMinutesLimit } : {}),
+      ...(unlimitedUsage !== undefined ? { unlimitedUsage } : {}),
+      ...(email !== undefined ? { email } : {}),
+      ...(shouldClearApproval ? { clearMinutesApproval: true } : {}),
+      // Custom minutes and unlimited are mutually exclusive controls.
+      ...(dailyMinutesLimit != null && unlimitedUsage === undefined
+        ? { unlimitedUsage: false }
+        : {}),
+      ...(unlimitedUsage === true && dailyMinutesLimit === undefined
+        ? { dailyMinutesLimit: null }
+        : {}),
+    });
     return NextResponse.json({ ok: true, policy });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Update failed";
@@ -73,6 +118,9 @@ export async function PATCH(req: Request, context: RouteContext) {
         { status: 503 }
       );
     }
-    return NextResponse.json({ error: "Failed to update voice policy" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update voice policy" },
+      { status: 500 }
+    );
   }
 }

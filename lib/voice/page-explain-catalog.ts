@@ -374,10 +374,11 @@ const PAGES: readonly VoicePageExplain[] = [
     path: "/admin-voice",
     title: "Voice Admin",
     purpose:
-      "Super-admin console for Release Desk Voice — per-user usage, daily minute limits, and bans. Restricted to the voice super-admin mailbox.",
+      "Super-admin console for Release Desk Voice — default 10 min/day per user, raise limits, grant unlimited, approve more-minutes requests, and bans. Restricted to the voice super-admin mailbox.",
     canDo: [
       "Review today’s voice minutes and sessions",
-      "Set or clear a daily minutes limit",
+      "Raise a user’s daily minutes or grant unlimited",
+      "Approve pending “need more minutes” requests",
       "Ban or unban voice for a user",
     ],
     nextSteps: ["Settings → Integrations", "Users"],

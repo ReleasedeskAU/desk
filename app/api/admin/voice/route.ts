@@ -6,7 +6,11 @@
  */
 import { NextResponse } from "next/server";
 import { requireVoiceSuperAdmin } from "@/lib/voice/admin-gate";
-import { listVoiceUserPolicies } from "@/lib/voice/policy";
+import {
+  effectiveDailyMinutes,
+  listVoiceUserPolicies,
+  VOICE_DEFAULT_DAILY_MINUTES,
+} from "@/lib/voice/policy";
 import {
   listVoiceUsageToday,
   VOICE_AUDIO_DUPLEX_USD_PER_MIN,
@@ -17,6 +21,25 @@ import {
   estimateVoiceWorstCaseUsd,
 } from "@/lib/voice/usage";
 import { prisma } from "@/lib/prisma";
+
+type AdminVoiceUserRow = {
+  clerkUserId: string;
+  email: string | null;
+  name: string | null;
+  banned: boolean;
+  unlimitedUsage: boolean;
+  dailyMinutesLimit: number | null;
+  /** Resolved cap for today (null = unlimited). */
+  effectiveDailyMinutes: number | null;
+  approvalRequested: boolean;
+  minutesApprovalRequestedAt: string | null;
+  sessionCount: number;
+  durationMs: number;
+  minutesUsed: number;
+  dayKey: string | null;
+  lastSessionAt: number | null;
+  policyUpdatedAt: string | null;
+};
 
 /**
  * Build the admin voice dashboard payload.
@@ -30,22 +53,7 @@ export async function GET() {
     Promise.resolve(listVoiceUsageToday()),
   ]);
 
-  const byId = new Map<
-    string,
-    {
-      clerkUserId: string;
-      email: string | null;
-      name: string | null;
-      banned: boolean;
-      dailyMinutesLimit: number | null;
-      sessionCount: number;
-      durationMs: number;
-      minutesUsed: number;
-      dayKey: string | null;
-      lastSessionAt: number | null;
-      policyUpdatedAt: string | null;
-    }
-  >();
+  const byId = new Map<string, AdminVoiceUserRow>();
 
   for (const p of policies) {
     byId.set(p.clerkUserId, {
@@ -53,7 +61,12 @@ export async function GET() {
       email: p.email,
       name: null,
       banned: p.banned,
+      unlimitedUsage: p.unlimitedUsage,
       dailyMinutesLimit: p.dailyMinutesLimit,
+      effectiveDailyMinutes: effectiveDailyMinutes(p),
+      approvalRequested: Boolean(p.minutesApprovalRequestedAt),
+      minutesApprovalRequestedAt:
+        p.minutesApprovalRequestedAt?.toISOString() ?? null,
       sessionCount: 0,
       durationMs: 0,
       minutesUsed: 0,
@@ -77,7 +90,11 @@ export async function GET() {
         email: null,
         name: null,
         banned: false,
+        unlimitedUsage: false,
         dailyMinutesLimit: null,
+        effectiveDailyMinutes: VOICE_DEFAULT_DAILY_MINUTES,
+        approvalRequested: false,
+        minutesApprovalRequestedAt: null,
         sessionCount: u.sessionCount,
         durationMs: u.durationMs,
         minutesUsed: Math.round((u.durationMs / 60_000) * 10) / 10,
@@ -112,12 +129,17 @@ export async function GET() {
   }
 
   const users = [...byId.values()].sort((a, b) => {
+    // Pending approvals first so the admin can act quickly.
+    if (a.approvalRequested !== b.approvalRequested) {
+      return a.approvalRequested ? -1 : 1;
+    }
     if (a.banned !== b.banned) return a.banned ? -1 : 1;
     return b.minutesUsed - a.minutesUsed || b.sessionCount - a.sessionCount;
   });
 
   return NextResponse.json({
     users,
+    defaultDailyMinutes: VOICE_DEFAULT_DAILY_MINUTES,
     ceilings: {
       maxSessionDurationMs: VOICE_MAX_SESSION_DURATION_MS,
       maxSessionsPerUserPerDay: VOICE_MAX_SESSIONS_PER_USER_PER_DAY,

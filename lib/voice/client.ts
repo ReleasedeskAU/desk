@@ -887,6 +887,12 @@ export class VoiceLiveClient {
     });
     const data = (await res.json().catch(() => ({}))) as SessionResponse;
     if (!res.ok) {
+      if (data.code === "daily_minutes_ceiling") {
+        throw new Error(data.error ?? "Daily voice limit reached");
+      }
+      if (data.code === "voice_banned") {
+        throw new Error(data.error ?? "Voice access is disabled for this account");
+      }
       if (res.status === 429) {
         if (data.code === "daily_session_ceiling") {
           throw new Error(data.error ?? "Daily voice session limit reached");
@@ -1204,18 +1210,22 @@ export class VoiceLiveClient {
           const json = (await res.json().catch(() => ({}))) as {
             forceDisconnect?: boolean;
             reason?: string;
+            code?: string;
           };
           if (json.forceDisconnect) {
             this.intentionalClose = true;
             this.clearWatchdogs();
             this.teardownSocketOnly();
             this.teardownAudio();
+            const kind: VoiceFailureKind =
+              json.code === "voice_banned" ||
+              json.reason?.toLowerCase().includes("ban")
+                ? "session_denied"
+                : "session_ceiling";
             this.hardFail(
               json.reason ??
                 "Voice access ended — daily limit reached or account disabled",
-              json.reason?.toLowerCase().includes("ban")
-                ? "session_denied"
-                : "session_ceiling"
+              kind
             );
           }
         } catch {
@@ -1817,10 +1827,21 @@ function classifyConnectFailure(
   if (/microphone|Microphone|NotFoundError|not available/i.test(message)) {
     return "mic_unavailable";
   }
+  if (
+    /daily voice limit|daily_minutes_ceiling|Ask your admin|waiting on admin approval/i.test(
+      message
+    )
+  ) {
+    return "session_ceiling";
+  }
   if (/daily voice session|session_ceiling/i.test(message)) {
     return "session_ceiling";
   }
-  if (/rate limit|Session mint|not configured|503|502/i.test(message)) {
+  if (
+    /disabled for this account|voice_banned|rate limit|Session mint|not configured|503|502/i.test(
+      message
+    )
+  ) {
     return "session_denied";
   }
   if (/WebSocket/i.test(message)) {

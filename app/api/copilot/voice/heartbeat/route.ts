@@ -41,12 +41,16 @@ export async function POST(req: Request) {
   let forceDisconnect = false;
   let accessCode: string | undefined;
   let accessReason: string | undefined;
+  let canRequestApproval = false;
+  let approvalRequested = false;
   try {
     const access = await checkVoiceUserAccess(user!.id);
     if (!access.allowed) {
       forceDisconnect = true;
       accessCode = access.code;
       accessReason = access.reason;
+      canRequestApproval = access.code === "daily_minutes_ceiling";
+      approvalRequested = access.approvalRequested;
     }
   } catch {
     // Pre-migration / DB blip — keep heartbeat telemetry flowing.
@@ -58,5 +62,7 @@ export async function POST(req: Request) {
     forceDisconnect,
     code: accessCode,
     reason: accessReason,
+    canRequestApproval,
+    approvalRequested,
   });
 }
