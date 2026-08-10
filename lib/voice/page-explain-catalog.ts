@@ -5,6 +5,7 @@
 import { normalizeVoicePath } from "@/lib/voice/route-allowlist";
 import { resolveVoiceNavTarget } from "@/lib/voice/sidebar-catalog";
 import { findFilterPageForPathname } from "@/lib/voice/list-filters-catalog";
+import { SETTINGS_TABS } from "@/lib/settings-tabs";
 
 export type VoicePageExplain = {
   path: string;
@@ -15,6 +16,8 @@ export type VoicePageExplain = {
   canDo: string[];
   /** Typical next steps / related pages. */
   nextSteps: string[];
+  /** Optional sub-sections / tabs for a structured walkthrough. */
+  sections?: readonly { id: string; label: string; summary: string }[];
 };
 
 const PAGES: readonly VoicePageExplain[] = [
@@ -368,15 +371,46 @@ const PAGES: readonly VoicePageExplain[] = [
     nextSteps: ["Settings", "Connectors"],
   },
   {
+    path: "/admin-voice",
+    title: "Voice Admin",
+    purpose:
+      "Super-admin console for Release Desk Voice — default 10 min/day per user, raise limits, grant unlimited, approve more-minutes requests, and bans. Restricted to the voice super-admin mailbox.",
+    canDo: [
+      "Review today’s voice minutes and sessions",
+      "Raise a user’s daily minutes or grant unlimited",
+      "Approve pending “need more minutes” requests",
+      "Ban or unban voice for a user",
+    ],
+    nextSteps: ["Settings → Integrations", "Users"],
+  },
+  {
     path: "/settings",
     title: "Settings",
     purpose:
-      "Workspace and user preferences, including voice usage where enabled.",
+      "Workspace settings hub — account preferences, Risk Engine bands, team access, and master-data tabs (departments, applications, environments, users). Release Lifecycle config lives under Lifecycle Settings in the sidebar, not here.",
     canDo: [
-      "Review preferences",
-      "Check voice usage ceilings if available",
+      "Ask for a walkthrough of Settings tabs (run_walkthrough tour=current_page)",
+      "Open a Settings tab via navigate_to path=/settings?tab=risk-engine (or team, appearance, …)",
+      "Ask how many team members are listed (get_page_context on Team Members)",
+      "Check Voice usage under Integrations",
     ],
-    nextSteps: ["Users", "Reference Data"],
+    nextSteps: ["Lifecycle Settings", "Risk Engine tab", "Team Members tab"],
+    sections: SETTINGS_TABS.map((t) => ({
+      id: t.id,
+      label: t.label,
+      summary: t.summary,
+    })),
+  },
+  {
+    path: "/lifecycle",
+    title: "Lifecycle Settings",
+    purpose:
+      "Configure release lifecycle statuses, transitions, and gates for this workspace.",
+    canDo: [
+      "Review status vocabulary and transition rules",
+      "Open via navigate_to after lookup_navigation if unsure of the URL",
+    ],
+    nextSteps: ["Releases", "Settings", "Approval Queue"],
   },
 ];
 
@@ -429,13 +463,23 @@ export function formatPageExplainSpeech(
       ? `Current URL filters: ${opts.activeQuery.replace(/^\?/, "")}.`
       : null;
 
+  const sections =
+    page.sections && page.sections.length > 0
+      ? `Tabs/sections: ${page.sections
+          .map((s) => `${s.label} — ${s.summary}`)
+          .join("; ")}.`
+      : null;
+
   return [
     `${page.title}: ${page.purpose}`,
-    `With voice you can: ${page.canDo.slice(0, 3).join("; ")}.`,
+    sections,
+    `With voice you can: ${page.canDo.slice(0, 4).join("; ")}.`,
     filterHint,
     active,
     `Typical next: ${page.nextSteps.slice(0, 3).join(", ")}.`,
-    "Ask about a release by code or name and I will say whether it is ready, blocked, or at risk — and why.",
+    page.path === "/settings"
+      ? "For a guided tour with scrolling, call run_walkthrough with tour=current_page."
+      : "Ask about a release by code or name and I will say whether it is ready, blocked, or at risk — and why.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -448,6 +492,6 @@ export function voicePageExplainBrief(): string {
   return [
     "explain_page: brief the current (or named) page like a release manager — purpose, what voice can do, filters, next steps. No screen share required.",
     "For release readiness / why blocked / why ready: search_entity then get_summary (verdict + reasons).",
-    "run_walkthrough: guided multi-step tours (critical blockers, release readiness, pending approvals, conflicts).",
+    "run_walkthrough: guided tours (critical_blockers, release_readiness, pending_approvals, env_conflicts, morning_check) OR tour=current_page to walk the open page with scroll + sections.",
   ].join(" ");
 }

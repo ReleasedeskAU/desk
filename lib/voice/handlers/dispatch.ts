@@ -2,6 +2,7 @@
  * Dispatch Gemini Live toolCalls to voice handlers and build toolResponse payloads.
  */
 import { handleNavigateTo, type NavigateDeps } from "@/lib/voice/handlers/navigate";
+import { handleLookupNavigation } from "@/lib/voice/handlers/lookup-navigation";
 import { handleSearchEntity } from "@/lib/voice/handlers/search";
 import { handleGetSummary } from "@/lib/voice/handlers/summary";
 import { handleProposeAction } from "@/lib/voice/handlers/propose";
@@ -64,7 +65,11 @@ export async function dispatchVoiceToolCalls(
     const args = call.args ?? {};
     let response: Record<string, unknown>;
 
-    if (name === "navigate_to") {
+    if (name === "lookup_navigation") {
+      const result = handleLookupNavigation(args);
+      response = result;
+      actionLines.push({ text: result.actionLine, role: "action" });
+    } else if (name === "navigate_to") {
       const result = await handleNavigateTo(args, deps);
       response = result;
       actionLines.push({ text: result.actionLine, role: "action" });

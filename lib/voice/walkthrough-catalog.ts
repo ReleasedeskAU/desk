@@ -17,6 +17,11 @@ export type WalkthroughStep =
       say: string;
     }
   | {
+      type: "scroll";
+      direction: "up" | "down" | "top" | "bottom";
+      say: string;
+    }
+  | {
       type: "say";
       say: string;
     };
@@ -215,5 +220,10 @@ export function resolveVoiceWalkthrough(raw: string): VoiceWalkthrough | null {
  */
 export function voiceWalkthroughBrief(): string {
   const ids = VOICE_WALKTHROUGHS.map((w) => `${w.id} (${w.title})`).join("; ");
-  return `run_walkthrough tours: ${ids}. Use when the user asks for a walkthrough, tour, show me how, or morning check.`;
+  return [
+    "run_walkthrough tours:",
+    `current_page (walk the open page with explain + live table count + scroll; also say this page / settings walkthrough);`,
+    `${ids}.`,
+    "Use current_page for “walk me through this page”; use named tours for cross-page flows (morning check, critical blockers, …).",
+  ].join(" ");
 }

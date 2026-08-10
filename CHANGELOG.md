@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Voice **navigation agent** (`lookup_navigation`): sidebar tabs/URLs derive from `lib/nav-data.ts` (single source with the UI sidebar) plus live `data-voice-nav` DOM sync. The Live LLM looks up pages instead of inventing paths; `navigate_to` allowlist is derived from the same registry. Lifecycle Settings (`/lifecycle`) included.
+- Voice **page totals + current-page tour**: `get_page_context` returns live `totalCount` from the UI table (sample rows capped separately — never answer “how many” from the sample). `run_walkthrough tour=current_page` explains the open page, scrolls, and walks Settings tabs from `lib/settings-tabs.ts`. Team Members publishes page context.
+- Voice **Admin console** (`/admin-voice`): restricted to `admin@releasedesk.com.au`. Track today’s usage, raise per-user daily minute limits, grant unlimited, approve “need more minutes” requests, ban/unban voice. Durable `VoiceUserPolicy` table; enforced on session mint + heartbeat disconnect.
+- Voice **default 10 min/day**: every user gets 10 connected minutes/day unless admin raises the cap or sets unlimited. After the cap, mic UI offers **Ask admin for more minutes** (`POST /api/copilot/voice/request-minutes`); admin clears the request by saving a higher limit or unlimited.
 - Sidebar **Lifecycle Settings** (`/lifecycle`): hub for Release Lifecycle and Blocker Lifecycle configuration (moved Release Lifecycle out of Settings). Blocker lifecycle defaults match the enterprise blockers table (Open → Closed/Cancelled/Reopened graph, Flexible edges, terminal Closed/Cancelled). `GET/PUT /api/blocker-lifecycle-config` and `PATCH /api/blockers/[id]` enforce transitions + edit policy.
 - **Approval Lifecycle** tab on `/lifecycle`: Pending → Approved/Rejected/Deferred/Withdrawn (Flexible); Approved/Rejected/Expired/Withdrawn terminal+immutable; Deferred editable/non-terminal with no default exits; Approved → Expired (AV-22). `GET/PUT /api/approval-lifecycle-config` and `PATCH /api/approvals/[id]` enforce decision transitions + edit policy.
 - **Sign-off Lifecycle** tab on `/lifecycle`: Pending → Approved/Rejected/Approved with Conditions/Withdrawn (Flexible) + Expired (SLA Required); terminal decisions immutable; Dev/Test/UAT/Security/Business/Ops types with mandatory/optional toggles. `GET/PUT /api/signoff-lifecycle-config`; `PATCH /api/releases/[id]` enforces checklist field transitions; CAB `signoffs_complete` uses mandatory types.
@@ -37,6 +41,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Voice Admin (`/admin-voice`) client page no longer imports server-only auth via `admin-gate` (Vercel build: `server-only` / Clerk server). Email allowlist helpers moved to `admin-gate-constants`.
+- Voice policy TypeScript: `effectiveDailyMinutes` accepts optional policy fields so `evaluateVoiceAccess` typechecks under `next build` (Vercel).
+- Voice Admin `GET /api/admin/voice` no longer hard-500s when `VoiceUserPolicy` is missing; returns a clear migration warning and empty list so the page can load.
+- Vercel Prisma client sync: `clean-and-generate-prisma` copies the regenerated client into `node_modules/@releasedesk/database` so runtime includes `voiceUserPolicy` (fixes `findMany` of undefined on Voice Admin).
+- Vercel Prisma file tracing now includes `node_modules/@releasedesk/database/generated` (JS + Linux query engine) so serverless runtime matches `install-links` resolution — fixes DB-backed tools/nav after the nm sync.
+- Voice super-admin mailbox is exempt from the default 10 min/day ceiling (unlimited) so admin testing is not blocked.
 - Release lifecycle previous-status validation is config-driven: any status with `kind: "interrupt"` may own a `__previous__` edge (no longer hardcoded to key `"blocked"`).
 - Invalid stored lifecycle graphs still fall back to the Enterprise Default for reads, but the fallback is loud: structured `console.error`, `usedEnterpriseDefaultFallback` on normalize, and GET `/api/release-lifecycle-config` returns `warning.code = ENTERPRISE_DEFAULT_FALLBACK`.
 - Voice session continuity: store Gemini resumption handles only when `resumable !== false` (avoid wiping a good handle mid-tool-call); proactive audio remint at ~8 min before the typical ~10 min Live WebSocket cut; quiet planned refresh (no false “network outage” apology); local transcript digest bridge when resume fails; reconnect remints no longer invalidate pending `propose_action` rows.

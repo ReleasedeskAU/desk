@@ -25,16 +25,32 @@ const ENTITY_TYPE_ENUM = SEARCH_ENTITY_TYPES.join(" | ");
  */
 export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
+    name: "lookup_navigation",
+    description:
+      "Navigation agent — resolve any sidebar tab, nested settings URL, or detail-shaped path to a real href. Call this FIRST when you are unsure of a page URL or when navigate_to fails with unknown page. Never invent paths like /settings/lifecycle; ask this tool, then call navigate_to with the returned href.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Spoken tab name (lifecycle settings), guessed path (/settings/lifecycle), or synonym (env booking).",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "navigate_to",
     description:
-      "REQUIRED to change pages. Navigate the Release Desk UI. path may be a real href (/blockers, /booking, /calendar) OR a spoken sidebar name (blockers, env booking, calendar tab). Always call this tool to open a tab — never only say you navigated. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes. For filtering a list, use apply_list_filters instead of stuffing query strings into path.",
+      "REQUIRED to change pages. Navigate the Release Desk UI. path may be a real href (/blockers, /booking, /lifecycle) OR a spoken sidebar name (blockers, env booking, lifecycle settings). If unsure of the URL, call lookup_navigation first. Always call this tool to open a tab — never only say you navigated. Never invent entity ids; for details use search_entity.path. Prefer get_summary for questions. Never use for writes. For filtering a list, use apply_list_filters instead of stuffing query strings into path.",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
           description:
-            "Full path from search_entity/get_summary path fields, or a sidebar name (env booking, calendar tab). Never invent detail URLs — use candidate.path.",
+            "Full path from lookup_navigation/search_entity/get_summary, or a sidebar name (env booking, lifecycle settings). Never invent detail URLs — use candidate.path / href.",
         },
         label: {
           type: "string",
@@ -206,7 +222,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "run_walkthrough",
     description:
-      "Run a multi-step guided tour (navigates + applies filters + returns a spoken script). Use for walkthrough, show me how, morning check, tour of blockers/approvals/conflicts/readiness. Tours: critical_blockers, release_readiness, pending_approvals, env_conflicts, morning_check.",
+      "Run a multi-step guided tour (navigates + applies filters + scrolls + returns a spoken script). Use for walkthrough / show me how / morning check. For the page you are already on (including Settings tabs), pass tour=current_page (or this page). Named tours: critical_blockers, release_readiness, pending_approvals, env_conflicts, morning_check.",
     parameters: {
       type: "object",
       properties: {
@@ -270,7 +286,7 @@ export const VOICE_TOOL_MANIFEST: readonly VoiceToolDeclaration[] = [
   {
     name: "get_page_context",
     description:
-      "REQUIRED to read what the current page/table is showing — filtered/on-screen row codes and names (ground truth). Use when the user asks what is filtered, list the releases/ids/names, how many rows, or what am I looking at on this list. Call after apply_list_filters before listing rows. No screen share. Do NOT use search_entity for the filtered table (that searches the whole DB).",
+      "REQUIRED to read what the current page/table is showing — returns totalCount (real page/table count) plus a sample of row codes/names. Use when the user asks what is filtered, list ids/names, how many rows, or what am I looking at. For how many, speak totalCount (never the sample size). Call after apply_list_filters before listing rows. No screen share. Do NOT use search_entity for the filtered table (that searches the whole DB).",
     parameters: {
       type: "object",
       properties: {

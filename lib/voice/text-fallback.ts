@@ -250,16 +250,21 @@ export function parseVoiceTextCommand(
     /^(?:walk\s*me\s*through|walkthrough|tour|show me how(?: to)?|morning check|daily briefing)\s*(.*)$/i
   );
   if (tour || /^(?:morning check|daily briefing)$/i.test(lower)) {
-    const hint =
-      tour?.[1]?.trim() ||
-      ( /morning|daily/i.test(lower) ? "morning_check" : "release_readiness");
+    const rest = tour?.[1]?.trim() ?? "";
+    const hint = /morning|daily/i.test(lower)
+      ? "morning_check"
+      : !rest ||
+          /^(this|the)?\s*page$/i.test(rest) ||
+          /^settings$/i.test(rest)
+        ? "current_page"
+        : rest;
     return {
       ok: true,
       calls: [
         {
           id: "text-walkthrough",
           name: "run_walkthrough",
-          args: { tour: hint || "release_readiness" },
+          args: { tour: hint || "current_page" },
         },
       ],
     };

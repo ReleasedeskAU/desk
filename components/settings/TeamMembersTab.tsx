@@ -1,11 +1,27 @@
 "use client";
 
+import { useMemo } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { teamMembers } from "@/lib/dummy-data";
+import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { Mail, MoreVertical, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Settings → Team Members table. Publishes live row count to the voice page-context agent.
+ */
 export function TeamMembersTab() {
+  const voiceRows = useMemo(
+    () =>
+      teamMembers.map((m) => ({
+        code: m.id,
+        label: `${m.name} — ${m.role}`,
+        path: `/settings?tab=team`,
+      })),
+    []
+  );
+  useVoiceListContext("/settings", "user", voiceRows, "team-members");
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex items-center justify-between mb-6">

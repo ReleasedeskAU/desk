@@ -873,6 +873,29 @@ model UserAppearancePreference {
   updatedAt   DateTime @updatedAt
 }
 
+/// Per-user Voice admin policy (ban + daily minutes quota).
+/// Managed only from /admin-voice by the voice super-admin email allowlist.
+/// Usage telemetry stays in-memory; this table is the durable control plane.
+/// Default daily cap is 10 minutes when unlimitedUsage=false and dailyMinutesLimit is null.
+model VoiceUserPolicy {
+  id                          String    @id @default(cuid())
+  clerkUserId                 String    @unique
+  /// Join aid — last known Clerk primary email for this user.
+  email                       String?
+  banned                      Boolean   @default(false)
+  /// When true, no daily minutes cap (admin-granted unlimited).
+  unlimitedUsage              Boolean   @default(false)
+  /// Custom daily minutes. Null + unlimitedUsage=false → default 10 min/day.
+  dailyMinutesLimit           Int?
+  /// Set when the user requests more minutes after hitting the cap.
+  minutesApprovalRequestedAt  DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  @@index([email])
+  @@index([minutesApprovalRequestedAt])
+}
+
 /// Per-user risk scoring thresholds/labels (Simple + Weighted).
 /// Demo-stage: keyed by clerkUserId (same shape as UserAppearancePreference).
 /// Future org migration: swap clerkUserId → organizationId without redesigning fields.

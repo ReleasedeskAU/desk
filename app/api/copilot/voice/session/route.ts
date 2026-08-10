@@ -26,6 +26,10 @@ import {
   VOICE_MAX_SESSION_DURATION_MS,
   VOICE_MAX_SESSIONS_PER_USER_PER_DAY,
 } from "@/lib/voice/usage";
+import {
+  checkVoiceUserAccess,
+  touchVoiceUserPolicyEmail,
+} from "@/lib/voice/policy";
 import { VOICE_TOOL_MANIFEST } from "@/lib/voice/tool-manifest";
 
 export async function POST(req: Request) {
@@ -35,6 +39,34 @@ export async function POST(req: Request) {
   const reconnect =
     req.headers.get("x-voice-reconnect")?.trim() === "1" ||
     req.headers.get("X-Voice-Reconnect")?.trim() === "1";
+
+  // Ban + per-user daily minutes (durable). Checked on cold start and reconnect.
+  try {
+    const access = await checkVoiceUserAccess(user!.id, user!.email);
+    if (!access.allowed) {
+      return NextResponse.json(
+        {
+          error: access.reason,
+          code: access.code,
+          banned: access.banned,
+          unlimitedUsage: access.unlimitedUsage,
+          dailyMinutesLimit: access.dailyMinutesLimit,
+          effectiveDailyMinutes: access.effectiveDailyMinutes,
+          minutesUsed: Math.round(access.minutesUsed * 10) / 10,
+          approvalRequested: access.approvalRequested,
+          canRequestApproval: access.code === "daily_minutes_ceiling",
+        },
+        { status: access.code === "voice_banned" ? 403 : 429 }
+      );
+    }
+  } catch {
+    // If policy table is unavailable, fail closed for safety on bans is ideal —
+    // but demos may not have migrated yet. Deny only when we can read a ban;
+    // swallow lookup errors so voice still works pre-migration.
+  }
+
+  // Best-effort email join aid for /admin-voice (never block mint).
+  void touchVoiceUserPolicyEmail(user!.id, user!.email).catch(() => {});
 
   if (!reconnect) {
     const ceiling = checkVoiceDailySessionCeiling(user!.id);

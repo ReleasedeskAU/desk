@@ -91,7 +91,7 @@ export function voiceSystemInstructionParts(
     {
       id: "page_context_list",
       inConstraints: true,
-      text: "When the user asks what THIS page is showing / filtered releases / names and ids on the current list: call get_page_context and speak ONLY those rows. Do not ask for screen share.",
+      text: "When the user asks what THIS page is showing / how many rows / filtered names and ids: call get_page_context. Answer how-many from totalCount (never invent 40/80). Sample rows are for naming/opening only. Do not ask for screen share.",
     },
     {
       id: "manager_reads",
@@ -146,12 +146,12 @@ export function voiceSystemInstructionParts(
     {
       id: "explain_vs_context",
       inConstraints: false,
-      text: "When asked what this page is for / what can I do here (product help): call explain_page. When asked what rows/data are showing: call get_page_context.",
+      text: "When asked what this page is for / what can I do here / Settings tabs (product help): call explain_page. When asked what rows/data or how many: call get_page_context (use totalCount).",
     },
     {
       id: "walkthrough",
       inConstraints: false,
-      text: "When asked for a walkthrough / show me how / morning check: call run_walkthrough with the matching tour.",
+      text: "When asked for a walkthrough of THIS page / Settings tabs / show me this page: call run_walkthrough with tour=current_page (scrolls + explains sections). For morning check / critical blockers / readiness: use the matching named tour.",
     },
     {
       id: "filters_required",
@@ -251,22 +251,27 @@ export function voiceSystemInstructionParts(
     {
       id: "sidebar_exists",
       inConstraints: false,
-      text: "If asked whether a sidebar tab exists (System Mapping, Versions & Config, Executive, Compare, Knowledge Graph, Reference Data, Settings, etc.), answer yes and offer to open it — never invent that the product lacks those pages.",
+      text: "If asked whether a sidebar tab exists (System Mapping, Versions & Config, Lifecycle Settings, Executive, Compare, Knowledge Graph, Reference Data, Settings, etc.), answer yes and offer to open it — never invent that the product lacks those pages.",
+    },
+    {
+      id: "nav_agent",
+      inConstraints: false,
+      text: "When unsure of any page/tab URL (new or old), call lookup_navigation first — never invent paths like /settings/lifecycle. Then call navigate_to with the returned href.",
     },
     {
       id: "navigate_required",
       inConstraints: false,
-      text: 'To open any sidebar tab, you MUST call navigate_to with the spoken tab name (e.g. path="blockers" or "/blockers") — never only say you navigated.',
+      text: 'To open any sidebar tab, you MUST call navigate_to with the spoken tab name (e.g. path="blockers", "lifecycle settings", or "/lifecycle") — never only say you navigated. If navigate_to returns unknown page, call lookup_navigation and retry.',
     },
     {
       id: "navigate_ok",
       inConstraints: false,
-      text: "Never claim navigation succeeded unless navigate_to returned ok. If the user says go to / open blockers, call navigate_to immediately.",
+      text: "Never claim navigation succeeded unless navigate_to returned ok. If the user says go to / open blockers or lifecycle settings, call navigate_to (or lookup_navigation then navigate_to) immediately.",
     },
     {
       id: "app_context",
       inConstraints: false,
-      text: "When [APP_CONTEXT] or [PAGE_UPDATE] is present, treat visible[] as the ground-truth on-screen table. Prefer get_page_context before speaking a full list.",
+      text: "When [APP_CONTEXT] or [PAGE_UPDATE] is present, totalCount is the real table count; visible[] is a sample. Prefer get_page_context before speaking counts or a full list.",
     },
     {
       id: "nav_ux",
