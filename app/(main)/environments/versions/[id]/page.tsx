@@ -2,29 +2,20 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  FileText,
-  GitCompare,
-  List,
-  Package,
-  Search,
-  Server,
-  Zap,
-} from "lucide-react";
+import { FileText, GitCompare, List, Search, Server } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
   StatusChip,
-  HeroStatusRow,
   TintedCallout,
   EntityTimeline,
   EntityConnection,
   type ChipTone,
   type TimelinePhase,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -32,6 +23,11 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  collectAttention,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
 
 type VersionSibling = {
   id: string;
@@ -117,48 +113,35 @@ function nullIfEmpty(value: string): string | null {
   return t ? t : null;
 }
 
-function alignmentFromStatus(status: string | null | undefined): {
+type Alignment = {
   label: string;
   tone: ChipTone;
-  heroTone: "rose" | "amber" | "emerald" | "sky";
-  percent: number;
+  /** Machine-readable verdict; `label` may be raw free-text from the record. */
+  state: "drift" | "sync" | "unknown" | "other";
   caption: string;
-} {
+};
+
+function alignmentFromStatus(status: string | null | undefined): Alignment {
   const s = (status ?? "").toLowerCase();
   if (s.includes("behind") || s.includes("drift") || s.includes("outdated")) {
-    return {
-      label: "Drift",
-      tone: "bad",
-      heroTone: "rose",
-      percent: 25,
-      caption: "behind other stages",
-    };
+    return { label: "Drift", tone: "bad", state: "drift", caption: "behind other stages" };
   }
   if (s.includes("current") || s.includes("sync") || s.includes("in sync")) {
-    return {
-      label: "In Sync",
-      tone: "good",
-      heroTone: "emerald",
-      percent: 100,
-      caption: "aligned with promotion path",
-    };
+    return { label: "In Sync", tone: "good", state: "sync", caption: "aligned with promotion path" };
   }
   if (!status?.trim()) {
-    return {
-      label: "Unknown",
-      tone: "neutral",
-      heroTone: "sky",
-      percent: 40,
-      caption: "status not recorded",
-    };
+    return { label: "Unknown", tone: "neutral", state: "unknown", caption: "status not recorded" };
   }
-  return {
-    label: status,
-    tone: "neutral",
-    heroTone: "amber",
-    percent: 55,
-    caption: "check before promotion",
-  };
+  return { label: status, tone: "neutral", state: "other", caption: "check before promotion" };
+}
+
+/** A build sitting this long without promotion is stale against later stages. */
+const STALE_BUILD_DAYS = 90;
+
+function daysSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return Math.max(0, Math.floor(ms / 86_400_000));
 }
 
 function statusTone(status: string): ChipTone {
@@ -319,6 +302,91 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
   const alignment = alignmentFromStatus(v.status);
   const phases = buildProgressionPhases(row.siblings ?? []);
   const stagesWithVersion = phases.filter((p) => p.complete || p.active).length;
+  const versionLabel = v.version.trim();
+  const deployAge = v.deployDate ? daysSince(v.deployDate) : null;
+
+  const attention = collectAttention([
+    {
+      id: "drift",
+      when: alignment.state === "drift",
+      tone: "critical",
+      label: `${row.environment.name} is behind the promotion path`,
+      detail: "Testing done here no longer reflects what later stages will run.",
+    },
+    {
+      id: "no-version",
+      when: !versionLabel,
+      tone: "critical",
+      label: "No version recorded",
+      detail: "Nothing identifies which build this environment is running.",
+    },
+    {
+      id: "unknown-alignment",
+      when: alignment.state === "unknown" && Boolean(versionLabel),
+      tone: "warning",
+      label: "Alignment status not recorded",
+      detail: "Nobody has confirmed whether this stage is current or behind.",
+    },
+    {
+      id: "no-deploy-date",
+      when: !v.deployDate,
+      tone: "warning",
+      label: "No deploy date",
+      detail: "Without a deploy date the build cannot be aged against other stages.",
+    },
+    {
+      id: "stale-build",
+      when: deployAge != null && deployAge > STALE_BUILD_DAYS && alignment.state !== "sync",
+      tone: "warning",
+      label: `Deployed ${deployAge} days ago`,
+    },
+    {
+      id: "no-trail",
+      when: stagesWithVersion <= 1,
+      tone: "warning",
+      label: "No promotion trail",
+      detail: "Only this stage has a recorded version, so drift cannot be compared.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    { label: "Version", value: versionLabel || "—", tone: versionLabel ? "neutral" : "bad" },
+    { label: "Build", value: v.buildNumber.trim() || "—" },
+    {
+      label: "Stages",
+      value: `${stagesWithVersion}/${phases.length}`,
+      tone: stagesWithVersion <= 1 ? "warn" : "neutral",
+      hint: "Promotion stages with a recorded version.",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    {
+      label: "Deployed",
+      value: v.deployDate ? formatDate(v.deployDate) : "Not recorded",
+      tone: v.deployDate ? "neutral" : "warn",
+      hint: deployAge != null ? `${deployAge} day${deployAge === 1 ? "" : "s"} ago` : undefined,
+    },
+    { label: "Updated by", value: v.updatedBy.trim() || "—" },
+  ];
+
+  const scope: DetailFact[] = [
+    { label: "Application", value: row.application.name },
+    { label: "Environment", value: `${row.environment.name} (${row.environment.type})` },
+    { label: "Department", value: row.application.department?.name ?? "—" },
+  ];
+
+  // No status to advance — the useful next step is comparing against the drift
+  // register when this stage is out of line.
+  const primaryAction: DetailAction | null =
+    alignment.state === "drift"
+      ? {
+          id: "check-drift",
+          label: "Check drift records",
+          href: "/drifts",
+          hint: "See whether this gap is already logged as a drift.",
+        }
+      : null;
 
   return (
     <EditableDetailShell
@@ -425,25 +493,15 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: Zap,
-          label: "Status",
-          value: v.status.trim() || "—",
-          tone: alignment.heroTone,
-        }}
-        secondary={{
-          icon: Server,
-          label: "Environment",
-          value: row.environment.name,
-        }}
-        metric={{
-          icon: GitCompare,
-          label: "Alignment",
-          percent: alignment.percent,
-          caption: alignment.caption,
-          tone: alignment.heroTone,
-        }}
+      <DetailDecisionHeader
+        status={{ label: alignment.label, tone: alignment.tone, caption: alignment.caption }}
+        signals={signals}
+        primaryAction={primaryAction}
+        canEdit={canEdit}
+        attention={attention}
+        attentionClearLabel="Build is in sync with the promotion path"
+        timing={timing}
+        scope={scope}
       />
 
       <DetailSection
@@ -462,81 +520,6 @@ export default function VersionDetailPage({ params }: { params: Promise<{ id: st
             }`}
           />
         </div>
-      </DetailSection>
-
-      <DetailSection
-        icon={Package}
-        tone="indigo"
-        title="Version identity"
-        description="Build identity for this environment. Application and environment links stay fixed."
-      >
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Version ID" value={versionCode} />
-          <EditableField
-            label="Version"
-            value={v.version}
-            editing={false}
-            mono
-          />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={
-              v.status.trim() ? (
-                <StatusChip label={v.status} tone={statusTone(v.status)} />
-              ) : (
-                "—"
-              )
-            }
-          />
-          <EditableField
-            label="Application"
-            value={row.application.name}
-            editing={false}
-            display={row.application.name}
-          />
-          <EditableField
-            label="Environment"
-            value={row.environment.name}
-            editing={false}
-            mono
-            display={`${row.environment.name} (${row.environment.type})`}
-          />
-          <EditableField
-            label="Department"
-            value={row.application.department?.name ?? ""}
-            editing={false}
-            display={row.application.department?.name ?? "—"}
-          />
-        </EditableFieldGrid>
-      </DetailSection>
-
-      <DetailSection
-        icon={Zap}
-        tone="violet"
-        title="Deployment details"
-        description="When this build landed, who recorded it, and the build number for audit."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Build Number"
-            value={v.buildNumber}
-            editing={false}
-            mono
-          />
-          <EditableField
-            label="Deploy Date"
-            value={v.deployDate}
-            editing={false}
-            display={v.deployDate ? formatDate(v.deployDate) : "—"}
-          />
-          <EditableField
-            label="Updated By"
-            value={v.updatedBy}
-            editing={false}
-          />
-        </EditableFieldGrid>
       </DetailSection>
 
       <DetailSection

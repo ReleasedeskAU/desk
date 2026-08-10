@@ -2,31 +2,18 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertOctagon,
-  Calendar,
-  CheckCircle2,
-  FileText,
-  List,
-  Package,
-  User,
-  Wrench,
-  Zap,
-} from "lucide-react";
+import { Calendar, FileText, List, Package, User, Wrench } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
   EmptyHint,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
   TintedCallout,
   SignoffChip,
-  ScoreBar,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -34,6 +21,15 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { blockerWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type BlockerDetail = {
   id: string;
@@ -153,21 +149,8 @@ function statusTone(status: string): ChipTone {
   return "neutral";
 }
 
-function heroToneFromSeverity(severity: string): "rose" | "amber" | "emerald" | "indigo" {
-  const t = severityTone(severity);
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  if (t === "good") return "emerald";
-  return "indigo";
-}
-
-function resolutionPercent(status: string, daysOpen: number): number {
-  const s = status.toLowerCase();
-  if (s.includes("resolv") || s.includes("closed")) return 100;
-  if (s.includes("progress")) return 60;
-  // Open longer → lower "clearance" feeling
-  return Math.max(8, 40 - Math.min(daysOpen, 30));
-}
+/** A blocker open past this many days is ageing and needs escalation attention. */
+const AGEING_BLOCKER_DAYS = 14;
 
 function toDraft(row: BlockerDetail, releases: ReleaseLookup[]): BlockerDraft {
   const matched =
@@ -211,6 +194,9 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, releaseList, me] = await Promise.all([
@@ -365,6 +351,35 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * Resolving stamps today's date; reopening clears it, so a reopened blocker
+   * never keeps a stale resolution date. The API re-validates and enforces the
+   * editor role — this button is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const body: Record<string, unknown> = { status: step.status };
+    if (step.stampsResolution) body.actualResolutionDate = new Date().toISOString().slice(0, 10);
+    if (step.clearsResolution) body.actualResolutionDate = null;
+
+    const res = await safeFetchJson(`/api/blockers/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      label: "blocker-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this blocker to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -387,6 +402,96 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
 
   const daysOpenNum = Number(v.daysOpen) || 0;
   const resolved = /resolv|closed/i.test(v.status);
+  const targetDue = describeDue(v.targetResolutionDate);
+  const workflow = blockerWorkflow(v.status);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "overdue",
+      when: !resolved && targetDue.state === "overdue",
+      tone: "critical",
+      label: `Target resolution ${targetDue.label.toLowerCase()}`,
+      detail: "The date this blocker was promised to clear has already passed.",
+    },
+    {
+      id: "severity",
+      when: !resolved && severityTone(v.severity) === "bad",
+      tone: "critical",
+      label: `${v.severity} severity still open`,
+      detail: "High-severity blockers hold the release until resolved or formally accepted.",
+    },
+    {
+      id: "unassigned",
+      when: !resolved && !v.assignedTo.trim(),
+      tone: "warning",
+      label: "No assignee",
+      detail: "Nobody owns this blocker, so no one is working to clear it.",
+    },
+    {
+      id: "ageing",
+      when: !resolved && daysOpenNum > AGEING_BLOCKER_DAYS,
+      tone: "warning",
+      label: `Open ${daysOpenNum} days`,
+      detail: "Long-running blockers usually need escalation rather than more waiting.",
+    },
+    {
+      id: "no-root-cause",
+      when: !resolved && !v.rootCause.trim(),
+      tone: "warning",
+      label: "Root cause not recorded",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Severity",
+      value: v.severity || "—",
+      tone: chipToneToFactTone(severityTone(v.severity)),
+      hint: "How hard this blocker hits the release. Critical and High hold go-live until cleared.",
+    },
+    {
+      label: "Days open",
+      value: String(daysOpenNum),
+      tone: resolved ? "good" : daysOpenNum > AGEING_BLOCKER_DAYS ? "bad" : "warn",
+      hint: "Calendar days since the blocker was raised.",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    { label: "Raised", value: v.raisedDate ? formatDate(v.raisedDate) : "—" },
+    {
+      label: "Target resolution",
+      value: v.targetResolutionDate ? formatDate(v.targetResolutionDate) : "—",
+      tone: resolved ? "neutral" : dueTone(targetDue.state),
+      hint: !resolved && v.targetResolutionDate ? targetDue.label : undefined,
+    },
+    {
+      label: "Actual resolution",
+      value: v.actualResolutionDate ? formatDate(v.actualResolutionDate) : "—",
+      tone: v.actualResolutionDate ? "good" : "neutral",
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    {
+      label: "Release",
+      value: v.releaseCode || "—",
+      href: row.release ? `/releases/${row.release.id}` : undefined,
+      hint: v.releaseName,
+    },
+    { label: "Application", value: v.application || "—" },
+    { label: "Department", value: v.department || "—" },
+    { label: "Impact", value: v.impactOnRelease || "—" },
+  ];
 
   return (
     <EditableDetailShell
@@ -575,63 +680,27 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: AlertOctagon,
-          label: "Severity",
-          value: v.severity,
-          tone: heroToneFromSeverity(v.severity),
+      <DetailDecisionHeader
+        identity={[
+          { label: "Assigned to", value: v.assignedTo || "Unassigned" },
+          { label: "Raised by", value: v.raisedBy || "—" },
+          { label: "Category", value: v.blockerType || "—" },
+        ]}
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
+          caption: resolved ? "Cleared" : "Blocking the release",
         }}
-        secondary={{
-          icon: Zap,
-          label: "Status",
-          value: v.status,
-        }}
-        metric={{
-          icon: CheckCircle2,
-          label: "Clearance",
-          percent: resolutionPercent(v.status, daysOpenNum),
-          caption: resolved ? "blocker cleared" : `${daysOpenNum} day${daysOpenNum === 1 ? "" : "s"} open`,
-          tone: resolved ? "emerald" : daysOpenNum > 14 ? "rose" : "amber",
-        }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="Nothing outstanding on this blocker"
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={AlertOctagon}
-        tone="rose"
-        title="Blocker status"
-        description="How severe this is, whether it’s still open, and how long it’s been blocking."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={resolved ? "CLEARED" : "⚠️ BLOCKING"}
-            tone={resolved ? "good" : "bad"}
-          />
-          <StatusChip label={v.severity} tone={severityTone(v.severity)} />
-          <StatusChip label={v.status} tone={statusTone(v.status)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Blocker ID" value={row.blockerCode} />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-          />
-          <EditableField
-            label="Severity"
-            value={v.severity}
-            editing={false}
-          />
-          <div>
-            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-              Days Open
-            </p>
-            <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-              <ScoreBar value={Math.min(daysOpenNum, 30)} max={30} label={`${daysOpenNum} days`} />
-            </div>
-          </div>
-        </EditableFieldGrid>
-      </DetailSection>
 
       <DetailSection
         icon={FileText}

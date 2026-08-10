@@ -7,7 +7,7 @@ import { ApplicationsBrowse } from "@/components/master-data/browse/Applications
 export default function ApplicationsPage() {
   return (
     <Suspense fallback={<TablePageSuspenseFallback />}>
-      <div className="max-w-[1400px] font-sans pb-24">
+      <div className="w-full font-sans pb-24">
         <ApplicationsBrowse />
       </div>
     </Suspense>

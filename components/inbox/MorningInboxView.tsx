@@ -130,7 +130,7 @@ export function MorningInboxView() {
       className="-mx-4 -mt-6 min-h-screen px-4 pb-9 pt-6 md:-mx-6 md:px-6 md:pt-9 lg:-mx-8 lg:px-8 bg-[#F4F7FE] dark:bg-[var(--background)]"
       style={{ fontFamily: "'Plus Jakarta Sans','DM Sans',ui-sans-serif,system-ui,sans-serif" }}
     >
-      <div className="mx-auto max-w-[1380px] space-y-7">
+      <div className="w-full space-y-7">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>

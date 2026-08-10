@@ -2,29 +2,17 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Calendar,
-  FileText,
-  List,
-  Package,
-  Server,
-  Wrench,
-  Zap,
-} from "lucide-react";
+import { Calendar, FileText, List, Package, Server, Wrench } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
-  LockedIdField,
   EditableField,
   EditableFieldGrid,
-  StatusChip,
-  HeroStatusRow,
   TintedCallout,
-  ScoreBar,
   EntityTimeline,
   type ChipTone,
 } from "@/components/detail/editable";
+import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -32,6 +20,15 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import {
+  chipToneToFactTone,
+  collectAttention,
+  describeDue,
+  dueTone,
+  type DetailAction,
+  type DetailFact,
+} from "@/lib/detail-decision";
+import { driftWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 
 type DriftDetail = {
   id: string;
@@ -125,13 +122,8 @@ function statusTone(status: string): ChipTone {
   return "neutral";
 }
 
-function heroToneFromSeverity(severity: string): "rose" | "amber" | "emerald" | "sky" {
-  const t = severityTone(severity);
-  if (t === "bad") return "rose";
-  if (t === "warn") return "amber";
-  if (t === "good") return "emerald";
-  return "sky";
-}
+/** A drift open past this many days needs escalation rather than more waiting. */
+const AGEING_DRIFT_DAYS = 14;
 
 function toDraft(
   row: DriftDetail,
@@ -183,6 +175,9 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
+  /** Id of the workflow step currently being written, so its button can spin. */
+  const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, deptList, releaseList, appList, envList, typeList, me] = await Promise.all([
@@ -396,6 +391,30 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     await load();
   };
 
+  /**
+   * Apply a one-click status transition from the decision header.
+   * The API re-validates the status and enforces the editor role — this button
+   * is convenience, not the permission check.
+   */
+  const applyStep = async (step: WorkflowStep) => {
+    if (!row) return;
+    setPendingStep(step.id);
+    setStepError(null);
+    const res = await safeFetchJson(`/api/drifts/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: step.status }),
+      label: "drift-status-step",
+      rejectHttpErrors: false,
+    });
+    setPendingStep(null);
+    if (!res.ok || res.status >= 300) {
+      setStepError(`Couldn’t set this drift to ${step.status}. Try again.`);
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -417,11 +436,95 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Drift not found.</p>;
 
   const daysOpen = daysSinceDetected(v.detectedDate || row.detectedDate);
-  const urgencyPct = Math.max(0, Math.min(100, (Math.min(daysOpen, 30) / 30) * 100));
   const resolved = /resolv|closed|fixed/i.test(v.status);
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
   const selectedApp = applications.find((a) => a.id === v.applicationId);
   const selectedDept = departments.find((dept) => dept.id === v.departmentId);
+  const etaDue = describeDue(v.etaToFix);
+  const workflow = driftWorkflow(v.status);
+
+  const toAction = (step: WorkflowStep): DetailAction => ({
+    id: step.id,
+    label: step.label,
+    write: true,
+    pending: pendingStep === step.id,
+    disabled: pendingStep !== null,
+    onClick: () => void applyStep(step),
+  });
+
+  const attention = collectAttention([
+    {
+      id: "eta-passed",
+      when: !resolved && etaDue.state === "overdue",
+      tone: "critical",
+      label: `Fix ETA ${etaDue.label.toLowerCase()}`,
+      detail: "The promised remediation date has passed and the environment still differs from baseline.",
+    },
+    {
+      id: "severity",
+      when: !resolved && severityTone(v.severity) === "bad",
+      tone: "critical",
+      label: `${v.severity} drift on ${v.environmentName || "this environment"}`,
+      detail: "High-severity drift can invalidate testing done against the intended baseline.",
+    },
+    {
+      id: "no-eta",
+      when: !resolved && !v.etaToFix,
+      tone: "warning",
+      label: "No fix ETA",
+      detail: "Nobody has committed to a date for restoring the baseline.",
+    },
+    {
+      id: "no-remediation",
+      when: !resolved && !v.remediationAction.trim(),
+      tone: "warning",
+      label: "No remediation plan",
+    },
+    {
+      id: "ageing",
+      when: !resolved && daysOpen > AGEING_DRIFT_DAYS,
+      tone: "warning",
+      label: `Open ${daysOpen} days`,
+      detail: "Long-running drift usually means the baseline itself is out of date.",
+    },
+  ]);
+
+  const signals: DetailFact[] = [
+    {
+      label: "Severity",
+      value: v.severity || "—",
+      tone: chipToneToFactTone(severityTone(v.severity)),
+      hint: "How far the environment has diverged from the intended release baseline.",
+    },
+    {
+      label: "Days open",
+      value: String(daysOpen),
+      tone: resolved ? "good" : daysOpen > AGEING_DRIFT_DAYS ? "bad" : "warn",
+      hint: "Calendar days since the drift was detected.",
+    },
+  ];
+
+  const timing: DetailFact[] = [
+    { label: "Detected", value: v.detectedDate ? formatDate(v.detectedDate) : "—" },
+    {
+      label: "Fix ETA",
+      value: v.etaToFix ? formatDate(v.etaToFix) : "Not set",
+      tone: resolved ? "neutral" : dueTone(etaDue.state),
+      hint: !resolved && v.etaToFix ? etaDue.label : undefined,
+    },
+  ];
+
+  const scope: DetailFact[] = [
+    {
+      label: "Release",
+      value: selectedRelease?.releaseCode ?? row.release.releaseCode,
+      href: `/releases/${v.releaseId || row.release.id}`,
+      hint: row.release.name,
+    },
+    { label: "Environment", value: v.environmentName || "—" },
+    { label: "Application", value: selectedApp?.name ?? row.application.name },
+    { label: "Department", value: selectedDept?.name ?? v.departmentName ?? "—" },
+  ];
 
   return (
     <EditableDetailShell
@@ -595,66 +698,24 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         </>
       }
     >
-      <HeroStatusRow
-        hero={{
-          icon: AlertTriangle,
-          label: "Severity",
-          value: v.severity,
-          tone: heroToneFromSeverity(v.severity),
-        }}
-        secondary={{
-          icon: Zap,
-          label: "Status",
-          value: v.status,
-        }}
-        metric={{
-          icon: Calendar,
-          label: "Urgency",
-          percent: urgencyPct,
+      <DetailDecisionHeader
+        status={{
+          label: v.status,
+          tone: statusTone(v.status),
           caption: resolved
-            ? "remediation complete"
-            : `${daysOpen} day${daysOpen === 1 ? "" : "s"} open`,
-          tone: resolved ? "emerald" : daysOpen > 14 ? "rose" : "amber",
+            ? "Baseline restored"
+            : `Open ${daysOpen} day${daysOpen === 1 ? "" : "s"} on ${v.environmentName || "this environment"}`,
         }}
+        signals={signals}
+        primaryAction={workflow.primary ? toAction(workflow.primary) : null}
+        secondaryActions={workflow.secondary.map(toAction)}
+        canEdit={canEdit}
+        actionError={stepError}
+        attention={attention}
+        attentionClearLabel="No outstanding drift — the environment matches the intended baseline"
+        timing={timing}
+        scope={scope}
       />
-
-      <DetailSection
-        icon={AlertTriangle}
-        tone="rose"
-        title="Drift status"
-        description="How severe the mismatch is, whether it’s still open, and how long it has been outstanding."
-      >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusChip
-            label={resolved ? "✓ CLEARED" : "⚠️ DRIFT OPEN"}
-            tone={resolved ? "good" : "bad"}
-          />
-          <StatusChip label={v.severity} tone={severityTone(v.severity)} />
-          <StatusChip label={v.status} tone={statusTone(v.status)} />
-        </div>
-        <EditableFieldGrid cols={3}>
-          <LockedIdField label="Drift ID" value={row.driftCode} />
-          <EditableField
-            label="Severity"
-            value={v.severity}
-            editing={false}
-            display={<StatusChip label={v.severity} tone={severityTone(v.severity)} />}
-          />
-          <EditableField
-            label="Status"
-            value={v.status}
-            editing={false}
-            display={<StatusChip label={v.status} tone={statusTone(v.status)} />}
-          />
-        </EditableFieldGrid>
-        <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
-          <ScoreBar
-            value={Math.min(daysOpen, 30)}
-            max={30}
-            label={`${daysOpen} day${daysOpen === 1 ? "" : "s"} since detected`}
-          />
-        </div>
-      </DetailSection>
 
       <DetailSection
         icon={Calendar}
@@ -684,82 +745,15 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
             },
           ]}
         />
-        <div className="mt-4">
-          <EditableFieldGrid>
-            <EditableField
-              label="Detected Date"
-              value={v.detectedDate}
-              editing={false}
-              display={v.detectedDate ? formatDate(v.detectedDate) : "—"}
-            />
-            <EditableField
-              label="ETA to Fix"
-              value={v.etaToFix}
-              editing={false}
-              display={v.etaToFix ? formatDate(v.etaToFix) : "—"}
-            />
-          </EditableFieldGrid>
-        </div>
-      </DetailSection>
-
-      <DetailSection
-        icon={Package}
-        tone="sky"
-        title="Associated release"
-        description="Which release and application this drift threatens."
-      >
-        <EditableFieldGrid>
-          <EditableField
-            label="Release"
-            value={v.releaseId}
-            editing={false}
-            display={
-              <ProgressLink
-                href={`/releases/${v.releaseId || row.release.id}`}
-                className="font-mono text-[13.5px] font-semibold text-sky-600 hover:underline dark:text-sky-300"
-              >
-                {selectedRelease?.releaseCode ?? row.release.releaseCode}
-              </ProgressLink>
-            }
-          />
-          <EditableField
-            label="Release Name"
-            value={row.release.name}
-            editing={false}
-            display={
-              v.releaseId === row.releaseId
-                ? row.release.name
-                : (selectedRelease?.releaseCode ?? "—")
-            }
-          />
-          <EditableField
-            label="Application"
-            value={v.applicationId}
-            editing={false}
-            display={selectedApp?.name ?? row.application.name}
-          />
-          <EditableField
-            label="Department"
-            value={v.departmentName}
-            editing={false}
-            display={selectedDept?.name ?? v.departmentName ?? "—"}
-          />
-        </EditableFieldGrid>
       </DetailSection>
 
       <DetailSection
         icon={Server}
         tone="amber"
-        title="Environment details"
-        description="Where the mismatch was found and what kind of drift it is."
+        title="What drifted"
+        description="The kind of mismatch found, so the right team picks it up."
       >
         <EditableFieldGrid>
-          <EditableField
-            label="Environment"
-            value={v.environmentName}
-            editing={false}
-            mono
-          />
           <EditableField label="Drift Type" value={v.driftType} editing={false} />
           <EditableField label="Drift Category" value={v.driftCategory} editing={false} />
         </EditableFieldGrid>
