@@ -9,26 +9,34 @@
  *
  * Usage: node scripts/clean-and-generate-prisma.mjs
  */
-import { existsSync, rmSync, readFileSync, cpSync } from "node:fs";
+import { existsSync, rmSync, readFileSync, cpSync, realpathSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sentinelRoot = resolve(__dirname, "..");
-const generatedDir = resolve(
-  sentinelRoot,
-  "vendor/releasedesk-database/generated"
-);
-const schemaPath = resolve(
-  sentinelRoot,
-  "vendor/releasedesk-database/prisma/schema.prisma"
-);
+const vendorPackageDir = resolve(sentinelRoot, "vendor/releasedesk-database");
+const generatedDir = resolve(vendorPackageDir, "generated");
+const schemaPath = resolve(vendorPackageDir, "prisma/schema.prisma");
 const nmPackageDir = resolve(
   sentinelRoot,
   "node_modules/@releasedesk/database"
 );
 const nmGeneratedDir = resolve(nmPackageDir, "generated");
+
+/**
+ * True when node_modules package is the same folder as vendor (junction/symlink).
+ * In that case syncing would rm the source we just generated.
+ */
+function isLinkedToVendorPackage() {
+  if (!existsSync(nmPackageDir) || !existsSync(vendorPackageDir)) return false;
+  try {
+    return realpathSync(nmPackageDir) === realpathSync(vendorPackageDir);
+  } catch {
+    return false;
+  }
+}
 
 if (!existsSync(schemaPath)) {
   console.error("clean-and-generate-prisma: missing", schemaPath);
@@ -92,8 +100,18 @@ for (const needle of [
   }
 }
 
-// Keep runtime resolution (@releasedesk/database → node_modules copy) in sync.
-if (existsSync(nmPackageDir)) {
+// Keep runtime resolution in sync when npm used --install-links (real copy).
+// Skip when node_modules is a junction/symlink to vendor — deleting nmGenerated
+// would wipe the vendor client we just generated (local Windows installs).
+if (!existsSync(nmPackageDir)) {
+  console.warn(
+    "clean-and-generate-prisma: node_modules/@releasedesk/database missing — skip sync"
+  );
+} else if (isLinkedToVendorPackage()) {
+  console.log(
+    "clean-and-generate-prisma: node_modules links to vendor — skip sync"
+  );
+} else {
   console.log(
     "clean-and-generate-prisma: syncing generated client → node_modules/@releasedesk/database"
   );
@@ -101,10 +119,6 @@ if (existsSync(nmPackageDir)) {
     rmSync(nmGeneratedDir, { recursive: true, force: true });
   }
   cpSync(generatedDir, nmGeneratedDir, { recursive: true });
-} else {
-  console.warn(
-    "clean-and-generate-prisma: node_modules/@releasedesk/database missing — skip sync"
-  );
 }
 
 console.log(
