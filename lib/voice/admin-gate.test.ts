@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import {
   isVoiceSuperAdminEmail,
   VOICE_SUPER_ADMIN_EMAIL,
-} from "./admin-gate";
+} from "./admin-gate-constants";
 
 describe("isVoiceSuperAdminEmail", () => {
   it("allows only the configured mailbox (case-insensitive)", () => {

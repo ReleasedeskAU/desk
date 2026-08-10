@@ -12,7 +12,7 @@ import {
   requestVoiceMinutesApproval,
   VOICE_DEFAULT_DAILY_MINUTES,
 } from "@/lib/voice/policy";
-import { VOICE_SUPER_ADMIN_EMAIL } from "@/lib/voice/admin-gate";
+import { VOICE_SUPER_ADMIN_EMAIL } from "@/lib/voice/admin-gate-constants";
 
 /**
  * Record a pending minutes-approval request for the current user.

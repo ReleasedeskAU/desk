@@ -8,7 +8,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { Mic, ShieldBan, Timer } from "lucide-react";
 import { TablePageSuspenseFallback } from "@/components/ui/TableSkeleton";
-import { isVoiceSuperAdminEmail } from "@/lib/voice/admin-gate";
+import { isVoiceSuperAdminEmail } from "@/lib/voice/admin-gate-constants";
 import { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
 import { cn } from "@/lib/utils";
 

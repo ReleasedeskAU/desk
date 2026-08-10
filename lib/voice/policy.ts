@@ -5,7 +5,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getVoiceUserUsage } from "@/lib/voice/usage";
-import { VOICE_SUPER_ADMIN_EMAIL } from "@/lib/voice/admin-gate";
+import { VOICE_SUPER_ADMIN_EMAIL } from "@/lib/voice/admin-gate-constants";
 import { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
 
 export { VOICE_DEFAULT_DAILY_MINUTES } from "@/lib/voice/policy-constants";
