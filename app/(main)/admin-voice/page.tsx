@@ -32,6 +32,7 @@ type AdminVoiceUser = {
 type AdminVoiceResponse = {
   users?: AdminVoiceUser[];
   defaultDailyMinutes?: number;
+  warning?: string | null;
   ceilings?: {
     maxSessionDurationMs: number;
     maxSessionsPerUserPerDay: number;
@@ -83,6 +84,9 @@ function AdminVoicePageInner() {
         return;
       }
       setData(json);
+      if (json.warning) {
+        setError(json.warning);
+      }
       const drafts: Record<string, string> = {};
       for (const u of json.users ?? []) {
         drafts[u.clerkUserId] =

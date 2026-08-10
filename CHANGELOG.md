@@ -40,6 +40,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Voice Admin (`/admin-voice`) client page no longer imports server-only auth via `admin-gate` (Vercel build: `server-only` / Clerk server). Email allowlist helpers moved to `admin-gate-constants`.
 - Voice policy TypeScript: `effectiveDailyMinutes` accepts optional policy fields so `evaluateVoiceAccess` typechecks under `next build` (Vercel).
+- Voice Admin `GET /api/admin/voice` no longer hard-500s when `VoiceUserPolicy` is missing; returns a clear migration warning and empty list so the page can load.
 - Release lifecycle previous-status validation is config-driven: any status with `kind: "interrupt"` may own a `__previous__` edge (no longer hardcoded to key `"blocked"`).
 - Invalid stored lifecycle graphs still fall back to the Enterprise Default for reads, but the fallback is loud: structured `console.error`, `usedEnterpriseDefaultFallback` on normalize, and GET `/api/release-lifecycle-config` returns `warning.code = ENTERPRISE_DEFAULT_FALLBACK`.
 - Voice session continuity: store Gemini resumption handles only when `resumable !== false` (avoid wiping a good handle mid-tool-call); proactive audio remint at ~8 min before the typical ~10 min Live WebSocket cut; quiet planned refresh (no false “network outage” apology); local transcript digest bridge when resume fails; reconnect remints no longer invalidate pending `propose_action` rows.
