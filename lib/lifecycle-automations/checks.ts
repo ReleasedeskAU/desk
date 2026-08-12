@@ -459,10 +459,13 @@ export async function runSignoffSlaExpiry(
       id: true,
       releaseCode: true,
       createdAt: true,
+      // Keep in sync with SIGNOFF_RELEASE_FIELDS — SLA expiry indexes every key.
       devSignoff: true,
       testSignoff: true,
       uatSignoff: true,
       securityClearance: true,
+      businessSignoff: true,
+      opsSignoff: true,
       dressRehearsal: true,
       trainingStatus: true,
       supportBriefed: true,
