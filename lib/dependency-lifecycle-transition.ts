@@ -103,6 +103,10 @@ export function dependencyStatusSatisfiesHardGate(
 
 /**
  * Validate a dependency status change against the config graph + soft gates.
+ *
+ * AV-26 system exception: Met → At Risk is allowed only when
+ * `isSystemTransition: true`. User PATCH must never set that flag — Met stays
+ * terminal/immutable for normal edits.
  */
 export function validateDependencyTransition(args: {
   config: DependencyLifecycleConfig;
@@ -110,6 +114,11 @@ export function validateDependencyTransition(args: {
   toStatus: string;
   overrideReason?: string | null;
   facts: DependencyGateFacts;
+  /**
+   * System automation marker (AV-26). When true, allows the Met → At Risk
+   * exception despite Met being terminal. Never accept this from client input.
+   */
+  isSystemTransition?: boolean;
 }): DependencyTransitionResult {
   const from = resolveDependencyLifecycleStatusRef(args.config, args.fromStatus);
   const to = resolveDependencyLifecycleStatusRef(args.config, args.toStatus);
@@ -129,6 +138,31 @@ export function validateDependencyTransition(args: {
       canonicalStatus: to.label,
     };
   }
+
+  // AV-26: system-only Met → At Risk (not in the user-facing graph).
+  const isAv26SystemMetToAtRisk =
+    Boolean(args.isSystemTransition) &&
+    from.key === "met" &&
+    to.key === "at_risk";
+  if (isAv26SystemMetToAtRisk) {
+    if (!to.enabled) {
+      return {
+        allowed: false,
+        code: "ILLEGAL_TRANSITION",
+        reason: `Status "${to.label}" is turned off in the dependency lifecycle configuration`,
+        fromKey: from.key,
+        toKey: to.key,
+      };
+    }
+    return {
+      allowed: true,
+      overridden: false,
+      fromKey: from.key,
+      toKey: to.key,
+      canonicalStatus: to.label,
+    };
+  }
+
   if (from.terminal) {
     return {
       allowed: false,
@@ -184,7 +218,7 @@ export function validateDependencyTransition(args: {
         allowed: false,
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
-          "Transition has unmet flexible requirement(s). Provide overrideReason (min 3 characters) to proceed.",
+          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
         unmetReasons: unmet,
         fromKey: from.key,
         toKey: to.key,

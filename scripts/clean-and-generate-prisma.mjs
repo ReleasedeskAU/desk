@@ -89,6 +89,7 @@ for (const needle of [
   "get userReleaseLifecycleStatus()",
   "get userReleaseLifecycleTransition()",
   "get userReleaseLifecycleGate()",
+  "get userReleaseFieldLockConfig()",
   "get deploymentBlocker()",
   "get voiceUserPolicy()",
 ]) {

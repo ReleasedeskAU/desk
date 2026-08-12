@@ -6,6 +6,8 @@ export type FormAlert = {
   title: string;
   message: string;
   details?: string[];
+  /** error = blocking failure (default); notice = successful save with important side effect. */
+  variant?: "error" | "notice";
 };
 
 const LIFECYCLE_CODES = new Set([
@@ -14,6 +16,7 @@ const LIFECYCLE_CODES = new Set([
   "TRANSITION_BLOCKED",
   "TRANSITION_NEEDS_OVERRIDE",
   "EDIT_POLICY_DENIED",
+  "FIELD_LOCK_DENIED",
 ]);
 
 /**
@@ -55,13 +58,19 @@ export function buildFormSaveAlert(
       ? unmetFromBody
       : undefined;
 
+  const isFieldLock = code === "FIELD_LOCK_DENIED" || /field lock/i.test(message);
   const isLifecycle =
-    LIFECYCLE_CODES.has(code) ||
-    /lifecycle|transition|not allowed|edit policy/i.test(message);
+    !isFieldLock &&
+    (LIFECYCLE_CODES.has(code) ||
+      /lifecycle|transition|not allowed|edit policy/i.test(message));
 
   const entity = options?.entityLabel?.trim() || "record";
   return {
-    title: isLifecycle ? "Status change blocked" : `Could not save ${entity}`,
+    title: isFieldLock
+      ? "This field is locked"
+      : isLifecycle
+        ? "Status change blocked"
+        : `Could not save ${entity}`,
     message,
     details: details?.length ? details : undefined,
   };

@@ -143,8 +143,8 @@ export function TransitionsPanel({
                         ) : null}
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
-                        {enabledGateCount} gate{enabledGateCount === 1 ? "" : "s"} · click to
-                        open Gates for this move
+                        {enabledGateCount} check{enabledGateCount === 1 ? "" : "s"} · click to
+                        open Checks for this move
                       </p>
                     </button>
                     <div className="flex flex-wrap items-center gap-3">
@@ -168,7 +168,7 @@ export function TransitionsPanel({
                           transition.enforcement === "required" ? "Required" : "Flexible"
                         }
                         disabled={!editing}
-                        title="Required = gates must pass (hard block). Flexible = override with a reason when gates fail."
+                        title="Required = checks must pass (must fix first — no exception). Flexible = continue with a reason when checks fail."
                         aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} enforcement`}
                         data-testid={`lifecycle-transition-required-${rowKey}`}
                       />

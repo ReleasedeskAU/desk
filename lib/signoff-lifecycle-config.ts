@@ -17,6 +17,8 @@ export const SIGNOFF_RELEASE_FIELDS = [
   "testSignoff",
   "uatSignoff",
   "securityClearance",
+  "businessSignoff",
+  "opsSignoff",
   "dressRehearsal",
   "trainingStatus",
   "supportBriefed",
@@ -35,6 +37,11 @@ export type SignoffLifecycleStatusConfig = {
   cascadeEffect: string;
   /** When true, this status counts as a completed sign-off for CAB gates. */
   countsAsComplete: boolean;
+  /**
+   * Sign-off SLA: auto-expire after N days in this status (null = none).
+   * Mirrors Approval `expiryDays`; Pending defaults to 30.
+   */
+  expiryDays: number | null;
 };
 
 export type SignoffLifecycleTransitionConfig = {
@@ -77,8 +84,9 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatus
     enabled: true,
     isSystem: true,
     editMode: "full",
-    cascadeEffect: "Awaiting signatory action",
+    cascadeEffect: "Awaiting signatory action; 30-day SLA expiry",
     countsAsComplete: false,
+    expiryDays: 30,
   },
   {
     key: "approved",
@@ -90,6 +98,7 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatus
     editMode: "immutable",
     cascadeEffect: "Required for Pending CAB transition",
     countsAsComplete: true,
+    expiryDays: null,
   },
   {
     key: "rejected",
@@ -101,6 +110,7 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatus
     editMode: "immutable",
     cascadeEffect: "Blocks CAB submission",
     countsAsComplete: false,
+    expiryDays: null,
   },
   {
     key: "approved_with_conditions",
@@ -112,6 +122,7 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatus
     editMode: "immutable",
     cascadeEffect: "Conditions must be tracked",
     countsAsComplete: true,
+    expiryDays: null,
   },
   {
     key: "withdrawn",
@@ -123,6 +134,7 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatus
     editMode: "immutable",
     cascadeEffect: "Manual withdrawal",
     countsAsComplete: false,
+    expiryDays: null,
   },
   {
     key: "expired",
@@ -134,6 +146,7 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatus
     editMode: "immutable",
     cascadeEffect: "Auto-expired when SLA exceeded",
     countsAsComplete: false,
+    expiryDays: null,
   },
 ];
 
@@ -207,7 +220,7 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: false,
-    releaseField: "trainingStatus",
+    releaseField: "businessSignoff",
   },
   {
     key: "ops",
@@ -216,7 +229,25 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: false,
+    releaseField: "opsSignoff",
+  },
+  {
+    key: "dress_rehearsal",
+    label: "Dress Rehearsal",
+    sortOrder: 70,
+    enabled: true,
+    isSystem: true,
+    mandatory: false,
     releaseField: "dressRehearsal",
+  },
+  {
+    key: "training",
+    label: "Training",
+    sortOrder: 80,
+    enabled: true,
+    isSystem: true,
+    mandatory: false,
+    releaseField: "trainingStatus",
   },
 ];
 
@@ -329,8 +360,18 @@ export function normalizeSignoffLifecycleConfig(
   ) {
     const candidate = raw as SignoffLifecycleConfig;
     if (!validateSignoffLifecycleConfig(candidate)) {
+      // Backfill expiryDays for older stored configs (Pending → 30).
+      const defaultsByKey = new Map(
+        DEFAULT_SIGNOFF_LIFECYCLE_STATUSES.map((s) => [s.key, s] as const)
+      );
       return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
+        statuses: candidate.statuses.map((s) => ({
+          ...s,
+          expiryDays:
+            typeof s.expiryDays === "number" || s.expiryDays === null
+              ? s.expiryDays
+              : (defaultsByKey.get(s.key)?.expiryDays ?? null),
+        })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
         types: candidate.types.map((t) => ({ ...t })),
       };

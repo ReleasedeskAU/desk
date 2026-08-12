@@ -177,6 +177,28 @@ model Release {
   releaseHealth          String?
   sourceOrder            Int?
 
+  // --- Release Fields gap closure (Tranche 3) ---
+  releaseType            String?
+  backupOwner            String?
+  technicalLead          String?
+  businessOwner          String?
+  scopeDescription       String?
+  changeDescription      String?
+  justification          String?
+  businessSignoff        String?
+  opsSignoff             String?
+  createdBy              String?
+  lastModifiedBy         String?
+  goLiveDate             DateTime?
+  deployDate             DateTime?
+  /** VR-34 — Post-Implementation Review completed before Close. */
+  postImplementationReviewCompleted Boolean @default(false)
+  /**
+   * CAB scope snapshot (Size / Priority / Scope Description) captured on entry
+   * to CAB Approved — compared at Ready (scope_unchanged_since_cab / VR-21).
+   */
+  cabScopeSnapshot       Json?
+
   // --- Weighted Risk Score (System 2) ---
   weightedRiskScore Float?
   weightedRiskLevel String?
@@ -545,6 +567,9 @@ model User {
   userId      String    @unique
   name        String
   email       String    @unique
+  /// Clerk session id (`auth().userId`). Filled on login by email match.
+  /// Links directory User → per-user lifecycle config scopes (cron personalization).
+  clerkUserId String?   @unique
   role        String
   department  String
   manager     String?
@@ -560,6 +585,8 @@ model User {
   approvalsGiven Approval[]
   leaveRecords   LeaveRecord[]
   stakeholderOf  ReleaseStakeholder[]
+
+  @@index([clerkUserId])
 }
 
 // ─── Phase 1: New Models ────────────────────────────────────
@@ -1001,6 +1028,27 @@ model UserReleaseLifecycleGate {
   transition UserReleaseLifecycleTransition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
 
   @@unique([transitionId, gateType])
+  @@index([clerkUserId])
+  @@index([organizationId])
+}
+
+/// Per-user field-level editability rules for Release, keyed by (status key, field).
+/// Scoping matches UserReleaseLifecycleStatus — clerkUserId is the live scope;
+/// organizationId is reserved/unenforced for the future org cutover.
+/// Always enforced against the live/latest config (no lifecycleConfigVersion pin).
+model UserReleaseFieldLockConfig {
+  id             String   @id @default(cuid())
+  clerkUserId    String
+  organizationId String?
+  fieldKey       String
+  category       String
+  lockRuleRef    String?
+  isConfigurable Boolean  @default(true)
+  statusRules    Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([clerkUserId, fieldKey])
   @@index([clerkUserId])
   @@index([organizationId])
 }

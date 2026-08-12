@@ -68,6 +68,7 @@ describe("default Release lifecycle configuration", () => {
   it("returns independent default objects", () => {
     const first = createDefaultReleaseLifecycleConfig();
     const second = createDefaultReleaseLifecycleConfig();
+    const secondGateCount = second.transitions[0]!.gates.length;
     first.statuses[0]!.label = "Changed";
     first.transitions[0]!.gates.push({
       gateType: "owner_set",
@@ -76,7 +77,9 @@ describe("default Release lifecycle configuration", () => {
       sortOrder: 99,
     });
     assert.equal(second.statuses[0]!.label, "Draft");
-    assert.equal(second.transitions[0]!.gates.length, 0);
+    // Mutating first must not change second (draft→planning ships with §1-02/§1-03 gates).
+    assert.equal(second.transitions[0]!.gates.length, secondGateCount);
+    assert.equal(first.transitions[0]!.gates.length, secondGateCount + 1);
   });
 });
 

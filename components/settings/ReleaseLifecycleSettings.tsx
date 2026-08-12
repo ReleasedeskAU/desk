@@ -35,12 +35,18 @@ import type { ReleaseLifecycleGateType } from "@/lib/release-lifecycle-gates";
 import { StatusesPanel } from "@/components/settings/lifecycle/StatusesPanel";
 import { TransitionsPanel } from "@/components/settings/lifecycle/TransitionsPanel";
 import { GatesPanel } from "@/components/settings/lifecycle/GatesPanel";
+import {
+  FieldLocksPanel,
+  type FieldLockMatrixRow,
+  type FieldLockStatusCol,
+} from "@/components/settings/lifecycle/FieldLocksPanel";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import type { FormAlert } from "@/lib/form-save-alert";
+import type { FieldLockState } from "@/lib/release-field-lock-catalog";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
-type PanelId = "statuses" | "transitions" | "gates";
+type PanelId = "statuses" | "transitions" | "gates" | "fieldLocks";
 
 const LIFECYCLE_TAB_HELP: Record<
   PanelId,
@@ -60,18 +66,28 @@ const LIFECYCLE_TAB_HELP: Record<
     points: [
       "A transition is an allowed move from one stage to another (for example UAT → Pending CAB).",
       "On = people can pick this move. Off = the move is hidden.",
-      "Flexible = if a gate fails, you can still proceed with a written reason.",
-      "Required = if a gate fails, the move is blocked — no override.",
-      "“1 gate” means 1 homework check is attached. Click the row (or open the Gates tab) to manage checks.",
+      "Flexible = if a check fails, you can still proceed with a written reason.",
+      "Required = if a check fails, the move is blocked — no exception.",
+      "“1 check” means 1 homework check is attached. Click the row (or open the Checks tab) to manage checks.",
     ],
   },
   gates: {
-    title: "Quick help · Gates",
+    title: "Quick help · Checks",
     points: [
       "Every allowed move is listed here — click a row (e.g. Draft → Planning) to open its checks.",
-      "Gates are homework checks on that move (booking exists, owner set, no blockers…).",
+      "Checks are homework requirements on that move (booking exists, owner set, no blockers…).",
       "Turn Attached on to add a check — it moves into Active and leaves Available for that move.",
-      "Hard block vs override is set on Transitions (Required vs Flexible).",
+      "Hard block vs exception is set on Transitions (Required vs Flexible).",
+    ],
+  },
+  fieldLocks: {
+    title: "Quick help · Field Locks",
+    points: [
+      "Ask: “When a release is in this status, can people still change this field?”",
+      "Can edit = allowed. Locked = blocked (they’ll see an error if they try).",
+      "Can edit → back to Pending CAB = allowed, but the release is sent back to Pending CAB (typical for Size/Priority after CAB approval).",
+      "Status itself is not controlled here — use Transitions for that.",
+      "“Coming later” rows are in the rules spreadsheet but not built in the product yet.",
     ],
   },
 };
@@ -166,6 +182,19 @@ export function ReleaseLifecycleSettings() {
   const [addTo, setAddTo] = useState("");
   const [selectedFromKey, setSelectedFromKey] = useState<string | null>(null);
   const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
+  const [fieldLockStatuses, setFieldLockStatuses] = useState<FieldLockStatusCol[]>(
+    []
+  );
+  const [fieldLockRows, setFieldLockRows] = useState<FieldLockMatrixRow[]>([]);
+  const [fieldLockGapRows, setFieldLockGapRows] = useState<FieldLockMatrixRow[]>(
+    []
+  );
+  const [fieldLockOrphans, setFieldLockOrphans] = useState<string[]>([]);
+  const [fieldLockBaseline, setFieldLockBaseline] = useState<FieldLockMatrixRow[]>(
+    []
+  );
+  const fieldLockRowsRef = useRef(fieldLockRows);
+  fieldLockRowsRef.current = fieldLockRows;
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
@@ -178,15 +207,79 @@ export function ReleaseLifecycleSettings() {
     setAlert({ title, message });
   }, []);
 
+  const applyFieldLockPayload = useCallback(
+    (payload: {
+      rows: Array<{
+        fieldKey: string;
+        category: string;
+        lockRuleRef: string | null;
+        isConfigurable: boolean;
+        statusRules: Record<string, FieldLockState>;
+      }>;
+      statuses: FieldLockStatusCol[];
+      orphanStatusKeys: string[];
+      catalog: Array<{
+        fieldKey: string;
+        label: string;
+        category: string;
+        lockRuleRef: string | null;
+        isConfigurable: boolean;
+        infoOnly?: boolean;
+        unavailable?: boolean;
+      }>;
+      gapRows: Array<{
+        fieldKey: string;
+        label: string;
+        category: string;
+        lockRuleRef: string | null;
+        isConfigurable: boolean;
+        infoOnly?: boolean;
+        unavailable?: boolean;
+      }>;
+    }) => {
+      const labelByKey = new Map(payload.catalog.map((c) => [c.fieldKey, c]));
+      const matrixRows: FieldLockMatrixRow[] = payload.rows.map((row) => {
+        const meta = labelByKey.get(row.fieldKey);
+        return {
+          fieldKey: row.fieldKey,
+          label: meta?.label ?? row.fieldKey,
+          category: row.category,
+          lockRuleRef: row.lockRuleRef,
+          isConfigurable: row.isConfigurable,
+          infoOnly: Boolean(meta?.infoOnly),
+          unavailable: false,
+          statusRules: row.statusRules,
+        };
+      });
+      const gaps: FieldLockMatrixRow[] = payload.gapRows.map((g) => ({
+        fieldKey: g.fieldKey,
+        label: g.label,
+        category: g.category,
+        lockRuleRef: g.lockRuleRef,
+        isConfigurable: false,
+        infoOnly: false,
+        unavailable: true,
+        statusRules: {},
+      }));
+      setFieldLockStatuses(payload.statuses);
+      setFieldLockRows(matrixRows);
+      setFieldLockBaseline(matrixRows.map((r) => ({ ...r, statusRules: { ...r.statusRules } })));
+      setFieldLockGapRows(gaps);
+      setFieldLockOrphans(payload.orphanStatusKeys);
+    },
+    []
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setAlert(null);
     try {
-      const [configRes, usageRes] = await Promise.all([
+      const [configRes, usageRes, fieldLockRes] = await Promise.all([
         fetch("/api/release-lifecycle-config", { credentials: "same-origin" }),
         fetch("/api/release-lifecycle-config/status-usage", {
           credentials: "same-origin",
         }),
+        fetch("/api/release-field-lock-config", { credentials: "same-origin" }),
       ]);
       if (!configRes.ok) {
         const body = (await configRes.json().catch(() => null)) as { error?: string } | null;
@@ -207,6 +300,13 @@ export function ReleaseLifecycleSettings() {
       } else {
         setUsage({});
       }
+
+      if (fieldLockRes.ok) {
+        const flBody = (await fieldLockRes.json()) as Parameters<
+          typeof applyFieldLockPayload
+        >[0];
+        applyFieldLockPayload(flBody);
+      }
     } catch (loadError) {
       showAlert(
         loadError instanceof Error
@@ -217,7 +317,7 @@ export function ReleaseLifecycleSettings() {
     } finally {
       setLoading(false);
     }
-  }, [showAlert]);
+  }, [showAlert, applyFieldLockPayload]);
 
   useEffect(() => {
     void load();
@@ -225,6 +325,12 @@ export function ReleaseLifecycleSettings() {
 
   const beginEdit = () => {
     setDraft(cloneLifecycleConfig(baseline));
+    setFieldLockRows(
+      fieldLockBaseline.map((r) => ({
+        ...r,
+        statusRules: { ...r.statusRules },
+      }))
+    );
     setEditing(true);
     setAlert(null);
     setEnforcementWarning(null);
@@ -232,6 +338,12 @@ export function ReleaseLifecycleSettings() {
 
   const cancelEdit = () => {
     setDraft(cloneLifecycleConfig(baseline));
+    setFieldLockRows(
+      fieldLockBaseline.map((r) => ({
+        ...r,
+        statusRules: { ...r.statusRules },
+      }))
+    );
     setEditing(false);
     setAlert(null);
     setEnforcementWarning(null);
@@ -263,9 +375,41 @@ export function ReleaseLifecycleSettings() {
       const saved = cloneLifecycleConfig(body.config);
       setBaseline(saved);
       setDraft(cloneLifecycleConfig(saved));
+
+      const lockRes = await fetch("/api/release-field-lock-config", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: fieldLockRowsRef.current
+            .filter((r) => r.isConfigurable && !r.infoOnly && !r.unavailable)
+            .map((r) => ({
+              fieldKey: r.fieldKey,
+              statusRules: r.statusRules,
+            })),
+        }),
+      });
+      const lockBody = (await lockRes.json().catch(() => null)) as {
+        error?: string;
+        rows?: Parameters<typeof applyFieldLockPayload>[0]["rows"];
+        statuses?: FieldLockStatusCol[];
+        orphanStatusKeys?: string[];
+      } | null;
+      if (!lockRes.ok) {
+        throw new Error(lockBody?.error ?? "Field lock save failed");
+      }
+      // Reload field locks so catalog/gap meta stays aligned after status renames.
+      const flReload = await fetch("/api/release-field-lock-config", {
+        credentials: "same-origin",
+      });
+      if (flReload.ok) {
+        applyFieldLockPayload(
+          (await flReload.json()) as Parameters<typeof applyFieldLockPayload>[0]
+        );
+      }
+
       setEditing(false);
       setEnforcementWarning(null);
-      // Refresh usage after save in case labels/keys changed.
       const usageRes = await fetch("/api/release-lifecycle-config/status-usage", {
         credentials: "same-origin",
       });
@@ -315,7 +459,7 @@ export function ReleaseLifecycleSettings() {
               Release Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure statuses, allowed transitions, and fixed-catalog gates for your own
+              Configure statuses, allowed transitions, and fixed-catalog checks for your own
               release workflow. Changes never affect another user&apos;s config.
             </p>
           </div>
@@ -370,7 +514,8 @@ export function ReleaseLifecycleSettings() {
           [
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
-            ["gates", "Gates"],
+            ["gates", "Checks"],
+            ["fieldLocks", "Field Locks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -440,7 +585,7 @@ export function ReleaseLifecycleSettings() {
         <SectionCard
           step="2"
           title="Transitions"
-          subtitle="Allowed moves between statuses. On = available as a next step. Required = gates hard-block (no override). Custom edges can be removed; defaults use Off instead."
+          subtitle="Allowed moves between statuses. On = available as a next step. Required = checks hard-block (no exception). Custom edges can be removed; defaults use Off instead."
           help={LIFECYCLE_TAB_HELP.transitions}
         >
           <TransitionsPanel
@@ -506,8 +651,8 @@ export function ReleaseLifecycleSettings() {
       {activePanel === "gates" ? (
         <SectionCard
           step="3"
-          title="Gates"
-          subtitle="Browse every transition and expand a row to attach checks. Unreliable deploy gates are labeled so they cannot be mistaken for real protection."
+          title="Checks"
+          subtitle="Browse every transition and expand a row to attach checks. Unreliable deploy checks are labeled so they cannot be mistaken for real protection."
           help={LIFECYCLE_TAB_HELP.gates}
         >
           <GatesPanel
@@ -531,6 +676,35 @@ export function ReleaseLifecycleSettings() {
                   enabled
                 ),
                 enabled ? "Could not attach check" : "Could not detach check"
+              );
+            }}
+          />
+        </SectionCard>
+      ) : null}
+
+      {activePanel === "fieldLocks" ? (
+        <SectionCard
+          step="4"
+          title="Field Locks"
+          subtitle="Decide which release fields people can change in each status. Click Edit to change the dropdowns, then Save."
+          help={LIFECYCLE_TAB_HELP.fieldLocks}
+        >
+          <FieldLocksPanel
+            statuses={fieldLockStatuses}
+            rows={fieldLockRows}
+            gapRows={fieldLockGapRows}
+            orphanStatusKeys={fieldLockOrphans}
+            editing={editing}
+            onCellChange={(fieldKey, statusKey, state) => {
+              setFieldLockRows((prev) =>
+                prev.map((row) =>
+                  row.fieldKey === fieldKey
+                    ? {
+                        ...row,
+                        statusRules: { ...row.statusRules, [statusKey]: state },
+                      }
+                    : row
+                )
               );
             }}
           />

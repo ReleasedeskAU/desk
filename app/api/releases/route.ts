@@ -12,6 +12,12 @@ import {
   defaultReleaseStatusLabel,
   isEnabledReleaseStatusLabel,
 } from "@/lib/release-lifecycle-status-ui";
+import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
+import { detectScheduleConflictsOnDeployDate } from "@/lib/lifecycle-event-hooks";
+import {
+  validateReleaseDateOrder,
+  validateReleaseNameAndApplications,
+} from "@/lib/release-planning-entry-rules";
 
 function optionalString(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
@@ -57,6 +63,15 @@ export async function POST(req: Request) {
   if (error) return error;
   const body = await req.json();
 
+  // §1-02 / §1-03: name + applications are API-enforced (not form-only).
+  const identityError = validateReleaseNameAndApplications({
+    name: body.name,
+    applicationIds: body.applicationIds,
+  });
+  if (identityError) {
+    return NextResponse.json({ error: identityError }, { status: 400 });
+  }
+
   // Only load codes when we need to generate one — avoid a full-table scan on every create.
   let releaseCode = typeof body.releaseCode === "string" ? body.releaseCode.trim() : "";
   if (!releaseCode) {
@@ -65,6 +80,15 @@ export async function POST(req: Request) {
   }
 
   const releaseDate = body.releaseDate ? new Date(body.releaseDate) : new Date();
+  const startDate = optionalDate(body.startDate) ?? null;
+  // VR-01: End Date cannot be before Start Date.
+  const dateOrderError = validateReleaseDateOrder({
+    startDate,
+    endDate: releaseDate,
+  });
+  if (dateOrderError) {
+    return NextResponse.json({ error: dateOrderError }, { status: 400 });
+  }
 
   // Pin new releases to the creator's latest lifecycle snapshot so mid-flight
   // config edits cannot re-route them. Existing rows stay unpinned until backfill.
@@ -95,6 +119,48 @@ export async function POST(req: Request) {
     );
   }
 
+  // Field locks at create status. Skip identity/audit/computed keys set by the server.
+  const createLockKeys = Object.keys(body).filter(
+    (key) =>
+      body[key] !== undefined &&
+      ![
+        "releaseCode",
+        "id",
+        "createdAt",
+        "updatedAt",
+        "releaseHealth",
+        "readinessPercent",
+        "weightedRiskScore",
+        "weightedRiskLevel",
+        "lifecycleConfigVersionId",
+      ].includes(key)
+  );
+  const createLock = await validateReleaseFieldUpdate(
+    user!.id,
+    status,
+    createLockKeys
+  );
+  if (!createLock.allowed) {
+    return NextResponse.json(
+      {
+        error: (() => {
+          const labels = createLock.rejected.map((r) => {
+            const match = r.reason.match(/^"([^"]+)"/);
+            return match?.[1] ?? r.field;
+          });
+          const list = labels.join(", ");
+          const verb = labels.length === 1 ? "is" : "are";
+          const pronoun = labels.length === 1 ? "it" : "them";
+          return `Can’t create with these fields set for this status. ${list} ${verb} locked until the release moves to a status that allows ${pronoun}.`;
+        })(),
+        code: "FIELD_LOCK_DENIED",
+        rejected: createLock.rejected,
+      },
+      { status: 400 }
+    );
+  }
+
+  const actorName = user!.name?.trim() || user!.id;
   const created = await createReleaseRow({
       releaseCode,
       name: String(body.name ?? ""),
@@ -109,7 +175,7 @@ export async function POST(req: Request) {
       dependencies: optionalString(body.dependencies) ?? null,
       releaseSize: optionalString(body.releaseSize) ?? null,
       cabDate: optionalDate(body.cabDate) ?? null,
-      startDate: optionalDate(body.startDate) ?? null,
+      startDate,
       testEnvRequired: optionalString(body.testEnvRequired) ?? null,
       uatEnvRequired: optionalString(body.uatEnvRequired) ?? null,
       conflictFlag: Boolean(body.conflictFlag),
@@ -125,6 +191,17 @@ export async function POST(req: Request) {
       deploymentWindow: optionalString(body.deploymentWindow) ?? null,
       releaseOwnerId: optionalString(body.releaseOwnerId) ?? null,
       lifecycleConfigVersionId,
+      releaseType: optionalString(body.releaseType) ?? null,
+      backupOwner: optionalString(body.backupOwner) ?? null,
+      technicalLead: optionalString(body.technicalLead) ?? null,
+      businessOwner: optionalString(body.businessOwner) ?? null,
+      scopeDescription: optionalString(body.scopeDescription) ?? null,
+      changeDescription: optionalString(body.changeDescription) ?? null,
+      justification: optionalString(body.justification) ?? null,
+      goLiveDate: optionalDate(body.goLiveDate) ?? null,
+      deployDate: optionalDate(body.deployDate) ?? null,
+      createdBy: actorName,
+      lastModifiedBy: actorName,
     });
   await Promise.all([
     body.applicationIds?.length
@@ -143,6 +220,18 @@ export async function POST(req: Request) {
         })
       : Promise.resolve(),
   ]);
+
+  // AV-05: after apps are linked so shared-application overlap can be detected.
+  if (body.releaseDate && body.applicationIds?.length) {
+    try {
+      await detectScheduleConflictsOnDeployDate(created.id, releaseDate);
+    } catch (hookErr) {
+      console.warn("[releases POST] AV-05 conflict detect failed", {
+        releaseId: created.id,
+        message: hookErr instanceof Error ? hookErr.message : "unknown",
+      });
+    }
+  }
 
   const row = await prisma.release.findUniqueOrThrow({
     where: { id: created.id },

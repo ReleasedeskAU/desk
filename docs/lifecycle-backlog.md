@@ -55,3 +55,19 @@ rules can still strand or re-route in-flight work for those 80.
 - Provisional Override (never built)
 - Org-scoped config (`organizationId` / `tenant_id`) — still `clerkUserId` today
 - Hard Required gates on Deploying → Deployed / Deployed → Closed (stay Flexible)
+
+## AV-13 — Daily config drift scan (deferred entirely)
+
+**Status:** Out of scope for the Category A cron pass (2026-08-11).
+
+**Why deferred:** There is no product definition of a "baseline" to drift from, and no
+environment-snapshot ingest path to compare against. A cron slot that only logs
+"skipped" would be dead weight in daily cron logs.
+
+**Needs before build:**
+
+1. What counts as a baseline (golden config, last-known-good, CAB-approved snapshot)?
+2. How snapshots are ingested (agent, connector, manual upload)?
+3. What entity/alert is created on drift (likely Drift +/or MonitoringAlert)
+
+Do **not** add an AV-13 stub to `/api/cron/lifecycle-automations`.

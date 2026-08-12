@@ -10,6 +10,7 @@ import {
   type SignoffLifecycleConfig,
   type SignoffLifecycleEnforcement,
 } from "@/lib/signoff-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -172,8 +173,12 @@ export function SignoffLifecycleSettings() {
             (Flexible).
           </li>
           <li>Rendered decisions are terminal and immutable.</li>
-          <li>Mandatory types must be complete before Pending CAB (release gate).</li>
+          <li>Mandatory types must be complete before Pending CAB (release check).</li>
           <li>Pending → Expired is the SLA auto path (Required).</li>
+          <li>
+            Daily SLA expiry uses the release owner’s Pending expiry days when that
+            person has logged in. Releases with no owner still use the shared default.
+          </li>
         </ul>
       </div>
 
@@ -221,9 +226,12 @@ export function SignoffLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                   {status.countsAsComplete ? " · counts as complete" : ""}
+                  {status.expiryDays != null
+                    ? ` · expiry ${status.expiryDays}d`
+                    : ""}
                 </p>
               </div>
               <LifecycleToggle

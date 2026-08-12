@@ -6,6 +6,7 @@ import { patchApprovalSchema } from "@/lib/validation/approval";
 import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
 import { deniedApprovalEditFields } from "@/lib/approval-lifecycle-edit-policy";
 import { validateApprovalTransition } from "@/lib/approval-lifecycle-transition";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -69,7 +70,13 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This approval is ${mode.replaceAll("_", "-")} in decision "${existing.decision}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "approval",
+            mode,
+            statusWord: "decision",
+            statusLabel: existing.decision,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,

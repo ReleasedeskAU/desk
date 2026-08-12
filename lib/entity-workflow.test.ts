@@ -203,12 +203,21 @@ describe("alertWorkflow", () => {
     assert.equal(primary?.status, "Acknowledged");
     assert.deepEqual(
       secondary.map((s) => s.status),
-      ["Investigating"]
+      ["Investigating", "Dismissed"]
     );
   });
 
   it("moves an acknowledged alert into investigation", () => {
     assert.equal(alertWorkflow("Acknowledged").primary?.status, "Investigating");
+    assert.ok(
+      alertWorkflow("Acknowledged").secondary.some((s) => s.status === "Dismissed")
+    );
+  });
+
+  it("offers dismiss from pending as a secondary step", () => {
+    const { primary, secondary } = alertWorkflow("Pending");
+    assert.equal(primary?.status, "Acknowledged");
+    assert.ok(secondary.some((s) => s.status === "Dismissed"));
   });
 
   it("treats a cleared alert the same as a resolved one", () => {

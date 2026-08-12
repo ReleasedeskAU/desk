@@ -101,13 +101,13 @@ export function evaluateRiskSoftGates(args: {
     const impactOk =
       typeof args.facts.impact === "number" && args.facts.impact >= 1;
     if (!likelihoodOk || !impactOk) {
-      unmet.push("Probability (likelihood) and Impact are required (§1-10, §1-11)");
+      unmet.push("Set likelihood and impact before continuing");
     }
   }
 
   if (args.fromKey === "assessing") {
     if (score == null || score < 1) {
-      unmet.push("Risk Score must be calculated (§2-08)");
+      unmet.push("Risk score must be calculated from likelihood and impact");
     }
   }
 
@@ -117,7 +117,7 @@ export function evaluateRiskSoftGates(args: {
       (typeof args.facts.likelihood === "number" && args.facts.likelihood >= 4) ||
       (typeof args.facts.impact === "number" && args.facts.impact >= 4);
     if (high && !hasText(args.facts.mitigationStrategy)) {
-      unmet.push("Mitigation Plan required for High severity (VR-27)");
+      unmet.push("High-severity risks need a mitigation plan before this step");
     }
   }
 
@@ -219,7 +219,7 @@ export function validateRiskTransition(args: {
         allowed: false,
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
-          "Transition has unmet flexible requirement(s). Provide overrideReason (min 3 characters) to proceed.",
+          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
         unmetReasons: unmet,
         fromKey: from.key,
         toKey: to.key,

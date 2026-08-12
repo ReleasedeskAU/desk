@@ -94,7 +94,7 @@ export function evaluateIncidentSoftGates(args: {
   if (args.fromKey === "open" && isCriticalSeverity(args.facts.severity)) {
     if (!args.facts.assignedTo || !String(args.facts.assignedTo).trim()) {
       unmet.push(
-        "Critical incidents require an owner before leaving Open (VR-13)"
+        "Critical incidents require an owner before leaving Open. Assign someone responsible, then try again — or continue with an exception reason if your process allows it."
       );
     }
   }
@@ -184,7 +184,7 @@ export function validateIncidentTransition(args: {
         allowed: false,
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
-          "Transition has unmet flexible requirement(s). Provide overrideReason (min 3 characters) to proceed.",
+          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
         unmetReasons: unmet,
         fromKey: from.key,
         toKey: to.key,

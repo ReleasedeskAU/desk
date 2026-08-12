@@ -9,6 +9,14 @@ import {
   RELEASE_LIFECYCLE_GATE_CATALOG,
   type ReleaseLifecycleGateType,
 } from "@/lib/release-lifecycle-gates";
+import {
+  isLargeReleaseSize,
+  validateReleaseDateOrder,
+} from "@/lib/release-planning-entry-rules";
+import {
+  cabScopeChangedSinceSnapshot,
+  type CabScopeSnapshot,
+} from "@/lib/release-cab-scope-snapshot";
 import type {
   ReleaseLifecycleConfig,
   ReleaseLifecycleEnforcement,
@@ -24,6 +32,12 @@ export type ReleaseLifecycleGateFacts = {
   owner: string | null | undefined;
   releaseSize: string | null | undefined;
   priority: string | null | undefined;
+  /** Release display name (§1-02). */
+  name: string | null | undefined;
+  /** Count of linked applications (§1-03). */
+  applicationCount: number;
+  /** Start Date — paired with releaseDate for VR-01. */
+  startDate: Date | string | null | undefined;
   releaseDate: Date | string | null | undefined;
   rollbackPlan: string | null | undefined;
   /** Release notes — used for reactivation / rework / root-cause proxies. */
@@ -31,6 +45,35 @@ export type ReleaseLifecycleGateFacts = {
   goLiveChecklistPercent: number | null | undefined;
   /** Count of blockers still open for this release. */
   openBlockerCount: number;
+  /**
+   * Count of linked incidents that block Deploying (AV-06): critical severity
+   * and/or actively resolving statuses, excluding Resolved/Closed.
+   */
+  blockingIncidentCount: number;
+  /** Count of linked incidents still non-terminal (VR-33 Close gate). */
+  openIncidentCount: number;
+  /** Detected/Under Review EnvironmentConflict rows involving this release (VR-32). */
+  openEnvironmentConflictCount: number;
+  /** BOOKED env bookings whose toDate is already past (AV-08). */
+  expiredEnvBookingCount: number;
+  /** True when `changeFreeze` is non-empty on the release (VR-05). */
+  changeFreezeActive: boolean;
+  /** True when DeploymentState.phase is Verified (§4-08). */
+  deploymentOutcomeConfirmed: boolean;
+  /** True when Test Sign-Off counts as complete (VR-30). */
+  testSignoffComplete: boolean;
+  /** True when Dress Rehearsal counts as complete (VR-26). */
+  dressRehearsalComplete: boolean;
+  /** True when Ops Sign-Off counts as complete (VR-31). */
+  opsSignoffComplete: boolean;
+  /** Incomplete linked Work Items by raw synced status (VR-29). */
+  incompleteWorkItemCount: number;
+  /** PIR completed flag (VR-34). */
+  pirComplete: boolean;
+  /** Scope fields at evaluation time for CAB compare. */
+  scopeDescription: string | null | undefined;
+  /** Snapshot captured at CAB approval (null = missing). */
+  cabScopeSnapshot: CabScopeSnapshot | null;
   /** True when a UAT-purpose environment booking exists. */
   hasUatBooking: boolean;
   /** True when a deploy-purpose (or any active) deploy booking exists. */
@@ -164,6 +207,23 @@ export function evaluateLifecycleGate(
       return isPresent(facts.releaseSize) ? pass() : fail("Release size is not set");
     case "priority_set":
       return isPresent(facts.priority) ? pass() : fail("Priority is not set");
+    case "name_set":
+      return isPresent(facts.name) ? pass() : fail("Release name is not set");
+    case "applications_linked":
+      return facts.applicationCount > 0
+        ? pass()
+        : fail("At least one application must be linked");
+    case "dates_ordered": {
+      const dateError = validateReleaseDateOrder({
+        startDate: facts.startDate,
+        endDate: facts.releaseDate,
+      });
+      return dateError ? fail(dateError) : pass();
+    }
+    case "test_signoff_complete":
+      return facts.testSignoffComplete
+        ? pass()
+        : fail("Test Sign-Off must be complete before UAT");
     case "go_live_date_set":
       return isPresent(facts.releaseDate)
         ? pass()
@@ -179,6 +239,30 @@ export function evaluateLifecycleGate(
         : fail(
             `${facts.openBlockerCount} open blocker${facts.openBlockerCount === 1 ? "" : "s"} remain`
           );
+    case "no_blocking_incidents":
+      return facts.blockingIncidentCount === 0
+        ? pass()
+        : fail(
+            `${facts.blockingIncidentCount} blocking incident${facts.blockingIncidentCount === 1 ? "" : "s"} remain`
+          );
+    case "no_open_incidents":
+      return facts.openIncidentCount === 0
+        ? pass()
+        : fail(
+            `${facts.openIncidentCount} open incident${facts.openIncidentCount === 1 ? "" : "s"} remain`
+          );
+    case "no_open_environment_conflicts":
+      return facts.openEnvironmentConflictCount === 0
+        ? pass()
+        : fail(
+            `${facts.openEnvironmentConflictCount} environment conflict${facts.openEnvironmentConflictCount === 1 ? "" : "s"} still Detected or Under Review`
+          );
+    case "dress_rehearsal_for_large":
+      // VR-26: warning only for Large; non-Large always passes.
+      if (!isLargeReleaseSize(facts.releaseSize)) return pass();
+      return facts.dressRehearsalComplete
+        ? pass()
+        : fail("Large release has no completed Dress Rehearsal");
     case "uat_environment_booked":
       return facts.hasUatBooking
         ? pass()
@@ -187,6 +271,16 @@ export function evaluateLifecycleGate(
       return facts.hasDeployBooking
         ? pass()
         : fail("No deployment environment booking on record");
+    case "no_expired_env_bookings":
+      return facts.expiredEnvBookingCount === 0
+        ? pass()
+        : fail(
+            `${facts.expiredEnvBookingCount} environment booking${facts.expiredEnvBookingCount === 1 ? "" : "s"} expired`
+          );
+    case "outside_change_freeze":
+      return facts.changeFreezeActive
+        ? fail("Deploy date falls inside a recorded change-freeze window")
+        : pass();
     case "hard_dependencies_met":
       return facts.hardDependenciesMet
         ? pass()
@@ -195,6 +289,10 @@ export function evaluateLifecycleGate(
       return facts.signoffsComplete
         ? pass()
         : fail("Required sign-offs are incomplete");
+    case "deployment_outcome_confirmed":
+      return facts.deploymentOutcomeConfirmed
+        ? pass()
+        : fail("Deployment outcome must be Verified before Deployed");
     case "pre_deployment_checklist_complete":
       return typeof facts.goLiveChecklistPercent === "number" &&
         facts.goLiveChecklistPercent >= 100
@@ -213,11 +311,28 @@ export function evaluateLifecycleGate(
         ? pass()
         : fail(`Required fields missing: ${missing.join(", ")}`);
     }
-    case "scope_unchanged_since_cab":
-      // Data reliability: missing — cannot prove; treat unmet until snapshot exists.
-      return fail(
-        "Scope-unchanged-since-CAB cannot be verified yet (no CAB scope snapshot)"
-      );
+    case "scope_unchanged_since_cab": {
+      const scopeError = cabScopeChangedSinceSnapshot(facts.cabScopeSnapshot, {
+        releaseSize: facts.releaseSize,
+        priority: facts.priority,
+        scopeDescription: facts.scopeDescription,
+      });
+      return scopeError ? fail(scopeError) : pass();
+    }
+    case "ops_signoff_complete":
+      return facts.opsSignoffComplete
+        ? pass()
+        : fail("Ops Sign-Off must be complete before Ready");
+    case "work_items_complete":
+      return facts.incompleteWorkItemCount === 0
+        ? pass()
+        : fail(
+            `${facts.incompleteWorkItemCount} linked work item${facts.incompleteWorkItemCount === 1 ? "" : "s"} still incomplete`
+          );
+    case "pir_complete":
+      return facts.pirComplete
+        ? pass()
+        : fail("Post-Implementation Review must be completed before Close");
     case "post_deployment_validation_complete":
       // Best-effort until a dedicated validation record exists.
       return typeof facts.goLiveChecklistPercent === "number" &&
@@ -285,7 +400,7 @@ export function validateReleaseTransition(args: {
     return {
       allowed: false,
       code: "UNKNOWN_STATUS",
-      reason: `Status ${which} is not in the lifecycle configuration. No legacy alias map is applied — migrate labels or use a configured status key/label.`,
+      reason: `This status isn’t in your workflow settings. Pick a status that exists under Lifecycle, or ask an admin to update the workflow.`,
     };
   }
 
@@ -370,7 +485,7 @@ export function validateReleaseTransition(args: {
       allowed: false,
       code: "TRANSITION_BLOCKED",
       reason:
-        "Transition blocked by required gate(s); override is not permitted",
+        "This status change is blocked. Required checks aren’t met, and this step doesn’t allow an exception. Fix the items listed below, then try again.",
       unmetReasons: requiredUnmet.map((e) => e.reason),
       ruleIds: [...new Set(requiredUnmet.flatMap((e) => e.ruleIds))],
       fromKey: from.key,
@@ -384,7 +499,7 @@ export function validateReleaseTransition(args: {
       allowed: false,
       code: "TRANSITION_NEEDS_OVERRIDE",
       reason:
-        "Transition has unmet flexible gate(s). Provide overrideReason (min 3 characters) to proceed.",
+        "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
       unmetReasons,
       ruleIds,
       fromKey: from.key,
@@ -412,11 +527,27 @@ export function emptyLifecycleGateFacts(
     owner: null,
     releaseSize: null,
     priority: null,
+    name: null,
+    applicationCount: 0,
+    startDate: null,
     releaseDate: null,
     rollbackPlan: null,
     notes: null,
     goLiveChecklistPercent: null,
     openBlockerCount: 0,
+    blockingIncidentCount: 0,
+    openIncidentCount: 0,
+    openEnvironmentConflictCount: 0,
+    expiredEnvBookingCount: 0,
+    changeFreezeActive: false,
+    deploymentOutcomeConfirmed: false,
+    testSignoffComplete: false,
+    dressRehearsalComplete: false,
+    opsSignoffComplete: false,
+    incompleteWorkItemCount: 0,
+    pirComplete: false,
+    scopeDescription: null,
+    cabScopeSnapshot: null,
     hasUatBooking: false,
     hasDeployBooking: false,
     hardDependenciesMet: true,

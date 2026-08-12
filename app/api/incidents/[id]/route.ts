@@ -6,6 +6,7 @@ import { patchIncidentSchema } from "@/lib/validation/incident";
 import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
 import { deniedIncidentEditFields } from "@/lib/incident-lifecycle-edit-policy";
 import { validateIncidentTransition } from "@/lib/incident-lifecycle-transition";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -78,7 +79,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This incident is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "incident",
+            mode,
+            statusLabel: existing.status,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,

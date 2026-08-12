@@ -6,6 +6,7 @@ import { patchMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
 import { loadAlertLifecycleConfig } from "@/lib/alert-lifecycle-config-db";
 import { deniedAlertEditFields } from "@/lib/alert-lifecycle-edit-policy";
 import { validateAlertTransition } from "@/lib/alert-lifecycle-transition";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -67,7 +68,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This alert is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "alert",
+            mode,
+            statusLabel: existing.status,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,

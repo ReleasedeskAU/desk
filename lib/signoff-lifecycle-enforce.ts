@@ -39,6 +39,14 @@ export function enforceSignoffFieldChanges(args: {
 }): SignoffEnforceOk | SignoffEnforceDenied {
   const managed = new Set(signoffReleaseFieldsFromConfig(args.config));
   const canonical: Partial<Record<SignoffReleaseField, string>> = {};
+  // §3-21: body.supersedeSignoffFields = ["devSignoff", ...] opens a new Pending request.
+  const supersedeFields = new Set(
+    Array.isArray(args.body.supersedeSignoffFields)
+      ? args.body.supersedeSignoffFields.filter(
+          (f): f is string => typeof f === "string" && f.trim().length > 0
+        )
+      : []
+  );
 
   for (const [key, raw] of Object.entries(args.body)) {
     if (raw === undefined) continue;
@@ -74,6 +82,7 @@ export function enforceSignoffFieldChanges(args: {
       config: args.config,
       fromStatus: currentResolved,
       toStatus: next,
+      allowSupersede: supersedeFields.has(key),
     });
     if (!transition.allowed) {
       // Terminal/immutable: prefer 409 edit-policy shape when exiting a rendered decision.

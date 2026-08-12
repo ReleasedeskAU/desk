@@ -56,7 +56,7 @@ export const DEFAULT_DEPENDENCY_LIFECYCLE_STATUSES: readonly DependencyLifecycle
       enabled: true,
       isSystem: true,
       editMode: "full",
-      cascadeEffect: "Hard dependencies block Deploying (VR-18)",
+      cascadeEffect: "Hard dependencies block Deploying",
       satisfiesHardGate: false,
     },
     {

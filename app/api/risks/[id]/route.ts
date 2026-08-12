@@ -7,6 +7,7 @@ import { loadRiskEngineConfig } from "@/lib/risk-engine-config-db";
 import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
 import { deniedRiskEditFields } from "@/lib/risk-lifecycle-edit-policy";
 import { validateRiskTransition } from "@/lib/risk-lifecycle-transition";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -68,7 +69,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This risk is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "risk",
+            mode,
+            statusLabel: existing.status,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,

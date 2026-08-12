@@ -6,6 +6,7 @@ import { patchConflictSchema } from "@/lib/validation/conflict";
 import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
 import { deniedConflictEditFields } from "@/lib/conflict-lifecycle-edit-policy";
 import { validateConflictTransition } from "@/lib/conflict-lifecycle-transition";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -109,7 +110,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This conflict is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "conflict",
+            mode,
+            statusLabel: existing.status,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,

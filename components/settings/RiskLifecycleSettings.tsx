@@ -10,6 +10,7 @@ import {
   type RiskLifecycleConfig,
   type RiskLifecycleEnforcement,
 } from "@/lib/risk-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -167,6 +168,11 @@ export function RiskLifecycleSettings() {
           <li>Closed is terminal and immutable (Required).</li>
           <li>High-severity Mitigating → Mitigated needs a mitigation plan (or override).</li>
           <li>Legacy Open / Monitoring / In Progress map to the new vocabulary.</li>
+          <li>
+            Daily auto-escalate uses the risk owner’s escalate-after days after that
+            person has signed in at least once. Until then, the shared default timing
+            is used. Risks with no owner still use the shared default.
+          </li>
         </ul>
       </div>
 
@@ -213,8 +219,8 @@ export function RiskLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                   {status.escalateAfterDays != null
                     ? ` · escalate ${status.escalateAfterDays}d`
                     : ""}

@@ -80,6 +80,11 @@ export function validateSignoffTransition(args: {
   fromStatus: string | null | undefined;
   toStatus: string;
   overrideReason?: string | null;
+  /**
+   * §3-21: explicit supersede — open a new Pending request that replaces a
+   * completed Approved / Approved with Conditions decision (not a silent flip to No).
+   */
+  allowSupersede?: boolean;
 }): SignoffTransitionResult {
   const from = resolveSignoffLifecycleStatusRef(args.config, args.fromStatus);
   const to = resolveSignoffLifecycleStatusRef(args.config, args.toStatus);
@@ -91,6 +96,20 @@ export function validateSignoffTransition(args: {
     };
   }
   if (from.key === to.key) {
+    return {
+      allowed: true,
+      overridden: false,
+      fromKey: from.key,
+      toKey: to.key,
+      canonicalStatus: to.label,
+    };
+  }
+  // §3-21 rework: completed → Pending only when explicitly superseding.
+  if (
+    args.allowSupersede &&
+    to.key === "pending" &&
+    (from.key === "approved" || from.key === "approved_with_conditions")
+  ) {
     return {
       allowed: true,
       overridden: false,

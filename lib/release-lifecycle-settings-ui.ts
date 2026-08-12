@@ -28,9 +28,8 @@ export const HARD_BOUNDARY_STATUS_KEYS = ["deploying", "deployed"] as const;
  * Gates that still cannot be proven from data (UI warning only).
  * Evaluators may still fail-closed for Flexible/Required transitions.
  */
-export const ALWAYS_PASS_GATE_TYPES: ReadonlySet<ReleaseLifecycleGateType> = new Set([
-  "scope_unchanged_since_cab",
-]);
+export const ALWAYS_PASS_GATE_TYPES: ReadonlySet<ReleaseLifecycleGateType> =
+  new Set([]);
 
 export type StatusUsageMap = Record<string, number>;
 
@@ -337,7 +336,7 @@ export function setLifecycleTransitionEnforcement(
   const enabledGates = item.gates.filter((gate) => gate.enabled);
   const warning =
     enforcement === "required" && enabledGates.length === 0
-      ? "This transition is Required but has no gates attached. Nothing will be checked when someone moves along this path."
+      ? "This transition is Required but has no checks attached. Nothing will be checked when someone moves along this path."
       : null;
   return { config: next, warning };
 }

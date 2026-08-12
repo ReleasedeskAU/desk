@@ -10,6 +10,7 @@ import {
   type IncidentLifecycleConfig,
   type IncidentLifecycleEnforcement,
 } from "@/lib/incident-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -165,7 +166,7 @@ export function IncidentLifecycleSettings() {
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
           <li>Open → Investigating / Closed; Resolving → Resolved / Escalated.</li>
           <li>Closed is terminal and immutable (Required).</li>
-          <li>Critical Open exits need an owner (VR-13) or overrideReason.</li>
+          <li>Critical Open exits need an owner or an exception reason.</li>
           <li>Legacy Active / Acknowledged / Mitigated map into the new vocabulary.</li>
         </ul>
       </div>
@@ -213,8 +214,8 @@ export function IncidentLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                 </p>
               </div>
               <LifecycleToggle

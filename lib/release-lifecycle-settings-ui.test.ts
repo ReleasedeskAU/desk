@@ -8,6 +8,7 @@ import {
   createDefaultReleaseLifecycleConfig,
   validateReleaseLifecycleConfig,
 } from "./release-lifecycle-config";
+import { RELEASE_LIFECYCLE_GATE_TYPES } from "./release-lifecycle-gates";
 import {
   addLifecycleStatus,
   addLifecycleTransition,
@@ -159,14 +160,15 @@ describe("transition toggles", () => {
 
   it("warns when setting Required with no enabled gates", () => {
     const config = createDefaultReleaseLifecycleConfig();
+    // draft→cancelled has no default checks — Required with an empty gate list warns.
     const result = setLifecycleTransitionEnforcement(
       config,
       "draft",
-      "planning",
+      "cancelled",
       "required"
     );
     assert.ok("config" in result);
-    assert.match(result.warning ?? "", /no gates attached/);
+    assert.match(result.warning ?? "", /no checks attached/);
   });
 
   it("adds a new transition between statuses", () => {
@@ -182,8 +184,9 @@ describe("transition toggles", () => {
 });
 
 describe("gates panel helpers", () => {
-  it("marks only unverifiable scope-CAB gate as always-pass UI warning", () => {
-    assert.equal(isAlwaysPassLifecycleGate("scope_unchanged_since_cab"), true);
+  it("marks only unverifiable gates as always-pass UI warning", () => {
+    // CAB scope snapshot is now reliable — no longer always-pass.
+    assert.equal(isAlwaysPassLifecycleGate("scope_unchanged_since_cab"), false);
     assert.equal(isAlwaysPassLifecycleGate("environment_booked_for_deploy"), false);
     assert.equal(isAlwaysPassLifecycleGate("owner_set"), false);
   });
@@ -221,8 +224,9 @@ describe("gates panel helpers", () => {
     const before = config.transitions.find(
       (t) => t.fromKey === "draft" && t.toKey === "cancelled"
     )!;
+    const catalogSize = RELEASE_LIFECYCLE_GATE_TYPES.length;
     assert.equal(partitionTransitionGateCatalog(before).attached.length, 0);
-    assert.equal(partitionTransitionGateCatalog(before).available.length, 18);
+    assert.equal(partitionTransitionGateCatalog(before).available.length, catalogSize);
 
     const on = toggleLifecycleGate(config, "draft", "cancelled", "owner_set", true);
     assert.ok("config" in on);
@@ -231,7 +235,7 @@ describe("gates panel helpers", () => {
     )!;
     const { attached, available } = partitionTransitionGateCatalog(after);
     assert.deepEqual(attached, ["owner_set"]);
-    assert.equal(available.length, 17);
+    assert.equal(available.length, catalogSize - 1);
     assert.ok(!available.includes("owner_set"));
   });
 });
@@ -239,6 +243,7 @@ describe("gates panel helpers", () => {
 describe("cloneLifecycleConfig", () => {
   it("does not share nested references with the original", () => {
     const original = createDefaultReleaseLifecycleConfig();
+    const originalGateCount = original.transitions[0]!.gates.length;
     const copy = cloneLifecycleConfig(original);
     copy.statuses[0]!.label = "Changed";
     copy.transitions[0]!.gates.push({
@@ -248,6 +253,6 @@ describe("cloneLifecycleConfig", () => {
       sortOrder: 1,
     });
     assert.equal(original.statuses[0]!.label, "Draft");
-    assert.equal(original.transitions[0]!.gates.length, 0);
+    assert.equal(original.transitions[0]!.gates.length, originalGateCount);
   });
 });

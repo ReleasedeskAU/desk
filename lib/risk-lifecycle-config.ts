@@ -53,7 +53,7 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     enabled: true,
     isSystem: true,
     editMode: "full",
-    cascadeEffect: "Probability and Impact required (§1-10, §1-11)",
+    cascadeEffect: "Probability and Impact required",
     escalateAfterDays: 3,
   },
   {
@@ -64,7 +64,7 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     enabled: true,
     isSystem: true,
     editMode: "full",
-    cascadeEffect: "Risk Score calculated (§2-08)",
+    cascadeEffect: "Risk Score calculated",
     escalateAfterDays: 3,
   },
   {
@@ -75,7 +75,7 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     enabled: true,
     isSystem: true,
     editMode: "full",
-    cascadeEffect: "Mitigation Plan required for High severity (VR-27)",
+    cascadeEffect: "Mitigation Plan required for High severity",
     escalateAfterDays: null,
   },
   {
@@ -119,7 +119,7 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     enabled: true,
     isSystem: true,
     editMode: "full",
-    cascadeEffect: "Auto-escalated after 3 days (AV-02)",
+    cascadeEffect: "Auto-escalated after 3 days",
     escalateAfterDays: null,
   },
 ];

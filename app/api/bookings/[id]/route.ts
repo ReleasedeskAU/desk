@@ -4,12 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { mapDbEnvBookingRow } from "@/lib/list-api-filters";
 import { patchBookingSchema } from "@/lib/validation/booking";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
+import { guardEnvBookingMutationWhileDeploying } from "@/lib/release-related-entity-guards";
 
 type Params = { params: Promise<{ id: string }> };
 
 const bookingInclude = {
   application: { select: { id: true, name: true } },
-  release: { select: { id: true, releaseCode: true, name: true } },
+  release: { select: { id: true, releaseCode: true, name: true, status: true } },
   environment: { select: { id: true, name: true, type: true } },
 } as const;
 
@@ -74,6 +75,11 @@ export async function PATCH(req: Request, { params }: Params) {
   const existing = await findBooking(id);
   if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
 
+  if (existing.release?.status) {
+    const locked = guardEnvBookingMutationWhileDeploying(existing.release.status);
+    if (!locked.ok) return locked.response;
+  }
+
   const parsed = patchBookingSchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
@@ -127,9 +133,11 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.releaseId) {
     const release = await prisma.release.findUnique({
       where: { id: body.releaseId },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!release) return NextResponse.json({ error: "Release not found" }, { status: 404 });
+    const targetLocked = guardEnvBookingMutationWhileDeploying(release.status);
+    if (!targetLocked.ok) return targetLocked.response;
   }
 
   try {
@@ -180,6 +188,11 @@ export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
   const existing = await findBooking(id);
   if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+
+  if (existing.release?.status) {
+    const locked = guardEnvBookingMutationWhileDeploying(existing.release.status);
+    if (!locked.ok) return locked.response;
+  }
 
   try {
     await prisma.envBooking.delete({ where: { id: existing.id } });

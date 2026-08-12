@@ -20,11 +20,30 @@ const baseFacts = emptyLifecycleGateFacts({
   owner: "Ada",
   releaseSize: "M",
   priority: "P2",
+  name: "Ada Release",
+  applicationCount: 1,
+  startDate: new Date("2026-08-01"),
   releaseDate: new Date("2026-09-01"),
   notes: "Decision recorded",
   rollbackPlan: "Rollback to v1",
   goLiveChecklistPercent: 100,
   openBlockerCount: 0,
+  openIncidentCount: 0,
+  openEnvironmentConflictCount: 0,
+  expiredEnvBookingCount: 0,
+  changeFreezeActive: false,
+  deploymentOutcomeConfirmed: true,
+  testSignoffComplete: true,
+  dressRehearsalComplete: true,
+  opsSignoffComplete: true,
+  incompleteWorkItemCount: 0,
+  pirComplete: true,
+  scopeDescription: "Initial scope",
+  cabScopeSnapshot: {
+    releaseSize: "M",
+    priority: "P2",
+    scopeDescription: "Initial scope",
+  },
   hardDependenciesMet: true,
   hasDeployBooking: true,
   signoffsComplete: true,
@@ -185,12 +204,11 @@ describe("listLegalNextStatuses / stepper", () => {
     assert.equal(toCancelled.allowed, true);
   });
 
-  it("hard-blocks Deploying → Deployed when Required gates fail (CFG-06, no override)", () => {
+  it("Wave A: Ready → Deploying needs override when VR-19/VR-18 facts fail (flexible)", () => {
     const denied = validateReleaseTransition({
       config,
-      fromStatus: "Deploying",
-      toStatus: "Deployed",
-      overrideReason: "please let me through",
+      fromStatus: "Ready to deploy",
+      toStatus: "Deploying",
       gateFacts: emptyLifecycleGateFacts({
         hasDeployBooking: false,
         hardDependenciesMet: false,
@@ -198,8 +216,46 @@ describe("listLegalNextStatuses / stepper", () => {
     });
     assert.equal(denied.allowed, false);
     if (!denied.allowed) {
+      assert.equal(denied.code, "TRANSITION_NEEDS_OVERRIDE");
+    }
+
+    const overridden = validateReleaseTransition({
+      config,
+      fromStatus: "Ready to deploy",
+      toStatus: "Deploying",
+      overrideReason: "emergency deploy window",
+      gateFacts: emptyLifecycleGateFacts({
+        hasDeployBooking: false,
+        hardDependenciesMet: false,
+      }),
+    });
+    assert.equal(overridden.allowed, true);
+  });
+
+  it("hard-blocks Deploying → Deployed when deployment outcome is unconfirmed (§4-08 / CFG-06)", () => {
+    const denied = validateReleaseTransition({
+      config,
+      fromStatus: "Deploying",
+      toStatus: "Deployed",
+      overrideReason: "please let me through",
+      gateFacts: emptyLifecycleGateFacts({
+        deploymentOutcomeConfirmed: false,
+      }),
+    });
+    assert.equal(denied.allowed, false);
+    if (!denied.allowed) {
       assert.equal(denied.code, "TRANSITION_BLOCKED");
     }
+
+    const ok = validateReleaseTransition({
+      config,
+      fromStatus: "Deploying",
+      toStatus: "Deployed",
+      gateFacts: emptyLifecycleGateFacts({
+        deploymentOutcomeConfirmed: true,
+      }),
+    });
+    assert.equal(ok.allowed, true);
   });
 
   it("requires notes for Deferred → Pending CAB and Rejected → Planning", () => {
@@ -250,9 +306,11 @@ describe("enforceReleaseStatusChange (PATCH path)", () => {
     id: "rel_1",
     releaseCode: "REL-0001",
     status: "Draft",
+    name: "Ada Release",
     owner: "Ada",
     releaseSize: "M",
     priority: "P2",
+    startDate: new Date("2026-08-01"),
     releaseDate: new Date("2026-09-01"),
     rollbackPlan: "Rollback to v1",
     goLiveChecklistPercent: 100,

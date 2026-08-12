@@ -15,6 +15,7 @@ import {
   buildReleaseFormSaveAlert,
   type ReleaseFormAlert,
 } from "@/lib/release-form-save-alert";
+import { parseUxNoticesFromHeaders } from "@/lib/ux-notice";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import {
   defaultReleaseStatusLabel,
@@ -413,6 +414,19 @@ export function ReleaseFormModal({
           )
         );
         return;
+      }
+
+      // VR-21 (and similar): announce status side effects after a successful save.
+      if (result.ok && result.headers) {
+        const notices = parseUxNoticesFromHeaders(result.headers);
+        if (notices[0]) {
+          setFormAlert({
+            title: notices[0].title,
+            message: notices[0].message,
+            details: notices[0].details,
+            variant: "notice",
+          });
+        }
       }
 
       onSaved();

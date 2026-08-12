@@ -94,9 +94,10 @@ export const DEFAULT_RELEASE_LIFECYCLE_STATUSES: readonly ReleaseLifecycleStatus
 
 function gate(
   gateType: ReleaseLifecycleGateType,
-  sortOrder: number
+  sortOrder: number,
+  enforcement: ReleaseLifecycleGateEnforcement = "inherit"
 ): ReleaseLifecycleGateAttachment {
-  return { gateType, enabled: true, enforcement: "inherit", sortOrder };
+  return { gateType, enabled: true, enforcement, sortOrder };
 }
 
 function transition(
@@ -125,12 +126,24 @@ function transition(
  * Testing → Planning, Rolled Back → Cancelled.
  */
 export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTransitionConfig[] = [
-  transition("draft", "planning", 10),
+  transition("draft", "planning", 10, [
+    gate("name_set", 10),
+    gate("applications_linked", 20),
+  ]),
   transition("draft", "cancelled", 20),
-  transition("planning", "testing", 10, [gate("owner_set", 10), gate("size_set", 20)]),
+  transition("planning", "testing", 10, [
+    gate("owner_set", 10),
+    gate("size_set", 20),
+    gate("name_set", 30),
+    gate("applications_linked", 40),
+    gate("dates_ordered", 50),
+  ]),
   transition("planning", "blocked", 20),
   transition("planning", "cancelled", 30),
-  transition("testing", "uat", 10, [gate("priority_set", 10)]),
+  transition("testing", "uat", 10, [
+    gate("priority_set", 10),
+    gate("test_signoff_complete", 20),
+  ]),
   transition("testing", "blocked", 20),
   // Extra (product ask): Testing may return to Planning.
   transition("testing", "planning", 25),
@@ -148,25 +161,40 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
   transition("pending_cab", "rejected", 30),
   transition("pending_cab", "blocked", 40),
   transition("pending_cab", "cancelled", 50),
+  // Wave A (Release Fields Progression Blockers): Ready-target gates land on
+  // cab_approved → ready_to_deploy (not one stage later on Ready → Deploying).
   transition("cab_approved", "ready_to_deploy", 10, [
     gate("scope_unchanged_since_cab", 10),
+    gate("no_open_blockers", 20),
+    gate("rollback_plan_documented", 30),
+    gate("pre_deployment_checklist_complete", 40),
+    gate("hard_dependencies_met", 50),
+    gate("no_open_environment_conflicts", 60),
+    // VR-26: warning-only for Large releases missing Dress Rehearsal.
+    gate("dress_rehearsal_for_large", 70, "flexible"),
+    gate("ops_signoff_complete", 80),
   ]),
   transition("cab_approved", "pending_cab", 20),
   transition("cab_approved", "blocked", 30),
   transition("cab_approved", "cancelled", 40),
+  // Deploying-target gates (VR-19 / VR-18 / AV-06 / AV-08 / VR-05).
   transition("ready_to_deploy", "deploying", 10, [
-    gate("rollback_plan_documented", 10),
-    gate("pre_deployment_checklist_complete", 20),
-    gate("no_open_blockers", 30),
+    gate("environment_booked_for_deploy", 10),
+    gate("hard_dependencies_met", 20),
+    gate("no_blocking_incidents", 30),
+    gate("no_expired_env_bookings", 40),
+    gate("outside_change_freeze", 50),
+    gate("work_items_complete", 60),
   ]),
   transition("ready_to_deploy", "blocked", 20),
   transition("ready_to_deploy", "cancelled", 30),
   // CFG-06: Deploying / Deployed exits are Required (no override).
+  // §4-08: outcome must be Verified (DeploymentState) before Deployed.
   transition(
     "deploying",
     "deployed",
     10,
-    [gate("environment_booked_for_deploy", 10), gate("hard_dependencies_met", 20)],
+    [gate("deployment_outcome_confirmed", 10)],
     false,
     "required"
   ),
@@ -176,7 +204,11 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
     "deployed",
     "closed",
     10,
-    [gate("post_deployment_validation_complete", 10)],
+    [
+      gate("post_deployment_validation_complete", 10),
+      gate("no_open_incidents", 20),
+      gate("pir_complete", 30),
+    ],
     false,
     "required"
   ),

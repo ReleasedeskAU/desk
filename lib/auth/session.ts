@@ -2,6 +2,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma, withDbRetry } from "@/lib/prisma";
 import type { SessionUser, UserRole } from "./roles";
 import { isUserRole, mapAccessLevelToRole } from "./role-rank";
+import { ensureUserClerkLink } from "@/lib/auth/link-clerk-user";
 
 export { encodeSession, parseSession } from "./cookie";
 
@@ -86,6 +87,11 @@ export async function getSession(): Promise<SessionUser | null> {
   }
 
   const role = await resolveRole(email, metadata);
+
+  // Bridge directory User → Clerk id (gradual fill on login) for cron personalization.
+  if (email) {
+    void ensureUserClerkLink(userId, email);
+  }
 
   return {
     id: userId,

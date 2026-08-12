@@ -10,6 +10,7 @@ import {
   type ConflictLifecycleConfig,
   type ConflictLifecycleEnforcement,
 } from "@/lib/conflict-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -169,7 +170,7 @@ export function ConflictLifecycleSettings() {
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
           <li>Detected → Under Review / Resolved / Dismissed (Flexible).</li>
           <li>Resolved and Dismissed are terminal and immutable.</li>
-          <li>Dismissing requires justification in notes (or overrideReason).</li>
+          <li>Dismissing requires justification in notes (or an exception reason).</li>
           <li>Legacy Open / In Progress / Escalated map into the new vocabulary.</li>
         </ul>
       </div>
@@ -218,8 +219,8 @@ export function ConflictLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                 </p>
               </div>
               <LifecycleToggle

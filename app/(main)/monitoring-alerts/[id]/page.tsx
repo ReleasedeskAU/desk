@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, AlertTriangle, Gauge, List } from "lucide-react";
 import {
@@ -12,8 +12,11 @@ import {
   type ChipTone,
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
+import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { useLifecycleStatusConfirm } from "@/hooks/useLifecycleStatusConfirm";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -166,7 +169,6 @@ export default function MonitoringAlertDetailPage({
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
   /** Id of the workflow step currently being written, so its button can spin. */
   const [pendingStep, setPendingStep] = useState<string | null>(null);
-  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, appList, me] = await Promise.all([
@@ -205,6 +207,20 @@ export default function MonitoringAlertDetailPage({
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
   const d = edit.draft;
+  /** True when exception panel was opened from modal save (retry should completeSaveSuccess). */
+  const exceptionFromModalSave = useRef(false);
+  const statusConfirm = useLifecycleStatusConfirm({
+    entityLabel: "alert",
+    onSuccess: async () => {
+      if (exceptionFromModalSave.current) {
+        exceptionFromModalSave.current = false;
+        if (edit.editing) {
+          edit.completeSaveSuccess(ALERT_FIELD_LABELS);
+        }
+      }
+      await load();
+    },
+  });
 
   const selectOptions = useMemo(
     () =>
@@ -249,56 +265,76 @@ export default function MonitoringAlertDetailPage({
     edit.setError(null);
     const d = edit.draft;
     // alertCode is immutable — never include it in PATCH.
+    const patchBody = {
+      timestamp: d.timestamp,
+      applicationId: d.applicationId,
+      departmentName: d.departmentName || null,
+      alertType: d.alertType,
+      severity: d.severity,
+      metric: d.metric,
+      threshold: d.threshold || null,
+      currentValue: d.currentValue || null,
+      status: d.status,
+      assignedTo: d.assignedTo || null,
+      environmentName: d.environmentName,
+    };
     const res = await safeFetchJson(`/api/monitoring-alerts/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        timestamp: d.timestamp,
-        applicationId: d.applicationId,
-        departmentName: d.departmentName || null,
-        alertType: d.alertType,
-        severity: d.severity,
-        metric: d.metric,
-        threshold: d.threshold || null,
-        currentValue: d.currentValue || null,
-        status: d.status,
-        assignedTo: d.assignedTo || null,
-        environmentName: d.environmentName,
-      }),
+      body: JSON.stringify(patchBody),
       label: "alert-patch",
       rejectHttpErrors: false,
     });
-    edit.setSaving(false);
-    if (!res.ok || res.status >= 300) {
-      edit.setError("Couldn’t save changes. Try again.");
+    if (!res.ok || (res.status ?? 0) >= 300) {
+      const data =
+        res.ok && res.data && typeof res.data === "object"
+          ? (res.data as {
+              error?: string;
+              code?: string;
+              unmetReasons?: unknown;
+            })
+          : null;
+      const apiError = typeof data?.error === "string" ? data.error : "";
+      const code = typeof data?.code === "string" ? data.code : "";
+      const unmetReasons = Array.isArray(data?.unmetReasons)
+        ? data.unmetReasons.filter((r): r is string => typeof r === "string")
+        : [];
+      if (code === "TRANSITION_NEEDS_OVERRIDE" && d.status !== row.status) {
+        const { status: _status, ...extraBody } = patchBody;
+        exceptionFromModalSave.current = true;
+        statusConfirm.presentException({
+          targetStatus: d.status,
+          targetLabel: d.status,
+          patchUrl: `/api/monitoring-alerts/${row.id}`,
+          extraBody,
+          unmetReasons,
+          leadMessage: apiError || null,
+        });
+        edit.setSaving(false);
+        return;
+      }
+      edit.setSaving(false);
+      edit.setError(apiError || "Couldn’t save changes. Try again.");
       return;
     }
+    edit.setSaving(false);
     edit.completeSaveSuccess(ALERT_FIELD_LABELS);
     await load();
   };
 
   /**
    * Apply a one-click status transition from the decision header.
-   * The API re-validates the status and enforces the editor role — this button
-   * is convenience, not the permission check.
+   * Soft unmet checks open LifecycleExceptionConfirm via the shared hook.
    */
   const applyStep = async (step: WorkflowStep) => {
     if (!row) return;
     setPendingStep(step.id);
-    setStepError(null);
-    const res = await safeFetchJson(`/api/monitoring-alerts/${row.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: step.status }),
-      label: "alert-status-step",
-      rejectHttpErrors: false,
+    await statusConfirm.requestStatusChange({
+      targetStatus: step.status,
+      targetLabel: step.label,
+      patchUrl: `/api/monitoring-alerts/${row.id}`,
     });
     setPendingStep(null);
-    if (!res.ok || res.status >= 300) {
-      setStepError(`Couldn’t set this alert to ${step.status}. Try again.`);
-      return;
-    }
-    await load();
   };
 
   const remove = async () => {
@@ -553,12 +589,31 @@ export default function MonitoringAlertDetailPage({
         primaryAction={workflow.primary ? toAction(workflow.primary) : null}
         secondaryActions={workflow.secondary.map(toAction)}
         canEdit={canEdit}
-        actionError={stepError}
+        actionError={null}
         attention={attention}
         attentionClearLabel="Alert cleared — the metric is back within threshold"
         timing={timing}
         scope={scope}
       />
+
+      {statusConfirm.pending ? (
+        <div className="mt-4">
+          <LifecycleExceptionConfirm
+            targetLabel={statusConfirm.pending.targetLabel}
+            needsException={statusConfirm.pending.needsException}
+            blocked={statusConfirm.pending.blocked}
+            exceptionReason={statusConfirm.exceptionReason}
+            onExceptionReasonChange={statusConfirm.setExceptionReason}
+            busy={statusConfirm.busy}
+            confirmDisabled={statusConfirm.confirmDisabled}
+            onCancel={statusConfirm.cancel}
+            onConfirm={() => void statusConfirm.confirm()}
+            checks={statusConfirm.pending.checks}
+            leadMessage={statusConfirm.pending.leadMessage}
+          />
+        </div>
+      ) : null}
+      <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection
         icon={Gauge}

@@ -6,6 +6,8 @@ import { jsonError, zodErrorResponse } from "@/lib/api-errors";
 import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
 import { deniedDependencyEditFields } from "@/lib/dependency-lifecycle-edit-policy";
 import { validateDependencyTransition } from "@/lib/dependency-lifecycle-transition";
+import { guardDependencyGraphMutation } from "@/lib/release-related-entity-guards";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -82,7 +84,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This dependency is ${mode.replaceAll("_", "-")} in status "${existing.status ?? "Pending"}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "dependency",
+            mode,
+            statusLabel: existing.status ?? "Pending",
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,
@@ -131,6 +138,23 @@ export async function PATCH(req: Request, { params }: Params) {
   const nextDependsOnId = body.dependsOnReleaseId ?? existing.dependsOnReleaseId;
   if (nextReleaseId === nextDependsOnId) {
     return NextResponse.json({ error: "A release cannot depend on itself" }, { status: 400 });
+  }
+
+  // VR-36: rewiring endpoints is an add/remove of the dependency graph.
+  if (body.releaseId !== undefined || body.dependsOnReleaseId !== undefined) {
+    const parentStatus = existing.release.status;
+    const frozen = guardDependencyGraphMutation(parentStatus);
+    if (!frozen.ok) return frozen.response;
+    if (body.releaseId !== undefined && body.releaseId !== existing.releaseId) {
+      const nextParent = await prisma.release.findUnique({
+        where: { id: body.releaseId },
+        select: { status: true },
+      });
+      if (nextParent) {
+        const nextFrozen = guardDependencyGraphMutation(nextParent.status);
+        if (!nextFrozen.ok) return nextFrozen.response;
+      }
+    }
   }
 
   try {
@@ -196,6 +220,9 @@ export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
   const existing = await findDependency(id);
   if (!existing) return NextResponse.json({ error: "Dependency not found" }, { status: 404 });
+
+  const frozen = guardDependencyGraphMutation(existing.release.status);
+  if (!frozen.ok) return frozen.response;
 
   try {
     await prisma.releaseDependency.delete({ where: { id: existing.id } });

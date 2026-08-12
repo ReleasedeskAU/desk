@@ -10,6 +10,7 @@ import {
   type ApprovalLifecycleConfig,
   type ApprovalLifecycleEnforcement,
 } from "@/lib/approval-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -167,6 +168,10 @@ export function ApprovalLifecycleSettings() {
           <li>Approved / Rejected / Expired / Withdrawn are terminal and immutable.</li>
           <li>Deferred is editable and not terminal, but has no default next status.</li>
           <li>Approved → Expired is the AV-22 auto-expiry path (Required).</li>
+          <li>
+            Daily auto-expiry uses each approver’s own expiry days after they have logged
+            in. Until then, the shared default applies.
+          </li>
         </ul>
       </div>
 
@@ -213,8 +218,8 @@ export function ApprovalLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                   {status.expiryDays != null ? ` · expiry ${status.expiryDays}d` : ""}
                 </p>
               </div>

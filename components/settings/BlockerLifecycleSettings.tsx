@@ -10,6 +10,7 @@ import {
   type BlockerLifecycleConfig,
   type BlockerLifecycleEnforcement,
 } from "@/lib/blocker-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -163,6 +164,10 @@ export function BlockerLifecycleSettings() {
           <li>Statuses with “blocks Ready” keep a release from moving to Ready.</li>
           <li>Closed / Cancelled are terminal (Required). Other moves are Flexible.</li>
           <li>In Progress can show a stale alert after 5 days (AV-03).</li>
+          <li>
+            Daily stale-alert timing always uses the shared default (not your personal
+            stale days). Blocker rows have no owner link we can use for personalization.
+          </li>
         </ul>
       </div>
 
@@ -209,8 +214,8 @@ export function BlockerLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                   {status.blocksReleaseReady ? " · blocks Ready" : ""}
                   {status.staleAlertDays != null
                     ? ` · stale ${status.staleAlertDays}d`

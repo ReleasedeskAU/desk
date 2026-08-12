@@ -10,6 +10,7 @@ import {
   type DependencyLifecycleConfig,
   type DependencyLifecycleEnforcement,
 } from "@/lib/dependency-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -108,7 +109,7 @@ export function DependencyLifecycleSettings() {
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
               Configure dependency statuses and allowed moves. Met / Waived / Removed are
-              terminal; Hard deps must be Met or Waived for Deploying (VR-18).
+              terminal; Hard deps must be Met or Waived before Deploying.
             </p>
           </div>
         </div>
@@ -165,7 +166,7 @@ export function DependencyLifecycleSettings() {
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
           <li>Pending → At Risk / Met / Waived / Removed (Flexible).</li>
           <li>Met, Waived, and Removed are terminal — no silent revert (AV-26).</li>
-          <li>Waiving requires documented approval in notes (or overrideReason).</li>
+          <li>Waiving requires documented approval in notes (or an exception reason).</li>
           <li>Legacy Clear / Resolved / Blocked map to Met / At Risk.</li>
         </ul>
       </div>
@@ -213,9 +214,9 @@ export function DependencyLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
-                  {status.satisfiesHardGate ? " · clears Hard gate" : ""}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
+                  {status.satisfiesHardGate ? " · clears Hard check" : ""}
                 </p>
               </div>
               <LifecycleToggle

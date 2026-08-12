@@ -113,14 +113,14 @@ export function ReleaseActionStrip({
           </div>
           <InfoTooltip
             label="About release controls"
-            text="Status changes only offer legal next steps from the lifecycle configuration, with gate feedback. Flexible unmet gates need an override reason. Go / No-Go decisions still ask for confirmation and are audited."
+            text="Status changes only offer legal next steps from your workflow settings, with check feedback. Soft unmet checks need an exception reason. Go / No-Go decisions still ask for confirmation and are audited."
           />
         </div>
 
         <div className="space-y-5">
           <div>
             <HoverExplain
-              text="Only statuses allowed by the lifecycle graph from the current status are shown. Soft gates warn; hard gates block."
+              text="Only statuses allowed by the workflow from the current status are shown. Soft checks warn; required checks block."
               label="About status"
             >
               <span className="mb-2 inline-block cursor-help text-[11px] font-bold uppercase tracking-wider text-slate-400 underline decoration-dotted decoration-slate-300 underline-offset-2">

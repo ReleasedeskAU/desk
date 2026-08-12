@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { blockerWhere, sp, str } from "@/lib/list-api-filters";
 import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
+import { guardBlockerCreateWhileDeployingOrLater } from "@/lib/release-related-entity-guards";
 
 const dateOnly = (value: Date | null) => value?.toISOString().slice(0, 10) ?? null;
 
@@ -116,6 +117,12 @@ export async function POST(req: Request) {
   if (!release) {
     return NextResponse.json({ error: "Release not found" }, { status: 404 });
   }
+
+  // VR-35: no new blockers once the parent is Deploying or later.
+  const blockerCreateGuard = guardBlockerCreateWhileDeployingOrLater(
+    release.status
+  );
+  if (!blockerCreateGuard.ok) return blockerCreateGuard.response;
 
   const blockerType = String(body.blockerType ?? "").trim();
   const blockerDescription = String(body.blockerDescription ?? "").trim();

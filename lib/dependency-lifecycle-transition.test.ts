@@ -75,6 +75,28 @@ describe("validateDependencyTransition", () => {
     }
   });
 
+  it("AV-26: Met → At Risk only when isSystemTransition is true", () => {
+    const userDenied = validateDependencyTransition({
+      config,
+      fromStatus: "Met",
+      toStatus: "At Risk",
+      facts: { notes: null },
+    });
+    assert.equal(userDenied.allowed, false);
+
+    const systemOk = validateDependencyTransition({
+      config,
+      fromStatus: "Met",
+      toStatus: "At Risk",
+      facts: { notes: null },
+      isSystemTransition: true,
+    });
+    assert.equal(systemOk.allowed, true);
+    if (systemOk.allowed) {
+      assert.equal(systemOk.toKey, "at_risk");
+    }
+  });
+
   it("allows At Risk → Pending / Met", () => {
     assert.equal(
       validateDependencyTransition({

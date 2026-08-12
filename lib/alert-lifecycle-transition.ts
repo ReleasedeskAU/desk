@@ -85,7 +85,7 @@ export function evaluateAlertSoftGates(args: {
     const reason = (args.facts.reason ?? "").trim();
     if (reason.length < MIN_ALERT_OVERRIDE_REASON_LENGTH) {
       unmet.push(
-        "Dismissing an alert requires a reason (overrideReason, min 3 characters)"
+        "Add a short reason before dismissing this alert."
       );
     }
   }
@@ -179,7 +179,7 @@ export function validateAlertTransition(args: {
         allowed: false,
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
-          "Transition has unmet flexible requirement(s). Provide overrideReason (min 3 characters) to proceed.",
+          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
         unmetReasons: unmet,
         fromKey: from.key,
         toKey: to.key,

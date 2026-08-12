@@ -151,7 +151,7 @@ export function StatusesPanel({
             )}
             {isHardBoundaryStatusKey(status.key) ? (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
-                Hard boundary
+                System stage (can&apos;t remove)
               </span>
             ) : null}
             {status.terminal ? (

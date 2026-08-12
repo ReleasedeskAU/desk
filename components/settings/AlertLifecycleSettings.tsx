@@ -10,6 +10,7 @@ import {
   type AlertLifecycleConfig,
   type AlertLifecycleEnforcement,
 } from "@/lib/alert-lifecycle-config";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -170,7 +171,7 @@ export function AlertLifecycleSettings() {
           <li>Pending → Acknowledged / Dismissed / Expired (Flexible).</li>
           <li>Acknowledged → Actioned / Dismissed (Limited edits).</li>
           <li>Actioned, Dismissed, and Expired are terminal and immutable.</li>
-          <li>Dismissing requires overrideReason (min 3 characters).</li>
+          <li>Dismissing requires an exception reason (min 3 characters).</li>
           <li>Legacy Active / Open / Resolved / Closed map into the new vocabulary.</li>
         </ul>
       </div>
@@ -219,8 +220,8 @@ export function AlertLifecycleSettings() {
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
                   {status.cascadeEffect}
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">
-                  {status.key} · edit: {status.editMode}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
                 </p>
               </div>
               <LifecycleToggle

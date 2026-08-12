@@ -49,7 +49,7 @@ export const DEFAULT_INCIDENT_LIFECYCLE_STATUSES: readonly IncidentLifecycleStat
       enabled: true,
       isSystem: true,
       editMode: "full",
-      cascadeEffect: "Critical incidents auto-escalate if no owner (VR-13)",
+      cascadeEffect: "Critical incidents auto-escalate if no owner",
     },
     {
       key: "investigating",
@@ -79,7 +79,7 @@ export const DEFAULT_INCIDENT_LIFECYCLE_STATUSES: readonly IncidentLifecycleStat
       enabled: true,
       isSystem: true,
       editMode: "full",
-      cascadeEffect: "May block linked release (AV-06)",
+      cascadeEffect: "May block linked release",
     },
     {
       key: "resolved",

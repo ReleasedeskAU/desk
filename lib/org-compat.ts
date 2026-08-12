@@ -490,6 +490,17 @@ export type CreateReleaseInput = {
    * release as latest-unpinned (legacy path / pin unavailable).
    */
   lifecycleConfigVersionId?: string | null;
+  releaseType?: string | null;
+  backupOwner?: string | null;
+  technicalLead?: string | null;
+  businessOwner?: string | null;
+  scopeDescription?: string | null;
+  changeDescription?: string | null;
+  justification?: string | null;
+  goLiveDate?: Date | null;
+  deployDate?: Date | null;
+  createdBy?: string | null;
+  lastModifiedBy?: string | null;
 };
 
 /** Creates a Release in both local v1 and organization-aware live v2 schemas. */

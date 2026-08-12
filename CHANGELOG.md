@@ -6,8 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Lifecycle Category A cron personalization:** daily checks use each record’s owner settings when `User.clerkUserId` is linked (Risk → risk owner, Approval → approver, Sign-off → release owner). Missing owner and missing Clerk link share one fallback to enterprise defaults (`scopeSource: owner | fallback_default`). Blocker stale alerts stay on shared defaults (no owner FK). `User.clerkUserId` is filled on login by email match.
+- **Release lifecycle Wave A gate retarget:** Progression Blocker gates for Target Status = Ready (`no_open_blockers`, `rollback_plan_documented`, `pre_deployment_checklist_complete`, `hard_dependencies_met`) now attach to `cab_approved → ready_to_deploy`. Deploying-target gates (`environment_booked_for_deploy`, `hard_dependencies_met`) attach to `ready_to_deploy → deploying` instead of `deploying → deployed`. `reconcileLifecycleSpecDefaults` migrates stored graphs off the one-stage-late placements.
+- **Sign-off lifecycle:** Pending status gains configurable `expiryDays` (default 30), matching Approval expiry for SLA automation.
+
 ### Added
 
+- **`User.clerkUserId`** (nullable unique): bridges directory User → Clerk session id on login for cron personalization. Migration `20260811200000_user_clerk_user_id`.
+- **Lifecycle Category A cron:** Vercel Cron (daily `0 2 * * *`) → `GET/POST /api/cron/lifecycle-automations` authenticated with `CRON_SECRET` (deny-by-default). Runs AV-02 risk escalate, AV-03 blocker stale MonitoringAlert, AV-22 approval expiry, and sign-off SLA expiry; batch-capped for Hobby 10s timeout. AV-13 deferred (see `docs/lifecycle-backlog.md`).
+- **Lifecycle Category B hooks:** AV-04 dep→Met on Deployed; AV-05 schedule conflict on `releaseDate` save; AV-06 `no_blocking_incidents` gate on Ready→Deploying; AV-14 Drift Escalated→MonitoringAlert; AV-26 system-only Met→At Risk on Rolled Back; CASC-02 auto-unblock on Blocker Resolved.
+- **Related-entity locks (Task 2):** VR-36 freezes dependency add/remove once Release ≥ Ready; §3-06 locks env booking create/update/delete while Release is Deploying; CASC-13 withdraws Pending/Deferred Approvals when Release transitions to Cancelled (`lib/release-related-entity-guards.ts`).
+- **Release Field Locks** (Phase 1): per-user `UserReleaseFieldLockConfig` matrix on Release Lifecycle → Field Locks tab. Enforces editable/locked/editable_with_side_effect against live status keys on Release create/PATCH; VR-21 Size/Priority at CAB Approved reverts to Pending CAB. Spec GAP fields shown as “not yet available”. Live/latest only (no lifecycle version pin).
 - Voice **navigation agent** (`lookup_navigation`): sidebar tabs/URLs derive from `lib/nav-data.ts` (single source with the UI sidebar) plus live `data-voice-nav` DOM sync. The Live LLM looks up pages instead of inventing paths; `navigate_to` allowlist is derived from the same registry. Lifecycle Settings (`/lifecycle`) included.
 - Voice **page totals + current-page tour**: `get_page_context` returns live `totalCount` from the UI table (sample rows capped separately — never answer “how many” from the sample). `run_walkthrough tour=current_page` explains the open page, scrolls, and walks Settings tabs from `lib/settings-tabs.ts`. Team Members publishes page context.
 - Voice **Admin console** (`/admin-voice`): restricted to `admin@releasedesk.com.au`. Track today’s usage, raise per-user daily minute limits, grant unlimited, approve “need more minutes” requests, ban/unban voice. Durable `VoiceUserPolicy` table; enforced on session mint + heartbeat disconnect.

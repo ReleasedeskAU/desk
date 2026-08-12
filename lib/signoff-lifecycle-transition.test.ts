@@ -62,6 +62,26 @@ describe("validateSignoffTransition", () => {
     assert.equal(result.allowed, false);
   });
 
+  it("§3-21: allows Approved → Pending only when superseding", () => {
+    assert.equal(
+      validateSignoffTransition({
+        config,
+        fromStatus: "Approved",
+        toStatus: "Pending",
+      }).allowed,
+      false
+    );
+    const ok = validateSignoffTransition({
+      config,
+      fromStatus: "Approved",
+      toStatus: "Pending",
+      allowSupersede: true,
+    });
+    assert.equal(ok.allowed, true);
+    if (!ok.allowed) return;
+    assert.equal(ok.canonicalStatus, "Pending");
+  });
+
   it("allows Pending → Expired (SLA) and Pending → Withdrawn", () => {
     assert.equal(
       validateSignoffTransition({

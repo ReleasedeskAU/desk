@@ -14,7 +14,11 @@ import {
   type TransitionResult,
 } from "@/lib/release-lifecycle-transition";
 import { createDefaultSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
-import { mandatorySignoffsComplete } from "@/lib/signoff-lifecycle-transition";
+import {
+  mandatorySignoffsComplete,
+  signoffStatusCountsAsComplete,
+} from "@/lib/signoff-lifecycle-transition";
+import { parseCabScopeSnapshot } from "@/lib/release-cab-scope-snapshot";
 
 const OPEN_BLOCKER_STATUSES_EXCLUDED = [
   "Resolved",
@@ -37,18 +41,26 @@ export type ReleaseStatusPatchRelease = {
   id: string;
   releaseCode: string;
   status: string;
+  name: string;
   owner: string;
   releaseSize: string | null;
   priority: string;
+  startDate?: Date | null;
   releaseDate: Date;
   rollbackPlan: string | null;
   notes?: string | null;
+  changeFreeze?: string | null;
   goLiveChecklistPercent: number | null;
   lifecycleConfigVersionId: string | null;
   devSignoff?: string | null;
   testSignoff?: string | null;
   uatSignoff?: string | null;
   securityClearance?: string | null;
+  dressRehearsal?: string | null;
+  opsSignoff?: string | null;
+  scopeDescription?: string | null;
+  postImplementationReviewCompleted?: boolean | null;
+  cabScopeSnapshot?: unknown;
 };
 
 export type ReleaseStatusEnforcementOk = {
@@ -86,6 +98,26 @@ function signoffsLookComplete(release: ReleaseStatusPatchRelease): boolean {
   });
 }
 
+const TERMINAL_INCIDENT_STATUSES = [
+  "Resolved",
+  "Closed",
+  "Cancelled",
+  "Canceled",
+] as const;
+
+const OPEN_ENVIRONMENT_CONFLICT_STATUSES = ["Detected", "Under Review"] as const;
+
+/** Raw synced Work Item statuses treated as complete for VR-29. */
+const TERMINAL_WORK_ITEM_STATUSES = [
+  "Done",
+  "Closed",
+  "Resolved",
+  "Cancelled",
+  "Canceled",
+  "Complete",
+  "Completed",
+] as const;
+
 /**
  * Load checklist facts for gate evaluation from related tables.
  * @param release - Release row being patched
@@ -93,11 +125,64 @@ function signoffsLookComplete(release: ReleaseStatusPatchRelease): boolean {
 export async function loadReleaseLifecycleGateFacts(
   release: ReleaseStatusPatchRelease
 ): Promise<ReleaseLifecycleGateFacts> {
-  const [openBlockerCount, bookings, hardDeps] = await Promise.all([
+  const now = new Date();
+  const signoffConfig = createDefaultSignoffLifecycleConfig();
+  const [
+    openBlockerCount,
+    blockingIncidentCount,
+    openIncidentCount,
+    openEnvironmentConflictCount,
+    applicationCount,
+    incompleteWorkItemCount,
+    bookings,
+    hardDeps,
+    deploymentState,
+  ] = await Promise.all([
     prisma.blocker.count({
       where: {
         releaseCode: release.releaseCode,
         status: { notIn: [...OPEN_BLOCKER_STATUSES_EXCLUDED] },
+      },
+    }),
+    // AV-06: critical or actively resolving incidents linked by denormalized code.
+    prisma.incident.count({
+      where: {
+        relatedReleaseCode: release.releaseCode,
+        status: { notIn: [...TERMINAL_INCIDENT_STATUSES] },
+        OR: [
+          { severity: { contains: "Critical", mode: "insensitive" } },
+          { severity: { equals: "P1", mode: "insensitive" } },
+          {
+            status: {
+              in: ["Open", "Investigating", "Escalated", "Resolving", "Reopened"],
+            },
+          },
+        ],
+      },
+    }),
+    // VR-33: any non-terminal linked incident blocks Close.
+    prisma.incident.count({
+      where: {
+        relatedReleaseCode: release.releaseCode,
+        status: { notIn: [...TERMINAL_INCIDENT_STATUSES] },
+      },
+    }),
+    // VR-32: Detected / Under Review conflicts involving this release code.
+    prisma.environmentConflict.count({
+      where: {
+        status: { in: [...OPEN_ENVIRONMENT_CONFLICT_STATUSES] },
+        OR: [
+          { release1Code: release.releaseCode },
+          { release2Code: release.releaseCode },
+        ],
+      },
+    }),
+    prisma.releaseApplication.count({ where: { releaseId: release.id } }),
+    // VR-29: raw synced Work Item status (no local lifecycle).
+    prisma.workItem.count({
+      where: {
+        releaseCode: release.releaseCode,
+        status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
       },
     }),
     prisma.envBooking.findMany({
@@ -105,12 +190,17 @@ export async function loadReleaseLifecycleGateFacts(
       select: {
         status: true,
         purpose: true,
+        toDate: true,
         environment: { select: { name: true, type: true } },
       },
     }),
     prisma.releaseDependency.findMany({
       where: { releaseId: release.id, dependencyType: "Hard" },
       select: { status: true },
+    }),
+    prisma.deploymentState.findUnique({
+      where: { releaseId: release.id },
+      select: { phase: true },
     }),
   ]);
 
@@ -131,6 +221,15 @@ export async function loadReleaseLifecycleGateFacts(
   );
   const anyActive = bookings.some((b) => activeBooking(b.status));
 
+  // AV-08: still BOOKED but past toDate — booking window has expired.
+  const expiredEnvBookingCount = bookings.filter(
+    (b) =>
+      /^booked$/i.test(b.status ?? "") &&
+      b.toDate instanceof Date &&
+      !Number.isNaN(b.toDate.getTime()) &&
+      b.toDate.getTime() < now.getTime()
+  ).length;
+
   const hardDependenciesMet =
     hardDeps.length === 0 ||
     hardDeps.every((d) =>
@@ -145,11 +244,37 @@ export async function loadReleaseLifecycleGateFacts(
     owner: release.owner,
     releaseSize: release.releaseSize,
     priority: release.priority,
+    name: release.name,
+    applicationCount,
+    startDate: release.startDate,
     releaseDate: release.releaseDate,
     rollbackPlan: release.rollbackPlan,
     notes: release.notes,
     goLiveChecklistPercent: release.goLiveChecklistPercent,
     openBlockerCount,
+    blockingIncidentCount,
+    openIncidentCount,
+    openEnvironmentConflictCount,
+    expiredEnvBookingCount,
+    // VR-05: non-empty changeFreeze string means an active freeze is recorded.
+    changeFreezeActive: Boolean(release.changeFreeze?.trim()),
+    deploymentOutcomeConfirmed: /^verified$/i.test(deploymentState?.phase ?? ""),
+    testSignoffComplete: signoffStatusCountsAsComplete(
+      signoffConfig,
+      release.testSignoff
+    ),
+    dressRehearsalComplete: signoffStatusCountsAsComplete(
+      signoffConfig,
+      release.dressRehearsal
+    ),
+    opsSignoffComplete: signoffStatusCountsAsComplete(
+      signoffConfig,
+      release.opsSignoff
+    ),
+    incompleteWorkItemCount,
+    pirComplete: Boolean(release.postImplementationReviewCompleted),
+    scopeDescription: release.scopeDescription,
+    cabScopeSnapshot: parseCabScopeSnapshot(release.cabScopeSnapshot),
     hasUatBooking,
     hasDeployBooking: explicitDeploy || anyActive, // partial: any active booking counts
     hardDependenciesMet,

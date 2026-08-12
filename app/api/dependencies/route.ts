@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
 import { createDependencySchema } from "@/lib/validation/dependency";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
+import { guardDependencyGraphMutation } from "@/lib/release-related-entity-guards";
 
 function mapDependencyRow(row: {
   id: string;
@@ -105,12 +106,21 @@ export async function POST(req: Request) {
 
   try {
     const [release, dependsOn] = await Promise.all([
-      prisma.release.findUnique({ where: { id: body.releaseId }, select: { id: true } }),
-      prisma.release.findUnique({ where: { id: body.dependsOnReleaseId }, select: { id: true } }),
+      prisma.release.findUnique({
+        where: { id: body.releaseId },
+        select: { id: true, status: true },
+      }),
+      prisma.release.findUnique({
+        where: { id: body.dependsOnReleaseId },
+        select: { id: true },
+      }),
     ]);
     if (!release || !dependsOn) {
       return NextResponse.json({ error: "Release not found" }, { status: 404 });
     }
+
+    const frozen = guardDependencyGraphMutation(release.status);
+    if (!frozen.ok) return frozen.response;
 
     const existing = await prisma.releaseDependency.findUnique({
       where: {

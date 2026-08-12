@@ -5,7 +5,13 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { patchBlockerSchema } from "@/lib/validation/blocker";
 import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { deniedBlockerEditFields } from "@/lib/blocker-lifecycle-edit-policy";
-import { validateBlockerTransition } from "@/lib/blocker-lifecycle-transition";
+import {
+  resolveBlockerLifecycleStatusRef,
+  validateBlockerTransition,
+} from "@/lib/blocker-lifecycle-transition";
+import { cascadeUnblockReleaseOnBlockerResolved } from "@/lib/lifecycle-event-hooks";
+import { createDefaultBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -104,7 +110,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This blocker is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "blocker",
+            mode,
+            statusLabel: existing.status,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,
@@ -187,6 +198,30 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.daysOpen !== undefined) data.daysOpen = body.daysOpen;
 
   const row = await prisma.blocker.update({ where: { id: existing.id }, data });
+
+  // CASC-02: Resolved only — auto-unblock parent release when no open blockers remain.
+  if (body.status !== undefined) {
+    const blockerConfig = createDefaultBlockerLifecycleConfig();
+    const nextKey = resolveBlockerLifecycleStatusRef(
+      blockerConfig,
+      row.status
+    )?.key;
+    const prevKey = resolveBlockerLifecycleStatusRef(
+      blockerConfig,
+      existing.status
+    )?.key;
+    if (nextKey === "resolved" && prevKey !== "resolved") {
+      try {
+        await cascadeUnblockReleaseOnBlockerResolved(row.releaseCode);
+      } catch (cascErr) {
+        console.warn("[blockers PATCH] CASC-02 auto-unblock failed", {
+          blockerCode: row.blockerCode,
+          message: cascErr instanceof Error ? cascErr.message : "unknown",
+        });
+      }
+    }
+  }
+
   const release = await prisma.release.findUnique({
     where: { releaseCode: row.releaseCode },
     select: { id: true, releaseCode: true, name: true, status: true },

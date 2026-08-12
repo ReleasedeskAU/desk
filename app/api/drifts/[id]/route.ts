@@ -6,6 +6,11 @@ import { patchDriftSchema } from "@/lib/validation/drift";
 import { loadDriftLifecycleConfig } from "@/lib/drift-lifecycle-config-db";
 import { deniedDriftEditFields } from "@/lib/drift-lifecycle-edit-policy";
 import { validateDriftTransition } from "@/lib/drift-lifecycle-transition";
+import {
+  createMonitoringAlertOnDriftEscalated,
+  isDriftEscalatedStatus,
+} from "@/lib/lifecycle-event-hooks";
+import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -69,7 +74,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (denied.length > 0) {
       return NextResponse.json(
         {
-          error: `This drift is ${mode.replaceAll("_", "-")} in status "${existing.status}". Cannot change: ${denied.join(", ")}`,
+          error: editPolicyDeniedMessage({
+            entity: "drift",
+            mode,
+            statusLabel: existing.status,
+            deniedFields: denied,
+          }),
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,
@@ -175,6 +185,29 @@ export async function PATCH(req: Request, { params }: Params) {
     data,
     include: driftInclude,
   });
+
+  // AV-14: MonitoringAlert only when status newly lands on Escalated.
+  if (
+    body.status !== undefined &&
+    isDriftEscalatedStatus(String(row.status)) &&
+    !isDriftEscalatedStatus(existing.status)
+  ) {
+    try {
+      await createMonitoringAlertOnDriftEscalated({
+        driftCode: row.driftCode,
+        applicationId: row.applicationId,
+        departmentName: row.departmentName,
+        environmentName: row.environmentName,
+        severity: row.severity,
+      });
+    } catch (hookErr) {
+      console.warn("[drifts PATCH] AV-14 monitoring alert failed", {
+        driftCode: row.driftCode,
+        message: hookErr instanceof Error ? hookErr.message : "unknown",
+      });
+    }
+  }
+
   return NextResponse.json(row);
 }
 

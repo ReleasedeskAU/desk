@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, CalendarCheck, FileText, List, Package, Server } from "lucide-react";
 import {
@@ -14,8 +14,11 @@ import {
   type ChipTone,
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
+import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { useLifecycleStatusConfirm } from "@/hooks/useLifecycleStatusConfirm";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -140,7 +143,6 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
   /** Id of the workflow step currently being written, so its button can spin. */
   const [pendingStep, setPendingStep] = useState<string | null>(null);
-  const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, me] = await Promise.all([
@@ -171,6 +173,20 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
   const d = edit.draft;
+  /** True when exception panel was opened from modal save (retry should completeSaveSuccess). */
+  const exceptionFromModalSave = useRef(false);
+  const statusConfirm = useLifecycleStatusConfirm({
+    entityLabel: "conflict",
+    onSuccess: async () => {
+      if (exceptionFromModalSave.current) {
+        exceptionFromModalSave.current = false;
+        if (edit.editing) {
+          edit.completeSaveSuccess(CONFLICT_FIELD_LABELS);
+        }
+      }
+      await load();
+    },
+  });
 
   const selectOptions = useMemo(
     () =>
@@ -184,44 +200,64 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
     if (!row || !edit.draft) return;
     edit.setSaving(true);
     edit.setError(null);
+    const patchBody = { ...edit.draft };
     const res = await safeFetchJson(`/api/conflicts/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(edit.draft),
+      body: JSON.stringify(patchBody),
       label: "conflict-patch",
       rejectHttpErrors: false,
     });
-    edit.setSaving(false);
-    if (!res.ok || res.status >= 300) {
-      edit.setError("Couldn’t save changes. Try again.");
+    if (!res.ok || (res.status ?? 0) >= 300) {
+      const data =
+        res.ok && res.data && typeof res.data === "object"
+          ? (res.data as {
+              error?: string;
+              code?: string;
+              unmetReasons?: unknown;
+            })
+          : null;
+      const apiError = typeof data?.error === "string" ? data.error : "";
+      const code = typeof data?.code === "string" ? data.code : "";
+      const unmetReasons = Array.isArray(data?.unmetReasons)
+        ? data.unmetReasons.filter((r): r is string => typeof r === "string")
+        : [];
+      if (code === "TRANSITION_NEEDS_OVERRIDE" && patchBody.status !== row.status) {
+        const { status: _status, ...extraBody } = patchBody;
+        exceptionFromModalSave.current = true;
+        statusConfirm.presentException({
+          targetStatus: patchBody.status,
+          targetLabel: patchBody.status,
+          patchUrl: `/api/conflicts/${row.id}`,
+          extraBody,
+          unmetReasons,
+          leadMessage: apiError || null,
+        });
+        edit.setSaving(false);
+        return;
+      }
+      edit.setSaving(false);
+      edit.setError(apiError || "Couldn’t save changes. Try again.");
       return;
     }
+    edit.setSaving(false);
     edit.completeSaveSuccess(CONFLICT_FIELD_LABELS);
     await load();
   };
 
   /**
    * Apply a one-click status transition from the decision header.
-   * The API re-validates the status and enforces the editor role — this button
-   * is convenience, not the permission check.
+   * Soft unmet checks open LifecycleExceptionConfirm via the shared hook.
    */
   const applyStep = async (step: WorkflowStep) => {
     if (!row) return;
     setPendingStep(step.id);
-    setStepError(null);
-    const res = await safeFetchJson(`/api/conflicts/${row.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: step.status }),
-      label: "conflict-status-step",
-      rejectHttpErrors: false,
+    await statusConfirm.requestStatusChange({
+      targetStatus: step.status,
+      targetLabel: step.label,
+      patchUrl: `/api/conflicts/${row.id}`,
     });
     setPendingStep(null);
-    if (!res.ok || res.status >= 300) {
-      setStepError(`Couldn’t set this conflict to ${step.status}. Try again.`);
-      return;
-    }
-    await load();
   };
 
   const remove = async () => {
@@ -475,12 +511,31 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
         primaryAction={workflow.primary ? toAction(workflow.primary) : null}
         secondaryActions={workflow.secondary.map(toAction)}
         canEdit={canEdit}
-        actionError={stepError}
+        actionError={null}
         attention={attention}
         attentionClearLabel="No outstanding clash between these two releases"
         timing={[]}
         scope={scope}
       />
+
+      {statusConfirm.pending ? (
+        <div className="mt-4">
+          <LifecycleExceptionConfirm
+            targetLabel={statusConfirm.pending.targetLabel}
+            needsException={statusConfirm.pending.needsException}
+            blocked={statusConfirm.pending.blocked}
+            exceptionReason={statusConfirm.exceptionReason}
+            onExceptionReasonChange={statusConfirm.setExceptionReason}
+            busy={statusConfirm.busy}
+            confirmDisabled={statusConfirm.confirmDisabled}
+            onCancel={statusConfirm.cancel}
+            onConfirm={() => void statusConfirm.confirm()}
+            checks={statusConfirm.pending.checks}
+            leadMessage={statusConfirm.pending.leadMessage}
+          />
+        </div>
+      ) : null}
+      <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection
         icon={Package}

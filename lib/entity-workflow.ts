@@ -239,16 +239,21 @@ export function alertWorkflow(status: string): WorkflowOptions {
   const resolve: WorkflowStep = { id: "resolve", label: "Mark resolved", status: "Resolved" };
   const close: WorkflowStep = { id: "close", label: "Close alert", status: "Closed" };
   const reopen: WorkflowStep = { id: "reopen", label: "Reopen alert", status: "Open" };
+  // Dismiss needs overrideReason — header step routes into LifecycleExceptionConfirm.
+  const dismiss: WorkflowStep = { id: "dismiss", label: "Dismiss", status: "Dismissed" };
 
   const normalized = status.trim().toLowerCase();
+  if (normalized.includes("dismiss")) return { primary: null, secondary: [] };
   if (normalized.includes("closed")) return { primary: null, secondary: [reopen] };
   if (normalized.includes("resolv") || normalized.includes("clear")) {
     return { primary: close, secondary: [reopen] };
   }
   if (normalized.includes("investigat")) return { primary: resolve, secondary: [] };
-  if (normalized.includes("ack")) return { primary: investigate, secondary: [resolve] };
-  // Open, firing, blank, or an unrecognised status: nobody has looked yet.
-  return { primary: acknowledge, secondary: [investigate] };
+  if (normalized.includes("ack")) {
+    return { primary: investigate, secondary: [resolve, dismiss] };
+  }
+  // Pending / Open / firing: Acknowledge stays primary; Dismiss is a one-click secondary.
+  return { primary: acknowledge, secondary: [investigate, dismiss] };
 }
 
 /**

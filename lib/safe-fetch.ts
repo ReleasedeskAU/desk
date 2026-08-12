@@ -25,6 +25,8 @@ export type SafeFetchOk<T> = {
   ok: true;
   data: T;
   status: number;
+  /** Response headers when available (e.g. UX notice channel). */
+  headers?: Headers;
 };
 
 export type SafeFetchErr = {
@@ -92,11 +94,16 @@ export async function safeFetchJson<T = unknown>(
     // Empty body is valid for some endpoints — treat as null.
     const text = await res.text();
     if (!text) {
-      return { ok: true, data: null as T, status: res.status };
+      return { ok: true, data: null as T, status: res.status, headers: res.headers };
     }
 
     try {
-      return { ok: true, data: JSON.parse(text) as T, status: res.status };
+      return {
+        ok: true,
+        data: JSON.parse(text) as T,
+        status: res.status,
+        headers: res.headers,
+      };
     } catch {
       logFailure(label, "parse", "invalid JSON");
       return { ok: false, code: "parse", status: res.status, error: "Invalid server response" };

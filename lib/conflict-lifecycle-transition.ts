@@ -172,7 +172,7 @@ export function validateConflictTransition(args: {
         allowed: false,
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
-          "Transition has unmet flexible requirement(s). Provide overrideReason (min 3 characters) to proceed.",
+          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
         unmetReasons: unmet,
         fromKey: from.key,
         toKey: to.key,
