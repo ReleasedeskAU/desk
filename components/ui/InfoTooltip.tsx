@@ -41,7 +41,7 @@ function TipPortal({ text, open, tipId, tipRef, coords }: SharedTipProps) {
       role="tooltip"
       className={cn(
         // Solid opaque panel — do not use --card (it is semi-transparent in light mode).
-        "pointer-events-none fixed z-[200] w-max max-w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-xs leading-snug text-slate-700 shadow-[0_12px_28px_-8px_rgba(15,23,42,0.35)] dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_12px_28px_-8px_rgba(0,0,0,0.65)]",
+        "pointer-events-none fixed z-[200] w-max max-w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-xs leading-snug whitespace-pre-line text-slate-700 shadow-[0_12px_28px_-8px_rgba(15,23,42,0.35)] dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_12px_28px_-8px_rgba(0,0,0,0.65)]",
         coords?.placement === "bottom" ? "" : "-translate-y-full",
         !coords && "invisible"
       )}

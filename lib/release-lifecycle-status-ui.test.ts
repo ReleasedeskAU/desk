@@ -110,7 +110,19 @@ describe("editReleaseStatusOptions", () => {
     const options = editReleaseStatusOptions("Pending CAB", [
       { label: "CAB Approved", outcome: "allowed" },
       { label: "Rejected", outcome: "needs_override" },
-      { label: "Blocked", outcome: "blocked" },
+      {
+        label: "Blocked",
+        outcome: "blocked",
+        gates: [
+          {
+            label: "No open blockers",
+            reason: "1 open blocker remains",
+            passed: false,
+            hard: true,
+            soft: false,
+          },
+        ],
+      },
     ]);
     assert.deepEqual(
       options.map((o) => o.label),
@@ -119,6 +131,10 @@ describe("editReleaseStatusOptions", () => {
     assert.equal(options.some((o) => o.label === "Rolled Back"), false);
     assert.equal(options.find((o) => o.label === "Blocked")?.disabled, true);
     assert.equal(options.find((o) => o.label === "Rejected")?.disabled, false);
+    assert.match(
+      options.find((o) => o.label === "Blocked")?.hint ?? "",
+      /1 open blocker remains/
+    );
   });
 });
 

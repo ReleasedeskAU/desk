@@ -14,6 +14,7 @@ import {
   type LegalNextStatusView,
   type ReleaseLifecycleGateFacts,
 } from "@/lib/release-lifecycle-transition";
+import { lifecycleStatusOptionHint } from "@/lib/lifecycle-status-option-hint";
 
 /** Chip / badge tone used across detail chips and table badges. */
 export type ReleaseStatusDisplayTone = "good" | "warn" | "bad" | "info" | "neutral";
@@ -277,6 +278,8 @@ export type EditReleaseStatusOption = {
   label: string;
   outcome: "current" | "allowed" | "needs_override" | "blocked";
   disabled: boolean;
+  /** Hover copy explaining blocked / exception-needed steps. */
+  hint?: string;
 };
 
 /**
@@ -288,7 +291,17 @@ export type EditReleaseStatusOption = {
  */
 export function editReleaseStatusOptions(
   currentLabel: string,
-  next: readonly { label: string; outcome: "allowed" | "needs_override" | "blocked" }[]
+  next: readonly {
+    label: string;
+    outcome: "allowed" | "needs_override" | "blocked";
+    gates?: readonly {
+      label: string;
+      reason: string;
+      passed: boolean;
+      hard: boolean;
+      soft: boolean;
+    }[];
+  }[]
 ): EditReleaseStatusOption[] {
   const seen = new Set<string>();
   const out: EditReleaseStatusOption[] = [];
@@ -305,6 +318,10 @@ export function editReleaseStatusOptions(
       label: item.label,
       outcome: item.outcome,
       disabled: item.outcome === "blocked",
+      hint: lifecycleStatusOptionHint({
+        outcome: item.outcome,
+        gates: item.gates,
+      }),
     });
   }
   return out;

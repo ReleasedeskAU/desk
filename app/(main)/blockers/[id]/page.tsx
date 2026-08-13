@@ -16,6 +16,7 @@ import {
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
 import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
@@ -33,6 +34,8 @@ import {
   type BlockerLifecycleConfig,
 } from "@/lib/blocker-lifecycle-config";
 import { legalNextBlockerStatuses } from "@/lib/blocker-lifecycle-transition";
+import { findEntityStatusByLabel } from "@/lib/entity-lifecycle-status-ui";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
 import {
   chipToneToFactTone,
   collectAttention,
@@ -307,6 +310,16 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         return true;
       })
       .map((label) => ({ value: label, label }));
+  }, [lifecycleConfig, row?.status]);
+
+  const showTerminalStatusNotice = useMemo(() => {
+    const current = row?.status ?? "";
+    const next = legalNextBlockerStatuses(lifecycleConfig, current);
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: next.length,
+      isTerminal: findEntityStatusByLabel(lifecycleConfig, current)?.terminal,
+    });
   }, [lifecycleConfig, row?.status]);
 
   const blockerTypeOptions = useMemo(() => {
@@ -614,6 +627,11 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
               kind="select"
               options={statusOptions}
               onChange={(n) => edit.setField("status", n)}
+              hint={
+                showTerminalStatusNotice ? (
+                  <LifecycleTerminalStatusNotice statusLabel={d.status} />
+                ) : undefined
+              }
             />
             <EditableField
               label="Severity"

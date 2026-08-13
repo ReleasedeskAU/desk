@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { LifecycleStatusSelect } from "@/components/detail/LifecycleStatusSelect";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
 import {
   buildReleaseFormSaveAlert,
   type ReleaseFormAlert,
@@ -28,6 +30,7 @@ import {
   MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH,
   type LegalNextStatusView,
 } from "@/lib/release-lifecycle-transition";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
 
 /**
  * Build a PATCH body with only fields that differ from the edit baseline.
@@ -262,6 +265,15 @@ export function ReleaseFormModal({
         : [],
     [editLegalNext, form.status, initial?.status, isEdit]
   );
+
+  const showTerminalStatusNotice = useMemo(() => {
+    if (!isEdit) return false;
+    const current = (initial?.status || form.status || "").trim();
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: editLegalNext.length,
+    });
+  }, [editLegalNext.length, form.status, initial?.status, isEdit]);
 
   const selectedNext = useMemo(() => {
     if (!isEdit) return null;
@@ -892,40 +904,56 @@ export function ReleaseFormModal({
               Status
               <RequiredMark />
             </label>
-            <select
-              className={cn(taInput, fieldErrors.status && "border-rose-400")}
-              value={form.status}
-              onChange={(e) => {
-                set("status", e.target.value);
-                setOverrideReason("");
-              }}
-            >
-              {isEdit
-                ? editStatusChoices.map((opt) => (
-                    <option key={opt.label} value={opt.label} disabled={opt.disabled}>
-                      {opt.outcome === "current"
-                        ? opt.label
-                        : opt.outcome === "needs_override"
-                          ? `${opt.label} · reason needed`
-                          : opt.outcome === "blocked"
-                            ? `${opt.label} · blocked`
-                            : opt.label}
-                    </option>
-                  ))
-                : statusOptions.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-            </select>
             {isEdit ? (
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-white/50">
-                {legalNextLoading
-                  ? "Showing the next steps from the lifecycle graph. Confirming checks…"
-                  : selectedNext?.outcome === "needs_override"
-                    ? "Some checks aren’t met. Enter an exception reason in the panel below, then continue."
-                    : "Only the next allowed steps are listed. Blocked steps can’t be chosen until their checks pass."}
-              </p>
+              <LifecycleStatusSelect
+                aria-label="Status"
+                className={cn(fieldErrors.status && "[&_button]:border-rose-400")}
+                value={form.status}
+                onChange={(next) => {
+                  set("status", next);
+                  setOverrideReason("");
+                }}
+                options={editStatusChoices.map((opt) => ({
+                  value: opt.label,
+                  label:
+                    opt.outcome === "current"
+                      ? opt.label
+                      : opt.outcome === "needs_override"
+                        ? `${opt.label} · reason needed`
+                        : opt.outcome === "blocked"
+                          ? `${opt.label} · blocked`
+                          : opt.label,
+                  disabled: opt.disabled,
+                  hint: opt.hint,
+                }))}
+              />
+            ) : (
+              <select
+                className={cn(taInput, fieldErrors.status && "border-rose-400")}
+                value={form.status}
+                onChange={(e) => set("status", e.target.value)}
+              >
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            )}
+            {isEdit ? (
+              showTerminalStatusNotice ? (
+                <LifecycleTerminalStatusNotice
+                  statusLabel={initial?.status || form.status}
+                />
+              ) : (
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-white/50">
+                  {legalNextLoading
+                    ? "Showing the next steps from the lifecycle graph. Confirming checks…"
+                    : selectedNext?.outcome === "needs_override"
+                      ? "Some checks aren’t met. Enter an exception reason in the panel below, then continue."
+                      : "Only the next allowed steps are listed. Hover a blocked step to see why it can’t be chosen."}
+                </p>
+              )
             ) : null}
             <FieldError message={fieldErrors.status} />
           </div>

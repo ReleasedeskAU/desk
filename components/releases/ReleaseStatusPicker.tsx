@@ -7,6 +7,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { StatusChip, type ChipTone } from "@/components/detail/editable";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { HoverExplain } from "@/components/ui/InfoTooltip";
+import { lifecycleStatusOptionHint } from "@/lib/lifecycle-status-option-hint";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { cn } from "@/lib/utils";
@@ -143,12 +145,26 @@ export function ReleaseStatusPicker({
             const active =
               selected?.key === item.key &&
               selected.isPreviousStatus === item.isPreviousStatus;
-            return (
+            const hint = lifecycleStatusOptionHint({
+              outcome: item.outcome,
+              gates: item.gates,
+            });
+            const label = `${item.isPreviousStatus ? `Return to ${item.label}` : item.label}${
+              item.outcome === "needs_override"
+                ? " · reason needed"
+                : item.outcome === "blocked"
+                  ? " · blocked"
+                  : ""
+            }`;
+            const chip = (
               <button
-                key={`${item.key}:${item.isPreviousStatus ? "prev" : "direct"}`}
                 type="button"
-                disabled={busy}
+                disabled={busy || item.outcome === "blocked"}
+                title={
+                  item.outcome !== "blocked" && hint ? hint : undefined
+                }
                 onClick={() => {
+                  if (item.outcome === "blocked") return;
                   setSelected(item);
                   setError(null);
                 }}
@@ -157,14 +173,27 @@ export function ReleaseStatusPicker({
                   active
                     ? "border-violet-500 bg-violet-50 text-violet-800 dark:bg-violet-500/20 dark:text-violet-100"
                     : "border-slate-200 bg-white text-slate-700 hover:border-violet-300 dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white/80",
-                  item.outcome === "blocked" && "opacity-70"
+                  item.outcome === "blocked" &&
+                    "cursor-not-allowed opacity-60 hover:border-slate-200"
                 )}
               >
-                {item.isPreviousStatus ? `Return to ${item.label}` : item.label}
-                {item.outcome === "needs_override" ? " · reason needed" : ""}
-                {item.outcome === "blocked" ? " · blocked" : ""}
+                {label}
               </button>
             );
+            const rowKey = `${item.key}:${item.isPreviousStatus ? "prev" : "direct"}`;
+            if (item.outcome === "blocked" && hint) {
+              return (
+                <HoverExplain
+                  key={rowKey}
+                  text={hint}
+                  label={`Why ${item.label} is unavailable`}
+                  placement="bottom"
+                >
+                  <span className="inline-flex pointer-events-none">{chip}</span>
+                </HoverExplain>
+              );
+            }
+            return <span key={rowKey}>{chip}</span>;
           })}
         </div>
       )}

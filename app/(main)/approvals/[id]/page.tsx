@@ -16,6 +16,7 @@ import {
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
 import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
@@ -37,6 +38,8 @@ import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import type { ApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config";
 import { DEFAULT_APPROVAL_LIFECYCLE_CONFIG } from "@/lib/approval-lifecycle-config";
 import { legalNextApprovalDecisions } from "@/lib/approval-lifecycle-transition";
+import { findEntityStatusByLabel } from "@/lib/entity-lifecycle-status-ui";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
 import { approvalTypeSelectOptions } from "@/lib/validation/approval";
 
 type ApprovalDetail = {
@@ -241,6 +244,16 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
         return true;
       })
       .map((label) => ({ value: label, label }));
+  }, [lifecycleConfig, row?.decision]);
+
+  const showTerminalDecisionNotice = useMemo(() => {
+    const current = row?.decision ?? "";
+    const next = legalNextApprovalDecisions(lifecycleConfig, current);
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: next.length,
+      isTerminal: findEntityStatusByLabel(lifecycleConfig, current)?.terminal,
+    });
   }, [lifecycleConfig, row?.decision]);
 
   const typeOptions = useMemo(
@@ -500,6 +513,11 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
               options={decisionOptions}
               onChange={(n) => edit.setField("decision", n)}
               display={<StatusChip label={d.decision} tone={decisionTone(d.decision)} />}
+              hint={
+                showTerminalDecisionNotice ? (
+                  <LifecycleTerminalStatusNotice statusLabel={d.decision} noun="decision" />
+                ) : undefined
+              }
             />
             <EditableField
               label="Approval Type"

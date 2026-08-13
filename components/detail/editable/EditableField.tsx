@@ -51,6 +51,8 @@ type EditableFieldProps = {
   className?: string;
   mono?: boolean;
   locked?: boolean;
+  /** Shown under the control in edit mode (e.g. final-status notice). */
+  hint?: ReactNode;
 };
 
 const editInputClass =
@@ -58,6 +60,7 @@ const editInputClass =
 
 /**
  * View/edit field — bold value in view mode; indigo-tinted input in edit mode.
+ * Optional `hint` renders under the control while editing (e.g. final-status notice).
  */
 export function EditableField({
   label,
@@ -71,6 +74,7 @@ export function EditableField({
   className,
   mono,
   locked,
+  hint,
 }: EditableFieldProps) {
   const show = display ?? (value?.trim() ? value : "—");
   const canEdit = editing && onChange && !locked;
@@ -126,6 +130,7 @@ export function EditableField({
           {show}
         </div>
       )}
+      {canEdit && hint ? hint : null}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
 import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
@@ -38,6 +39,8 @@ import {
   type IncidentLifecycleConfig,
 } from "@/lib/incident-lifecycle-config";
 import { legalNextIncidentStatuses } from "@/lib/incident-lifecycle-transition";
+import { findEntityStatusByLabel } from "@/lib/entity-lifecycle-status-ui";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
 
 type IncidentDetail = {
   id: string;
@@ -301,6 +304,19 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       .map((label) => ({ value: label, label }));
   }, [lifecycle.config, row?.status]);
 
+  const showTerminalStatusNotice = useMemo(() => {
+    const current = row?.status ?? "";
+    const config =
+      (lifecycle.config as IncidentLifecycleConfig | null) ??
+      createDefaultIncidentLifecycleConfig();
+    const next = legalNextIncidentStatuses(config, current);
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: next.length,
+      isTerminal: findEntityStatusByLabel(config, current)?.terminal,
+    });
+  }, [lifecycle.config, row?.status]);
+
   const save = async () => {
     if (!row || !edit.draft) return;
     edit.setSaving(true);
@@ -549,6 +565,11 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
               kind="select"
               options={statusOptions}
               onChange={(n) => edit.setField("status", n)}
+              hint={
+                showTerminalStatusNotice ? (
+                  <LifecycleTerminalStatusNotice statusLabel={d.status} />
+                ) : undefined
+              }
             />
             <EditableField
               label="Impact"
