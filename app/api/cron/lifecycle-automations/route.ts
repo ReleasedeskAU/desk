@@ -35,13 +35,22 @@ async function handle(req: Request): Promise<NextResponse> {
   }
   try {
     const result = await runLifecycleAutomations(new Date());
+    if (!result.ok) {
+      console.error("[lifecycle-cron] run completed with role faults", {
+        checks: result.checks
+          .filter((c) => c.roleFaults.length > 0)
+          .map((c) => ({ check: c.check, roleFaults: c.roleFaults })),
+      });
+    }
     console.warn("[lifecycle-cron] run complete", {
+      ok: result.ok,
       anyTruncated: result.anyTruncated,
       checks: result.checks.map((c) => ({
         check: c.check,
         mutated: c.mutated,
         truncated: c.truncated,
         errors: c.errors,
+        roleFaults: c.roleFaults,
       })),
     });
     return NextResponse.json(result);

@@ -29,6 +29,9 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { driftWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
+import type { DriftLifecycleConfig } from "@/lib/drift-lifecycle-config";
 
 type DriftDetail = {
   id: string;
@@ -157,20 +160,11 @@ const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"].map((v) => ({
   label: v,
 }));
 
-const STATUS_OPTIONS = [
-  "Detected",
-  "Investigating",
-  "Approved",
-  "Reverted",
-  "Escalated",
-].map((v) => ({
-  value: v,
-  label: v,
-}));
 
 export default function DriftDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const lifecycle = useEntityLifecycleStatuses("/api/drift-lifecycle-config");
   const [row, setRow] = useState<DriftDetail | null>(null);
   const [options, setOptions] = useState<DriftOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
@@ -346,13 +340,10 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     return SEVERITY_OPTIONS;
   }, [row?.severity]);
 
-  const statusOptions = useMemo(() => {
-    const set = new Set(STATUS_OPTIONS.map((o) => o.value));
-    if (row?.status && !set.has(row.status)) {
-      return [{ value: row.status, label: row.status }, ...STATUS_OPTIONS];
-    }
-    return STATUS_OPTIONS;
-  }, [row?.status]);
+  const statusOptions = useMemo(
+    () => statusSelectOptions(lifecycle.createOptions, row?.status),
+    [lifecycle.createOptions, row?.status]
+  );
 
   const save = async () => {
     if (!row || !edit.draft) return;
@@ -448,7 +439,10 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   const selectedApp = applications.find((a) => a.id === v.applicationId);
   const selectedDept = departments.find((dept) => dept.id === v.departmentId);
   const etaDue = describeDue(v.etaToFix);
-  const workflow = driftWorkflow(v.status);
+  const workflow = driftWorkflow(
+    v.status,
+    (lifecycle.config as DriftLifecycleConfig | null) ?? undefined
+  );
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,

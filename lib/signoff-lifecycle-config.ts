@@ -42,6 +42,8 @@ export type SignoffLifecycleStatusConfig = {
    * Mirrors Approval `expiryDays`; Pending defaults to 30.
    */
   expiryDays: number | null;
+  /** New / empty checklist cells land here. */
+  isIntake: boolean;
 };
 
 export type SignoffLifecycleTransitionConfig = {
@@ -75,7 +77,10 @@ export const MAX_SIGNOFF_LIFECYCLE_STATUSES = 20;
 export const MAX_SIGNOFF_LIFECYCLE_TRANSITIONS = 80;
 export const MAX_SIGNOFF_TYPES = 20;
 
-export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly SignoffLifecycleStatusConfig[] = [
+export const DEFAULT_SIGNOFF_LIFECYCLE_STATUSES: readonly Omit<
+  SignoffLifecycleStatusConfig,
+  "isIntake"
+>[] = [
   {
     key: "pending",
     label: "Pending",
@@ -257,7 +262,10 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
  */
 export function createDefaultSignoffLifecycleConfig(): SignoffLifecycleConfig {
   return {
-    statuses: DEFAULT_SIGNOFF_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    statuses: DEFAULT_SIGNOFF_LIFECYCLE_STATUSES.map((s) => ({
+      ...s,
+      isIntake: s.key === "pending",
+    })),
     transitions: DEFAULT_SIGNOFF_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
     types: DEFAULT_SIGNOFF_TYPES.map((t) => ({ ...t })),
   };
@@ -371,6 +379,7 @@ export function normalizeSignoffLifecycleConfig(
             typeof s.expiryDays === "number" || s.expiryDays === null
               ? s.expiryDays
               : (defaultsByKey.get(s.key)?.expiryDays ?? null),
+          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "pending",
         })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
         types: candidate.types.map((t) => ({ ...t })),

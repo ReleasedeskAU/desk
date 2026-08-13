@@ -7,7 +7,7 @@ describe("buildReleaseFormSaveAlert", () => {
     const alert = buildReleaseFormSaveAlert(
       {
         error:
-          'Transition from "Draft" to "Deploying" is not allowed by the lifecycle configuration',
+          'You can’t move this release from “Draft” to “Deploying”. That step isn’t allowed from here.',
         code: "ILLEGAL_TRANSITION",
       },
       "Failed to save release"

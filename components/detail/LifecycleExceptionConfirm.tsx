@@ -35,6 +35,10 @@ export type LifecycleExceptionConfirmProps = {
   onConfirm: () => void;
   /** Optional lead line above the check list (e.g. API summary). */
   leadMessage?: string | null;
+  /** Override the exception textarea label. */
+  reasonLabel?: string;
+  /** Override the exception textarea placeholder. */
+  reasonPlaceholder?: string;
 };
 
 /**
@@ -53,6 +57,8 @@ export function LifecycleExceptionConfirm({
   onCancel,
   onConfirm,
   leadMessage,
+  reasonLabel,
+  reasonPlaceholder,
 }: LifecycleExceptionConfirmProps) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-[var(--border)] dark:bg-white/5">
@@ -107,14 +113,19 @@ export function LifecycleExceptionConfirm({
       {needsException && (
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-white/60">
-            Exception reason (required)
+            {reasonLabel ?? "Exception reason (required)"}
           </span>
           <textarea
             value={exceptionReason}
             onChange={(e) => onExceptionReasonChange(e.target.value)}
             rows={2}
             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white"
-            placeholder="Briefly explain why you’re continuing without meeting the checks (this is recorded)."
+            placeholder={
+              reasonPlaceholder ??
+              (needsException
+                ? "Briefly explain why you’re taking this step (this is recorded)."
+                : "Briefly explain why you’re continuing without meeting the checks (this is recorded).")
+            }
           />
         </label>
       )}

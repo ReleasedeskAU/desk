@@ -9,21 +9,9 @@ import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { BLOCKER_CATEGORIES } from "@/lib/blocker-categories";
 
-const BLOCKER_TYPES = [
-  "Environment",
-  "Technical",
-  "Dependency",
-  "Resource",
-  "Business",
-  "Testing",
-  "Security",
-  "Infrastructure",
-  "Defect",
-  "Compliance",
-  "Documentation",
-  "External",
-] as const;
+const BLOCKER_TYPES = BLOCKER_CATEGORIES;
 
 const SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
 const ESCALATIONS = ["L1 - Team Lead", "L2 - Manager", "L3 - Director"] as const;

@@ -86,6 +86,7 @@ describe("validateReleaseTransition", () => {
     assert.equal(result.allowed, false);
     if (result.allowed) return;
     assert.equal(result.code, "ILLEGAL_TRANSITION");
+    assert.match(result.reason, /isn’t allowed from here/);
   });
 
   it("blocks unknown/legacy current status without aliasing", () => {
@@ -202,6 +203,28 @@ describe("listLegalNextStatuses / stepper", () => {
       gateFacts: baseFacts,
     });
     assert.equal(toCancelled.allowed, true);
+  });
+
+  it("VR-27: high-score risks without a mitigation plan need override before Ready", () => {
+    const denied = validateReleaseTransition({
+      config,
+      fromStatus: "CAB Approved",
+      toStatus: "Ready to deploy",
+      gateFacts: { ...baseFacts, unmitigatedHighRiskCount: 1 },
+    });
+    assert.equal(denied.allowed, false);
+    if (!denied.allowed) {
+      assert.equal(denied.code, "TRANSITION_NEEDS_OVERRIDE");
+      assert.ok((denied.unmetReasons ?? []).some((r) => /mitigation plan/i.test(r)));
+    }
+
+    const ok = validateReleaseTransition({
+      config,
+      fromStatus: "CAB Approved",
+      toStatus: "Ready to deploy",
+      gateFacts: baseFacts,
+    });
+    assert.equal(ok.allowed, true);
   });
 
   it("Wave A: Ready → Deploying needs override when VR-19/VR-18 facts fail (flexible)", () => {

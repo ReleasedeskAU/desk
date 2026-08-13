@@ -25,6 +25,8 @@ export type ConflictLifecycleStatusConfig = {
   editMode: ConflictEditMode;
   /** Cascade / notes shown in settings. */
   cascadeEffect: string;
+  /** New conflict records land here. */
+  isIntake: boolean;
 };
 
 export type ConflictLifecycleTransitionConfig = {
@@ -55,7 +57,10 @@ export const MAX_CONFLICT_LIFECYCLE_STATUSES = 20;
 export const MAX_CONFLICT_LIFECYCLE_TRANSITIONS = 80;
 export const MAX_CONFLICT_TYPES = 20;
 
-export const DEFAULT_CONFLICT_LIFECYCLE_STATUSES: readonly ConflictLifecycleStatusConfig[] =
+export const DEFAULT_CONFLICT_LIFECYCLE_STATUSES: readonly Omit<
+  ConflictLifecycleStatusConfig,
+  "isIntake"
+>[] =
   [
     {
       key: "detected",
@@ -157,7 +162,10 @@ export const DEFAULT_CONFLICT_TYPES: readonly ConflictTypeConfig[] = [
  */
 export function createDefaultConflictLifecycleConfig(): ConflictLifecycleConfig {
   return {
-    statuses: DEFAULT_CONFLICT_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    statuses: DEFAULT_CONFLICT_LIFECYCLE_STATUSES.map((s) => ({
+      ...s,
+      isIntake: s.key === "detected",
+    })),
     transitions: DEFAULT_CONFLICT_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
     types: DEFAULT_CONFLICT_TYPES.map((t) => ({ ...t })),
   };
@@ -244,7 +252,10 @@ export function normalizeConflictLifecycleConfig(
     const candidate = raw as ConflictLifecycleConfig;
     if (!validateConflictLifecycleConfig(candidate)) {
       return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
+        statuses: candidate.statuses.map((s) => ({
+          ...s,
+          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "detected",
+        })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
         types: candidate.types.map((t) => ({ ...t })),
       };

@@ -16,7 +16,7 @@ import {
 import { LIFECYCLE_CRON_BATCH_SIZE } from "@/lib/lifecycle-automations/scope-policy";
 
 export type LifecycleCronRunResult = {
-  ok: true;
+  ok: boolean;
   startedAt: string;
   finishedAt: string;
   /** Owner-linked Clerk settings when available; else enterprise defaults. */
@@ -61,12 +61,13 @@ export async function runLifecycleAutomations(
         errors: 1,
         ownerScoped: 0,
         fallbackScoped: 0,
+        roleFaults: [],
       });
     }
   }
 
   return {
-    ok: true,
+    ok: checks.every((c) => c.roleFaults.length === 0),
     startedAt,
     finishedAt: new Date().toISOString(),
     scopePolicy: "owner_or_fallback_default",

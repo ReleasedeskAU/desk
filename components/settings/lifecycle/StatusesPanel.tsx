@@ -5,15 +5,24 @@
  */
 import { useState } from "react";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
-import type {
-  ReleaseLifecycleConfig,
-  ReleaseLifecycleStatusConfig,
+import {
+  RELEASE_EDIT_MODES,
+  type ReleaseEditMode,
+  type ReleaseLifecycleConfig,
+  type ReleaseLifecycleStatusConfig,
 } from "@/lib/release-lifecycle-config";
 import {
   isHardBoundaryStatusKey,
   statusRemovalBlockReason,
   type StatusUsageMap,
 } from "@/lib/release-lifecycle-settings-ui";
+import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
+import {
+  RELEASE_STATUS_ROLE_IDS,
+  statusRoleFieldsFor,
+} from "@/lib/lifecycle-status-roles";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { LifecycleSection } from "@/components/settings/lifecycle/LifecycleSection";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
@@ -30,8 +39,14 @@ export type StatusesPanelProps = {
   onAdd: () => void;
   onRemove: (key: string) => void;
   onToggleEnabled: (key: string, enabled: boolean) => void;
+  onEditModeChange: (key: string, editMode: ReleaseEditMode) => void;
   /** Apply a new top-to-bottom key order after drag-and-drop. */
   onReorder: (orderedKeys: string[]) => void;
+  onRoleToggle: (
+    key: string,
+    id: "isIntake" | "readyMilestone" | "deployingMilestone" | "deployedMilestone" | "withdrawApprovalsOnEnter",
+    checked: boolean
+  ) => void;
 };
 
 /**
@@ -48,7 +63,9 @@ export function StatusesPanel({
   onAdd,
   onRemove,
   onToggleEnabled,
+  onEditModeChange,
   onReorder,
+  onRoleToggle,
 }: StatusesPanelProps) {
   const sorted = [...config.statuses].sort((a, b) => a.sortOrder - b.sortOrder);
   const active = sorted.filter((s) => s.enabled);
@@ -160,15 +177,55 @@ export function StatusesPanel({
               </span>
             ) : null}
           </div>
+          <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
+            {lifecycleEditModeLabel(status.editMode)}
+          </p>
           <p className="mt-0.5 font-mono text-[11px] text-slate-400 dark:text-white/40">
             {status.key}
             {count > 0 ? ` · ${count} release${count === 1 ? "" : "s"} in use` : ""}
           </p>
+          <StatusMeaningEditor
+            fields={statusRoleFieldsFor(RELEASE_STATUS_ROLE_IDS)}
+            values={status}
+            editing={editing}
+            statusLabel={status.label}
+            onToggle={(id, checked) =>
+              onRoleToggle(
+                status.key,
+                id as
+                  | "isIntake"
+                  | "readyMilestone"
+                  | "deployingMilestone"
+                  | "deployedMilestone"
+                  | "withdrawApprovalsOnEnter",
+                checked
+              )
+            }
+            onDaysChange={() => undefined}
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {editing ? (
             <>
+              <label className="flex flex-col gap-0.5 text-[11px] font-medium text-slate-500 dark:text-white/55">
+                Edit rule
+                <select
+                  className={cn(taInput, "h-8 min-w-[10.5rem] py-1 text-[12px]")}
+                  value={status.editMode}
+                  onChange={(e) =>
+                    onEditModeChange(status.key, e.target.value as ReleaseEditMode)
+                  }
+                  aria-label={`${status.label} edit rule`}
+                  data-testid={`lifecycle-status-edit-mode-${status.key}`}
+                >
+                  {RELEASE_EDIT_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {lifecycleEditModeLabel(mode)}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <LifecycleToggle
                 checked={status.enabled}
                 onCheckedChange={(enabled) => onToggleEnabled(status.key, enabled)}
@@ -223,6 +280,10 @@ export function StatusesPanel({
 
   return (
     <div className="space-y-4" data-testid="lifecycle-statuses-panel">
+      <ExclusiveRoleWarning
+        statuses={config.statuses}
+        roleIds={RELEASE_STATUS_ROLE_IDS}
+      />
       <LifecycleSection
         title="Active"
         count={active.length}

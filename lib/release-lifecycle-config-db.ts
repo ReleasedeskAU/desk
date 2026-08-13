@@ -17,6 +17,7 @@ import {
   normalizeReleaseLifecycleConfigResult,
   releaseLifecycleTargetKey,
   validateReleaseLifecycleConfig,
+  withReleaseStatusRoles,
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
 import {
@@ -64,7 +65,27 @@ type StatusRowInput = {
 };
 
 /** Idempotent preview-database fallback matching the checked-in migrations. */
+const globalForLifecycleDdl = globalThis as unknown as {
+  releaseLifecycleTablesEnsured?: Promise<void>;
+};
+
+/**
+ * Preview-DB DDL. Single-flight per process so dashboard/settings loads do not
+ * re-run CREATE TABLE IF NOT EXISTS on every request.
+ */
 async function ensureUserReleaseLifecycleTables(): Promise<void> {
+  if (!globalForLifecycleDdl.releaseLifecycleTablesEnsured) {
+    globalForLifecycleDdl.releaseLifecycleTablesEnsured = runEnsureUserReleaseLifecycleTables().catch(
+      (err) => {
+        globalForLifecycleDdl.releaseLifecycleTablesEnsured = undefined;
+        throw err;
+      }
+    );
+  }
+  await globalForLifecycleDdl.releaseLifecycleTablesEnsured;
+}
+
+async function runEnsureUserReleaseLifecycleTables(): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "UserReleaseLifecycleStatus" (
       "id" TEXT NOT NULL, "clerkUserId" TEXT NOT NULL, "organizationId" TEXT,
@@ -140,11 +161,18 @@ function statusInputs(
   clerkUserId: string,
   config: ReleaseLifecycleConfig
 ): StatusRowInput[] {
+  // Role flags are not Prisma columns — persist them on the version snapshot only.
   return config.statuses.map((status) => ({
     id: randomUUID(),
     clerkUserId,
     organizationId: null,
-    ...status,
+    key: status.key,
+    label: status.label,
+    sortOrder: status.sortOrder,
+    terminal: status.terminal,
+    kind: status.kind,
+    isSystem: status.isSystem,
+    enabled: status.enabled,
   }));
 }
 
@@ -241,17 +269,46 @@ async function readGraph(
   ]);
   if (!statuses.length) return null;
 
+  const latestSnapshot = await prisma.userReleaseLifecycleConfigVersion.findFirst({
+    where: { clerkUserId },
+    orderBy: { version: "desc" },
+    select: { snapshot: true },
+  });
+  const snapshotByKey = new Map<string, Record<string, unknown>>();
+  const snapObj = latestSnapshot?.snapshot;
+  if (snapObj && typeof snapObj === "object" && "statuses" in snapObj) {
+    const list = (snapObj as { statuses?: unknown }).statuses;
+    if (Array.isArray(list)) {
+      for (const row of list) {
+        if (row && typeof row === "object" && "key" in row) {
+          snapshotByKey.set(String((row as { key: unknown }).key), row as Record<string, unknown>);
+        }
+      }
+    }
+  }
+
   const normalized = normalizeReleaseLifecycleConfigResult(
     {
-      statuses: statuses.map((status) => ({
-        key: status.key,
-        label: status.label,
-        sortOrder: status.sortOrder,
-        terminal: status.terminal,
-        kind: status.kind as ReleaseLifecycleConfig["statuses"][number]["kind"],
-        isSystem: status.isSystem,
-        enabled: status.enabled,
-      })),
+      statuses: statuses.map((status) => {
+        const extra = snapshotByKey.get(status.key) ?? {};
+        return withReleaseStatusRoles({
+          key: status.key,
+          label: status.label,
+          sortOrder: status.sortOrder,
+          terminal: status.terminal,
+          kind: status.kind as ReleaseLifecycleConfig["statuses"][number]["kind"],
+          isSystem: status.isSystem,
+          enabled: status.enabled,
+          editMode: extra.editMode as ReleaseLifecycleConfig["statuses"][number]["editMode"],
+          isIntake: extra.isIntake as boolean | undefined,
+          readyMilestone: extra.readyMilestone as boolean | undefined,
+          deployingMilestone: extra.deployingMilestone as boolean | undefined,
+          deployedMilestone: extra.deployedMilestone as boolean | undefined,
+          withdrawApprovalsOnEnter: extra.withdrawApprovalsOnEnter as boolean | undefined,
+          writesCabScopeSnapshot: extra.writesCabScopeSnapshot as boolean | undefined,
+          clearsCabScopeSnapshot: extra.clearsCabScopeSnapshot as boolean | undefined,
+        });
+      }),
       transitions: transitions.map((item) => ({
         fromKey: item.fromStatus.key,
         toKey: item.toStatus?.key ?? null,

@@ -3,6 +3,11 @@
  * Mirrors the enterprise Approvals Lifecycle table; storage is Clerk-user scoped.
  */
 
+import {
+  APPROVAL_STATUS_ROLE_IDS,
+  fillMissingRoleFields,
+} from "@/lib/lifecycle-status-roles";
+
 export const APPROVAL_LIFECYCLE_ENFORCEMENTS = ["flexible", "required"] as const;
 export type ApprovalLifecycleEnforcement =
   (typeof APPROVAL_LIFECYCLE_ENFORCEMENTS)[number];
@@ -22,6 +27,14 @@ export type ApprovalLifecycleStatusConfig = {
   cascadeEffect: string;
   /** AV-22: expiry after N days when not deployed (null = none). */
   expiryDays: number | null;
+  /** New approval records land here. */
+  isIntake: boolean;
+  /** CASC-13 lands open approvals here when the parent release withdraws them. */
+  isWithdrawn: boolean;
+  /** Entering this decision requires a plain-text Conditions note. */
+  requiresConditions: boolean;
+  /** Entering this decision reverts the linked release to approvalRejectLanding. */
+  revertsLinkedReleaseOnEnter: boolean;
 };
 
 export type ApprovalLifecycleTransitionConfig = {
@@ -41,7 +54,17 @@ export type ApprovalLifecycleConfig = {
 export const MAX_APPROVAL_LIFECYCLE_STATUSES = 20;
 export const MAX_APPROVAL_LIFECYCLE_TRANSITIONS = 80;
 
-export const DEFAULT_APPROVAL_LIFECYCLE_STATUSES: readonly ApprovalLifecycleStatusConfig[] = [
+const APPROVAL_ROLE_OMIT = [
+  "isIntake",
+  "isWithdrawn",
+  "requiresConditions",
+  "revertsLinkedReleaseOnEnter",
+] as const;
+
+export const DEFAULT_APPROVAL_LIFECYCLE_STATUSES: readonly Omit<
+  ApprovalLifecycleStatusConfig,
+  (typeof APPROVAL_ROLE_OMIT)[number]
+>[] = [
   {
     key: "pending",
     label: "Pending",
@@ -65,6 +88,17 @@ export const DEFAULT_APPROVAL_LIFECYCLE_STATUSES: readonly ApprovalLifecycleStat
     expiryDays: 30,
   },
   {
+    key: "approved_with_conditions",
+    label: "Approved with Conditions",
+    sortOrder: 25,
+    terminal: true,
+    enabled: true,
+    isSystem: true,
+    editMode: "immutable",
+    cascadeEffect: "Terminal yes, subject to recorded conditions",
+    expiryDays: null,
+  },
+  {
     key: "rejected",
     label: "Rejected",
     sortOrder: 30,
@@ -72,7 +106,7 @@ export const DEFAULT_APPROVAL_LIFECYCLE_STATUSES: readonly ApprovalLifecycleStat
     enabled: true,
     isSystem: true,
     editMode: "immutable",
-    cascadeEffect: "Release reverts to Planning (informational)",
+    cascadeEffect: "Reverts the linked release to its approval-reject landing status",
     expiryDays: null,
   },
   {
@@ -110,6 +144,51 @@ export const DEFAULT_APPROVAL_LIFECYCLE_STATUSES: readonly ApprovalLifecycleStat
   },
 ];
 
+/**
+ * Seed / fill-missing roles for a default approval status key.
+ * Runtime must read flags on the live status object, not call this.
+ */
+export function defaultApprovalStatusRoles(key: string): Pick<
+  ApprovalLifecycleStatusConfig,
+  | "isIntake"
+  | "isWithdrawn"
+  | "requiresConditions"
+  | "revertsLinkedReleaseOnEnter"
+> {
+  return {
+    isIntake: key === "pending",
+    isWithdrawn: key === "withdrawn",
+    requiresConditions: key === "approved_with_conditions",
+    revertsLinkedReleaseOnEnter: key === "rejected",
+  };
+}
+
+function withApprovalStatusRoles(
+  status: Omit<
+    ApprovalLifecycleStatusConfig,
+    | "isIntake"
+    | "isWithdrawn"
+    | "requiresConditions"
+    | "revertsLinkedReleaseOnEnter"
+  > &
+    Partial<
+      Pick<
+        ApprovalLifecycleStatusConfig,
+        | "isIntake"
+        | "isWithdrawn"
+        | "requiresConditions"
+        | "revertsLinkedReleaseOnEnter"
+      >
+    >
+): ApprovalLifecycleStatusConfig {
+  const fallback = defaultApprovalStatusRoles(status.key);
+  return fillMissingRoleFields(
+    { ...fallback, ...status },
+    { key: status.key, ...fallback },
+    APPROVAL_STATUS_ROLE_IDS
+  ) as ApprovalLifecycleStatusConfig;
+}
+
 function edge(
   fromKey: string,
   toKey: string,
@@ -126,14 +205,15 @@ function edge(
   };
 }
 
-/** Default graph: Pending → Approved/Rejected/Deferred. Deferred has no outgoing edges. */
+/** Default graph: Pending → Approved / Approved with Conditions / Rejected / Deferred / Withdrawn. */
 export const DEFAULT_APPROVAL_LIFECYCLE_TRANSITIONS: readonly ApprovalLifecycleTransitionConfig[] =
   [
     edge("pending", "approved", 10),
+    edge("pending", "approved_with_conditions", 15),
     edge("pending", "rejected", 20),
     edge("pending", "deferred", 30),
     edge("pending", "withdrawn", 40),
-    // Auto-expiry path (AV-22): Approved → Expired when job/timer fires.
+    // Auto-expiry path (AV-22): unique Required exit from a status with expiryDays.
     edge("approved", "expired", 10, "required"),
   ];
 
@@ -143,9 +223,35 @@ export const DEFAULT_APPROVAL_LIFECYCLE_TRANSITIONS: readonly ApprovalLifecycleT
  */
 export function createDefaultApprovalLifecycleConfig(): ApprovalLifecycleConfig {
   return {
-    statuses: DEFAULT_APPROVAL_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    statuses: DEFAULT_APPROVAL_LIFECYCLE_STATUSES.map((s) =>
+      withApprovalStatusRoles({ ...s })
+    ),
     transitions: DEFAULT_APPROVAL_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
   };
+}
+
+/**
+ * True when this enabled Required edge is the unique expiry exit from a
+ * terminal status that has expiryDays set (AV-22). Flag-driven — not key names.
+ */
+export function isApprovalTerminalExpiryExit(
+  config: ApprovalLifecycleConfig,
+  from: Pick<
+    ApprovalLifecycleStatusConfig,
+    "key" | "terminal" | "expiryDays"
+  >,
+  item: Pick<
+    ApprovalLifecycleTransitionConfig,
+    "enabled" | "fromKey" | "toKey" | "enforcement"
+  >
+): boolean {
+  if (!item.enabled || !from.terminal) return false;
+  if (item.enforcement !== "required") return false;
+  if (from.expiryDays == null || from.expiryDays <= 0) return false;
+  const outgoing = config.transitions.filter(
+    (t) => t.enabled && t.fromKey === from.key
+  );
+  return outgoing.length === 1 && outgoing[0]!.toKey === item.toKey;
 }
 
 /**
@@ -187,11 +293,10 @@ export function validateApprovalLifecycleConfig(
     const to = byKey.get(item.toKey);
     if (!from) return `Unknown transition source: ${item.fromKey}`;
     if (!to) return `Unknown transition target: ${item.toKey}`;
-    // Terminal sources cannot have enabled outgoing edges — except Approved → Expired (AV-22).
     if (
       item.enabled &&
       from.terminal &&
-      !(item.fromKey === "approved" && item.toKey === "expired")
+      !isApprovalTerminalExpiryExit(config, from, item)
     ) {
       return `Enabled transition ${item.fromKey} → ${item.toKey} leaves a terminal status`;
     }
@@ -208,8 +313,41 @@ export function validateApprovalLifecycleConfig(
   return null;
 }
 
+function injectMissingDefaultStatuses(
+  stored: ApprovalLifecycleConfig
+): ApprovalLifecycleConfig {
+  const defaults = createDefaultApprovalLifecycleConfig();
+  const have = new Set(stored.statuses.map((s) => s.key));
+  const statuses = [
+    ...stored.statuses.map((s) =>
+      withApprovalStatusRoles({
+        ...s,
+        expiryDays:
+          typeof s.expiryDays === "number" || s.expiryDays === null
+            ? s.expiryDays
+            : (defaults.statuses.find((d) => d.key === s.key)?.expiryDays ??
+              null),
+      })
+    ),
+    ...defaults.statuses.filter((s) => !have.has(s.key)),
+  ];
+  const edgeIds = new Set(
+    stored.transitions.map((t) => `${t.fromKey}:${t.toKey}`)
+  );
+  const statusKeys = new Set(statuses.map((s) => s.key));
+  const transitions = [
+    ...stored.transitions.map((t) => ({ ...t })),
+    ...defaults.transitions.filter((t) => {
+      if (edgeIds.has(`${t.fromKey}:${t.toKey}`)) return false;
+      return statusKeys.has(t.fromKey) && statusKeys.has(t.toKey);
+    }),
+  ];
+  return { statuses, transitions };
+}
+
 /**
  * Normalize stored JSON; fall back to enterprise default when invalid.
+ * Injects new system statuses/roles so older snapshots keep working.
  * @param raw - Persisted snapshot or null.
  */
 export function normalizeApprovalLifecycleConfig(
@@ -221,12 +359,11 @@ export function normalizeApprovalLifecycleConfig(
     Array.isArray((raw as ApprovalLifecycleConfig).statuses) &&
     Array.isArray((raw as ApprovalLifecycleConfig).transitions)
   ) {
-    const candidate = raw as ApprovalLifecycleConfig;
+    const candidate = injectMissingDefaultStatuses(
+      raw as ApprovalLifecycleConfig
+    );
     if (!validateApprovalLifecycleConfig(candidate)) {
-      return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
-        transitions: candidate.transitions.map((t) => ({ ...t })),
-      };
+      return candidate;
     }
   }
   return createDefaultApprovalLifecycleConfig();

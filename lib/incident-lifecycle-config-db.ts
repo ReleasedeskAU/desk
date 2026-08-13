@@ -9,6 +9,7 @@ import {
   validateIncidentLifecycleConfig,
   type IncidentLifecycleConfig,
 } from "@/lib/incident-lifecycle-config";
+import { reconcileIncidentLifecycleSpec } from "@/lib/incident-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -61,7 +62,9 @@ export async function loadIncidentLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeIncidentLifecycleConfig(latest.snapshot),
+      config: reconcileIncidentLifecycleSpec(
+        normalizeIncidentLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

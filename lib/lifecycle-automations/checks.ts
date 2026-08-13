@@ -11,8 +11,12 @@ import {
   createDefaultApprovalLifecycleConfig,
   type ApprovalLifecycleConfig,
 } from "@/lib/approval-lifecycle-config";
-import { validateApprovalTransition } from "@/lib/approval-lifecycle-transition";
+import {
+  resolveApprovalLifecycleStatusRef,
+  validateApprovalTransition,
+} from "@/lib/approval-lifecycle-transition";
 import { createDefaultBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config";
+import { resolveBlockerLifecycleStatusRef } from "@/lib/blocker-lifecycle-transition";
 import {
   createDefaultRiskLifecycleConfig,
   type RiskLifecycleConfig,
@@ -28,6 +32,16 @@ import { resolveSignoffLifecycleStatusRef } from "@/lib/signoff-lifecycle-transi
 import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
 import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
 import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
+import { loadReleaseLifecycleConfig } from "@/lib/release-lifecycle-config-db";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
+import {
+  enabledStatusMatchValues,
+  reportLifecycleRoleFault,
+  resolveExclusiveRole,
+  type LifecycleRoleFault,
+} from "@/lib/lifecycle-status-roles";
 import {
   LIFECYCLE_CRON_BATCH_SIZE,
   resolveCronScope,
@@ -49,9 +63,13 @@ export type CheckRunSummary = {
   errors: number;
   ownerScoped: number;
   fallbackScoped: number;
+  roleFaults: Array<{
+    code: string;
+    message: string;
+    roleId: string;
+    automation: string;
+  }>;
 };
-
-const DEPLOYED_OR_CLOSED = ["Deployed", "Closed"] as const;
 
 export { escalateAfterDaysForRiskStatus };
 
@@ -65,6 +83,7 @@ function emptySummary(check: string): CheckRunSummary {
     errors: 0,
     ownerScoped: 0,
     fallbackScoped: 0,
+    roleFaults: [],
   };
 }
 
@@ -74,6 +93,33 @@ function tallyScope(
 ): void {
   if (scopeSource === "owner") summary.ownerScoped += 1;
   else summary.fallbackScoped += 1;
+}
+
+function recordRoleFault(
+  summary: CheckRunSummary,
+  fault: LifecycleRoleFault,
+  seen: Set<string>
+): void {
+  const key = `${fault.roleId}:${fault.automation}:${fault.code}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  summary.errors += 1;
+  summary.roleFaults.push(fault);
+  reportLifecycleRoleFault(fault);
+}
+
+function uniqueOutgoingToKey(
+  transitions: readonly { fromKey: string; toKey: string; enabled: boolean; enforcement?: string }[],
+  fromKey: string,
+  requiredOnly = false
+): string | null {
+  const hits = transitions.filter(
+    (t) =>
+      t.enabled &&
+      t.fromKey === fromKey &&
+      (!requiredOnly || t.enforcement === "required")
+  );
+  return hits.length === 1 ? hits[0]!.toKey : null;
 }
 
 /**
@@ -125,6 +171,22 @@ function createSignoffConfigLoader() {
   };
 }
 
+function createReleaseConfigLoader() {
+  const cache = new Map<string, Promise<ReleaseLifecycleConfig>>();
+  const defaults = createDefaultReleaseLifecycleConfig();
+  return async (
+    clerkUserId: string | null
+  ): Promise<ReleaseLifecycleConfig> => {
+    if (!clerkUserId) return defaults;
+    let pending = cache.get(clerkUserId);
+    if (!pending) {
+      pending = loadReleaseLifecycleConfig(clerkUserId).then((r) => r.config);
+      cache.set(clerkUserId, pending);
+    }
+    return pending;
+  };
+}
+
 /**
  * AV-02 — escalate Identified/Assessing risks past escalateAfterDays.
  * Uses risk owner's linked Clerk settings when available.
@@ -134,12 +196,14 @@ export async function runAv02RiskEscalations(
   batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
 ): Promise<CheckRunSummary> {
   const defaultConfig = createDefaultRiskLifecycleConfig();
-  const candidateStatuses = defaultConfig.statuses
-    .filter((s) => s.escalateAfterDays != null && s.escalateAfterDays > 0)
-    .map((s) => s.label);
+  const candidateStatuses = enabledStatusMatchValues(
+    defaultConfig.statuses,
+    (s) => s.escalateAfterDays != null && s.escalateAfterDays > 0
+  );
 
   const summary = emptySummary("AV-02");
   if (candidateStatuses.length === 0) return summary;
+  const roleSeen = new Set<string>();
 
   const loadConfig = createRiskConfigLoader();
   const rows = await prisma.risk.findMany({
@@ -177,12 +241,20 @@ export async function runAv02RiskEscalations(
       summary.skipped += 1;
       continue;
     }
-    const escalatedLabel =
-      config.statuses.find((s) => s.key === "escalated")?.label ?? "Escalated";
+    const target = resolveExclusiveRole(
+      config.statuses,
+      (s) => s.escalateTarget,
+      "escalateTarget",
+      "AV-02"
+    );
+    if (!target.ok) {
+      recordRoleFault(summary, target.fault, roleSeen);
+      continue;
+    }
     const transition = validateRiskTransition({
       config,
       fromStatus: row.status,
-      toStatus: escalatedLabel,
+      toStatus: target.status.label,
       overrideReason: `AV-02: auto-escalated after ${days} days in ${row.status}`,
       facts: {
         likelihood: row.likelihood,
@@ -230,13 +302,15 @@ export async function runAv03BlockerStaleAlerts(
   batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
 ): Promise<CheckRunSummary> {
   const config = createDefaultBlockerLifecycleConfig();
-  const inProgress = config.statuses.find((s) => s.key === "in_progress");
-  const staleDays = inProgress?.staleAlertDays ?? null;
+  const staleValues = enabledStatusMatchValues(
+    config.statuses,
+    (s) => s.staleAlertDays != null && s.staleAlertDays > 0
+  );
   const summary = emptySummary("AV-03");
-  if (staleDays == null || staleDays <= 0 || !inProgress) return summary;
+  if (staleValues.length === 0) return summary;
 
   const rows = await prisma.blocker.findMany({
-    where: { status: inProgress.label },
+    where: { status: { in: staleValues } },
     orderBy: { updatedAt: "asc" },
     take: batchSize * 3,
     select: {
@@ -259,7 +333,9 @@ export async function runAv03BlockerStaleAlerts(
     }
     const scopeSource: LifecycleCronScopeSource = "fallback_default";
     tallyScope(summary, scopeSource);
-    if (!isPastDayThreshold(row.updatedAt, staleDays, now)) {
+    const resolved = resolveBlockerLifecycleStatusRef(config, row.status);
+    const staleDays = resolved?.staleAlertDays ?? null;
+    if (staleDays == null || staleDays <= 0 || !isPastDayThreshold(row.updatedAt, staleDays, now)) {
       summary.skipped += 1;
       continue;
     }
@@ -336,13 +412,18 @@ export async function runAv22ApprovalExpiry(
   batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
 ): Promise<CheckRunSummary> {
   const defaultConfig = createDefaultApprovalLifecycleConfig();
-  const approvedDefault = defaultConfig.statuses.find((s) => s.key === "approved");
+  const expiringValues = enabledStatusMatchValues(
+    defaultConfig.statuses,
+    (s) => s.expiryDays != null && s.expiryDays > 0
+  );
   const summary = emptySummary("AV-22");
-  if (!approvedDefault) return summary;
+  if (expiringValues.length === 0) return summary;
+  const roleSeen = new Set<string>();
 
   const loadConfig = createApprovalConfigLoader();
+  const loadReleaseConfig = createReleaseConfigLoader();
   const rows = await prisma.approval.findMany({
-    where: { decision: approvedDefault.label },
+    where: { decision: { in: expiringValues } },
     orderBy: { decisionDate: "asc" },
     take: batchSize * 3,
     select: {
@@ -367,11 +448,28 @@ export async function runAv22ApprovalExpiry(
     );
     tallyScope(summary, scopeSource);
     const config = await loadConfig(clerkUserId);
-    const expiryDays = approvalExpiryDays(config);
-    const expiredLabel =
-      config.statuses.find((s) => s.key === "expired")?.label ?? "Expired";
-    if (expiryDays == null || expiryDays <= 0) {
+    const from = resolveApprovalLifecycleStatusRef(config, row.decision);
+    const expiryDays = from?.expiryDays ?? null;
+    if (!from || expiryDays == null || expiryDays <= 0) {
       summary.skipped += 1;
+      continue;
+    }
+    const destKey = uniqueOutgoingToKey(config.transitions, from.key);
+    const dest = destKey
+      ? config.statuses.find((s) => s.enabled && s.key === destKey)
+      : null;
+    if (!dest) {
+      recordRoleFault(
+        summary,
+        {
+          code: "LIFECYCLE_ROLE_MISSING",
+          message:
+            "No single expiry destination from the approval status that has an expiry window. Add exactly one exit from that status under Lifecycle Settings.",
+          roleId: "isIntake",
+          automation: "AV-22",
+        },
+        roleSeen
+      );
       continue;
     }
     const anchor = row.decisionDate ?? row.updatedAt;
@@ -379,13 +477,14 @@ export async function runAv22ApprovalExpiry(
       summary.skipped += 1;
       continue;
     }
+    const releaseConfig = await loadReleaseConfig(clerkUserId);
+    const releaseStatus = resolveLifecycleStatusRef(
+      releaseConfig,
+      row.release.status
+    );
     if (
-      DEPLOYED_OR_CLOSED.some(
-        (s) =>
-          row.release.status.localeCompare(s, undefined, {
-            sensitivity: "accent",
-          }) === 0
-      )
+      releaseStatus &&
+      (releaseStatus.terminal || releaseStatus.deployedMilestone)
     ) {
       summary.skipped += 1;
       continue;
@@ -393,7 +492,7 @@ export async function runAv22ApprovalExpiry(
     const transition = validateApprovalTransition({
       config,
       fromStatus: row.decision,
-      toStatus: expiredLabel,
+      toStatus: dest.label,
     });
     if (!transition.allowed) {
       summary.skipped += 1;
@@ -437,15 +536,19 @@ export async function runSignoffSlaExpiry(
   batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
 ): Promise<CheckRunSummary> {
   const defaultConfig = createDefaultSignoffLifecycleConfig();
-  const pendingDefault = defaultConfig.statuses.find((s) => s.key === "pending");
+  const pendingValues = enabledStatusMatchValues(
+    defaultConfig.statuses,
+    (s) => s.isIntake || (s.expiryDays != null && s.expiryDays > 0)
+  );
   const summary = emptySummary("SIGNOFF-SLA");
-  if (!pendingDefault) return summary;
+  if (pendingValues.length === 0) return summary;
+  const roleSeen = new Set<string>();
 
   // Widest practical floor: 1 day — per-owner expiry applied in memory.
   const floorCutoff = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
-  const orFilters = SIGNOFF_RELEASE_FIELDS.map((field) => ({
-    [field]: pendingDefault.label,
-  }));
+  const orFilters = SIGNOFF_RELEASE_FIELDS.flatMap((field) =>
+    pendingValues.map((value) => ({ [field]: value }))
+  );
 
   const loadConfig = createSignoffConfigLoader();
   const rows = await prisma.release.findMany({
@@ -484,11 +587,41 @@ export async function runSignoffSlaExpiry(
     );
     tallyScope(summary, scopeSource);
     const config = await loadConfig(clerkUserId);
-    const expiryDays = signoffPendingExpiryDays(config);
-    const expiredLabel =
-      config.statuses.find((s) => s.key === "expired")?.label ?? "Expired";
+    const intake = resolveExclusiveRole(
+      config.statuses,
+      (s) => s.isIntake,
+      "isIntake",
+      "SIGNOFF-SLA"
+    );
+    if (!intake.ok) {
+      recordRoleFault(summary, intake.fault, roleSeen);
+      continue;
+    }
+    const expiryDays = intake.status.expiryDays;
+    const destKey = uniqueOutgoingToKey(
+      config.transitions,
+      intake.status.key,
+      true
+    );
+    const dest = destKey
+      ? config.statuses.find((s) => s.enabled && s.key === destKey)
+      : null;
     if (expiryDays == null || expiryDays <= 0) {
       summary.skipped += 1;
+      continue;
+    }
+    if (!dest) {
+      recordRoleFault(
+        summary,
+        {
+          code: "LIFECYCLE_ROLE_MISSING",
+          message:
+            "No single required exit from the Starting status for sign-off expiry. Add exactly one Required exit under Lifecycle Settings.",
+          roleId: "isIntake",
+          automation: "SIGNOFF-SLA",
+        },
+        roleSeen
+      );
       continue;
     }
     if (!isPastDayThreshold(row.createdAt, expiryDays, now)) {
@@ -499,8 +632,8 @@ export async function runSignoffSlaExpiry(
     for (const field of SIGNOFF_RELEASE_FIELDS) {
       const value = row[field];
       const resolved = resolveSignoffLifecycleStatusRef(config, value);
-      if (resolved?.key === "pending") {
-        data[field] = expiredLabel;
+      if (resolved?.enabled && resolved.isIntake) {
+        data[field] = dest.label;
       }
     }
     if (Object.keys(data).length === 0) {

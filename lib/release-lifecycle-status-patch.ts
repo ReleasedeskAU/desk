@@ -5,6 +5,15 @@
  * gate facts, and runs validateReleaseTransition. Non-status patches skip this.
  */
 import { prisma } from "@/lib/prisma";
+import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
+import type { BlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config";
+import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
+import type { ConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config";
+import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
+import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
+import type { IncidentLifecycleConfig } from "@/lib/incident-lifecycle-config";
+import { dependencyStatusSatisfiesHardGate } from "@/lib/dependency-lifecycle-transition";
+import { enabledStatusMatchValues } from "@/lib/lifecycle-status-roles";
 import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
 import type { LifecycleConfigPinKind } from "@/lib/release-lifecycle-config-version";
 import {
@@ -13,29 +22,13 @@ import {
   type ReleaseLifecycleGateFacts,
   type TransitionResult,
 } from "@/lib/release-lifecycle-transition";
-import { createDefaultSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
+import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
 import {
   mandatorySignoffsComplete,
   signoffStatusCountsAsComplete,
 } from "@/lib/signoff-lifecycle-transition";
 import { parseCabScopeSnapshot } from "@/lib/release-cab-scope-snapshot";
-
-const OPEN_BLOCKER_STATUSES_EXCLUDED = [
-  "Resolved",
-  "Closed",
-  "Done",
-  "Cancelled",
-  "Canceled",
-  "Mitigated",
-] as const;
-/** Hard deps that satisfy VR-18 — includes lifecycle Met/Waived/Removed + legacy Clear/Resolved. */
-const HARD_DEP_CLEAR = [
-  "Met",
-  "Waived",
-  "Removed",
-  "Clear",
-  "Resolved",
-] as const;
+import { RISK_HIGH_SCORE_THRESHOLD } from "@/lib/risk-lifecycle-config";
 
 export type ReleaseStatusPatchRelease = {
   id: string;
@@ -87,10 +80,13 @@ export type ReleaseStatusEnforcementResult =
   | ReleaseStatusEnforcementOk
   | ReleaseStatusEnforcementDenied;
 
-function signoffsLookComplete(release: ReleaseStatusPatchRelease): boolean {
+function signoffsLookComplete(
+  release: ReleaseStatusPatchRelease,
+  signoffConfig: Parameters<typeof mandatorySignoffsComplete>[0]
+): boolean {
   // Config-driven: mandatory types must be Approved / Approved with Conditions
   // (legacy Yes/Done aliases resolve via the sign-off lifecycle).
-  return mandatorySignoffsComplete(createDefaultSignoffLifecycleConfig(), {
+  return mandatorySignoffsComplete(signoffConfig, {
     devSignoff: release.devSignoff,
     testSignoff: release.testSignoff,
     uatSignoff: release.uatSignoff,
@@ -98,16 +94,7 @@ function signoffsLookComplete(release: ReleaseStatusPatchRelease): boolean {
   });
 }
 
-const TERMINAL_INCIDENT_STATUSES = [
-  "Resolved",
-  "Closed",
-  "Cancelled",
-  "Canceled",
-] as const;
-
-const OPEN_ENVIRONMENT_CONFLICT_STATUSES = ["Detected", "Under Review"] as const;
-
-/** Raw synced Work Item statuses treated as complete for VR-29. */
+/** Raw synced Work Item statuses treated as complete for VR-29 (no local lifecycle). */
 const TERMINAL_WORK_ITEM_STATUSES = [
   "Done",
   "Closed",
@@ -118,15 +105,72 @@ const TERMINAL_WORK_ITEM_STATUSES = [
   "Completed",
 ] as const;
 
+export type ReleaseGateFactStatusLists = {
+  blockingBlockerStatuses: string[];
+  blockingIncidentStatuses: string[];
+  openIncidentStatuses: string[];
+  openConflictStatuses: string[];
+};
+
+/**
+ * Prisma `status in` lists from live related-entity configs (not default keys).
+ * @param configs - Caller’s blocker / incident / conflict graphs.
+ */
+export function releaseGateFactStatusLists(configs: {
+  blocker: BlockerLifecycleConfig;
+  incident: IncidentLifecycleConfig;
+  conflict: ConflictLifecycleConfig;
+}): ReleaseGateFactStatusLists {
+  return {
+    blockingBlockerStatuses: enabledStatusMatchValues(
+      configs.blocker.statuses,
+      (s) => s.blocksReleaseReady
+    ),
+    blockingIncidentStatuses: enabledStatusMatchValues(
+      configs.incident.statuses,
+      (s) => s.blocksLinkedRelease
+    ),
+    openIncidentStatuses: enabledStatusMatchValues(
+      configs.incident.statuses,
+      (s) => !s.terminal
+    ),
+    openConflictStatuses: enabledStatusMatchValues(
+      configs.conflict.statuses,
+      (s) => !s.terminal
+    ),
+  };
+}
+
+function statusInOrNone(values: string[]): { in: string[] } {
+  // Empty `in: []` is engine-dependent; a sentinel matches no real row.
+  return { in: values.length > 0 ? values : ["__lifecycle_no_match__"] };
+}
+
 /**
  * Load checklist facts for gate evaluation from related tables.
+ * Related-entity counts use the caller’s live lifecycle flags (Wave 1).
  * @param release - Release row being patched
+ * @param clerkUserId - Caller whose blocker/incident/dependency/conflict config to read
  */
 export async function loadReleaseLifecycleGateFacts(
-  release: ReleaseStatusPatchRelease
+  release: ReleaseStatusPatchRelease,
+  clerkUserId: string
 ): Promise<ReleaseLifecycleGateFacts> {
   const now = new Date();
-  const signoffConfig = createDefaultSignoffLifecycleConfig();
+  const [blockerLoaded, incidentLoaded, dependencyLoaded, conflictLoaded, signoffLoaded] =
+    await Promise.all([
+      loadBlockerLifecycleConfig(clerkUserId),
+      loadIncidentLifecycleConfig(clerkUserId),
+      loadDependencyLifecycleConfig(clerkUserId),
+      loadConflictLifecycleConfig(clerkUserId),
+      loadSignoffLifecycleConfig(clerkUserId),
+    ]);
+  const signoffConfig = signoffLoaded.config;
+  const statusLists = releaseGateFactStatusLists({
+    blocker: blockerLoaded.config,
+    incident: incidentLoaded.config,
+    conflict: conflictLoaded.config,
+  });
   const [
     openBlockerCount,
     blockingIncidentCount,
@@ -137,40 +181,32 @@ export async function loadReleaseLifecycleGateFacts(
     bookings,
     hardDeps,
     deploymentState,
+    highRisks,
   ] = await Promise.all([
     prisma.blocker.count({
       where: {
         releaseCode: release.releaseCode,
-        status: { notIn: [...OPEN_BLOCKER_STATUSES_EXCLUDED] },
+        status: statusInOrNone(statusLists.blockingBlockerStatuses),
       },
     }),
-    // AV-06: critical or actively resolving incidents linked by denormalized code.
+    // AV-06: incidents whose live status is marked “blocks linked release”.
     prisma.incident.count({
       where: {
         relatedReleaseCode: release.releaseCode,
-        status: { notIn: [...TERMINAL_INCIDENT_STATUSES] },
-        OR: [
-          { severity: { contains: "Critical", mode: "insensitive" } },
-          { severity: { equals: "P1", mode: "insensitive" } },
-          {
-            status: {
-              in: ["Open", "Investigating", "Escalated", "Resolving", "Reopened"],
-            },
-          },
-        ],
+        status: statusInOrNone(statusLists.blockingIncidentStatuses),
       },
     }),
-    // VR-33: any non-terminal linked incident blocks Close.
+    // VR-33: any non-terminal linked incident blocks Close (`terminal` on the live graph).
     prisma.incident.count({
       where: {
         relatedReleaseCode: release.releaseCode,
-        status: { notIn: [...TERMINAL_INCIDENT_STATUSES] },
+        status: statusInOrNone(statusLists.openIncidentStatuses),
       },
     }),
-    // VR-32: Detected / Under Review conflicts involving this release code.
+    // VR-32: non-terminal conflicts involving this release code.
     prisma.environmentConflict.count({
       where: {
-        status: { in: [...OPEN_ENVIRONMENT_CONFLICT_STATUSES] },
+        status: statusInOrNone(statusLists.openConflictStatuses),
         OR: [
           { release1Code: release.releaseCode },
           { release2Code: release.releaseCode },
@@ -201,6 +237,15 @@ export async function loadReleaseLifecycleGateFacts(
     prisma.deploymentState.findUnique({
       where: { releaseId: release.id },
       select: { phase: true },
+    }),
+    // VR-27: High-score risks without a mitigation plan block Ready.
+    // Only score, status, and mitigation text for this release — no extra PII.
+    prisma.risk.findMany({
+      where: {
+        releaseId: release.id,
+        riskScore: { gte: RISK_HIGH_SCORE_THRESHOLD },
+      },
+      select: { mitigationStrategy: true, status: true },
     }),
   ]);
 
@@ -233,12 +278,15 @@ export async function loadReleaseLifecycleGateFacts(
   const hardDependenciesMet =
     hardDeps.length === 0 ||
     hardDeps.every((d) =>
-      HARD_DEP_CLEAR.some(
-        (ok) =>
-          (d.status ?? "").localeCompare(ok, undefined, { sensitivity: "accent" }) ===
-          0
-      )
+      dependencyStatusSatisfiesHardGate(dependencyLoaded.config, d.status)
     );
+
+  // Wave 2+: no risk role for “does not block Ready”; Closed/Accepted/Mitigated stay label-based.
+  const unmitigatedHighRiskCount = highRisks.filter(
+    (risk) =>
+      !/^(closed|accepted|mitigated)$/i.test(risk.status ?? "") &&
+      !risk.mitigationStrategy?.trim()
+  ).length;
 
   return emptyLifecycleGateFacts({
     owner: release.owner,
@@ -271,6 +319,7 @@ export async function loadReleaseLifecycleGateFacts(
       signoffConfig,
       release.opsSignoff
     ),
+    unmitigatedHighRiskCount,
     incompleteWorkItemCount,
     pirComplete: Boolean(release.postImplementationReviewCompleted),
     scopeDescription: release.scopeDescription,
@@ -278,7 +327,7 @@ export async function loadReleaseLifecycleGateFacts(
     hasUatBooking,
     hasDeployBooking: explicitDeploy || anyActive, // partial: any active booking counts
     hardDependenciesMet,
-    signoffsComplete: signoffsLookComplete(release),
+    signoffsComplete: signoffsLookComplete(release, signoffConfig),
     fields: {
       owner: release.owner,
       releaseSize: release.releaseSize,
@@ -349,7 +398,7 @@ export async function enforceReleaseStatusChange(
     args.clerkUserId,
     args.release.lifecycleConfigVersionId
   );
-  const gateFacts = await loadGateFacts(args.release);
+  const gateFacts = await loadGateFacts(args.release, args.clerkUserId);
   const previousStatus =
     args.previousStatusHint?.trim() ||
     (await loadPreviousStatus(args.release.id, args.release.status));

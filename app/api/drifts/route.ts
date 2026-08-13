@@ -50,11 +50,13 @@ export async function POST(req: Request) {
   }
 
   let status = String(body.status ?? "").trim();
+  let statusKey: string | undefined;
   try {
     const loaded = await loadDriftLifecycleConfig(user!.id);
     const resolved = resolveCreateLifecycleStatus(loaded.config, status, "drift");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
+    statusKey = resolved.statusKey;
   } catch (err) {
     console.error("[drifts-create] lifecycle config load failed", {
       message: err instanceof Error ? err.message : "unknown",
@@ -112,6 +114,7 @@ export async function POST(req: Request) {
     impactOnRelease: body.impactOnRelease ?? null,
     remediationAction: body.remediationAction ?? null,
     status,
+    statusKey,
     etaToFix: body.etaToFix ? new Date(body.etaToFix) : null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

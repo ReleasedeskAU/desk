@@ -12,6 +12,9 @@ import {
 } from "@/lib/dependency-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
+import { DEPENDENCY_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -196,6 +199,11 @@ export function DependencyLifecycleSettings() {
       </div>
 
       {panel === "statuses" ? (
+        <div className="space-y-3">
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={DEPENDENCY_STATUS_ROLE_IDS}
+        />
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {sortedStatuses.map((status) => (
             <li
@@ -216,8 +224,16 @@ export function DependencyLifecycleSettings() {
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {lifecycleEditModeLabel(status.editMode)}
-                  {status.satisfiesHardGate ? " · clears Hard check" : ""}
                 </p>
+                <StatusMeaningControls
+                  roleIds={DEPENDENCY_STATUS_ROLE_IDS}
+                  statuses={draft.statuses}
+                  statusKey={status.key}
+                  editing={editing}
+                  onStatusesChange={(statuses) =>
+                    setDraft((prev) => ({ ...prev, statuses }))
+                  }
+                />
               </div>
               <LifecycleToggle
                 checked={status.enabled}
@@ -235,6 +251,7 @@ export function DependencyLifecycleSettings() {
             </li>
           ))}
         </ul>
+        </div>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions

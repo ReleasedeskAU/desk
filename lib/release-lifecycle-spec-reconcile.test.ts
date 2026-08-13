@@ -111,6 +111,7 @@ describe("reconcileLifecycleSpecDefaults", () => {
       "rollback_plan_documented",
       "pre_deployment_checklist_complete",
       "hard_dependencies_met",
+      "high_risks_mitigated",
     ]) {
       assert.ok(readyGates.includes(g), `Ready entry missing ${g}`);
     }
@@ -143,6 +144,7 @@ describe("Wave A default seed attachments", () => {
       [
         "dress_rehearsal_for_large",
         "hard_dependencies_met",
+        "high_risks_mitigated",
         "no_open_blockers",
         "no_open_environment_conflicts",
         "ops_signoff_complete",

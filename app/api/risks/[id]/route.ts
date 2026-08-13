@@ -6,7 +6,10 @@ import { patchRiskSchemaForScale } from "@/lib/validation/risk";
 import { loadRiskEngineConfig } from "@/lib/risk-engine-config-db";
 import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
 import { deniedRiskEditFields } from "@/lib/risk-lifecycle-edit-policy";
-import { validateRiskTransition } from "@/lib/risk-lifecycle-transition";
+import {
+  resolveRiskLifecycleStatusRef,
+  validateRiskTransition,
+} from "@/lib/risk-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
@@ -57,6 +60,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadRiskLifecycleConfig(user!.id);
@@ -113,6 +117,10 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveRiskLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[risks PATCH] lifecycle enforcement failed", {
@@ -179,6 +187,7 @@ export async function PATCH(req: Request, { params }: Params) {
     mitigationStrategy?: string | null;
     riskOwnerId?: string | null;
     status?: string;
+    statusKey?: string;
     notes?: string | null;
   } = {};
   if (body.releaseId !== undefined) data.releaseId = body.releaseId;
@@ -191,7 +200,10 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.affectedArea !== undefined) data.affectedArea = body.affectedArea;
   if (body.mitigationStrategy !== undefined) data.mitigationStrategy = body.mitigationStrategy;
   if (body.riskOwnerId !== undefined) data.riskOwnerId = body.riskOwnerId;
-  if (body.status !== undefined) data.status = body.status;
+  if (body.status !== undefined) {
+    data.status = body.status;
+    if (nextStatusKey) data.statusKey = nextStatusKey;
+  }
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.likelihood !== undefined || body.impact !== undefined) {
     data.riskScore = likelihood * impact;

@@ -986,6 +986,7 @@ async function main(): Promise<number> {
             fromStatus: from,
             toStatus: to,
             overrideReason: "AUD-ST override reason",
+            facts: { assignedTo: "AUD-ST Assignee", resolutionNotes: "waiting", rootCause: "cause" },
           });
           return {
             allowed: r.allowed,
@@ -1023,11 +1024,15 @@ async function main(): Promise<number> {
           });
         },
         validate: (from, to) => {
+          const dest = approvalCfg.statuses.find(
+            (s) => s.label === to || s.key === to
+          );
           const r = validateApprovalTransition({
             config: approvalCfg,
             fromStatus: from,
             toStatus: to,
             overrideReason: "AUD-ST override reason",
+            conditions: dest?.requiresConditions ? "AUD-ST recorded conditions" : null,
           });
           return {
             allowed: r.allowed,

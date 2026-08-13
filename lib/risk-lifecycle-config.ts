@@ -22,6 +22,10 @@ export type RiskLifecycleStatusConfig = {
   cascadeEffect: string;
   /** AV-02: auto-escalate after N days in this status (null = none). */
   escalateAfterDays: number | null;
+  /** New risk records land here. */
+  isIntake: boolean;
+  /** Daily auto-escalate moves overdue risks into this status. */
+  escalateTarget: boolean;
 };
 
 export type RiskLifecycleTransitionConfig = {
@@ -55,6 +59,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "full",
     cascadeEffect: "Probability and Impact required",
     escalateAfterDays: 3,
+    isIntake: true,
+    escalateTarget: false,
   },
   {
     key: "assessing",
@@ -66,6 +72,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "full",
     cascadeEffect: "Risk Score calculated",
     escalateAfterDays: 3,
+    isIntake: false,
+    escalateTarget: false,
   },
   {
     key: "mitigating",
@@ -77,6 +85,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "full",
     cascadeEffect: "Mitigation Plan required for High severity",
     escalateAfterDays: null,
+    isIntake: false,
+    escalateTarget: false,
   },
   {
     key: "mitigated",
@@ -88,6 +98,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "limited",
     cascadeEffect: "Residual risk documented",
     escalateAfterDays: null,
+    isIntake: false,
+    escalateTarget: false,
   },
   {
     key: "accepted",
@@ -99,6 +111,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "read_only",
     cascadeEffect: "Requires documented acceptance",
     escalateAfterDays: null,
+    isIntake: false,
+    escalateTarget: false,
   },
   {
     key: "closed",
@@ -110,6 +124,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "immutable",
     cascadeEffect: "FINAL — risk resolved/retired",
     escalateAfterDays: null,
+    isIntake: false,
+    escalateTarget: false,
   },
   {
     key: "escalated",
@@ -121,6 +137,8 @@ export const DEFAULT_RISK_LIFECYCLE_STATUSES: readonly RiskLifecycleStatusConfig
     editMode: "full",
     cascadeEffect: "Auto-escalated after 3 days",
     escalateAfterDays: null,
+    isIntake: false,
+    escalateTarget: true,
   },
 ];
 
@@ -236,7 +254,12 @@ export function normalizeRiskLifecycleConfig(raw: unknown): RiskLifecycleConfig 
     const candidate = raw as RiskLifecycleConfig;
     if (!validateRiskLifecycleConfig(candidate)) {
       return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
+        statuses: candidate.statuses.map((s) => ({
+          ...s,
+          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "identified",
+          escalateTarget:
+            typeof s.escalateTarget === "boolean" ? s.escalateTarget : s.key === "escalated",
+        })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
       };
     }

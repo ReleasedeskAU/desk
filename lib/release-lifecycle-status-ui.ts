@@ -2,11 +2,18 @@
  * Release-status helpers driven by lifecycle config (SSOT for labels/filters/tones).
  * Pure — safe for client and server; no I/O.
  */
+import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import type {
   ReleaseLifecycleConfig,
   ReleaseLifecycleStatusConfig,
   ReleaseLifecycleStatusKind,
 } from "@/lib/release-lifecycle-config";
+import {
+  emptyLifecycleGateFacts,
+  listLegalNextStatuses,
+  type LegalNextStatusView,
+  type ReleaseLifecycleGateFacts,
+} from "@/lib/release-lifecycle-transition";
 
 /** Chip / badge tone used across detail chips and table badges. */
 export type ReleaseStatusDisplayTone = "good" | "warn" | "bad" | "info" | "neutral";
@@ -264,4 +271,62 @@ export function pipelineToneForKind(
     default:
       return "slate";
   }
+}
+
+export type EditReleaseStatusOption = {
+  label: string;
+  outcome: "current" | "allowed" | "needs_override" | "blocked";
+  disabled: boolean;
+};
+
+/**
+ * Status choices for Edit Release: current status plus legal next only.
+ *
+ * @param currentLabel - Status the release is in now.
+ * @param next - Legal-next rows from the lifecycle API (same as the detail picker).
+ * @returns Deduped options; blocked next steps are listed but not selectable.
+ */
+export function editReleaseStatusOptions(
+  currentLabel: string,
+  next: readonly { label: string; outcome: "allowed" | "needs_override" | "blocked" }[]
+): EditReleaseStatusOption[] {
+  const seen = new Set<string>();
+  const out: EditReleaseStatusOption[] = [];
+  const current = currentLabel.trim();
+  if (current) {
+    out.push({ label: current, outcome: "current", disabled: false });
+    seen.add(current.toLocaleLowerCase());
+  }
+  for (const item of next) {
+    const key = item.label.trim().toLocaleLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      label: item.label,
+      outcome: item.outcome,
+      disabled: item.outcome === "blocked",
+    });
+  }
+  return out;
+}
+
+/**
+ * Graph next-steps without waiting on per-release gate facts (those load several
+ * other entity configs and can take tens of seconds). Used to paint Edit Release
+ * immediately; the lifecycle API overwrites with live blocked/allowed outcomes.
+ *
+ * @param fromStatus - Current release status label or key.
+ * @param config - Lifecycle graph; defaults to the Enterprise Default.
+ * @param facts - Optional field facts already on the form (name, apps, dates).
+ */
+export function previewEditLegalNext(
+  fromStatus: string,
+  config: ReleaseLifecycleConfig = createDefaultReleaseLifecycleConfig(),
+  facts?: Partial<ReleaseLifecycleGateFacts>
+): LegalNextStatusView[] {
+  return listLegalNextStatuses({
+    config,
+    fromStatus,
+    gateFacts: emptyLifecycleGateFacts(facts),
+  });
 }

@@ -29,17 +29,20 @@ export function escalateAfterDaysForRiskStatus(
 export function approvalExpiryDays(
   config: ApprovalLifecycleConfig = createDefaultApprovalLifecycleConfig()
 ): number | null {
-  const approved = resolveApprovalLifecycleStatusRef(config, "approved")
-    ?? config.statuses.find((s) => s.key === "approved");
+  const withDays = config.statuses.filter(
+    (s) => s.enabled && s.expiryDays != null && s.expiryDays > 0
+  );
+  if (withDays.length === 1) return withDays[0]!.expiryDays;
+  const approved = resolveApprovalLifecycleStatusRef(config, "approved");
   return approved?.expiryDays ?? null;
 }
 
 /**
- * Resolve Pending-status expiryDays from a sign-off lifecycle config.
+ * Resolve Starting-status expiryDays from a sign-off lifecycle config.
  */
 export function signoffPendingExpiryDays(
   config: SignoffLifecycleConfig = createDefaultSignoffLifecycleConfig()
 ): number | null {
-  const pending = config.statuses.find((s) => s.key === "pending");
-  return pending?.expiryDays ?? null;
+  const intake = config.statuses.find((s) => s.enabled && s.isIntake);
+  return intake?.expiryDays ?? null;
 }

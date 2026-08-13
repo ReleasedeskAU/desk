@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, FileText, List, Package, User, Wrench } from "lucide-react";
 import {
@@ -14,13 +14,24 @@ import {
   type ChipTone,
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
+import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { useLifecycleStatusConfirm } from "@/hooks/useLifecycleStatusConfirm";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { taBtnSecondary } from "@/lib/styles";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
+import { parseUxNoticesFromHeaders } from "@/lib/ux-notice";
+import { blockerCategoryOptions } from "@/lib/blocker-categories";
+import {
+  createDefaultBlockerLifecycleConfig,
+  type BlockerLifecycleConfig,
+} from "@/lib/blocker-lifecycle-config";
+import { legalNextBlockerStatuses } from "@/lib/blocker-lifecycle-transition";
 import {
   chipToneToFactTone,
   collectAttention,
@@ -108,20 +119,7 @@ const BLOCKER_FIELD_LABELS: Partial<Record<keyof BlockerDraft, string>> = {
   impactOnRelease: "Impact on Release",
 };
 
-const BLOCKER_TYPE_OPTIONS = [
-  "Environment",
-  "Technical",
-  "Dependency",
-  "Resource",
-  "Business",
-  "Testing",
-  "Security",
-  "Infrastructure",
-  "Defect",
-  "Compliance",
-  "Documentation",
-  "External",
-].map((v) => ({ value: v, label: v }));
+const BLOCKER_TYPE_OPTIONS = blockerCategoryOptions();
 
 const ESCALATION_OPTIONS = ["L1 - Team Lead", "L2 - Manager", "L3 - Director"].map((v) => ({
   value: v,
@@ -180,10 +178,6 @@ function toDraft(row: BlockerDetail, releases: ReleaseLookup[]): BlockerDraft {
 }
 
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"].map((v) => ({ value: v, label: v }));
-const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"].map((v) => ({
-  value: v,
-  label: v,
-}));
 
 export default function BlockerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -194,12 +188,14 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
-  /** Id of the workflow step currently being written, so its button can spin. */
+  const [lifecycleConfig, setLifecycleConfig] = useState<BlockerLifecycleConfig>(
+    createDefaultBlockerLifecycleConfig
+  );
   const [pendingStep, setPendingStep] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const [detail, list, releaseList, me] = await Promise.all([
+    const [detail, list, releaseList, me, lifecycle] = await Promise.all([
       safeFetchJson<BlockerDetail>(`/api/blockers/${id}`, {
         signal,
         label: "blocker-detail",
@@ -216,6 +212,11 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         }[]
       >("/api/releases", { signal, label: "releases-list" }),
       safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
+      safeFetchJson<{ config: BlockerLifecycleConfig }>("/api/blocker-lifecycle-config", {
+        signal,
+        label: "blocker-lifecycle",
+        rejectHttpErrors: false,
+      }),
     ]);
     if (signal?.aborted) return;
     setRow(detail.ok && detail.status < 300 ? detail.data : null);
@@ -232,6 +233,9 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         : [],
     );
     if (me.ok) setUser(me.data.user);
+    if (lifecycle.ok && lifecycle.data?.config) {
+      setLifecycleConfig(lifecycle.data.config);
+    }
     setLastRefresh(new Date());
     setLoading(false);
   }, [id]);
@@ -247,6 +251,17 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
   const d = edit.draft;
+  const exceptionFromModalSave = useRef(false);
+  const statusConfirm = useLifecycleStatusConfirm({
+    entityLabel: "blocker",
+    onSuccess: async () => {
+      if (exceptionFromModalSave.current) {
+        exceptionFromModalSave.current = false;
+        edit.completeSaveSuccess(BLOCKER_FIELD_LABELS);
+      }
+      await load();
+    },
+  });
 
   const selectOptions = useMemo(
     () =>
@@ -279,12 +294,19 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   }, [row?.severity]);
 
   const statusOptions = useMemo(() => {
-    const set = new Set(STATUS_OPTIONS.map((o) => o.value));
-    if (row?.status && !set.has(row.status)) {
-      return [{ value: row.status, label: row.status }, ...STATUS_OPTIONS];
-    }
-    return STATUS_OPTIONS;
-  }, [row?.status]);
+    const current = row?.status ?? "";
+    const next = legalNextBlockerStatuses(lifecycleConfig, current);
+    const labels = [current, ...next.map((s) => s.label)].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const key = label.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [lifecycleConfig, row?.status]);
 
   const blockerTypeOptions = useMemo(() => {
     const set = new Set(BLOCKER_TYPE_OPTIONS.map((o) => o.value));
@@ -340,12 +362,71 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
     });
     edit.setSaving(false);
     if (!res.ok || res.status >= 300) {
-      const message =
-        res.ok && res.data && typeof res.data === "object" && "error" in res.data
-          ? String((res.data as { error?: string }).error || "")
-          : "";
-      edit.setError(message || "Couldn’t save changes. Try again.");
+      const data =
+        res.ok && res.data && typeof res.data === "object"
+          ? (res.data as {
+              error?: string;
+              code?: string;
+              unmetReasons?: unknown;
+              transition?: { unmetReasons?: unknown };
+            })
+          : null;
+      const apiError = typeof data?.error === "string" ? data.error : "";
+      const code = typeof data?.code === "string" ? data.code : "";
+      const unmetReasons = Array.isArray(data?.unmetReasons)
+        ? data.unmetReasons.filter((r): r is string => typeof r === "string")
+        : Array.isArray(data?.transition?.unmetReasons)
+          ? data.transition.unmetReasons.filter((r): r is string => typeof r === "string")
+          : [];
+      if (code === "TRANSITION_NEEDS_OVERRIDE" && draft.status !== row.status) {
+        const extraBody = {
+          releaseCode: draft.releaseCode,
+          releaseName: draft.releaseName,
+          department: draft.department,
+          application: draft.application,
+          blockerType: draft.blockerType,
+          blockerDescription: draft.blockerDescription,
+          severity: draft.severity,
+          raisedDate: draft.raisedDate,
+          raisedBy: draft.raisedBy,
+          assignedTo: draft.assignedTo || null,
+          targetResolutionDate: draft.targetResolutionDate || null,
+          actualResolutionDate: draft.actualResolutionDate || null,
+          daysOpen: Number(draft.daysOpen),
+          escalationLevel: draft.escalationLevel,
+          rootCause: draft.rootCause || null,
+          resolutionNotes: draft.resolutionNotes || null,
+          impactOnRelease: draft.impactOnRelease,
+        };
+        exceptionFromModalSave.current = true;
+        statusConfirm.presentException({
+          targetStatus: draft.status,
+          targetLabel: draft.status,
+          patchUrl: `/api/blockers/${row.id}`,
+          extraBody,
+          unmetReasons,
+          leadMessage: apiError || null,
+        });
+        edit.setSaving(false);
+        return;
+      }
+      edit.setSaving(false);
+      edit.setError(apiError || "Couldn’t save changes. Try again.");
+      statusConfirm.setAlert(
+        buildFormSaveAlert(data, apiError || "Couldn’t save changes. Try again.", {
+          entityLabel: "blocker",
+        })
+      );
       return;
+    }
+    const notices = parseUxNoticesFromHeaders(res.headers);
+    if (notices[0]) {
+      statusConfirm.setAlert({
+        title: notices[0].title,
+        message: notices[0].message,
+        details: notices[0].details,
+        variant: "notice",
+      });
     }
     edit.completeSaveSuccess(BLOCKER_FIELD_LABELS);
     await load();
@@ -361,23 +442,16 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
     if (!row) return;
     setPendingStep(step.id);
     setStepError(null);
-    const body: Record<string, unknown> = { status: step.status };
-    if (step.stampsResolution) body.actualResolutionDate = new Date().toISOString().slice(0, 10);
-    if (step.clearsResolution) body.actualResolutionDate = null;
-
-    const res = await safeFetchJson(`/api/blockers/${row.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      label: "blocker-status-step",
-      rejectHttpErrors: false,
+    const extraBody: Record<string, unknown> = {};
+    if (step.stampsResolution) extraBody.actualResolutionDate = new Date().toISOString().slice(0, 10);
+    if (step.clearsResolution) extraBody.actualResolutionDate = null;
+    await statusConfirm.requestStatusChange({
+      targetStatus: step.status,
+      targetLabel: step.label,
+      patchUrl: `/api/blockers/${row.id}`,
+      extraBody,
     });
     setPendingStep(null);
-    if (!res.ok || res.status >= 300) {
-      setStepError(`Couldn’t set this blocker to ${step.status}. Try again.`);
-      return;
-    }
-    await load();
   };
 
   const remove = async () => {
@@ -403,7 +477,7 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
   const daysOpenNum = Number(v.daysOpen) || 0;
   const resolved = /resolv|closed/i.test(v.status);
   const targetDue = describeDue(v.targetResolutionDate);
-  const workflow = blockerWorkflow(v.status);
+  const workflow = blockerWorkflow(v.status, lifecycleConfig);
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,
@@ -702,6 +776,25 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         timing={timing}
         scope={scope}
       />
+
+      {statusConfirm.pending ? (
+        <div className="mt-4">
+          <LifecycleExceptionConfirm
+            targetLabel={statusConfirm.pending.targetLabel}
+            needsException={statusConfirm.pending.needsException}
+            blocked={statusConfirm.pending.blocked}
+            exceptionReason={statusConfirm.exceptionReason}
+            onExceptionReasonChange={statusConfirm.setExceptionReason}
+            busy={statusConfirm.busy}
+            confirmDisabled={statusConfirm.confirmDisabled}
+            onCancel={statusConfirm.cancel}
+            onConfirm={() => void statusConfirm.confirm()}
+            checks={statusConfirm.pending.checks}
+            leadMessage={statusConfirm.pending.leadMessage}
+          />
+        </div>
+      ) : null}
+      <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection
         icon={FileText}

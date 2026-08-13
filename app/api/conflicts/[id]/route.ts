@@ -5,7 +5,10 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { patchConflictSchema } from "@/lib/validation/conflict";
 import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
 import { deniedConflictEditFields } from "@/lib/conflict-lifecycle-edit-policy";
-import { validateConflictTransition } from "@/lib/conflict-lifecycle-transition";
+import {
+  resolveConflictLifecycleStatusRef,
+  validateConflictTransition,
+} from "@/lib/conflict-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
@@ -98,6 +101,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadConflictLifecycleConfig(user!.id);
@@ -145,6 +149,10 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveConflictLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[conflicts PATCH] lifecycle enforcement failed", {
@@ -158,7 +166,10 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const data: Record<string, unknown> = {};
-  if (body.status !== undefined) data.status = body.status;
+  if (body.status !== undefined) {
+    data.status = body.status;
+    if (nextStatusKey) data.statusKey = nextStatusKey;
+  }
   if (body.priority !== undefined) data.priority = body.priority;
   if (body.release1Code !== undefined) data.release1Code = body.release1Code;
   if (body.release2Code !== undefined) data.release2Code = body.release2Code;

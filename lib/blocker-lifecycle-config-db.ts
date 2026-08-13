@@ -9,6 +9,7 @@ import {
   validateBlockerLifecycleConfig,
   type BlockerLifecycleConfig,
 } from "@/lib/blocker-lifecycle-config";
+import { reconcileBlockerLifecycleSpec } from "@/lib/blocker-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -61,7 +62,9 @@ export async function loadBlockerLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeBlockerLifecycleConfig(latest.snapshot),
+      config: reconcileBlockerLifecycleSpec(
+        normalizeBlockerLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

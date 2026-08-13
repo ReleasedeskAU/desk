@@ -48,6 +48,9 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { riskWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import type { RiskLifecycleConfig } from "@/lib/risk-lifecycle-config";
+import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
 
 type RiskDetail = {
   id: string;
@@ -132,15 +135,6 @@ function scaleOptions(max: number) {
   return scaleAxisValues(max).map((n) => ({ value: String(n), label: String(n) }));
 }
 
-const STATUS_OPTIONS = [
-  "Identified",
-  "Assessing",
-  "Mitigating",
-  "Mitigated",
-  "Accepted",
-  "Closed",
-  "Escalated",
-].map((v) => ({ value: v, label: v }));
 
 function formatScale(n: number, map: Record<number, string>) {
   const label = map[n];
@@ -203,6 +197,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const router = useRouter();
   const { config: riskConfig } = useRiskEngineConfig();
+  const lifecycle = useEntityLifecycleStatuses("/api/risk-lifecycle-config");
   const [row, setRow] = useState<RiskDetail | null>(null);
   const [options, setOptions] = useState<RiskOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
@@ -361,13 +356,10 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     return [{ value: "", label: "— Unassigned —" }, ...opts];
   }, [users, departments, d?.departmentId, v?.departmentId, row?.riskOwner]);
 
-  const statusOptions = useMemo(() => {
-    const set = new Set(STATUS_OPTIONS.map((o) => o.value));
-    if (row?.status && !set.has(row.status)) {
-      return [{ value: row.status, label: row.status }, ...STATUS_OPTIONS];
-    }
-    return STATUS_OPTIONS;
-  }, [row?.status]);
+  const statusOptions = useMemo(
+    () => statusSelectOptions(lifecycle.createOptions, row?.status),
+    [lifecycle.createOptions, row?.status]
+  );
 
   const save = async () => {
     if (!row || !edit.draft) return;
@@ -483,7 +475,10 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const selectedDept = departments.find((dept) => dept.id === v.departmentId);
   const selectedOwner = users.find((u) => u.id === v.riskOwnerId) ?? row.riskOwner;
   const releaseDue = describeDue(row.release.releaseDate);
-  const workflow = riskWorkflow(v.status);
+  const workflow = riskWorkflow(
+    v.status,
+    (lifecycle.config as RiskLifecycleConfig | null) ?? undefined
+  );
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,

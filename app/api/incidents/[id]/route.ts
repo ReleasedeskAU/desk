@@ -5,8 +5,18 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { patchIncidentSchema } from "@/lib/validation/incident";
 import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
 import { deniedIncidentEditFields } from "@/lib/incident-lifecycle-edit-policy";
-import { validateIncidentTransition } from "@/lib/incident-lifecycle-transition";
+import {
+  resolveIncidentLifecycleStatusRef,
+  validateIncidentTransition,
+} from "@/lib/incident-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { keysWithActualIncidentPatchChanges } from "@/lib/incident-patch-changed-keys";
+import { cascadeUnblockReleaseOnIncidentResolved } from "@/lib/lifecycle-event-hooks";
+import {
+  encodeUxNoticeHeader,
+  UX_NOTICE_HEADER,
+  type UxNotice,
+} from "@/lib/ux-notice";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -67,10 +77,14 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadIncidentLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
+    const proposedKeys = keysWithActualIncidentPatchChanges({
+      existing: existing as unknown as Record<string, unknown>,
+      body: body as unknown as Record<string, unknown>,
+    });
     const { mode, denied } = deniedIncidentEditFields(
       config,
       existing.status,
@@ -102,6 +116,10 @@ export async function PATCH(req: Request, { params }: Params) {
           severity: body.severity ?? existing.severity,
           assignedTo:
             body.assignedTo !== undefined ? body.assignedTo : existing.assignedTo,
+          relatedReleaseCode:
+            body.relatedReleaseCode !== undefined
+              ? body.relatedReleaseCode
+              : existing.relatedReleaseCode,
         },
       });
       if (!transition.allowed) {
@@ -116,6 +134,10 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveIncidentLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[incidents PATCH] lifecycle enforcement failed", {
@@ -144,7 +166,10 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.departmentName !== undefined) data.departmentName = body.departmentName;
   if (body.severity !== undefined) data.severity = body.severity;
   if (body.title !== undefined) data.title = body.title;
-  if (body.status !== undefined) data.status = body.status;
+  if (body.status !== undefined) {
+    data.status = body.status;
+    if (nextStatusKey) data.statusKey = nextStatusKey;
+  }
   if (body.impact !== undefined) data.impact = body.impact;
   if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
   if (body.relatedReleaseCode !== undefined) data.relatedReleaseCode = body.relatedReleaseCode;
@@ -155,6 +180,42 @@ export async function PATCH(req: Request, { params }: Params) {
     data,
     include: incidentInclude,
   });
+
+  const uxNotices: UxNotice[] = [];
+  if (body.status !== undefined && row.relatedReleaseCode) {
+    try {
+      const { config: incidentConfig } = await loadIncidentLifecycleConfig(user!.id);
+      const next = resolveIncidentLifecycleStatusRef(incidentConfig, row.status);
+      const prev = resolveIncidentLifecycleStatusRef(incidentConfig, existing.status);
+      if (next?.unblocksParent && !prev?.unblocksParent) {
+        const casc = await cascadeUnblockReleaseOnIncidentResolved(
+          row.relatedReleaseCode,
+          user!.id
+        );
+        if (casc.roleFault) {
+          console.error("[incidents PATCH] unblock role fault", casc.roleFault);
+          uxNotices.push({
+            title: "Automation needs a Settings fix",
+            message: casc.roleFault.message,
+          });
+        }
+      }
+    } catch (cascErr) {
+      console.warn("[incidents PATCH] incident auto-unblock failed", {
+        incidentCode: row.incidentCode,
+        message: cascErr instanceof Error ? cascErr.message : "unknown",
+      });
+    }
+  }
+
+  if (uxNotices.length > 0) {
+    return NextResponse.json(await withRelatedRelease(row), {
+      headers: {
+        [UX_NOTICE_HEADER]: encodeUxNoticeHeader(uxNotices),
+        "Access-Control-Expose-Headers": UX_NOTICE_HEADER,
+      },
+    });
+  }
   return NextResponse.json(await withRelatedRelease(row));
 }
 

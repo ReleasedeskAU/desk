@@ -4,13 +4,24 @@ import { prisma } from "@/lib/prisma";
 import { mapDbEnvBookingRow } from "@/lib/list-api-filters";
 import { patchBookingSchema } from "@/lib/validation/booking";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
-import { guardEnvBookingMutationWhileDeploying } from "@/lib/release-related-entity-guards";
+import {
+  guardEnvBookingMutationWhileDeploying,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 type Params = { params: Promise<{ id: string }> };
 
 const bookingInclude = {
   application: { select: { id: true, name: true } },
-  release: { select: { id: true, releaseCode: true, name: true, status: true } },
+  release: {
+    select: {
+      id: true,
+      releaseCode: true,
+      name: true,
+      status: true,
+      lifecycleConfigVersionId: true,
+    },
+  },
   environment: { select: { id: true, name: true, type: true } },
 } as const;
 
@@ -68,7 +79,7 @@ export async function GET(_req: Request, { params }: Params) {
 
 /** Update allowlisted booking fields (editor+). */
 export async function PATCH(req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -76,7 +87,14 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
 
   if (existing.release?.status) {
-    const locked = guardEnvBookingMutationWhileDeploying(existing.release.status);
+    const releaseConfig = await loadGuardReleaseConfig(
+      user!.id,
+      existing.release.lifecycleConfigVersionId
+    );
+    const locked = guardEnvBookingMutationWhileDeploying(
+      existing.release.status,
+      releaseConfig
+    );
     if (!locked.ok) return locked.response;
   }
 
@@ -133,10 +151,17 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.releaseId) {
     const release = await prisma.release.findUnique({
       where: { id: body.releaseId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, lifecycleConfigVersionId: true },
     });
     if (!release) return NextResponse.json({ error: "Release not found" }, { status: 404 });
-    const targetLocked = guardEnvBookingMutationWhileDeploying(release.status);
+    const targetConfig = await loadGuardReleaseConfig(
+      user!.id,
+      release.lifecycleConfigVersionId
+    );
+    const targetLocked = guardEnvBookingMutationWhileDeploying(
+      release.status,
+      targetConfig
+    );
     if (!targetLocked.ok) return targetLocked.response;
   }
 
@@ -182,7 +207,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
 /** Delete a booking (editor+). */
 export async function DELETE(_req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
@@ -190,7 +215,14 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
 
   if (existing.release?.status) {
-    const locked = guardEnvBookingMutationWhileDeploying(existing.release.status);
+    const releaseConfig = await loadGuardReleaseConfig(
+      user!.id,
+      existing.release.lifecycleConfigVersionId
+    );
+    const locked = guardEnvBookingMutationWhileDeploying(
+      existing.release.status,
+      releaseConfig
+    );
     if (!locked.ok) return locked.response;
   }
 

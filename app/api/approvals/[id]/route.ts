@@ -5,8 +5,19 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { patchApprovalSchema } from "@/lib/validation/approval";
 import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
 import { deniedApprovalEditFields } from "@/lib/approval-lifecycle-edit-policy";
-import { validateApprovalTransition } from "@/lib/approval-lifecycle-transition";
+import {
+  approvalDecisionRevertsLinkedRelease,
+  resolveApprovalLifecycleStatusRef,
+  validateApprovalTransition,
+} from "@/lib/approval-lifecycle-transition";
+import { keysWithActualApprovalPatchChanges } from "@/lib/approval-patch-changed-keys";
+import { cascadeRevertReleaseOnApprovalDecision } from "@/lib/release-related-entity-guards";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import {
+  encodeUxNoticeHeader,
+  UX_NOTICE_HEADER,
+  type UxNotice,
+} from "@/lib/ux-notice";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -27,6 +38,16 @@ function parseDate(value: string | null | undefined): Date | null | undefined {
   if (value === null || value === "") return null;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function appendRecordedReason(
+  existing: string | null | undefined,
+  reason: string
+): string {
+  const line = `Exception reason: ${reason.trim()}`;
+  const cur = (existing ?? "").trim();
+  if (cur.includes(line)) return cur;
+  return cur ? `${cur}\n${line}` : line;
 }
 
 export async function GET(_req: Request, { params }: Params) {
@@ -58,10 +79,15 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
-  // Lifecycle: edit policy + decision transitions (config-driven).
+  let nextDecisionKey: string | undefined;
+  let recordedOverride: string | undefined;
+  const uxNotices: UxNotice[] = [];
   try {
     const { config } = await loadApprovalLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
+    const proposedKeys = keysWithActualApprovalPatchChanges({
+      existing: existing as unknown as Record<string, unknown>,
+      body: body as unknown as Record<string, unknown>,
+    });
     const { mode, denied } = deniedApprovalEditFields(
       config,
       existing.decision,
@@ -90,19 +116,30 @@ export async function PATCH(req: Request, { params }: Params) {
         fromStatus: existing.decision,
         toStatus: String(body.decision),
         overrideReason: body.overrideReason ?? null,
+        conditions:
+          body.conditions !== undefined
+            ? body.conditions
+            : ((existing as { conditions?: string | null }).conditions ?? null),
       });
       if (!transition.allowed) {
         return NextResponse.json(
           {
             error: transition.reason,
             code: transition.code,
+            unmetReasons: transition.unmetReasons,
             transition,
           },
           { status: 422 }
         );
       }
-      // Persist the lifecycle-canonical label (not the raw client string).
       body.decision = transition.canonicalStatus;
+      nextDecisionKey = resolveApprovalLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
+      if (transition.overridden && transition.overrideReason) {
+        recordedOverride = transition.overrideReason;
+      }
     }
   } catch (err) {
     console.error("[approvals PATCH] lifecycle enforcement failed", {
@@ -129,8 +166,8 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
   }
   if (body.approverId !== undefined) {
-    const user = await prisma.user.findUnique({ where: { id: body.approverId }, select: { id: true } });
-    if (!user) return NextResponse.json({ error: "Approver not found" }, { status: 400 });
+    const approver = await prisma.user.findUnique({ where: { id: body.approverId }, select: { id: true } });
+    if (!approver) return NextResponse.json({ error: "Approver not found" }, { status: 400 });
   }
 
   const data: Record<string, unknown> = {};
@@ -141,15 +178,72 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.approverId !== undefined) data.approverId = body.approverId;
   if (submittedDate !== undefined) data.submittedDate = submittedDate;
   if (decisionDate !== undefined) data.decisionDate = decisionDate;
-  if (body.decision !== undefined) data.decision = body.decision;
+  if (body.decision !== undefined) {
+    data.decision = body.decision;
+    if (nextDecisionKey) data.decisionKey = nextDecisionKey;
+  }
   if (body.comments !== undefined) data.comments = body.comments;
   if (body.cabMeetingId !== undefined) data.cabMeetingId = body.cabMeetingId;
+  if (body.conditions !== undefined) data.conditions = body.conditions;
+  if (recordedOverride) {
+    const base =
+      body.comments !== undefined
+        ? body.comments
+        : existing.comments;
+    data.comments = appendRecordedReason(
+      typeof base === "string" ? base : null,
+      recordedOverride
+    );
+  }
 
   const row = await prisma.approval.update({
     where: { id: existing.id },
     data,
     include: approvalInclude,
   });
+
+  if (
+    body.decision !== undefined &&
+    String(row.decision) !== existing.decision
+  ) {
+    try {
+      const { config } = await loadApprovalLifecycleConfig(user!.id);
+      if (approvalDecisionRevertsLinkedRelease(config, row.decision)) {
+        const casc = await cascadeRevertReleaseOnApprovalDecision(
+          row.releaseId,
+          user!.id,
+          config,
+          row.decision
+        );
+        if (casc.roleFault) {
+          uxNotices.push({
+            title: "Automation needs a Settings fix",
+            message: casc.roleFault.message,
+          });
+        } else if (casc.count > 0) {
+          uxNotices.push({
+            title: "Linked release moved back",
+            message:
+              "This rejection moved the linked release to the landing status configured in Release Lifecycle (Planning by default).",
+          });
+        }
+      }
+    } catch (cascErr) {
+      console.warn("[approvals PATCH] release revert cascade failed", {
+        approvalId: existing.id,
+        message: cascErr instanceof Error ? cascErr.message : "unknown",
+      });
+    }
+  }
+
+  if (uxNotices.length > 0) {
+    return NextResponse.json(row, {
+      headers: {
+        [UX_NOTICE_HEADER]: encodeUxNoticeHeader(uxNotices),
+        "Access-Control-Expose-Headers": UX_NOTICE_HEADER,
+      },
+    });
+  }
   return NextResponse.json(row);
 }
 

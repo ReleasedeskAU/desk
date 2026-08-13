@@ -9,6 +9,33 @@
  * Pure module — the API route still validates the resulting status and
  * enforces the editor role, so these are suggestions, never authorization.
  */
+import { createDefaultAlertLifecycleConfig } from "./alert-lifecycle-config";
+import type { AlertLifecycleConfig } from "./alert-lifecycle-config";
+import { resolveAlertLifecycleStatusRef } from "./alert-lifecycle-transition";
+import { createDefaultApprovalLifecycleConfig } from "./approval-lifecycle-config";
+import type { ApprovalLifecycleConfig } from "./approval-lifecycle-config";
+import { resolveApprovalLifecycleStatusRef } from "./approval-lifecycle-transition";
+import { createDefaultBlockerLifecycleConfig } from "./blocker-lifecycle-config";
+import type { BlockerLifecycleConfig } from "./blocker-lifecycle-config";
+import {
+  legalNextBlockerStatuses,
+  resolveBlockerLifecycleStatusRef,
+} from "./blocker-lifecycle-transition";
+import { createDefaultConflictLifecycleConfig } from "./conflict-lifecycle-config";
+import type { ConflictLifecycleConfig } from "./conflict-lifecycle-config";
+import { resolveConflictLifecycleStatusRef } from "./conflict-lifecycle-transition";
+import { createDefaultDependencyLifecycleConfig } from "./dependency-lifecycle-config";
+import type { DependencyLifecycleConfig } from "./dependency-lifecycle-config";
+import { resolveDependencyLifecycleStatusRef } from "./dependency-lifecycle-transition";
+import { createDefaultDriftLifecycleConfig } from "./drift-lifecycle-config";
+import type { DriftLifecycleConfig } from "./drift-lifecycle-config";
+import { resolveDriftLifecycleStatusRef } from "./drift-lifecycle-transition";
+import { createDefaultIncidentLifecycleConfig } from "./incident-lifecycle-config";
+import type { IncidentLifecycleConfig } from "./incident-lifecycle-config";
+import { resolveIncidentLifecycleStatusRef } from "./incident-lifecycle-transition";
+import { createDefaultRiskLifecycleConfig } from "./risk-lifecycle-config";
+import type { RiskLifecycleConfig } from "./risk-lifecycle-config";
+import { resolveRiskLifecycleStatusRef } from "./risk-lifecycle-transition";
 
 export type WorkflowStep = {
   /** Stable key; also used to track which button is mid-flight. */
@@ -29,231 +56,302 @@ export type WorkflowOptions = {
   secondary: WorkflowStep[];
 };
 
-type ResolveFlowLabels = {
-  start: string;
-  resolve: string;
-  close: string;
-  reopen: string;
+const BLOCKER_PRIMARY_BY_FROM: Readonly<Record<string, string>> = {
+  open: "assigned",
+  assigned: "in_progress",
+  in_progress: "resolved",
+  pending: "in_progress",
+  escalated: "in_progress",
+  resolved: "closed",
+  reopened: "in_progress",
 };
 
+const BLOCKER_STEP_COPY: Readonly<Record<string, string>> = {
+  assigned: "Assign owner",
+  in_progress: "Start work",
+  pending: "Mark pending",
+  escalated: "Escalate",
+  resolved: "Mark resolved",
+  closed: "Close blocker",
+  cancelled: "Cancel blocker",
+  reopened: "Reopen blocker",
+};
+
+function blockerStepForTarget(toKey: string, toLabel: string): WorkflowStep {
+  return {
+    id: toKey,
+    label: BLOCKER_STEP_COPY[toKey] ?? `Move to ${toLabel}`,
+    status: toLabel,
+    stampsResolution: toKey === "resolved",
+    clearsResolution: toKey === "reopened",
+  };
+}
+
 /**
- * Open → In Progress → Resolved → Closed lifecycle shared by blockers and
- * environment conflicts.
+ * One-click transitions from the live blocker lifecycle graph.
+ * Terminal statuses (Closed, Cancelled) offer no reopen-to-Open shortcut.
  *
- * @param status - Current status; matched loosely so seed/CSV variants still resolve.
- * @param labels - Entity-specific button copy.
- * @param tracksResolutionDate - Whether the entity stores an actual resolution date.
- * @returns Primary and secondary transitions for the current status.
+ * @param status - Current blocker status (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
  */
-function resolveFlow(
+export function blockerWorkflow(
   status: string,
-  labels: ResolveFlowLabels,
-  tracksResolutionDate: boolean
+  config: BlockerLifecycleConfig = createDefaultBlockerLifecycleConfig()
 ): WorkflowOptions {
-  const start: WorkflowStep = { id: "start", label: labels.start, status: "In Progress" };
-  const resolve: WorkflowStep = {
-    id: "resolve",
-    label: labels.resolve,
-    status: "Resolved",
-    stampsResolution: tracksResolutionDate,
-  };
-  const close: WorkflowStep = { id: "close", label: labels.close, status: "Closed" };
-  const reopen: WorkflowStep = {
-    id: "reopen",
-    label: labels.reopen,
-    status: "Open",
-    clearsResolution: tracksResolutionDate,
-  };
+  const from = resolveBlockerLifecycleStatusRef(config, status);
+  if (!from) {
+    return blockerWorkflow("Open", config);
+  }
+  const next = legalNextBlockerStatuses(config, status);
+  if (from.terminal || next.length === 0) {
+    return { primary: null, secondary: [] };
+  }
+  const preferredKey = BLOCKER_PRIMARY_BY_FROM[from.key];
+  const preferred =
+    next.find((s) => s.key === preferredKey) ?? next[0]!;
+  const primary = blockerStepForTarget(preferred.key, preferred.label);
+  const secondary = next
+    .filter((s) => s.key !== preferred.key)
+    .map((s) => blockerStepForTarget(s.key, s.label));
+  return { primary, secondary };
+}
 
-  const normalized = status.trim().toLowerCase();
-  if (normalized.includes("closed")) return { primary: null, secondary: [reopen] };
-  if (normalized.includes("resolv")) return { primary: close, secondary: [reopen] };
-  if (normalized.includes("progress")) return { primary: resolve, secondary: [] };
-  // Open, blank, or an unrecognised status: treat as untouched work.
-  return { primary: start, secondary: [resolve] };
+type GraphStatus = {
+  key: string;
+  label: string;
+  enabled: boolean;
+  terminal: boolean;
+  isIntake?: boolean;
+};
+
+type GraphTransition = {
+  fromKey: string;
+  toKey: string;
+  enabled: boolean;
+  sortOrder: number;
+  /** Required edges are cron/system — not one-click buttons. */
+  enforcement?: string;
+};
+
+type GraphConfig = {
+  statuses: GraphStatus[];
+  transitions: GraphTransition[];
+};
+
+type GraphWorkflowOpts = {
+  primaryByFrom: Readonly<Record<string, string>>;
+  stepCopy: Readonly<Record<string, string>>;
+  stampsResolution?: (toKey: string) => boolean;
+  clearsResolution?: (toKey: string) => boolean;
+};
+
+function legalNextFromGraph(
+  config: GraphConfig,
+  fromKey: string
+): Array<{ key: string; label: string }> {
+  return config.transitions
+    .filter(
+      (item) =>
+        item.enabled &&
+        item.fromKey === fromKey &&
+        item.enforcement !== "required"
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((item) =>
+      config.statuses.find((s) => s.key === item.toKey && s.enabled)
+    )
+    .filter((s): s is GraphStatus => Boolean(s))
+    .map((s) => ({ key: s.key, label: s.label }));
+}
+
+function graphStep(
+  toKey: string,
+  toLabel: string,
+  opts: GraphWorkflowOpts
+): WorkflowStep {
+  return {
+    id: toKey,
+    label: opts.stepCopy[toKey] ?? `Move to ${toLabel}`,
+    status: toLabel,
+    stampsResolution: opts.stampsResolution?.(toKey),
+    clearsResolution: opts.clearsResolution?.(toKey),
+  };
 }
 
 /**
- * Transitions for a release blocker.
- *
- * @param status - Current blocker status.
- * @returns Primary and secondary transitions.
+ * One-click transitions from a live entity graph (Blocker-style).
+ * @param from - Resolved current status, or null to use Starting status.
  */
-export function blockerWorkflow(status: string): WorkflowOptions {
-  return resolveFlow(
-    status,
-    {
-      start: "Start work",
-      resolve: "Mark resolved",
-      close: "Close blocker",
-      reopen: "Reopen blocker",
+function graphWorkflow(
+  from: GraphStatus | null,
+  config: GraphConfig,
+  opts: GraphWorkflowOpts
+): WorkflowOptions {
+  const current =
+    from ??
+    config.statuses.find((s) => s.enabled && s.isIntake) ??
+    config.statuses.find((s) => s.enabled);
+  if (!current) return { primary: null, secondary: [] };
+  const next = legalNextFromGraph(config, current.key);
+  if (current.terminal || next.length === 0) {
+    return { primary: null, secondary: [] };
+  }
+  const preferredKey = opts.primaryByFrom[current.key];
+  const preferred = next.find((s) => s.key === preferredKey) ?? next[0]!;
+  return {
+    primary: graphStep(preferred.key, preferred.label, opts),
+    secondary: next
+      .filter((s) => s.key !== preferred.key)
+      .map((s) => graphStep(s.key, s.label, opts)),
+  };
+}
+
+/**
+ * One-click transitions from the live conflict graph.
+ * @param status - Current conflict status (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
+ */
+export function conflictWorkflow(
+  status: string,
+  config: ConflictLifecycleConfig = createDefaultConflictLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(resolveConflictLifecycleStatusRef(config, status), config, {
+    primaryByFrom: { detected: "under_review", under_review: "resolved" },
+    stepCopy: {
+      under_review: "Start review",
+      resolved: "Mark resolved",
+      dismissed: "Dismiss conflict",
     },
-    true
+  });
+}
+
+/**
+ * One-click transitions from the live drift graph.
+ * @param status - Current drift status (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
+ */
+export function driftWorkflow(
+  status: string,
+  config: DriftLifecycleConfig = createDefaultDriftLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(resolveDriftLifecycleStatusRef(config, status), config, {
+    primaryByFrom: {
+      detected: "investigating",
+      investigating: "approved",
+      escalated: "investigating",
+    },
+    stepCopy: {
+      investigating: "Start investigation",
+      approved: "Approve drift",
+      reverted: "Mark reverted",
+      escalated: "Escalate drift",
+    },
+  });
+}
+
+/**
+ * One-click transitions from the live dependency graph.
+ * @param status - Current dependency status (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
+ */
+export function dependencyWorkflow(
+  status: string,
+  config: DependencyLifecycleConfig = createDefaultDependencyLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(
+    resolveDependencyLifecycleStatusRef(config, status),
+    config,
+    {
+      primaryByFrom: { pending: "at_risk", at_risk: "met" },
+      stepCopy: {
+        at_risk: "Mark at risk",
+        met: "Mark met",
+        waived: "Waive dependency",
+        removed: "Remove dependency",
+        pending: "Return to pending",
+      },
+    }
   );
 }
 
 /**
- * Transitions for an environment conflict. Conflicts store no resolution date,
- * so no date is stamped on resolve.
- *
- * @param status - Current conflict status.
- * @returns Primary and secondary transitions.
+ * One-click transitions from the live incident graph.
+ * @param status - Current incident status (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
  */
-export function conflictWorkflow(status: string): WorkflowOptions {
-  return resolveFlow(
-    status,
-    {
-      start: "Start resolving",
-      resolve: "Mark resolved",
-      close: "Close conflict",
-      reopen: "Reopen conflict",
+export function incidentWorkflow(
+  status: string,
+  config: IncidentLifecycleConfig = createDefaultIncidentLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(resolveIncidentLifecycleStatusRef(config, status), config, {
+    primaryByFrom: {
+      open: "acknowledged",
+      acknowledged: "investigating",
+      investigating: "resolving",
+      escalated: "investigating",
+      resolving: "resolved",
+      resolved: "closed",
+      reopened: "investigating",
     },
-    false
+    stepCopy: {
+      acknowledged: "Acknowledge incident",
+      investigating: "Start investigating",
+      resolving: "Start resolving",
+      escalated: "Escalate incident",
+      resolved: "Mark resolved",
+      closed: "Close incident",
+      reopened: "Reopen incident",
+    },
+  });
+}
+
+/**
+ * One-click transitions from the live approval graph.
+ * Approve/Reject stamp the decision date.
+ * @param decision - Current decision (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
+ */
+export function approvalWorkflow(
+  decision: string,
+  config: ApprovalLifecycleConfig = createDefaultApprovalLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(
+    resolveApprovalLifecycleStatusRef(config, decision),
+    config,
+    {
+      primaryByFrom: { pending: "approved", approved: "expired" },
+      stepCopy: {
+        approved: "Approve",
+        approved_with_conditions: "Approve with conditions",
+        rejected: "Reject",
+        deferred: "Defer to next CAB",
+        withdrawn: "Withdraw",
+        expired: "Mark expired",
+      },
+      stampsResolution: (toKey) =>
+        Boolean(config.statuses.find((s) => s.key === toKey)?.terminal),
+    }
   );
 }
 
 /**
- * Transitions for an environment/config drift. Drift stores an ETA rather than
- * an actual resolution date, so no date is stamped on resolve.
- *
- * @param status - Current drift status.
- * @returns Primary and secondary transitions.
+ * One-click transitions from the live alert graph.
+ * @param status - Current alert status (key or label).
+ * @param config - Lifecycle config; defaults to the enterprise graph.
  */
-export function driftWorkflow(status: string): WorkflowOptions {
-  return resolveFlow(
-    status,
-    {
-      start: "Start remediation",
-      resolve: "Mark remediated",
-      close: "Close drift",
-      reopen: "Reopen drift",
+export function alertWorkflow(
+  status: string,
+  config: AlertLifecycleConfig = createDefaultAlertLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(resolveAlertLifecycleStatusRef(config, status), config, {
+    primaryByFrom: { pending: "acknowledged", acknowledged: "actioned" },
+    stepCopy: {
+      acknowledged: "Acknowledge",
+      actioned: "Mark actioned",
+      dismissed: "Dismiss",
+      expired: "Mark expired",
     },
-    false
-  );
-}
-
-/**
- * Transitions for an inter-release dependency. The lifecycle tracks how much
- * the upstream link threatens the dependent release, not repair work, so the
- * moves are Blocked ↔ At Risk → Clear → Resolved.
- *
- * @param status - Current dependency status.
- * @returns Primary and secondary transitions.
- */
-export function dependencyWorkflow(status: string): WorkflowOptions {
-  const block: WorkflowStep = { id: "block", label: "Mark blocked", status: "Blocked" };
-  const atRisk: WorkflowStep = { id: "at-risk", label: "Mark at risk", status: "At Risk" };
-  const clear: WorkflowStep = { id: "clear", label: "Mark cleared", status: "Clear" };
-  const resolve: WorkflowStep = { id: "resolve", label: "Mark resolved", status: "Resolved" };
-  const reopen: WorkflowStep = { id: "reopen", label: "Reopen as at risk", status: "At Risk" };
-
-  const normalized = status.trim().toLowerCase();
-  if (normalized.includes("resolv")) return { primary: null, secondary: [reopen] };
-  if (normalized.includes("clear")) return { primary: resolve, secondary: [block] };
-  if (normalized.includes("risk")) return { primary: clear, secondary: [block] };
-  // Blocked, blank, or an unrecognised status: the link is still a threat.
-  return { primary: clear, secondary: [atRisk] };
-}
-
-/**
- * Transitions for a production incident. Incidents climb a containment ladder
- * before they can be resolved: Active → Investigating → Mitigated → Resolved.
- *
- * @param status - Current incident status.
- * @returns Primary and secondary transitions.
- */
-export function incidentWorkflow(status: string): WorkflowOptions {
-  const investigate: WorkflowStep = {
-    id: "investigate",
-    label: "Start investigating",
-    status: "Investigating",
-  };
-  const mitigate: WorkflowStep = { id: "mitigate", label: "Mark mitigated", status: "Mitigated" };
-  const resolve: WorkflowStep = { id: "resolve", label: "Mark resolved", status: "Resolved" };
-  const close: WorkflowStep = { id: "close", label: "Close incident", status: "Closed" };
-  const reopen: WorkflowStep = { id: "reopen", label: "Reopen incident", status: "Active" };
-
-  const normalized = status.trim().toLowerCase();
-  if (normalized.includes("closed")) return { primary: null, secondary: [reopen] };
-  if (normalized.includes("resolv")) return { primary: close, secondary: [reopen] };
-  if (normalized.includes("mitigat")) return { primary: resolve, secondary: [] };
-  if (normalized.includes("investigat")) return { primary: mitigate, secondary: [resolve] };
-  // Active, blank, or an unrecognised status: nobody is on it yet.
-  return { primary: investigate, secondary: [mitigate] };
-}
-
-/**
- * Transitions for a CAB approval gate. Unlike the other lifecycles this one is
- * a decision rather than progress, so there is no middle "working on it" rung:
- * a gate is pending, deferred to a later meeting, or decided either way.
- * Recording a decision stamps the decision date; reopening clears it.
- *
- * @param decision - Current decision value.
- * @returns Primary and secondary transitions.
- */
-export function approvalWorkflow(decision: string): WorkflowOptions {
-  const approve: WorkflowStep = {
-    id: "approve",
-    label: "Approve",
-    status: "Approved",
-    stampsResolution: true,
-  };
-  const reject: WorkflowStep = {
-    id: "reject",
-    label: "Reject",
-    status: "Rejected",
-    stampsResolution: true,
-  };
-  const defer: WorkflowStep = { id: "defer", label: "Defer to next CAB", status: "Deferred" };
-  const reopen: WorkflowStep = {
-    id: "reopen",
-    label: "Reopen as pending",
-    status: "Pending",
-    clearsResolution: true,
-  };
-
-  const normalized = decision.trim().toLowerCase();
-  if (normalized.includes("approv") || normalized.includes("reject") || normalized.includes("denied")) {
-    return { primary: null, secondary: [reopen] };
-  }
-  if (normalized.includes("defer")) return { primary: approve, secondary: [reject] };
-  // Pending, in review, blank, or unrecognised: the gate is still open.
-  return { primary: approve, secondary: [reject, defer] };
-}
-
-/**
- * Transitions for a monitoring alert. Alerts are acknowledged before anyone
- * investigates, so "someone has seen this" is a distinct rung from "someone is
- * working on it" — that gap is exactly what ops triage cares about.
- *
- * @param status - Current alert status.
- * @returns Primary and secondary transitions.
- */
-export function alertWorkflow(status: string): WorkflowOptions {
-  const acknowledge: WorkflowStep = { id: "ack", label: "Acknowledge", status: "Acknowledged" };
-  const investigate: WorkflowStep = {
-    id: "investigate",
-    label: "Start investigating",
-    status: "Investigating",
-  };
-  const resolve: WorkflowStep = { id: "resolve", label: "Mark resolved", status: "Resolved" };
-  const close: WorkflowStep = { id: "close", label: "Close alert", status: "Closed" };
-  const reopen: WorkflowStep = { id: "reopen", label: "Reopen alert", status: "Open" };
-  // Dismiss needs overrideReason — header step routes into LifecycleExceptionConfirm.
-  const dismiss: WorkflowStep = { id: "dismiss", label: "Dismiss", status: "Dismissed" };
-
-  const normalized = status.trim().toLowerCase();
-  if (normalized.includes("dismiss")) return { primary: null, secondary: [] };
-  if (normalized.includes("closed")) return { primary: null, secondary: [reopen] };
-  if (normalized.includes("resolv") || normalized.includes("clear")) {
-    return { primary: close, secondary: [reopen] };
-  }
-  if (normalized.includes("investigat")) return { primary: resolve, secondary: [] };
-  if (normalized.includes("ack")) {
-    return { primary: investigate, secondary: [resolve, dismiss] };
-  }
-  // Pending / Open / firing: Acknowledge stays primary; Dismiss is a one-click secondary.
-  return { primary: acknowledge, secondary: [investigate, dismiss] };
+  });
 }
 
 /**
@@ -293,25 +391,26 @@ export function maintenanceWorkflow(status: string): WorkflowOptions {
  * @param status - Current risk status.
  * @returns Primary and secondary transitions.
  */
-export function riskWorkflow(status: string): WorkflowOptions {
-  const mitigate: WorkflowStep = { id: "mitigate", label: "Start mitigating", status: "Mitigating" };
-  const escalate: WorkflowStep = { id: "escalate", label: "Escalate", status: "Escalated" };
-  const accept: WorkflowStep = { id: "accept", label: "Accept risk", status: "Accepted" };
-  const close: WorkflowStep = { id: "close", label: "Close risk", status: "Closed" };
-  const reopen: WorkflowStep = { id: "reopen", label: "Reopen risk", status: "Open" };
-
-  const normalized = status.trim().toLowerCase();
-  // Accepted and Closed are both terminal: the only move left is reopening.
-  if (normalized.includes("closed") || normalized.includes("accept")) {
-    return { primary: null, secondary: [reopen] };
-  }
-  if (normalized.includes("escalat")) return { primary: mitigate, secondary: [accept] };
-  if (
-    normalized.includes("mitigat") ||
-    normalized.includes("progress") ||
-    normalized.includes("monitor")
-  ) {
-    return { primary: close, secondary: [escalate, accept] };
-  }
-  return { primary: mitigate, secondary: [escalate, accept] };
+export function riskWorkflow(
+  status: string,
+  config: RiskLifecycleConfig = createDefaultRiskLifecycleConfig()
+): WorkflowOptions {
+  return graphWorkflow(resolveRiskLifecycleStatusRef(config, status), config, {
+    primaryByFrom: {
+      identified: "assessing",
+      assessing: "mitigating",
+      mitigating: "mitigated",
+      mitigated: "closed",
+      accepted: "closed",
+      escalated: "mitigating",
+    },
+    stepCopy: {
+      assessing: "Start assessing",
+      mitigating: "Start mitigating",
+      mitigated: "Mark mitigated",
+      accepted: "Accept risk",
+      closed: "Close risk",
+      escalated: "Escalate",
+    },
+  });
 }

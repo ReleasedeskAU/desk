@@ -15,6 +15,13 @@ export type EntityLifecycleStatusLike = {
 
 export type EntityLifecycleConfigLike = {
   statuses: EntityLifecycleStatusLike[];
+  transitions?: Array<{
+    fromKey: string;
+    toKey: string;
+    enabled: boolean;
+    sortOrder: number;
+    enforcement?: string;
+  }>;
 };
 
 export type EntityStatusDisplayTone = "good" | "warn" | "bad" | "info" | "neutral";
@@ -44,6 +51,23 @@ export function findEntityStatusByLabel(
         s.key.toLocaleLowerCase() === needle
     ) ?? null
   );
+}
+
+/**
+ * Select options from enabled labels, plus the current value if it is Off/unknown.
+ * @param enabledLabels - Enabled status labels in display order.
+ * @param current - Value currently stored on the row.
+ */
+export function statusSelectOptions(
+  enabledLabels: readonly string[],
+  current?: string | null
+): Array<{ value: string; label: string }> {
+  const opts = enabledLabels.map((v) => ({ value: v, label: v }));
+  const raw = (current ?? "").trim();
+  if (raw && !opts.some((o) => o.value === raw)) {
+    return [{ value: raw, label: raw }, ...opts];
+  }
+  return opts;
 }
 
 /**

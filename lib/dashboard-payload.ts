@@ -1,17 +1,14 @@
 import {
-  bookingOverlapFilter,
   buildTimeBuckets,
   countInBuckets,
   dashboardPeriodRange,
-  leaveOverlapFilter,
   parseDashboardPeriod,
   periodContextLabel,
   releaseDateFilter,
-  submittedDateFilter,
-  timestampFilter,
   type DashboardPeriod,
 } from "@/lib/dashboard-period";
-import { prisma, withDbRetry } from "@/lib/prisma";
+import { loadDashboardFacts } from "@/lib/dashboard-payload-facts";
+import { withDbRetry } from "@/lib/prisma";
 import { getRiskLevel } from "@/lib/risk-level";
 import {
   DEFAULT_RISK_ENGINE_CONFIG,
@@ -142,33 +139,95 @@ export async function buildDashboardPayload(
     .filter((s) => s.enabled)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // --- 1. Hero ---
-  const [blockedReleases, activeP1Incidents, appsDownProd] = await Promise.all([
-    attentionLabels.length
-      ? prisma.release.count({
-          where: { status: { in: attentionLabels }, ...releaseWhere },
-        })
-      : Promise.resolve(0),
-    prisma.incident.count({
-      where: {
-        severity: "P1",
-        status: { notIn: ["Resolved"] },
-        ...timestampFilter(range),
-      },
-    }),
-    prisma.applicationStatus.count({
-      where: {
-        status: "Down",
-        environmentName: "Prod",
-      },
-    }),
-  ]);
+  const pendingCabLabel =
+    enabledStatuses.find((s) => s.key === "pending_cab")?.label ?? "Pending CAB";
+  const releaseIssueWhere =
+    attentionLabels.length > 0
+      ? { ...releaseWhere, status: { in: attentionLabels } }
+      : { ...releaseWhere, status: { in: ["__none__"] } };
+  const trendRange = range ?? { start: new Date(now.getTime() - 84 * DAY_MS), end: now };
+  const releaseTrendRange =
+    range ?? ({ start: now, end: new Date(now.getTime() + 28 * DAY_MS) } as { start: Date; end: Date });
+  const maintRange = range ?? { start: now, end: new Date(now.getTime() + 30 * DAY_MS) };
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayEnd = new Date(todayStart.getTime() + DAY_MS);
+  const cabWeekEnd = new Date(now.getTime() + 7 * DAY_MS);
+  const leaveTodayStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const leaveTodayEnd = new Date(leaveTodayStart.getTime() + DAY_MS);
+  const leaveWeekEnd = new Date(now.getTime() + 7 * DAY_MS);
 
-  // --- 2. Release Pipeline (driven by lifecycle-enabled statuses) ---
-  const [totalReleases, releaseStatusCounts] = await Promise.all([
-    prisma.release.count({ where: releaseWhere }),
-    prisma.release.groupBy({ by: ["status"], where: releaseWhere, _count: true }),
-  ]);
+  const {
+    blockedReleases,
+    activeP1Incidents,
+    appsDownProd,
+    totalReleases,
+    releaseStatusCounts,
+    incidentSeverityCounts,
+    criticalAlertsActive,
+    totalAlertsActive,
+    envConflictBookings,
+    totalBookings,
+    blockedDeps,
+    totalDeps,
+    pendingApprovals,
+    nextCab,
+    staffOnLeave,
+    blockedList,
+    severeRelease,
+    pendingCabRelease,
+    oldestPendingApproval,
+    downProdApp,
+    appStatusCounts,
+    appStatusProd,
+    incidentsInWindow,
+    risks,
+    releasesInTrend,
+    scheduledToday,
+    dbRefresh,
+    vendorMaint,
+    fullOutage,
+    activeConflicts,
+    priorityCounts,
+    alertSeverityCounts,
+    alertAcknowledged,
+    alertResolved24h,
+    incidentStatusInvestigating,
+    incidentResolved24h,
+    cabMeetingsNext7,
+    staffOnLeaveToday,
+    staffOnLeaveWeek,
+    releasesThisWeek,
+    rollbackReady,
+    rollbackAtRisk,
+    checklistAgg,
+    freezeQuarter,
+    freezeYear,
+    freezeAudit,
+    freezeHoliday,
+    totalFrozenReleases,
+    releasesThisMonth,
+  } = await loadDashboardFacts({
+    attentionLabels,
+    pendingCabLabel,
+    releaseWhere,
+    releaseIssueWhere,
+    range,
+    now,
+    period,
+    riskConfig,
+    trendRange,
+    releaseTrendRange,
+    maintRange,
+    todayStart,
+    todayEnd,
+    cabWeekEnd,
+    leaveTodayStart,
+    leaveTodayEnd,
+    leaveWeekEnd,
+  });
+
   const countByStatus = (status: string) =>
     releaseStatusCounts.find((r) => r.status === status)?._count ?? 0;
 
@@ -215,58 +274,6 @@ export async function buildDashboardPayload(
         };
       }),
   ];
-
-  // --- 3. Operations ---
-  const [
-    incidentSeverityCounts,
-    criticalAlertsActive,
-    totalAlertsActive,
-    envConflictBookings,
-    totalBookings,
-    blockedDeps,
-    totalDeps,
-    pendingApprovals,
-    nextCab,
-    staffOnLeave,
-  ] = await Promise.all([
-    prisma.incident.groupBy({
-      by: ["severity"],
-      where: { status: { notIn: ["Resolved"] }, ...timestampFilter(range) },
-      _count: true,
-    }),
-    // Open = Pending (canonical) + Active (legacy seed/UI).
-    prisma.monitoringAlert.count({
-      where: {
-        severity: "Critical",
-        status: { in: ["Active", "Pending"] },
-        ...timestampFilter(range),
-      },
-    }),
-    prisma.monitoringAlert.count({
-      where: { status: { in: ["Active", "Pending"] }, ...timestampFilter(range) },
-    }),
-    prisma.envBooking.count({
-      where: { conflictFlag: true, ...bookingOverlapFilter(range) },
-    }),
-    prisma.envBooking.count({ where: bookingOverlapFilter(range) }),
-    prisma.releaseDependency.count({
-      where: { status: "Blocked", ...(range ? { release: releaseWhere } : {}) },
-    }),
-    prisma.releaseDependency.count({
-      where: range ? { release: releaseWhere } : {},
-    }),
-    prisma.approval.count({
-      where: { decision: "Pending", ...submittedDateFilter(range) },
-    }),
-    prisma.release.findFirst({
-      where: {
-        cabDate: range ? { gte: range.start, lte: range.end } : { gte: now },
-      },
-      orderBy: { cabDate: "asc" },
-      select: { cabDate: true },
-    }),
-    prisma.leaveRecord.count({ where: leaveOverlapFilter(range) }),
-  ]);
 
   const activeIncidentsTotal = incidentSeverityCounts.reduce((sum, r) => sum + r._count, 0);
   const p1Active = incidentSeverityCounts.find((r) => r.severity === "P1")?._count ?? 0;
@@ -326,53 +333,6 @@ export async function buildDashboardPayload(
       tone: "emerald" as const,
     },
   ];
-
-  // --- Needs Your Decision ---
-  const pendingCabLabel =
-    enabledStatuses.find((s) => s.key === "pending_cab")?.label ?? "Pending CAB";
-  const releaseIssueWhere =
-    attentionLabels.length > 0
-      ? { ...releaseWhere, status: { in: attentionLabels } }
-      : { ...releaseWhere, status: { in: ["__none__"] } };
-  const [blockedList, severeRelease, pendingCabRelease, oldestPendingApproval, downProdApp] = await Promise.all([
-    prisma.release.findMany({
-      where: releaseIssueWhere,
-      include: { department: true },
-      orderBy: { releaseDate: "asc" },
-      take: 2,
-    }),
-    riskConfig.weightedRiskEnabled
-      ? prisma.release.findFirst({
-          where: {
-            weightedRiskScore: { not: null, gte: riskConfig.weightedBandCutoffs.high },
-            ...releaseWhere,
-          },
-          include: { department: true },
-          orderBy: { weightedRiskScore: "desc" },
-        })
-      : Promise.resolve(null),
-    prisma.release.findFirst({
-      where: { status: pendingCabLabel, ...releaseWhere },
-      include: { department: true },
-      orderBy: { cabDate: "asc" },
-    }),
-    prisma.approval.findFirst({
-      where: { decision: "Pending", ...submittedDateFilter(range) },
-      include: {
-        release: { include: { department: true } },
-        approver: true,
-      },
-      orderBy: { submittedDate: "asc" },
-    }),
-    prisma.applicationStatus.findFirst({
-      where: {
-        status: "Down",
-        environmentName: "Prod",
-      },
-      include: { application: { include: { department: true } } },
-      orderBy: { lastCheck: "desc" },
-    }),
-  ]);
 
   const topIssues: TopIssue[] = [];
   const seenHrefs = new Set<string>();
@@ -440,7 +400,7 @@ export async function buildDashboardPayload(
         icon: "Clock",
       });
     }
-  } else if (oldestPendingApproval && topIssues.length < 5) {
+  } else if (oldestPendingApproval?.release && topIssues.length < 5) {
     const r = oldestPendingApproval.release;
     const href = `/releases/${r.id}`;
     if (!seenHrefs.has(href)) {
@@ -498,15 +458,6 @@ export async function buildDashboardPayload(
     period
   );
 
-  // --- Application Availability ---
-  const [appStatusCounts, appStatusProd] = await Promise.all([
-    prisma.applicationStatus.groupBy({ by: ["status"], _count: true }),
-    prisma.applicationStatus.groupBy({
-      by: ["status"],
-      where: { environmentName: "Prod" },
-      _count: true,
-    }),
-  ]);
   const healthyCount = appStatusCounts.find((r) => r.status === "Healthy")?._count ?? 0;
   const degradedCount = appStatusCounts.find((r) => r.status === "Degraded")?._count ?? 0;
   const downCount = appStatusCounts.find((r) => r.status === "Down")?._count ?? 0;
@@ -525,12 +476,6 @@ export async function buildDashboardPayload(
     total: totalAppStatus,
   };
 
-  // --- Incident Trend ---
-  const trendRange = range ?? { start: new Date(now.getTime() - 84 * DAY_MS), end: now };
-  const incidentsInWindow = await prisma.incident.findMany({
-    where: { timestamp: { gte: trendRange.start, lte: trendRange.end } },
-    select: { timestamp: true },
-  });
   const incidentBuckets = buildTimeBuckets(period, range, now);
   const incidentTrend = countInBuckets(
     incidentBuckets,
@@ -538,11 +483,6 @@ export async function buildDashboardPayload(
     period
   ).map((b) => ({ date: b.date, count: b.count }));
 
-  // --- Risk Distribution ---
-  const risks = await prisma.risk.findMany({
-    where: range ? { release: releaseWhere } : undefined,
-    select: { riskScore: true },
-  });
   const distColors = ["#10b981", "#84cc16", "#f59e0b", "#fb923c", "#f43f5e", "#be123c"];
   const riskBandCounts: Record<string, number> = {};
   for (const b of riskConfig.simpleBands) riskBandCounts[b.id] = 0;
@@ -556,15 +496,6 @@ export async function buildDashboardPayload(
     color: distColors[Math.min(i, distColors.length - 1)]!,
     href: `/risks?band=${encodeURIComponent(band.id)}`,
   }));
-
-  // --- Release Trend ---
-  const releaseTrendRange =
-    range ??
-    ({ start: now, end: new Date(now.getTime() + 28 * DAY_MS) } as { start: Date; end: Date });
-  const releasesInTrend = await prisma.release.findMany({
-    where: { releaseDate: { gte: releaseTrendRange.start, lte: releaseTrendRange.end } },
-    select: { releaseDate: true },
-  });
 
   let releaseTrend: { week: string; count: number }[] = [];
   if (period === "today") {
@@ -595,24 +526,6 @@ export async function buildDashboardPayload(
     }
   }
 
-  // --- Planned Maintenance ---
-  const maintRange = range ?? { start: now, end: new Date(now.getTime() + 30 * DAY_MS) };
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const todayEnd = new Date(todayStart.getTime() + DAY_MS);
-  const [scheduledToday, dbRefresh, vendorMaint, fullOutage] = await Promise.all([
-    prisma.plannedMaintenance.count({
-      where: { scheduledDate: { gte: period === "today" ? todayStart : maintRange.start, lte: period === "today" ? todayEnd : maintRange.end } },
-    }),
-    prisma.plannedMaintenance.count({
-      where: { type: "DB Refresh", scheduledDate: { gte: maintRange.start, lte: maintRange.end } },
-    }),
-    prisma.plannedMaintenance.count({
-      where: { type: "Vendor Maintenance", scheduledDate: { gte: maintRange.start, lte: maintRange.end } },
-    }),
-    prisma.plannedMaintenance.count({
-      where: { impact: "Full Outage", scheduledDate: { gte: maintRange.start, lte: maintRange.end } },
-    }),
-  ]);
   const maintenance = [
     { label: period === "today" ? "Scheduled today" : "Scheduled in period", value: scheduledToday, href: "/planned-maintenance" },
     { label: "DB refreshes", value: dbRefresh, href: "/planned-maintenance?type=DB+Refresh" },
@@ -626,34 +539,6 @@ export async function buildDashboardPayload(
     { name: "Vendor", value: vendorMaint, color: "#8b5cf6", href: "/planned-maintenance?type=Vendor+Maintenance" },
     { name: "Outages", value: fullOutage, color: "#f43f5e", href: "/planned-maintenance" },
   ];
-
-  // --- Extended dashboard sections ---
-  const activeConflicts = await prisma.release.count({
-    where: { conflictFlag: true, ...releaseWhere },
-  });
-
-  const [priorityCounts, alertSeverityCounts, alertAcknowledged, alertResolved24h, incidentStatusInvestigating, incidentResolved24h] =
-    await Promise.all([
-      prisma.release.groupBy({ by: ["priority"], where: releaseWhere, _count: true }),
-      prisma.monitoringAlert.groupBy({
-        by: ["severity"],
-        where: { status: { in: ["Active", "Pending"] } },
-        _count: true,
-      }),
-      prisma.monitoringAlert.count({ where: { status: "Acknowledged" } }),
-      prisma.monitoringAlert.count({
-        where: {
-          status: { in: ["Resolved", "Actioned"] },
-          timestamp: { gte: new Date(now.getTime() - DAY_MS) },
-        },
-      }),
-      prisma.incident.count({
-        where: { status: "Investigating" },
-      }),
-      prisma.incident.count({
-        where: { status: "Resolved", timestamp: { gte: new Date(now.getTime() - DAY_MS) } },
-      }),
-    ]);
 
   const priorityBucket = (prefix: string) =>
     priorityCounts
@@ -679,66 +564,6 @@ export async function buildDashboardPayload(
   const warningAlerts =
     alertSeverityCounts.find((a) => a.severity === "Warning")?._count ?? 0;
   const infoAlerts = alertSeverityCounts.find((a) => a.severity === "Info")?._count ?? 0;
-
-  const cabWeekEnd = new Date(now.getTime() + 7 * DAY_MS);
-  const leaveTodayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const leaveTodayEnd = new Date(leaveTodayStart.getTime() + DAY_MS);
-  const leaveWeekEnd = new Date(now.getTime() + 7 * DAY_MS);
-
-  const [
-    cabMeetingsNext7,
-    staffOnLeaveToday,
-    staffOnLeaveWeek,
-    releasesThisWeek,
-    rollbackReady,
-    rollbackAtRisk,
-    checklistAgg,
-    freezeQuarter,
-    freezeYear,
-    freezeAudit,
-    freezeHoliday,
-    totalFrozenReleases,
-    releasesThisMonth,
-  ] = await Promise.all([
-    prisma.release.count({ where: { cabDate: { gte: now, lte: cabWeekEnd } } }),
-    prisma.leaveRecord.count({
-      where: { leaveStart: { lte: leaveTodayEnd }, leaveEnd: { gte: leaveTodayStart } },
-    }),
-    prisma.leaveRecord.count({
-      where: { leaveStart: { lte: leaveWeekEnd }, leaveEnd: { gte: now } },
-    }),
-    prisma.release.count({
-      where: {
-        releaseDate: {
-          gte: new Date(now.getTime() - 6 * DAY_MS),
-          lte: new Date(now.getTime() + DAY_MS),
-        },
-      },
-    }),
-    prisma.release.count({ where: { rollbackPlan: "Ready", ...releaseWhere } }),
-    prisma.release.count({ where: { rollbackPlan: "At Risk", ...releaseWhere } }),
-    prisma.release.aggregate({
-      where: { goLiveChecklistPercent: { not: null }, ...releaseWhere },
-      _avg: { goLiveChecklistPercent: true },
-    }),
-    prisma.release.count({ where: { changeFreeze: "Quarter-End Freeze", ...releaseWhere } }),
-    prisma.release.count({ where: { changeFreeze: "Year-End Freeze", ...releaseWhere } }),
-    prisma.release.count({ where: { changeFreeze: "Audit Freeze", ...releaseWhere } }),
-    prisma.release.count({ where: { changeFreeze: "Holiday Freeze", ...releaseWhere } }),
-    prisma.release.count({ where: { changeFreeze: { not: null }, ...releaseWhere } }),
-    prisma.release.count({
-      where: {
-        releaseDate: {
-          gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-          lte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999)),
-        },
-      },
-    }),
-  ]);
-
-  const weekRangeStart = new Date(now);
-  weekRangeStart.setUTCDate(weekRangeStart.getUTCDate() - 6);
-  weekRangeStart.setUTCHours(0, 0, 0, 0);
 
   const summary = {
     totalReleases,

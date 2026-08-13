@@ -25,6 +25,8 @@ export type AlertLifecycleStatusConfig = {
   editMode: AlertEditMode;
   /** Cascade / notes shown in settings. */
   cascadeEffect: string;
+  /** New alert records land here. */
+  isIntake: boolean;
 };
 
 export type AlertLifecycleTransitionConfig = {
@@ -55,7 +57,10 @@ export const MAX_ALERT_LIFECYCLE_STATUSES = 20;
 export const MAX_ALERT_LIFECYCLE_TRANSITIONS = 80;
 export const MAX_ALERT_TYPES = 20;
 
-export const DEFAULT_ALERT_LIFECYCLE_STATUSES: readonly AlertLifecycleStatusConfig[] =
+export const DEFAULT_ALERT_LIFECYCLE_STATUSES: readonly Omit<
+  AlertLifecycleStatusConfig,
+  "isIntake"
+>[] =
   [
     {
       key: "pending",
@@ -175,7 +180,10 @@ export const DEFAULT_ALERT_TYPES: readonly AlertTypeConfig[] = [
  */
 export function createDefaultAlertLifecycleConfig(): AlertLifecycleConfig {
   return {
-    statuses: DEFAULT_ALERT_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    statuses: DEFAULT_ALERT_LIFECYCLE_STATUSES.map((s) => ({
+      ...s,
+      isIntake: s.key === "pending",
+    })),
     transitions: DEFAULT_ALERT_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
     types: DEFAULT_ALERT_TYPES.map((t) => ({ ...t })),
   };
@@ -260,7 +268,10 @@ export function normalizeAlertLifecycleConfig(raw: unknown): AlertLifecycleConfi
     const candidate = raw as AlertLifecycleConfig;
     if (!validateAlertLifecycleConfig(candidate)) {
       return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
+        statuses: candidate.statuses.map((s) => ({
+          ...s,
+          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "pending",
+        })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
         types: candidate.types.map((t) => ({ ...t })),
       };

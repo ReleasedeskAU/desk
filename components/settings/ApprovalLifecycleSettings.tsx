@@ -12,6 +12,9 @@ import {
 } from "@/lib/approval-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
+import { APPROVAL_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -108,8 +111,8 @@ export function ApprovalLifecycleSettings() {
               Approval Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure approval decisions, allowed moves, and immutability after a decision is
-              rendered. Changes apply to your approval workflow.
+              Configure approval decisions, allowed moves, conditions text, and immutability
+              after a decision is rendered. Unusual Flexible moves need a recorded reason.
             </p>
           </div>
         </div>
@@ -164,10 +167,30 @@ export function ApprovalLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Approvals</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Pending can move to Approved, Rejected, Deferred, or Withdrawn (Flexible).</li>
-          <li>Approved / Rejected / Expired / Withdrawn are terminal and immutable.</li>
+          <li>
+            Pending can move to Approved, Approved with Conditions, Rejected, Deferred, or
+            Withdrawn (Flexible). Approved is the usual next step — other Flexible moves need a
+            short recorded reason.
+          </li>
+          <li>
+            Approved with Conditions is a real terminal decision. The Conditions field (plain
+            text) is required when a status is marked “Requires conditions text when entered”.
+          </li>
+          <li>
+            Approval types on new records: CAB Final, Change Manager, Executive Approval,
+            Emergency Approval. Older types still display on existing records and can be kept
+            until you change them.
+          </li>
+          <li>Approved / Approved with Conditions / Rejected / Expired / Withdrawn are terminal and immutable.</li>
           <li>Deferred is editable and not terminal, but has no default next status.</li>
-          <li>Approved → Expired is the AV-22 auto-expiry path (Required).</li>
+          <li>
+            A terminal status with expiry days may have one Required outgoing edge (AV-22
+            auto-expiry). That path is cron-only, not a one-click button.
+          </li>
+          <li>
+            Rejected (when marked “Revert the linked release”) moves the release to the status
+            marked “Landing status after an approval rejection” (Planning by default).
+          </li>
           <li>
             Daily auto-expiry uses each approver’s own expiry days after they have logged
             in. Until then, the shared default applies.
@@ -200,6 +223,11 @@ export function ApprovalLifecycleSettings() {
       </div>
 
       {panel === "statuses" ? (
+        <div className="space-y-3">
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={APPROVAL_STATUS_ROLE_IDS}
+        />
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {sortedStatuses.map((status) => (
             <li
@@ -222,6 +250,15 @@ export function ApprovalLifecycleSettings() {
                   {lifecycleEditModeLabel(status.editMode)}
                   {status.expiryDays != null ? ` · expiry ${status.expiryDays}d` : ""}
                 </p>
+                <StatusMeaningControls
+                  roleIds={APPROVAL_STATUS_ROLE_IDS}
+                  statuses={draft.statuses}
+                  statusKey={status.key}
+                  editing={editing}
+                  onStatusesChange={(statuses) =>
+                    setDraft((prev) => ({ ...prev, statuses }))
+                  }
+                />
               </div>
               <LifecycleToggle
                 checked={status.enabled}
@@ -239,6 +276,7 @@ export function ApprovalLifecycleSettings() {
             </li>
           ))}
         </ul>
+        </div>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions

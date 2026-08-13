@@ -9,6 +9,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { FormAlert } from "@/lib/form-save-alert";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { parseUxNoticesFromHeaders } from "@/lib/ux-notice";
 import type { LifecycleExceptionCheck } from "@/components/detail/LifecycleExceptionConfirm";
 
 export type LifecycleStatusConfirmState = {
@@ -17,6 +18,10 @@ export type LifecycleStatusConfirmState = {
   patchUrl: string;
   /** Extra PATCH fields merged with status / overrideReason (modal save retry). */
   extraBody?: Record<string, unknown>;
+  /** Body key for the status write. Approvals use `decision`. */
+  statusField?: string;
+  /** When true, the exception reason is also written to `conditions`. */
+  needsConditions?: boolean;
   needsException: boolean;
   blocked: boolean;
   checks: LifecycleExceptionCheck[];
@@ -91,12 +96,16 @@ export function useLifecycleStatusConfirm(args: {
   const runPatch = useCallback(
     async (state: LifecycleStatusConfirmState, reason: string | null) => {
       setBusy(true);
+      const statusField = state.statusField ?? "status";
       const body: Record<string, unknown> = {
         ...(state.extraBody ?? {}),
-        status: state.targetStatus,
+        [statusField]: state.targetStatus,
       };
       if (reason && reason.trim().length >= 3) {
         body.overrideReason = reason.trim();
+        if (state.needsConditions) {
+          body.conditions = reason.trim();
+        }
       }
       const result = await safeFetchJson(state.patchUrl, {
         method: "PATCH",
@@ -123,10 +132,11 @@ export function useLifecycleStatusConfirm(args: {
         const code = extractCode(data);
         const unmet = extractUnmet(data);
 
-        if (code === "TRANSITION_NEEDS_OVERRIDE") {
+        if (code === "TRANSITION_NEEDS_OVERRIDE" || code === "CONDITIONS_REQUIRED") {
           setPending({
             ...state,
             needsException: true,
+            needsConditions: code === "CONDITIONS_REQUIRED" || state.needsConditions,
             blocked: false,
             checks: unmetToChecks(unmet),
             leadMessage:
@@ -134,7 +144,9 @@ export function useLifecycleStatusConfirm(args: {
               data &&
               typeof (data as { error?: string }).error === "string"
                 ? (data as { error: string }).error
-                : "This step needs an exception note. Some checks aren’t met.",
+                : code === "CONDITIONS_REQUIRED"
+                  ? "This decision needs the conditions written down before it can be saved."
+                  : "This step needs an exception note. Some checks aren’t met.",
           });
           return;
         }
@@ -170,6 +182,15 @@ export function useLifecycleStatusConfirm(args: {
 
       setPending(null);
       setExceptionReason("");
+      const notices = parseUxNoticesFromHeaders(result.headers);
+      if (notices[0]) {
+        setAlert({
+          title: notices[0].title,
+          message: notices[0].message,
+          details: notices[0].details,
+          variant: "notice",
+        });
+      }
       await args.onSuccess();
     },
     [args]
@@ -184,6 +205,7 @@ export function useLifecycleStatusConfirm(args: {
       targetLabel: string;
       patchUrl: string;
       extraBody?: Record<string, unknown>;
+      statusField?: string;
       /** When true, open the confirm panel first (with exception box already shown). */
       openExceptionFirst?: boolean;
     }) => {
@@ -193,6 +215,7 @@ export function useLifecycleStatusConfirm(args: {
         targetLabel: opts.targetLabel,
         patchUrl: opts.patchUrl,
         extraBody: opts.extraBody,
+        statusField: opts.statusField,
         needsException: Boolean(opts.openExceptionFirst),
         blocked: false,
         checks: [],
@@ -226,8 +249,10 @@ export function useLifecycleStatusConfirm(args: {
       targetLabel: string;
       patchUrl: string;
       extraBody?: Record<string, unknown>;
+      statusField?: string;
       unmetReasons?: string[];
       leadMessage?: string | null;
+      needsConditions?: boolean;
     }) => {
       setAlert(null);
       setPending({
@@ -235,6 +260,8 @@ export function useLifecycleStatusConfirm(args: {
         targetLabel: opts.targetLabel,
         patchUrl: opts.patchUrl,
         extraBody: opts.extraBody,
+        statusField: opts.statusField,
+        needsConditions: opts.needsConditions,
         needsException: true,
         blocked: false,
         checks: unmetToChecks(opts.unmetReasons ?? []),

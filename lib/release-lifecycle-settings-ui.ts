@@ -3,10 +3,17 @@
  * Keeps panel interactions testable without a browser and reuses engine validation.
  */
 import {
+  applyStatusRolePatch,
+  exclusiveRoleIds,
+  RELEASE_STATUS_ROLE_IDS,
+} from "@/lib/lifecycle-status-roles";
+import {
   MAX_RELEASE_LIFECYCLE_STATUSES,
   PREVIOUS_STATUS_TARGET_KEY,
+  isReleaseEditMode,
   releaseLifecycleTargetKey,
   validateReleaseLifecycleConfig,
+  type ReleaseEditMode,
   type ReleaseLifecycleConfig,
   type ReleaseLifecycleEnforcement,
   type ReleaseLifecycleStatusConfig,
@@ -23,6 +30,16 @@ import {
 
 /** Status keys that must remain present for the hard-gate rollout (CFG-06). */
 export const HARD_BOUNDARY_STATUS_KEYS = ["deploying", "deployed"] as const;
+
+/**
+ * CFG-06: exits from Deploying / Deployed are always Required (no Flexible toggle).
+ *
+ * @param fromKey - Transition source status key.
+ * @returns true when the Required/Flexible control must stay Required.
+ */
+export function isCfg06EnforcementLocked(fromKey: string): boolean {
+  return (HARD_BOUNDARY_STATUS_KEYS as readonly string[]).includes(fromKey);
+}
 
 /**
  * Gates that still cannot be proven from data (UI warning only).
@@ -137,6 +154,67 @@ export function toggleLifecycleStatus(
   }
   const validationError = validateReleaseLifecycleConfig(next);
   if (validationError) return { error: validationError };
+  return { config: next };
+}
+
+/**
+ * Set the Editable? column for a status (full / limited / view-only / immutable).
+ *
+ * @param config - Draft config.
+ * @param key - Status key.
+ * @param editMode - New edit mode.
+ * @returns Next config, or an error string.
+ */
+export function setLifecycleStatusEditMode(
+  config: ReleaseLifecycleConfig,
+  key: string,
+  editMode: ReleaseEditMode
+): { config: ReleaseLifecycleConfig } | { error: string } {
+  if (!isReleaseEditMode(editMode)) {
+    return { error: "Unknown edit rule" };
+  }
+  const next = cloneLifecycleConfig(config);
+  const status = next.statuses.find((item) => item.key === key);
+  if (!status) return { error: `Unknown status: ${key}` };
+  status.editMode = editMode;
+  const validationError = validateReleaseLifecycleConfig(next);
+  if (validationError) return { error: validationError };
+  return { config: next };
+}
+
+/**
+ * Patch status-role flags (starting status, milestones, …). Exclusive flags
+ * that are turned on are cleared on every other status.
+ */
+export function setLifecycleStatusRoles(
+  config: ReleaseLifecycleConfig,
+  key: string,
+  patch: Partial<
+    Pick<
+      ReleaseLifecycleStatusConfig,
+      | "isIntake"
+      | "readyMilestone"
+      | "deployingMilestone"
+      | "deployedMilestone"
+      | "withdrawApprovalsOnEnter"
+      | "writesCabScopeSnapshot"
+      | "clearsCabScopeSnapshot"
+      | "approvalRejectLanding"
+    >
+  >
+): { config: ReleaseLifecycleConfig } | { error: string } {
+  if (!config.statuses.some((item) => item.key === key)) {
+    return { error: `Unknown status: ${key}` };
+  }
+  const next = cloneLifecycleConfig(config);
+  next.statuses = applyStatusRolePatch(
+    next.statuses,
+    key,
+    patch,
+    exclusiveRoleIds(RELEASE_STATUS_ROLE_IDS)
+  ) as ReleaseLifecycleStatusConfig[];
+  const error = validateReleaseLifecycleConfig(next);
+  if (error) return { error };
   return { config: next };
 }
 
@@ -280,6 +358,15 @@ export function addLifecycleStatus(
         kind,
         isSystem: false,
         enabled: true,
+        editMode: terminal ? "immutable" : "full",
+        isIntake: false,
+        readyMilestone: false,
+        deployingMilestone: false,
+        deployedMilestone: false,
+        withdrawApprovalsOnEnter: false,
+        writesCabScopeSnapshot: false,
+        clearsCabScopeSnapshot: false,
+        approvalRejectLanding: false,
       },
     ],
   };
@@ -329,6 +416,12 @@ export function setLifecycleTransitionEnforcement(
       releaseLifecycleTargetKey(transition) === targetKey
   );
   if (!item) return { error: "Unknown transition" };
+  if (isCfg06EnforcementLocked(fromKey) && enforcement !== "required") {
+    return {
+      error:
+        "Moves out of Deploying and Deployed always require checks to pass. This cannot be changed to Flexible.",
+    };
+  }
   item.enforcement = enforcement;
   const validationError = validateReleaseLifecycleConfig(next);
   if (validationError) return { error: validationError };
@@ -548,6 +641,15 @@ export function groupTransitionsByFrom(
             kind: "branch" as const,
             isSystem: false,
             enabled: false,
+            editMode: "full" as const,
+            isIntake: false,
+            readyMilestone: false,
+            deployingMilestone: false,
+            deployedMilestone: false,
+            withdrawApprovalsOnEnter: false,
+            writesCabScopeSnapshot: false,
+            clearsCabScopeSnapshot: false,
+            approvalRejectLanding: false,
           },
           transitions: (groups.get(key) ?? []).slice(),
         }))

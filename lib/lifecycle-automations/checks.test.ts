@@ -38,6 +38,17 @@ describe("sign-off / approval SLA thresholds", () => {
   it("approval Approved expiryDays defaults to 30", () => {
     assert.equal(approvalExpiryDays(), 30);
   });
+
+  it("sign-off expiry follows Starting status, not the pending key", () => {
+    const config = createDefaultSignoffLifecycleConfig();
+    const approved = config.statuses.find((s) => s.key === "approved")!;
+    const pending = config.statuses.find((s) => s.key === "pending")!;
+    pending.isIntake = false;
+    pending.expiryDays = null;
+    approved.isIntake = true;
+    approved.expiryDays = 12;
+    assert.equal(signoffPendingExpiryDays(config), 12);
+  });
 });
 
 describe("elapsed simulation", () => {

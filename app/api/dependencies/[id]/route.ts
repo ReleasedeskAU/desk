@@ -5,8 +5,14 @@ import { patchDependencySchema } from "@/lib/validation/dependency";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
 import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
 import { deniedDependencyEditFields } from "@/lib/dependency-lifecycle-edit-policy";
-import { validateDependencyTransition } from "@/lib/dependency-lifecycle-transition";
-import { guardDependencyGraphMutation } from "@/lib/release-related-entity-guards";
+import {
+  resolveDependencyLifecycleStatusRef,
+  validateDependencyTransition,
+} from "@/lib/dependency-lifecycle-transition";
+import {
+  guardDependencyGraphMutation,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
@@ -16,14 +22,30 @@ async function findDependency(id: string) {
     (await prisma.releaseDependency.findUnique({
       where: { id },
       include: {
-        release: { select: { id: true, releaseCode: true, name: true, status: true } },
+        release: {
+          select: {
+            id: true,
+            releaseCode: true,
+            name: true,
+            status: true,
+            lifecycleConfigVersionId: true,
+          },
+        },
         dependsOnRelease: { select: { id: true, releaseCode: true, name: true, status: true } },
       },
     })) ??
     (await prisma.releaseDependency.findFirst({
       where: { dependencyCode: id },
       include: {
-        release: { select: { id: true, releaseCode: true, name: true, status: true } },
+        release: {
+          select: {
+            id: true,
+            releaseCode: true,
+            name: true,
+            status: true,
+            lifecycleConfigVersionId: true,
+          },
+        },
         dependsOnRelease: { select: { id: true, releaseCode: true, name: true, status: true } },
       },
     }))
@@ -72,6 +94,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadDependencyLifecycleConfig(user!.id);
@@ -122,6 +145,10 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveDependencyLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[dependencies PATCH] lifecycle enforcement failed", {
@@ -143,15 +170,26 @@ export async function PATCH(req: Request, { params }: Params) {
   // VR-36: rewiring endpoints is an add/remove of the dependency graph.
   if (body.releaseId !== undefined || body.dependsOnReleaseId !== undefined) {
     const parentStatus = existing.release.status;
-    const frozen = guardDependencyGraphMutation(parentStatus);
+    const parentConfig = await loadGuardReleaseConfig(
+      user!.id,
+      existing.release.lifecycleConfigVersionId
+    );
+    const frozen = guardDependencyGraphMutation(parentStatus, parentConfig);
     if (!frozen.ok) return frozen.response;
     if (body.releaseId !== undefined && body.releaseId !== existing.releaseId) {
       const nextParent = await prisma.release.findUnique({
         where: { id: body.releaseId },
-        select: { status: true },
+        select: { status: true, lifecycleConfigVersionId: true },
       });
       if (nextParent) {
-        const nextFrozen = guardDependencyGraphMutation(nextParent.status);
+        const nextConfig = await loadGuardReleaseConfig(
+          user!.id,
+          nextParent.lifecycleConfigVersionId
+        );
+        const nextFrozen = guardDependencyGraphMutation(
+          nextParent.status,
+          nextConfig
+        );
         if (!nextFrozen.ok) return nextFrozen.response;
       }
     }
@@ -188,12 +226,25 @@ export async function PATCH(req: Request, { params }: Params) {
           ? { dependsOnReleaseId: body.dependsOnReleaseId }
           : {}),
         ...(body.dependencyType !== undefined ? { dependencyType: body.dependencyType } : {}),
-        ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(body.status !== undefined
+          ? {
+              status: body.status,
+              ...(nextStatusKey ? { statusKey: nextStatusKey } : {}),
+            }
+          : {}),
         ...(body.impactIfBlocked !== undefined ? { impactIfBlocked: body.impactIfBlocked } : {}),
         ...(body.notes !== undefined ? { notes: body.notes } : {}),
       },
       include: {
-        release: { select: { id: true, releaseCode: true, name: true, status: true } },
+        release: {
+          select: {
+            id: true,
+            releaseCode: true,
+            name: true,
+            status: true,
+            lifecycleConfigVersionId: true,
+          },
+        },
         dependsOnRelease: { select: { id: true, releaseCode: true, name: true, status: true } },
       },
     });
@@ -214,14 +265,21 @@ export async function PATCH(req: Request, { params }: Params) {
 
 /** Delete a dependency (editor+). */
 export async function DELETE(_req: Request, { params }: Params) {
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
   const existing = await findDependency(id);
   if (!existing) return NextResponse.json({ error: "Dependency not found" }, { status: 404 });
 
-  const frozen = guardDependencyGraphMutation(existing.release.status);
+  const parentConfig = await loadGuardReleaseConfig(
+    user!.id,
+    existing.release.lifecycleConfigVersionId
+  );
+  const frozen = guardDependencyGraphMutation(
+    existing.release.status,
+    parentConfig
+  );
   if (!frozen.ok) return frozen.response;
 
   try {

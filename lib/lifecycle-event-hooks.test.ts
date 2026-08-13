@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { createDefaultDriftLifecycleConfig } from "@/lib/drift-lifecycle-config";
 import {
   isDriftEscalatedStatus,
   orderedReleaseCodes,
@@ -21,9 +22,17 @@ describe("lifecycle event hook helpers", () => {
     ]);
   });
 
-  it("detects Escalated drift status", () => {
-    assert.equal(isDriftEscalatedStatus("Escalated"), true);
-    assert.equal(isDriftEscalatedStatus("Investigating"), false);
+  it("detects escalate-target drift status, not the Escalated key", () => {
+    const config = createDefaultDriftLifecycleConfig();
+    assert.equal(isDriftEscalatedStatus("Escalated", config), true);
+    assert.equal(isDriftEscalatedStatus("Investigating", config), false);
+    const moved = createDefaultDriftLifecycleConfig();
+    moved.statuses = moved.statuses.map((s) => ({
+      ...s,
+      escalateTarget: s.key === "investigating",
+    }));
+    assert.equal(isDriftEscalatedStatus("Investigating", moved), true);
+    assert.equal(isDriftEscalatedStatus("Escalated", moved), false);
   });
 });
 

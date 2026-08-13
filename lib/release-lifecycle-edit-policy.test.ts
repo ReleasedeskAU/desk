@@ -10,12 +10,13 @@ import {
 const config = createDefaultReleaseLifecycleConfig();
 
 describe("resolveReleaseEditMode", () => {
-  it("marks Closed/Cancelled immutable and Deploying/Deployed read_only", () => {
+  it("marks Closed/Cancelled immutable, Deploying view-only, Deployed limited", () => {
     assert.equal(resolveReleaseEditMode(config, "Closed"), "immutable");
     assert.equal(resolveReleaseEditMode(config, "Cancelled"), "immutable");
     assert.equal(resolveReleaseEditMode(config, "Deploying"), "read_only");
-    assert.equal(resolveReleaseEditMode(config, "Deployed"), "read_only");
+    assert.equal(resolveReleaseEditMode(config, "Deployed"), "limited");
     assert.equal(resolveReleaseEditMode(config, "Pending CAB"), "limited");
+    assert.equal(resolveReleaseEditMode(config, "Rejected"), "full");
     assert.equal(resolveReleaseEditMode(config, "Draft"), "full");
   });
 });
@@ -23,6 +24,16 @@ describe("resolveReleaseEditMode", () => {
 describe("deniedReleaseEditFields", () => {
   it("blocks scope edits on limited statuses but allows notes", () => {
     const { denied } = deniedReleaseEditFields(config, "CAB Approved", [
+      "name",
+      "notes",
+      "status",
+    ]);
+    assert.deepEqual(denied, ["name"]);
+    assert.equal(isReleaseFieldEditable("limited", "notes"), true);
+  });
+
+  it("allows notes on Deployed (limited) but still blocks scope fields", () => {
+    const { denied } = deniedReleaseEditFields(config, "Deployed", [
       "name",
       "notes",
       "status",

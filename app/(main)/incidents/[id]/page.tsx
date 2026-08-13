@@ -31,6 +31,9 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { incidentWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
+import type { IncidentLifecycleConfig } from "@/lib/incident-lifecycle-config";
 
 type IncidentDetail = {
   id: string;
@@ -81,17 +84,6 @@ const INCIDENT_FIELD_LABELS: Partial<Record<keyof IncidentDraft, string>> = {
 
 const SEVERITY_OPTIONS = ["P1", "P2", "P3"].map((v) => ({ value: v, label: v }));
 
-const STATUS_OPTIONS = [
-  "Open",
-  "Investigating",
-  "Escalated",
-  "Resolving",
-  "Resolved",
-  "Closed",
-  "Reopened",
-].map(
-  (v) => ({ value: v, label: v })
-);
 
 function toDateInput(iso: string | null) {
   if (!iso) return "";
@@ -172,6 +164,7 @@ function toDraft(row: IncidentDetail): IncidentDraft {
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const lifecycle = useEntityLifecycleStatuses("/api/incident-lifecycle-config");
   const [row, setRow] = useState<IncidentDetail | null>(null);
   const [options, setOptions] = useState<IncidentOption[]>([]);
   const [applications, setApplications] = useState<ApplicationOption[]>([]);
@@ -285,13 +278,10 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     return SEVERITY_OPTIONS;
   }, [row?.severity]);
 
-  const statusOptions = useMemo(() => {
-    const set = new Set(STATUS_OPTIONS.map((o) => o.value));
-    if (row?.status && !set.has(row.status)) {
-      return [{ value: row.status, label: row.status }, ...STATUS_OPTIONS];
-    }
-    return STATUS_OPTIONS;
-  }, [row?.status]);
+  const statusOptions = useMemo(
+    () => statusSelectOptions(lifecycle.createOptions, row?.status),
+    [lifecycle.createOptions, row?.status]
+  );
 
   const save = async () => {
     if (!row || !edit.draft) return;
@@ -404,7 +394,10 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const daysOpen = daysSince(v.timestamp || row.timestamp);
   const highSeverity = severityTone(v.severity) === "bad";
   const assignee = v.assignedTo.trim();
-  const workflow = incidentWorkflow(v.status);
+  const workflow = incidentWorkflow(
+    v.status,
+    (lifecycle.config as IncidentLifecycleConfig | null) ?? undefined
+  );
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,

@@ -12,13 +12,16 @@ import {
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import { INCIDENT_STATUSES } from "@/lib/validation/incident";
+import {
+  INCIDENT_SEVERITY_LABELS,
+  INCIDENT_STATUSES,
+} from "@/lib/validation/incident";
 
 type Application = { id: string; name: string };
 type Environment = { id: string; name: string; applicationId: string };
 type Release = { id: string; releaseCode: string; name: string };
 
-const SEVERITIES = ["P1", "P2", "P3"] as const;
+const SEVERITIES = INCIDENT_SEVERITY_LABELS;
 const IMPACTS = ["Down", "Degraded", "Partial"] as const;
 
 type FormValues = {
@@ -53,11 +56,11 @@ const nowLocal = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-const emptyForm = (defaultStatus = "Open"): FormValues => ({
+const emptyForm = (defaultStatus = "Active"): FormValues => ({
   applicationId: "",
   environmentName: "",
   timestamp: nowLocal(),
-  severity: "P2",
+  severity: "P2 - High",
   title: "",
   status: defaultStatus,
   impact: "Degraded",

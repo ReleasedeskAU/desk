@@ -4,12 +4,13 @@
 import { NextResponse } from "next/server";
 import {
   defaultEntityStatusLabel,
+  findEntityStatusByLabel,
   isEnabledEntityStatusLabel,
   type EntityLifecycleConfigLike,
 } from "@/lib/entity-lifecycle-status-ui";
 
 export type LifecycleCreateStatusResult =
-  | { ok: true; status: string }
+  | { ok: true; status: string; statusKey: string }
   | { ok: false; response: NextResponse };
 
 /**
@@ -36,5 +37,10 @@ export function resolveCreateLifecycleStatus(
       ),
     };
   }
-  return { ok: true, status };
+  const found = findEntityStatusByLabel(config, status);
+  return {
+    ok: true,
+    status: found?.label ?? status,
+    statusKey: found?.key ?? status,
+  };
 }

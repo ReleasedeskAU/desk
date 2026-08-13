@@ -5,20 +5,29 @@
 import type {
   IncidentLifecycleConfig,
   IncidentLifecycleStatusConfig,
+  IncidentLifecycleTransitionConfig,
 } from "@/lib/incident-lifecycle-config";
+import {
+  INCIDENT_LIFECYCLE_GATE_CATALOG,
+  type IncidentLifecycleGateAttachment,
+  type IncidentLifecycleGateType,
+} from "@/lib/incident-lifecycle-gates";
 
 export const MIN_INCIDENT_OVERRIDE_REASON_LENGTH = 3;
 
 /** Legacy seed / UI labels that map onto canonical lifecycle statuses. */
 const INCIDENT_STATUS_ALIASES: Readonly<Record<string, string>> = {
   active: "open",
-  acknowledged: "investigating",
+  open: "open",
   mitigated: "resolving",
 };
+
+const CRITICAL_SEVERITY_KEYS = new Set(["p1", "p1 - critical", "critical"]);
 
 export type IncidentGateFacts = {
   severity: string | null | undefined;
   assignedTo: string | null | undefined;
+  relatedReleaseCode?: string | null | undefined;
 };
 
 /**
@@ -69,32 +78,76 @@ export type IncidentTransitionResult =
       unmetReasons?: string[];
     };
 
-function isCriticalSeverity(severity: string | null | undefined): boolean {
+/**
+ * True for P1 / Critical only — explicit values, not prefix matching.
+ * @param severity - Stored or submitted severity label
+ */
+export function isCriticalIncidentSeverity(
+  severity: string | null | undefined
+): boolean {
   if (!severity) return false;
-  const s = severity.trim().toLowerCase();
-  return (
-    s === "critical" ||
-    s === "p1" ||
-    s.startsWith("p1 ") ||
-    s.startsWith("critical") ||
-    s.includes("sev-1") ||
-    s.includes("sev1")
-  );
+  return CRITICAL_SEVERITY_KEYS.has(severity.trim().toLowerCase());
+}
+
+function isPresent(value: string | null | undefined): boolean {
+  return Boolean(value && String(value).trim());
+}
+
+function failMessage(gateType: IncidentLifecycleGateType): string {
+  const def = INCIDENT_LIFECYCLE_GATE_CATALOG[gateType];
+  switch (gateType) {
+    case "responder_confirmation_set":
+      return "This incident needs a responder in Assigned To before you can make that move. Assign someone, then try again — or continue with an exception reason if your process allows it.";
+    case "release_link_set":
+      return "Link this incident to a release in Related Release before this move, or continue with an exception reason if it is not deployment-related.";
+    default:
+      return def.description;
+  }
+}
+
+/**
+ * Evaluate one attached catalog check against PATCH/row facts.
+ * @returns Unmet reason, or null when the check passes.
+ */
+export function evaluateIncidentGate(
+  gate: IncidentLifecycleGateAttachment,
+  facts: IncidentGateFacts
+): string | null {
+  if (!gate.enabled) return null;
+  switch (gate.gateType) {
+    case "responder_confirmation_set":
+      return isPresent(facts.assignedTo) ? null : failMessage(gate.gateType);
+    case "release_link_set":
+      return isPresent(facts.relatedReleaseCode) ? null : failMessage(gate.gateType);
+    default:
+      return `Unhandled incident check: ${String((gate as { gateType: string }).gateType)}`;
+  }
+}
+
+function effectiveEnforcement(
+  transition: IncidentLifecycleTransitionConfig,
+  gate: IncidentLifecycleGateAttachment
+): "flexible" | "required" {
+  if (gate.enforcement === "flexible" || gate.enforcement === "required") {
+    return gate.enforcement;
+  }
+  return transition.enforcement;
 }
 
 /**
  * Soft gates for the enterprise incidents table (VR-13).
+ * Owner is required when leaving the Starting status (`isIntake`), not a hardcoded "Open" key.
  */
 export function evaluateIncidentSoftGates(args: {
-  fromKey: string;
+  from: IncidentLifecycleStatusConfig;
   toKey: string;
   facts: IncidentGateFacts;
 }): string[] {
   const unmet: string[] = [];
-  if (args.fromKey === "open" && isCriticalSeverity(args.facts.severity)) {
+  if (args.from.isIntake && isCriticalIncidentSeverity(args.facts.severity)) {
     if (!args.facts.assignedTo || !String(args.facts.assignedTo).trim()) {
       unmet.push(
-        "Critical incidents require an owner before leaving Open. Assign someone responsible, then try again — or continue with an exception reason if your process allows it."
+        `Critical incidents require an owner before leaving ${args.from.label}. Assign someone responsible, then try again — or continue with an exception reason if your process allows it.`
       );
     }
   }
@@ -161,23 +214,38 @@ export function validateIncidentTransition(args: {
     };
   }
 
-  const unmet = evaluateIncidentSoftGates({
-    fromKey: from.key,
+  const unmetRequired: string[] = [];
+  const unmetFlexible: string[] = [];
+  for (const reason of evaluateIncidentSoftGates({
+    from,
     toKey: to.key,
     facts: args.facts,
-  });
-
-  if (unmet.length > 0) {
-    if (transition.enforcement === "required") {
-      return {
-        allowed: false,
-        code: "ILLEGAL_TRANSITION",
-        reason: unmet.join("; "),
-        unmetReasons: unmet,
-        fromKey: from.key,
-        toKey: to.key,
-      };
+  })) {
+    if (transition.enforcement === "required") unmetRequired.push(reason);
+    else unmetFlexible.push(reason);
+  }
+  for (const gate of transition.gates ?? []) {
+    const unmet = evaluateIncidentGate(gate, args.facts);
+    if (!unmet) continue;
+    if (effectiveEnforcement(transition, gate) === "required") {
+      unmetRequired.push(unmet);
+    } else {
+      unmetFlexible.push(unmet);
     }
+  }
+
+  if (unmetRequired.length > 0) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: unmetRequired.join(" "),
+      unmetReasons: unmetRequired,
+      fromKey: from.key,
+      toKey: to.key,
+    };
+  }
+
+  if (unmetFlexible.length > 0) {
     const reasonText = (args.overrideReason ?? "").trim();
     if (reasonText.length < MIN_INCIDENT_OVERRIDE_REASON_LENGTH) {
       return {
@@ -185,7 +253,7 @@ export function validateIncidentTransition(args: {
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
           "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
-        unmetReasons: unmet,
+        unmetReasons: unmetFlexible,
         fromKey: from.key,
         toKey: to.key,
       };
@@ -197,7 +265,7 @@ export function validateIncidentTransition(args: {
       toKey: to.key,
       canonicalStatus: to.label,
       overrideReason: reasonText,
-      unmetReasons: unmet,
+      unmetReasons: unmetFlexible,
     };
   }
 

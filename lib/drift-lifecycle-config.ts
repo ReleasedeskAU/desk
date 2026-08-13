@@ -20,6 +20,10 @@ export type DriftLifecycleStatusConfig = {
   editMode: DriftEditMode;
   /** Detection / cascade notes shown in settings. */
   cascadeEffect: string;
+  /** New drift records land here. */
+  isIntake: boolean;
+  /** Auto-escalate / AV-14 security alert lands here. */
+  escalateTarget: boolean;
 };
 
 export type DriftLifecycleTransitionConfig = {
@@ -39,7 +43,10 @@ export type DriftLifecycleConfig = {
 export const MAX_DRIFT_LIFECYCLE_STATUSES = 20;
 export const MAX_DRIFT_LIFECYCLE_TRANSITIONS = 80;
 
-export const DEFAULT_DRIFT_LIFECYCLE_STATUSES: readonly DriftLifecycleStatusConfig[] = [
+export const DEFAULT_DRIFT_LIFECYCLE_STATUSES: readonly Omit<
+  DriftLifecycleStatusConfig,
+  "isIntake" | "escalateTarget"
+>[] = [
   {
     key: "detected",
     label: "Detected",
@@ -127,7 +134,11 @@ export const DEFAULT_DRIFT_LIFECYCLE_TRANSITIONS: readonly DriftLifecycleTransit
  */
 export function createDefaultDriftLifecycleConfig(): DriftLifecycleConfig {
   return {
-    statuses: DEFAULT_DRIFT_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    statuses: DEFAULT_DRIFT_LIFECYCLE_STATUSES.map((s) => ({
+      ...s,
+      isIntake: s.key === "detected",
+      escalateTarget: s.key === "escalated",
+    })),
     transitions: DEFAULT_DRIFT_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
   };
 }
@@ -198,7 +209,12 @@ export function normalizeDriftLifecycleConfig(raw: unknown): DriftLifecycleConfi
     const candidate = raw as DriftLifecycleConfig;
     if (!validateDriftLifecycleConfig(candidate)) {
       return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
+        statuses: candidate.statuses.map((s) => ({
+          ...s,
+          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "detected",
+          escalateTarget:
+            typeof s.escalateTarget === "boolean" ? s.escalateTarget : s.key === "escalated",
+        })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
       };
     }

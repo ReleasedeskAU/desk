@@ -411,6 +411,69 @@ describe("HTTP handlers with session mock", () => {
   );
 
   it(
+    "PATCH illegal status with echoed Release ID returns ILLEGAL_TRANSITION not FIELD_LOCK",
+    { skip: skipDb },
+    async () => {
+      if (!(await installAuthMock())) return;
+
+      const loaded = await loadReleaseFieldLockConfig(WIRING_SCOPE);
+      const pending = loaded.lifecycleConfig.statuses.find(
+        (s) => s.key === "pending_cab"
+      );
+      const rolled = loaded.lifecycleConfig.statuses.find(
+        (s) => s.key === "rolled_back"
+      );
+      assert.ok(pending && rolled);
+
+      const dept = await prisma.department.findFirst({ select: { id: true } });
+      assert.ok(dept);
+      const code = `FLW-ST-${Date.now().toString(36).toUpperCase()}`;
+      const release = await createReleaseRow({
+        releaseCode: code,
+        name: "Field-lock wiring status echo",
+        programProject: "N/A",
+        owner: "Wiring Test",
+        status: pending.label,
+        releaseDate: new Date("2026-12-01"),
+        priority: "P3 - Medium",
+        impact: "Medium",
+        departmentId: dept.id,
+      });
+
+      try {
+        const { PATCH } = await import("@/app/api/releases/[id]/route");
+        const req = new NextRequest(
+          `http://local/api/releases/${release.id}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              releaseCode: code,
+              name: release.name,
+              status: rolled.label,
+            }),
+          }
+        );
+        const res = await PATCH(req, {
+          params: Promise.resolve({ id: release.id }),
+        });
+        assert.equal(res.status, 422);
+        const body = (await res.json()) as { code?: string; error?: string };
+        assert.equal(body.code, "ILLEGAL_TRANSITION");
+        const after = await prisma.release.findUniqueOrThrow({
+          where: { id: release.id },
+        });
+        assert.equal(after.status, pending.label);
+        assert.equal(after.releaseCode, code);
+      } finally {
+        await prisma.release
+          .delete({ where: { id: release.id } })
+          .catch(() => undefined);
+      }
+    }
+  );
+
+  it(
     "PATCH Size on CAB Approved reverts status to Pending CAB (VR-21)",
     { skip: skipDb },
     async () => {

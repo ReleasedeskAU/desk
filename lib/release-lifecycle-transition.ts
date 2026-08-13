@@ -66,6 +66,11 @@ export type ReleaseLifecycleGateFacts = {
   dressRehearsalComplete: boolean;
   /** True when Ops Sign-Off counts as complete (VR-31). */
   opsSignoffComplete: boolean;
+  /**
+   * Count of High-score linked risks that still have no mitigation plan (VR-27).
+   * Closed / Accepted / Mitigated risks are excluded.
+   */
+  unmitigatedHighRiskCount: number;
   /** Incomplete linked Work Items by raw synced status (VR-29). */
   incompleteWorkItemCount: number;
   /** PIR completed flag (VR-34). */
@@ -323,6 +328,12 @@ export function evaluateLifecycleGate(
       return facts.opsSignoffComplete
         ? pass()
         : fail("Ops Sign-Off must be complete before Ready");
+    case "high_risks_mitigated":
+      return facts.unmitigatedHighRiskCount === 0
+        ? pass()
+        : fail(
+            `${facts.unmitigatedHighRiskCount} high-score risk${facts.unmitigatedHighRiskCount === 1 ? "" : "s"} still ${facts.unmitigatedHighRiskCount === 1 ? "has" : "have"} no mitigation plan`
+          );
     case "work_items_complete":
       return facts.incompleteWorkItemCount === 0
         ? pass()
@@ -419,7 +430,7 @@ export function validateReleaseTransition(args: {
     return {
       allowed: false,
       code: "ILLEGAL_TRANSITION",
-      reason: `Status "${toRequested.label}" is turned off in the lifecycle configuration`,
+      reason: `“${toRequested.label}” is turned off in workflow settings, so it can’t be chosen as a next step.`,
       fromKey: from.key,
       toKey: toRequested.key,
     };
@@ -429,7 +440,7 @@ export function validateReleaseTransition(args: {
     return {
       allowed: false,
       code: "ILLEGAL_TRANSITION",
-      reason: `Status "${from.label}" is terminal — no further transitions are allowed`,
+      reason: `“${from.label}” is a final status — this release can’t move on from here.`,
       fromKey: from.key,
       toKey: toRequested.key,
     };
@@ -454,7 +465,7 @@ export function validateReleaseTransition(args: {
     return {
       allowed: false,
       code: "ILLEGAL_TRANSITION",
-      reason: `Transition from "${from.label}" to "${toRequested.label}" is not allowed by the lifecycle configuration`,
+      reason: `You can’t move this release from “${from.label}” to “${toRequested.label}”. That step isn’t allowed from here.`,
       fromKey: from.key,
       toKey: toRequested.key,
     };
@@ -544,6 +555,7 @@ export function emptyLifecycleGateFacts(
     testSignoffComplete: false,
     dressRehearsalComplete: false,
     opsSignoffComplete: false,
+    unmitigatedHighRiskCount: 0,
     incompleteWorkItemCount: 0,
     pirComplete: false,
     scopeDescription: null,

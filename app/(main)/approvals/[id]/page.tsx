@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, ClipboardCheck, List, MessageSquare, Package } from "lucide-react";
 import {
@@ -14,8 +14,11 @@ import {
   type ChipTone,
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
+import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { useLifecycleStatusConfirm } from "@/hooks/useLifecycleStatusConfirm";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -29,6 +32,11 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { approvalWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import type { ApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config";
+import { DEFAULT_APPROVAL_LIFECYCLE_CONFIG } from "@/lib/approval-lifecycle-config";
+import { legalNextApprovalDecisions } from "@/lib/approval-lifecycle-transition";
+import { approvalTypeSelectOptions } from "@/lib/validation/approval";
 
 type ApprovalDetail = {
   id: string;
@@ -42,6 +50,7 @@ type ApprovalDetail = {
   decisionDate: string | null;
   decision: string;
   comments: string | null;
+  conditions: string | null;
   cabMeetingId: string | null;
   release: { id: string; releaseCode: string; name: string; status: string; releaseDate: string };
   approver: { id: string; userId: string; name: string; email: string; role: string };
@@ -61,6 +70,7 @@ type ApprovalDraft = {
   decisionDate: string;
   decision: string;
   comments: string;
+  conditions: string;
   cabMeetingId: string;
 };
 
@@ -74,20 +84,10 @@ const APPROVAL_FIELD_LABELS: Partial<Record<keyof ApprovalDraft, string>> = {
   decisionDate: "Decision Date",
   decision: "Decision",
   comments: "Comments",
+  conditions: "Conditions",
   cabMeetingId: "CAB Meeting",
 };
 
-const DECISION_OPTIONS = [
-  "Pending",
-  "Approved",
-  "Rejected",
-  "Deferred",
-  "Expired",
-  "Withdrawn",
-].map((v) => ({
-  value: v,
-  label: v,
-}));
 
 function toDateInput(iso: string | null) {
   if (!iso) return "";
@@ -123,6 +123,7 @@ function toDraft(row: ApprovalDetail): ApprovalDraft {
     decisionDate: toDateInput(row.decisionDate),
     decision: row.decision,
     comments: row.comments ?? "",
+    conditions: row.conditions ?? "",
     cabMeetingId: row.cabMeetingId ?? "",
   };
 }
@@ -130,6 +131,7 @@ function toDraft(row: ApprovalDetail): ApprovalDraft {
 export default function ApprovalDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const lifecycle = useEntityLifecycleStatuses("/api/approval-lifecycle-config");
   const [row, setRow] = useState<ApprovalDetail | null>(null);
   const [options, setOptions] = useState<ApprovalOption[]>([]);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
@@ -176,6 +178,19 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
   const d = edit.draft;
+  const exceptionFromModalSave = useRef(false);
+  const statusConfirm = useLifecycleStatusConfirm({
+    entityLabel: "approval",
+    onSuccess: async () => {
+      if (exceptionFromModalSave.current) {
+        exceptionFromModalSave.current = false;
+        if (edit.editing) {
+          edit.completeSaveSuccess(APPROVAL_FIELD_LABELS);
+        }
+      }
+      await load();
+    },
+  });
 
   const selectOptions = useMemo(
     () =>
@@ -208,75 +223,115 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
     return opts;
   }, [users, row?.approver]);
 
+  const lifecycleConfig =
+    (lifecycle.config as ApprovalLifecycleConfig | null) ??
+    DEFAULT_APPROVAL_LIFECYCLE_CONFIG;
+
   const decisionOptions = useMemo(() => {
-    const set = new Set(DECISION_OPTIONS.map((o) => o.value));
-    if (row?.decision && !set.has(row.decision)) {
-      return [{ value: row.decision, label: row.decision }, ...DECISION_OPTIONS];
-    }
-    return DECISION_OPTIONS;
-  }, [row?.decision]);
+    const current = row?.decision ?? "";
+    const next = legalNextApprovalDecisions(lifecycleConfig, current);
+    const labels = [current, ...next.map((s) => s.label)].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const key = label.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [lifecycleConfig, row?.decision]);
+
+  const typeOptions = useMemo(
+    () => approvalTypeSelectOptions(row?.approvalType ?? d?.approvalType),
+    [row?.approvalType, d?.approvalType]
+  );
 
   const save = async () => {
     if (!row || !edit.draft) return;
     edit.setSaving(true);
     edit.setError(null);
-    const d = edit.draft;
-    // approvalCode is immutable — never include it in PATCH.
+    const draft = edit.draft;
+    const patchBody = {
+      releaseId: draft.releaseId,
+      applicationName: draft.applicationName || null,
+      departmentName: draft.departmentName || null,
+      approvalType: draft.approvalType,
+      approverId: draft.approverId,
+      submittedDate: draft.submittedDate,
+      decisionDate: draft.decisionDate || null,
+      decision: draft.decision,
+      comments: draft.comments || null,
+      conditions: draft.conditions || null,
+      cabMeetingId: draft.cabMeetingId || null,
+    };
     const res = await safeFetchJson(`/api/approvals/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        releaseId: d.releaseId,
-        applicationName: d.applicationName || null,
-        departmentName: d.departmentName || null,
-        approvalType: d.approvalType,
-        approverId: d.approverId,
-        submittedDate: d.submittedDate,
-        decisionDate: d.decisionDate || null,
-        decision: d.decision,
-        comments: d.comments || null,
-        cabMeetingId: d.cabMeetingId || null,
-      }),
+      body: JSON.stringify(patchBody),
       label: "approval-patch",
       rejectHttpErrors: false,
     });
-    edit.setSaving(false);
-    if (!res.ok || res.status >= 300) {
-      edit.setError("Couldn’t save changes. Try again.");
+    if (!res.ok || (res.status ?? 0) >= 300) {
+      const data =
+        res.ok && res.data && typeof res.data === "object"
+          ? (res.data as { error?: string; code?: string; unmetReasons?: unknown })
+          : null;
+      const apiError = typeof data?.error === "string" ? data.error : "";
+      const code = typeof data?.code === "string" ? data.code : "";
+      const unmetReasons = Array.isArray(data?.unmetReasons)
+        ? data.unmetReasons.filter((r): r is string => typeof r === "string")
+        : [];
+      if (
+        (code === "TRANSITION_NEEDS_OVERRIDE" || code === "CONDITIONS_REQUIRED") &&
+        draft.decision !== row.decision
+      ) {
+        const { decision: _decision, ...extraBody } = patchBody;
+        exceptionFromModalSave.current = true;
+        statusConfirm.presentException({
+          targetStatus: draft.decision,
+          targetLabel: draft.decision,
+          patchUrl: `/api/approvals/${row.id}`,
+          statusField: "decision",
+          extraBody,
+          unmetReasons,
+          leadMessage: apiError || null,
+          needsConditions: code === "CONDITIONS_REQUIRED",
+        });
+        edit.setSaving(false);
+        return;
+      }
+      edit.setSaving(false);
+      edit.setError(apiError || "Couldn’t save changes. Try again.");
       return;
     }
+    edit.setSaving(false);
     edit.completeSaveSuccess(APPROVAL_FIELD_LABELS);
     await load();
   };
 
   /**
    * Record a CAB decision from the header. Approving or rejecting stamps
-   * today's decision date and reopening clears it, so the date always matches
-   * the decision. The API re-validates and enforces the editor role.
+   * today's decision date. Unusual Flexible moves open the exception panel.
    */
   const applyStep = async (step: WorkflowStep) => {
     if (!row) return;
     setPendingStep(step.id);
     setStepError(null);
-    const res = await safeFetchJson(`/api/approvals/${row.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        decision: step.status,
+    await statusConfirm.requestStatusChange({
+      targetStatus: step.status,
+      targetLabel: step.label,
+      patchUrl: `/api/approvals/${row.id}`,
+      statusField: "decision",
+      extraBody: {
         ...(step.stampsResolution
           ? { decisionDate: new Date().toISOString().slice(0, 10) }
           : {}),
         ...(step.clearsResolution ? { decisionDate: null } : {}),
-      }),
-      label: "approval-decision-step",
-      rejectHttpErrors: false,
+        ...(row.conditions ? { conditions: row.conditions } : {}),
+      },
     });
     setPendingStep(null);
-    if (!res.ok || res.status >= 300) {
-      setStepError(`Couldn’t record a ${step.status} decision. Try again.`);
-      return;
-    }
-    await load();
   };
 
   const remove = async () => {
@@ -310,7 +365,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
   const releaseHref = `/releases/${v.releaseId || row.release.id}`;
   const releaseDue = describeDue(row.release.releaseDate);
   const waitingDays = v.submittedDate ? daysSince(v.submittedDate) : 0;
-  const workflow = approvalWorkflow(v.decision);
+  const workflow = approvalWorkflow(v.decision, lifecycleConfig);
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,
@@ -449,8 +504,9 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
               label="Approval Type"
               value={d.approvalType}
               editing
+              kind="select"
+              options={typeOptions}
               onChange={(n) => edit.setField("approvalType", n)}
-              placeholder="e.g. CAB Sign-off…"
             />
             <EditableField
               label="Release"
@@ -507,6 +563,15 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
               placeholder="CAB meeting id…"
             />
             <EditableField
+              label="Conditions"
+              value={d.conditions}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("conditions", n)}
+              placeholder="Terms this approval is subject to…"
+              className="sm:col-span-2"
+            />
+            <EditableField
               label="Comments"
               value={d.comments}
               editing
@@ -550,12 +615,41 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
         primaryAction={workflow.primary ? toAction(workflow.primary) : null}
         secondaryActions={workflow.secondary.map(toAction)}
         canEdit={canEdit}
-        actionError={stepError}
+        actionError={stepError || statusConfirm.alert?.message || null}
         attention={attention}
         attentionClearLabel="Gate cleared — governance is not holding this release"
         timing={timing}
         scope={scope}
       />
+
+      {statusConfirm.pending ? (
+        <div className="mt-4">
+          <LifecycleExceptionConfirm
+            targetLabel={statusConfirm.pending.targetLabel}
+            needsException={statusConfirm.pending.needsException}
+            blocked={statusConfirm.pending.blocked}
+            exceptionReason={statusConfirm.exceptionReason}
+            onExceptionReasonChange={statusConfirm.setExceptionReason}
+            busy={statusConfirm.busy}
+            confirmDisabled={statusConfirm.confirmDisabled}
+            onCancel={statusConfirm.cancel}
+            onConfirm={() => void statusConfirm.confirm()}
+            checks={statusConfirm.pending.checks}
+            leadMessage={statusConfirm.pending.leadMessage}
+            reasonLabel={
+              statusConfirm.pending.needsConditions
+                ? "Conditions (required)"
+                : undefined
+            }
+            reasonPlaceholder={
+              statusConfirm.pending.needsConditions
+                ? "The terms this approval is subject to (this is recorded)."
+                : undefined
+            }
+          />
+        </div>
+      ) : null}
+      <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection
         icon={ClipboardCheck}
@@ -623,6 +717,17 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
             display={v.approverId === row.approverId ? (row.approver.role ?? "—") : "—"}
           />
         </EditableFieldGrid>
+      </DetailSection>
+
+      <DetailSection
+        icon={MessageSquare}
+        tone="violet"
+        title="Conditions"
+        description="Terms recorded when the decision requires conditions (plain text)."
+      >
+        <TintedCallout tone="violet">
+          {v.conditions.trim() ? v.conditions : "No conditions recorded."}
+        </TintedCallout>
       </DetailSection>
 
       <DetailSection

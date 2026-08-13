@@ -25,7 +25,6 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnSecondary } from "@/lib/styles";
 import {
   DEPENDENCY_IMPACTS,
-  DEPENDENCY_STATUSES,
   DEPENDENCY_TYPES,
 } from "@/lib/validation/dependency";
 import {
@@ -35,6 +34,9 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { dependencyWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
+import type { DependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
 
 type DependencyDetail = {
   id: string;
@@ -69,7 +71,6 @@ const DEPENDENCY_FIELD_LABELS: Partial<Record<keyof DependencyDraft, string>> = 
 };
 
 const TYPE_OPTIONS = DEPENDENCY_TYPES.map((v) => ({ value: v, label: v }));
-const STATUS_OPTIONS = DEPENDENCY_STATUSES.map((v) => ({ value: v, label: v }));
 const IMPACT_OPTIONS = DEPENDENCY_IMPACTS.map((v) => ({ value: v, label: v }));
 
 function statusTone(status: string): ChipTone {
@@ -118,6 +119,7 @@ function toDraft(row: DependencyDetail): DependencyDraft {
 export default function DependencyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
   const [row, setRow] = useState<DependencyDetail | null>(null);
   const [options, setOptions] = useState<DependencyOption[]>([]);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
@@ -208,8 +210,8 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     [row?.dependencyType]
   );
   const statusOptions = useMemo(
-    () => withCurrentOption(STATUS_OPTIONS, row?.status),
-    [row?.status]
+    () => statusSelectOptions(lifecycle.createOptions, row?.status),
+    [lifecycle.createOptions, row?.status]
   );
   const impactOptions = useMemo(
     () => withCurrentOption(IMPACT_OPTIONS, row?.impactIfBlocked),
@@ -321,7 +323,10 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     (v.dependsOnReleaseId === row.dependsOnRelease.id ? row.dependsOnRelease : null);
   // Pending is a live lifecycle state (not cleared) — treat like blocked/at-risk for attention.
   const blockedish = /block|risk|pending/i.test(v.status);
-  const workflow = dependencyWorkflow(v.status);
+  const workflow = dependencyWorkflow(
+    v.status,
+    (lifecycle.config as DependencyLifecycleConfig | null) ?? undefined
+  );
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,

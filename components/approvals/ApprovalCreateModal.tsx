@@ -6,7 +6,7 @@ import { CreateConfirmation, CreateModalShell, FieldError, RequiredMark, Summary
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import { APPROVAL_DECISIONS, APPROVAL_TYPES } from "@/lib/validation/approval";
+import { APPROVAL_DECISIONS, approvalTypeSelectOptions } from "@/lib/validation/approval";
 
 type ReleaseOption = { id: string; releaseCode: string; name: string };
 type UserOption = { id: string; userId: string; name: string };
@@ -23,12 +23,13 @@ type CreatedApproval = {
 const today = () => new Date().toISOString().slice(0, 10);
 const emptyForm = (defaultDecision = "Pending") => ({
   releaseId: "",
-  approvalType: "Tech Review",
+  approvalType: "CAB Final",
   approverId: "",
   submittedDate: today(),
   decision: defaultDecision,
   decisionDate: "",
   comments: "",
+  conditions: "",
   cabMeetingId: "",
 });
 
@@ -37,7 +38,7 @@ export function ApprovalCreateModal({
   open,
   onClose,
   onCreated,
-  approvalTypes = [],
+  approvalTypes: _approvalTypes = [],
   decisionOptions: decisionOptionsProp = [],
   defaultDecision = "Pending",
 }: {
@@ -86,8 +87,8 @@ export function ApprovalCreateModal({
   }, [open, defaultDecision]);
 
   const typeOptions = useMemo(
-    () => [...new Set([...APPROVAL_TYPES, ...approvalTypes].filter(Boolean))].sort(),
-    [approvalTypes]
+    () => approvalTypeSelectOptions(form.approvalType),
+    [form.approvalType]
   );
   const selectedRelease = releases.find((release) => release.id === form.releaseId);
   const selectedUser = users.find((user) => user.id === form.approverId);
@@ -135,6 +136,7 @@ export function ApprovalCreateModal({
         decision: form.decision,
         decisionDate: form.decisionDate || null,
         comments: form.comments.trim() || null,
+        conditions: form.conditions.trim() || null,
         cabMeetingId: form.cabMeetingId.trim() || null,
       }),
       label: "create-approval",
@@ -189,7 +191,9 @@ export function ApprovalCreateModal({
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Approval type<RequiredMark />
             <select className={cn(taInput, "mt-1", errors.approvalType && "border-rose-400")} value={form.approvalType} onChange={(e) => set("approvalType", e.target.value)}>
-              {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+              {typeOptions.map((type) => (
+                <option key={type.value} value={type.value}>{type.label}</option>
+              ))}
             </select>
             <FieldError message={errors.approvalType} />
           </label>
@@ -233,6 +237,13 @@ export function ApprovalCreateModal({
             <input className={cn(taInput, "mt-1")} maxLength={120} value={form.cabMeetingId} onChange={(e) => set("cabMeetingId", e.target.value)} />
           </label>
         </div>
+        <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          Conditions
+          <span className="mt-0.5 block text-[11px] font-normal text-gray-500">
+            Required when the decision is Approved with Conditions (the terms this approval is subject to).
+          </span>
+          <textarea className={cn(taInput, "mt-1 min-h-[80px]")} maxLength={4000} value={form.conditions} onChange={(e) => set("conditions", e.target.value)} />
+        </label>
         <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
           Comments
           <textarea className={cn(taInput, "mt-1 min-h-[80px]")} maxLength={4000} value={form.comments} onChange={(e) => set("comments", e.target.value)} />

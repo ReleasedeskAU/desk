@@ -1,7 +1,13 @@
 /**
- * Per-user Blocker lifecycle configuration (statuses + transitions + cascade metadata).
- * Mirrors the enterprise Blockers Lifecycle table; storage is Clerk-user scoped.
+ * Per-user Blocker lifecycle configuration (statuses + transitions + checks).
+ * Storage is Clerk-user scoped JSON snapshots.
  */
+import {
+  BLOCKER_LIFECYCLE_GATE_ENFORCEMENTS,
+  blockerGate,
+  isBlockerLifecycleGateType,
+  type BlockerLifecycleGateAttachment,
+} from "@/lib/blocker-lifecycle-gates";
 
 export const BLOCKER_LIFECYCLE_ENFORCEMENTS = ["flexible", "required"] as const;
 export type BlockerLifecycleEnforcement =
@@ -9,6 +15,19 @@ export type BlockerLifecycleEnforcement =
 
 export const BLOCKER_EDIT_MODES = ["full", "limited", "read_only", "immutable"] as const;
 export type BlockerEditMode = (typeof BLOCKER_EDIT_MODES)[number];
+
+/** Display-only accountable role from the sheet — not enforced this pass. */
+export const BLOCKER_STATUS_OWNER_HINT: Readonly<Record<string, string>> = {
+  open: "Release Manager",
+  assigned: "Blocker Owner",
+  in_progress: "Blocker Owner",
+  pending: "Blocker Owner",
+  escalated: "Manager",
+  resolved: "Blocker Owner",
+  closed: "Release Manager",
+  cancelled: "Release Manager",
+  reopened: "Blocker Owner",
+};
 
 export type BlockerLifecycleStatusConfig = {
   key: string;
@@ -18,12 +37,13 @@ export type BlockerLifecycleStatusConfig = {
   enabled: boolean;
   isSystem: boolean;
   editMode: BlockerEditMode;
-  /** Short cascade note shown in settings (informational + used by helpers). */
   cascadeEffect: string;
-  /** When true, this status counts as an open blocker for release gates. */
   blocksReleaseReady: boolean;
-  /** AV-03: stale alert after N days in this status (null = none). */
   staleAlertDays: number | null;
+  /** New blocker records land here. */
+  isIntake: boolean;
+  /** Entering this status can auto-unblock the parent release (CASC-02). */
+  unblocksParent: boolean;
 };
 
 export type BlockerLifecycleTransitionConfig = {
@@ -33,6 +53,7 @@ export type BlockerLifecycleTransitionConfig = {
   enforcement: BlockerLifecycleEnforcement;
   isSystem: boolean;
   sortOrder: number;
+  gates: BlockerLifecycleGateAttachment[];
 };
 
 export type BlockerLifecycleConfig = {
@@ -43,97 +64,133 @@ export type BlockerLifecycleConfig = {
 export const MAX_BLOCKER_LIFECYCLE_STATUSES = 20;
 export const MAX_BLOCKER_LIFECYCLE_TRANSITIONS = 80;
 
-export const DEFAULT_BLOCKER_LIFECYCLE_STATUSES: readonly BlockerLifecycleStatusConfig[] = [
-  {
-    key: "open",
-    label: "Open",
-    sortOrder: 10,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "Blocks release transition to Ready",
-    blocksReleaseReady: true,
-    staleAlertDays: null,
-  },
-  {
-    key: "in_progress",
-    label: "In Progress",
-    sortOrder: 20,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "Stale alert after 5 days (AV-03)",
-    blocksReleaseReady: true,
-    staleAlertDays: 5,
-  },
-  {
-    key: "escalated",
-    label: "Escalated",
-    sortOrder: 30,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "Higher visibility",
-    blocksReleaseReady: true,
-    staleAlertDays: null,
-  },
-  {
-    key: "resolved",
-    label: "Resolved",
-    sortOrder: 40,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "limited",
-    cascadeEffect: "May auto-unblock release (CASC-02)",
-    blocksReleaseReady: false,
-    staleAlertDays: null,
-  },
-  {
-    key: "closed",
-    label: "Closed",
-    sortOrder: 50,
-    terminal: true,
-    enabled: true,
-    isSystem: true,
-    editMode: "immutable",
-    cascadeEffect: "Release unblocked if all resolved/closed",
-    blocksReleaseReady: false,
-    staleAlertDays: null,
-  },
-  {
-    key: "cancelled",
-    label: "Cancelled",
-    sortOrder: 60,
-    terminal: true,
-    enabled: true,
-    isSystem: true,
-    editMode: "immutable",
-    cascadeEffect: "No cascade",
-    blocksReleaseReady: false,
-    staleAlertDays: null,
-  },
-  {
-    key: "reopened",
-    label: "Reopened",
-    sortOrder: 70,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "May re-block release",
-    blocksReleaseReady: true,
-    staleAlertDays: null,
-  },
-];
+function status(
+  partial: Omit<BlockerLifecycleStatusConfig, "isIntake" | "unblocksParent">
+): BlockerLifecycleStatusConfig {
+  return {
+    ...partial,
+    isIntake: partial.key === "open",
+    unblocksParent: partial.key === "resolved",
+  };
+}
+
+export const DEFAULT_BLOCKER_LIFECYCLE_STATUSES: readonly BlockerLifecycleStatusConfig[] =
+  [
+    status({
+      key: "open",
+      label: "Open",
+      sortOrder: 10,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Blocks release transition to Ready",
+      blocksReleaseReady: true,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "assigned",
+      label: "Assigned",
+      sortOrder: 20,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Owner designated — assignment required to start work",
+      blocksReleaseReady: true,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "in_progress",
+      label: "In Progress",
+      sortOrder: 30,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Stale alert after 5 days (AV-03)",
+      blocksReleaseReady: true,
+      staleAlertDays: 5,
+    }),
+    status({
+      key: "pending",
+      label: "Pending",
+      sortOrder: 40,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Awaiting external input",
+      blocksReleaseReady: true,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "escalated",
+      label: "Escalated",
+      sortOrder: 50,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Higher visibility",
+      blocksReleaseReady: true,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "resolved",
+      label: "Resolved",
+      sortOrder: 60,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "limited",
+      cascadeEffect: "May auto-unblock release (CASC-02). Resolution details locked.",
+      blocksReleaseReady: false,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "closed",
+      label: "Closed",
+      sortOrder: 70,
+      terminal: true,
+      enabled: true,
+      isSystem: true,
+      editMode: "immutable",
+      cascadeEffect: "Release unblocked if all resolved/closed. Terminal, immutable (§3-09).",
+      blocksReleaseReady: false,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "cancelled",
+      label: "Cancelled",
+      sortOrder: 80,
+      terminal: true,
+      enabled: true,
+      isSystem: true,
+      editMode: "immutable",
+      cascadeEffect: "Invalid / withdrawn blocker. No cascade.",
+      blocksReleaseReady: false,
+      staleAlertDays: null,
+    }),
+    status({
+      key: "reopened",
+      label: "Reopened",
+      sortOrder: 90,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "May re-block release after a failed fix",
+      blocksReleaseReady: true,
+      staleAlertDays: null,
+    }),
+  ];
 
 function edge(
   fromKey: string,
   toKey: string,
   sortOrder: number,
+  gates: BlockerLifecycleGateAttachment[] = [],
   enforcement: BlockerLifecycleEnforcement = "flexible"
 ): BlockerLifecycleTransitionConfig {
   return {
@@ -143,22 +200,30 @@ function edge(
     enforcement,
     isSystem: true,
     sortOrder,
+    gates: gates.map((g) => ({ ...g })),
   };
 }
 
-export const DEFAULT_BLOCKER_LIFECYCLE_TRANSITIONS: readonly BlockerLifecycleTransitionConfig[] = [
-  edge("open", "in_progress", 10),
-  edge("open", "cancelled", 20),
-  edge("in_progress", "resolved", 10),
-  edge("in_progress", "escalated", 20),
-  edge("in_progress", "cancelled", 30),
-  edge("escalated", "in_progress", 10),
-  edge("escalated", "resolved", 20),
-  edge("escalated", "cancelled", 30),
-  edge("resolved", "closed", 10),
-  edge("resolved", "reopened", 20),
-  edge("reopened", "in_progress", 10),
-];
+export const DEFAULT_BLOCKER_LIFECYCLE_TRANSITIONS: readonly BlockerLifecycleTransitionConfig[] =
+  [
+    edge("open", "assigned", 10, [blockerGate("assignee_set", 10)]),
+    edge("open", "escalated", 20),
+    edge("open", "in_progress", 30, [blockerGate("assignee_set", 10)]),
+    edge("open", "cancelled", 40),
+    edge("assigned", "in_progress", 10, [blockerGate("assignee_set", 10)]),
+    edge("in_progress", "pending", 10, [blockerGate("pending_reason_set", 10)]),
+    edge("in_progress", "resolved", 20),
+    edge("in_progress", "escalated", 30),
+    edge("in_progress", "cancelled", 40),
+    edge("pending", "in_progress", 10),
+    edge("pending", "escalated", 20),
+    edge("escalated", "in_progress", 10),
+    edge("escalated", "resolved", 20),
+    edge("escalated", "cancelled", 30),
+    edge("resolved", "closed", 10),
+    edge("resolved", "reopened", 20),
+    edge("reopened", "in_progress", 10),
+  ];
 
 /**
  * Fresh default blocker lifecycle graph.
@@ -167,8 +232,29 @@ export const DEFAULT_BLOCKER_LIFECYCLE_TRANSITIONS: readonly BlockerLifecycleTra
 export function createDefaultBlockerLifecycleConfig(): BlockerLifecycleConfig {
   return {
     statuses: DEFAULT_BLOCKER_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
-    transitions: DEFAULT_BLOCKER_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
+    transitions: DEFAULT_BLOCKER_LIFECYCLE_TRANSITIONS.map((t) => ({
+      ...t,
+      gates: t.gates.map((g) => ({ ...g })),
+    })),
   };
+}
+
+function validateGates(
+  item: BlockerLifecycleTransitionConfig,
+  fromKey: string,
+  toKey: string
+): string | null {
+  const seen = new Set<string>();
+  for (const gate of item.gates ?? []) {
+    if (!isBlockerLifecycleGateType(gate.gateType)) {
+      return `Unknown check "${String(gate.gateType)}" on ${fromKey} → ${toKey}`;
+    }
+    if (seen.has(gate.gateType)) {
+      return `Duplicate check ${gate.gateType} on ${fromKey} → ${toKey}`;
+    }
+    seen.add(gate.gateType);
+  }
+  return null;
 }
 
 /**
@@ -189,18 +275,18 @@ export function validateBlockerLifecycleConfig(
   }
   const keys = new Set<string>();
   const labels = new Set<string>();
-  for (const status of config.statuses) {
-    if (!/^[a-z][a-z0-9_]{0,39}$/.test(status.key)) {
-      return `Invalid blocker status key: ${status.key}`;
+  for (const item of config.statuses) {
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(item.key)) {
+      return `Invalid blocker status key: ${item.key}`;
     }
-    if (!status.label.trim()) return `Invalid label for ${status.key}`;
-    if (keys.has(status.key)) return `Duplicate status key: ${status.key}`;
-    const lower = status.label.trim().toLocaleLowerCase();
-    if (labels.has(lower)) return `Duplicate status label: ${status.label}`;
-    if (!BLOCKER_EDIT_MODES.includes(status.editMode)) {
-      return `Invalid editMode for ${status.key}`;
+    if (!item.label.trim()) return `Invalid label for ${item.key}`;
+    if (keys.has(item.key)) return `Duplicate status key: ${item.key}`;
+    const lower = item.label.trim().toLocaleLowerCase();
+    if (labels.has(lower)) return `Duplicate status label: ${item.label}`;
+    if (!BLOCKER_EDIT_MODES.includes(item.editMode)) {
+      return `Invalid editMode for ${item.key}`;
     }
-    keys.add(status.key);
+    keys.add(item.key);
     labels.add(lower);
   }
   const byKey = new Map(config.statuses.map((s) => [s.key, s]));
@@ -219,8 +305,28 @@ export function validateBlockerLifecycleConfig(
     const edgeId = `${item.fromKey}:${item.toKey}`;
     if (edges.has(edgeId)) return `Duplicate transition: ${edgeId}`;
     edges.add(edgeId);
+    const gateError = validateGates(item, item.fromKey, item.toKey);
+    if (gateError) return gateError;
   }
   return null;
+}
+
+function coerceTransition(
+  raw: BlockerLifecycleTransitionConfig
+): BlockerLifecycleTransitionConfig {
+  const gates = Array.isArray(raw.gates)
+    ? raw.gates.filter((g) => isBlockerLifecycleGateType(g.gateType)).map((g) => ({
+        gateType: g.gateType,
+        enabled: Boolean(g.enabled),
+        enforcement: BLOCKER_LIFECYCLE_GATE_ENFORCEMENTS.includes(
+          g.enforcement as typeof BLOCKER_LIFECYCLE_GATE_ENFORCEMENTS[number]
+        )
+          ? g.enforcement
+          : "inherit",
+        sortOrder: Number(g.sortOrder) || 0,
+      }))
+    : [];
+  return { ...raw, gates };
 }
 
 /**
@@ -236,12 +342,17 @@ export function normalizeBlockerLifecycleConfig(
     Array.isArray((raw as BlockerLifecycleConfig).statuses) &&
     Array.isArray((raw as BlockerLifecycleConfig).transitions)
   ) {
-    const candidate = raw as BlockerLifecycleConfig;
+    const candidate: BlockerLifecycleConfig = {
+      statuses: (raw as BlockerLifecycleConfig).statuses.map((s) => ({
+        ...s,
+        isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "open",
+        unblocksParent:
+          typeof s.unblocksParent === "boolean" ? s.unblocksParent : s.key === "resolved",
+      })),
+      transitions: (raw as BlockerLifecycleConfig).transitions.map(coerceTransition),
+    };
     if (!validateBlockerLifecycleConfig(candidate)) {
-      return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
-        transitions: candidate.transitions.map((t) => ({ ...t })),
-      };
+      return candidate;
     }
   }
   return createDefaultBlockerLifecycleConfig();

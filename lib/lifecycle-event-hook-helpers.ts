@@ -1,6 +1,8 @@
 /**
  * Pure helpers for Category B event hooks (no DB).
  */
+import type { DriftLifecycleConfig } from "@/lib/drift-lifecycle-config";
+import { resolveDriftLifecycleStatusRef } from "@/lib/drift-lifecycle-transition";
 
 /**
  * Canonical ordered pair of release codes for conflict uniqueness.
@@ -13,8 +15,12 @@ export function orderedReleaseCodes(
 }
 
 /**
- * True when a drift status label/key is Escalated.
+ * True when a drift status is the auto-escalate target (`escalateTarget`).
  */
-export function isDriftEscalatedStatus(status: string): boolean {
-  return /^escalated$/i.test(status.trim());
+export function isDriftEscalatedStatus(
+  status: string,
+  config: DriftLifecycleConfig
+): boolean {
+  const resolved = resolveDriftLifecycleStatusRef(config, status);
+  return Boolean(resolved?.enabled && resolved.escalateTarget);
 }

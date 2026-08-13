@@ -129,6 +129,8 @@ model Release {
   programProject String?
   owner          String
   status         String
+  /** Stable lifecycle key; `status` remains the display label. */
+  statusKey      String?
   releaseDate    DateTime
   priority       String
   impact         String
@@ -252,6 +254,7 @@ model ReleaseDependency {
   dependsOnRelease   Release @relation("ReleaseDependedBy", fields: [dependsOnReleaseId], references: [id], onDelete: Cascade)
   dependencyType     String?
   status             String?
+  statusKey          String?
   impactIfBlocked    String?
   notes              String?
   sourceOrder        Int?
@@ -306,6 +309,7 @@ model EnvironmentConflict {
   id                      String   @id @default(cuid())
   conflictCode            String   @unique
   status                  String
+  statusKey               String?
   priority                String
   assignedTo              String?
   release1Code            String
@@ -334,6 +338,7 @@ model Blocker {
   raisedBy             String
   assignedTo           String?
   status               String
+  statusKey            String?
   targetResolutionDate DateTime?
   actualResolutionDate DateTime?
   daysOpen             Int
@@ -618,6 +623,7 @@ model Risk {
   riskOwnerId        String?
   riskOwner          User?    @relation(fields: [riskOwnerId], references: [id])
   status             String
+  statusKey          String?
   notes              String?
   sourceOrder        Int?
   createdAt          DateTime @default(now())
@@ -672,6 +678,7 @@ model Drift {
   impactOnRelease   String?
   remediationAction String?
   status            String
+  statusKey         String?
   etaToFix          DateTime?
   sourceOrder       Int?
   createdAt         DateTime    @default(now())
@@ -716,6 +723,7 @@ model MonitoringAlert {
   threshold       String?
   currentValue    String?
   status          String
+  statusKey       String?
   assignedTo      String?
   environmentName String
   sourceOrder     Int?
@@ -740,6 +748,7 @@ model Incident {
   severity           String
   title              String
   status             String
+  statusKey          String?
   impact             String
   assignedTo         String?
   relatedReleaseCode String?
@@ -825,6 +834,9 @@ model Approval {
   submittedDate   DateTime
   decisionDate    DateTime?
   decision        String    @default("Pending")
+  decisionKey     String?
+  /** Plain-text terms when the decision requires conditions. */
+  conditions      String?
   comments        String?
   cabMeetingId    String?
   sourceOrder     Int?

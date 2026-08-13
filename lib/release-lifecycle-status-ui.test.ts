@@ -4,13 +4,15 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createDefaultReleaseLifecycleConfig } from "./release-lifecycle-config";
+import { createDefaultReleaseLifecycleConfig, withReleaseStatusRoles } from "./release-lifecycle-config";
 import {
   attentionStatusLabels,
   bucketReleaseStatusWithConfig,
   defaultReleaseStatusLabel,
+  editReleaseStatusOptions,
   enabledReleaseStatusLabels,
   isEnabledReleaseStatusLabel,
+  previewEditLegalNext,
   releaseStatusFilterOptions,
   resolveReleaseStatusDisplay,
   toneForLifecycleKind,
@@ -19,15 +21,18 @@ import {
 describe("enabledReleaseStatusLabels / filter options", () => {
   it("lists enabled labels in sort order and includes custom enabled unused", () => {
     const config = createDefaultReleaseLifecycleConfig();
-    config.statuses.push({
-      key: "hold_custom",
-      label: "Hold Review",
-      sortOrder: 25,
-      terminal: false,
-      kind: "branch",
-      isSystem: false,
-      enabled: true,
-    });
+    config.statuses.push(
+      withReleaseStatusRoles({
+        key: "hold_custom",
+        label: "Hold Review",
+        sortOrder: 25,
+        terminal: false,
+        kind: "branch",
+        isSystem: false,
+        enabled: true,
+        editMode: "full",
+      })
+    );
     const labels = enabledReleaseStatusLabels(config);
     assert.ok(labels.includes("Hold Review"));
     assert.ok(labels.includes("Draft"));
@@ -97,5 +102,36 @@ describe("defaults and buckets", () => {
     assert.equal(bucketReleaseStatusWithConfig("Deployed", config), "shipped");
     assert.equal(bucketReleaseStatusWithConfig("Deferred", config), "atRisk");
     assert.equal(toneForLifecycleKind("mainline"), "info");
+  });
+});
+
+describe("editReleaseStatusOptions", () => {
+  it("lists current plus legal next and disables blocked steps", () => {
+    const options = editReleaseStatusOptions("Pending CAB", [
+      { label: "CAB Approved", outcome: "allowed" },
+      { label: "Rejected", outcome: "needs_override" },
+      { label: "Blocked", outcome: "blocked" },
+    ]);
+    assert.deepEqual(
+      options.map((o) => o.label),
+      ["Pending CAB", "CAB Approved", "Rejected", "Blocked"]
+    );
+    assert.equal(options.some((o) => o.label === "Rolled Back"), false);
+    assert.equal(options.find((o) => o.label === "Blocked")?.disabled, true);
+    assert.equal(options.find((o) => o.label === "Rejected")?.disabled, false);
+  });
+});
+
+describe("previewEditLegalNext", () => {
+  it("lists Draft exits from the default graph without a DB round", () => {
+    const next = previewEditLegalNext("Draft", undefined, {
+      name: "CRM cutover",
+      applicationCount: 1,
+    });
+    assert.deepEqual(
+      next.map((s) => s.label).sort(),
+      ["Cancelled", "Planning"]
+    );
+    assert.equal(next.find((s) => s.label === "Planning")?.outcome, "allowed");
   });
 });

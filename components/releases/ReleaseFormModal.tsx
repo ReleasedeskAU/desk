@@ -11,6 +11,7 @@ import { diffDraftChanges, type FieldChange } from "@/lib/detail-edit-diff";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
 import {
   buildReleaseFormSaveAlert,
   type ReleaseFormAlert,
@@ -19,8 +20,14 @@ import { parseUxNoticesFromHeaders } from "@/lib/ux-notice";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import {
   defaultReleaseStatusLabel,
+  editReleaseStatusOptions,
   enabledReleaseStatusLabels,
+  previewEditLegalNext,
 } from "@/lib/release-lifecycle-status-ui";
+import {
+  MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH,
+  type LegalNextStatusView,
+} from "@/lib/release-lifecycle-transition";
 
 /** Fields needed to create/update a release — not every table column. */
 export type ReleaseFormData = {
@@ -147,6 +154,9 @@ export function ReleaseFormModal({
   const [lifecycleStatusOptions, setLifecycleStatusOptions] = useState<string[]>(
     []
   );
+  const [editLegalNext, setEditLegalNext] = useState<LegalNextStatusView[]>([]);
+  const [legalNextLoading, setLegalNextLoading] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
   const [defaultStatusLabel, setDefaultStatusLabel] = useState("Draft");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof ReleaseFormData, string>>>({});
   const [formAlert, setFormAlert] = useState<ReleaseFormAlert | null>(null);
@@ -155,13 +165,45 @@ export function ReleaseFormModal({
   const editBaseline = useRef<ReleaseFormData | null>(null);
   const isEdit = Boolean(initial?.id);
 
+  const editStatusChoices = useMemo(
+    () =>
+      isEdit
+        ? editReleaseStatusOptions(initial?.status || form.status || "", editLegalNext)
+        : [],
+    [editLegalNext, form.status, initial?.status, isEdit]
+  );
+
+  const selectedNext = useMemo(() => {
+    if (!isEdit) return null;
+    const current = (initial?.status ?? "").trim().toLocaleLowerCase();
+    if (form.status.trim().toLocaleLowerCase() === current) return null;
+    return (
+      editLegalNext.find(
+        (item) => item.label.trim().toLocaleLowerCase() === form.status.trim().toLocaleLowerCase()
+      ) ?? null
+    );
+  }, [editLegalNext, form.status, initial?.status, isEdit]);
+
   const statusOptions = useMemo(() => {
+    if (isEdit) {
+      const labels = editStatusChoices.map((o) => o.label);
+      if (form.status && !labels.some((l) => l === form.status)) {
+        return [...labels, form.status];
+      }
+      return labels;
+    }
     const base =
       statusOptionsProp && statusOptionsProp.length > 0
         ? statusOptionsProp
         : lifecycleStatusOptions;
     return [...new Set([...base, form.status].filter(Boolean))];
-  }, [form.status, lifecycleStatusOptions, statusOptionsProp]);
+  }, [
+    editStatusChoices,
+    form.status,
+    isEdit,
+    lifecycleStatusOptions,
+    statusOptionsProp,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -179,7 +221,44 @@ export function ReleaseFormModal({
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setEditLegalNext([]);
+      setLegalNextLoading(false);
+      return;
+    }
+    if (isEdit && initial?.id) {
+      const current = initial.status || form.status || "";
+      // Paint graph next immediately — the per-release lifecycle GET can take >15s.
+      setEditLegalNext(
+        previewEditLegalNext(current, undefined, {
+          name: initial.name,
+          owner: initial.owner,
+          applicationCount: initial.applicationIds?.length ?? 0,
+          releaseSize: initial.releaseSize,
+          priority: initial.priority,
+          startDate: initial.startDate || null,
+          releaseDate: initial.releaseDate || null,
+        })
+      );
+      setLegalNextLoading(true);
+      const stop = loadJsonEffect<{
+        currentLabel: string;
+        next: LegalNextStatusView[];
+      }>(
+        `/api/releases/${initial.id}/lifecycle?preview=1`,
+        (payload) => {
+          setEditLegalNext(payload.next ?? []);
+        },
+        {
+          label: "release-form-legal-next",
+          onFinally: () => setLegalNextLoading(false),
+        }
+      );
+      return () => {
+        stop();
+        setLegalNextLoading(false);
+      };
+    }
     if (statusOptionsProp && statusOptionsProp.length > 0) {
       setDefaultStatusLabel(statusOptionsProp[0] ?? "Draft");
       return;
@@ -194,7 +273,8 @@ export function ReleaseFormModal({
       },
       { label: "release-form-lifecycle-statuses" }
     );
-  }, [open, statusOptionsProp]);
+    // Create-mode labels: length/[0] avoid aborting the edit fetch on parent rerenders.
+  }, [initial?.id, initial?.status, isEdit, open, statusOptionsProp?.length, statusOptionsProp?.[0]]);
 
   useEffect(() => {
     if (!open || environments.length > 0) {
@@ -223,6 +303,8 @@ export function ReleaseFormModal({
     setEditChanges(null);
     setFieldErrors({});
     setFormAlert(null);
+    setOverrideReason("");
+    setEditLegalNext([]);
   }, [open]);
 
   useEffect(() => {
@@ -363,13 +445,38 @@ export function ReleaseFormModal({
 
   const save = async () => {
     if (!validate()) return;
+    if (isEdit && selectedNext?.outcome === "blocked") {
+      setFormAlert({
+        title: "Status change blocked",
+        message: `You can’t move this release to “${selectedNext.label}” until the required checks pass.`,
+        details: selectedNext.gates
+          .filter((g) => g.hard && !g.passed)
+          .map((g) => g.reason),
+      });
+      return;
+    }
+    if (
+      isEdit &&
+      selectedNext?.outcome === "needs_override" &&
+      overrideReason.trim().length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH
+    ) {
+      setFormAlert({
+        title: "Status change blocked",
+        message:
+          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
+        details: selectedNext.gates
+          .filter((g) => !g.passed)
+          .map((g) => g.reason),
+      });
+      return;
+    }
     setSaving(true);
     setFormAlert(null);
     const ownerLabel = users.find((u) => u.value === form.releaseOwnerId)?.label;
     const ownerName = ownerLabel?.includes(" — ")
       ? ownerLabel.split(" — ").slice(1).join(" — ")
       : form.owner;
-    const payload = {
+    const payload: Record<string, unknown> = {
       ...form,
       programProject: normalizeProgramProject(form.programProject) ?? "N/A",
       owner: ownerName || form.owner || "Unknown",
@@ -381,6 +488,13 @@ export function ReleaseFormModal({
       uatEnvRequired: form.uatEnvRequired.trim() || null,
       releaseSize: form.releaseSize || null,
     };
+    if (
+      isEdit &&
+      selectedNext?.outcome === "needs_override" &&
+      overrideReason.trim().length >= MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH
+    ) {
+      payload.overrideReason = overrideReason.trim();
+    }
 
     // Dev compile + Neon cold starts can take a long time; never leave Save stuck forever.
     const ac = new AbortController();
@@ -666,14 +780,36 @@ export function ReleaseFormModal({
             <select
               className={cn(taInput, fieldErrors.status && "border-rose-400")}
               value={form.status}
-              onChange={(e) => set("status", e.target.value)}
+              onChange={(e) => {
+                set("status", e.target.value);
+                setOverrideReason("");
+              }}
             >
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+              {isEdit
+                ? editStatusChoices.map((opt) => (
+                    <option key={opt.label} value={opt.label} disabled={opt.disabled}>
+                      {opt.outcome === "current"
+                        ? opt.label
+                        : opt.outcome === "needs_override"
+                          ? `${opt.label} · reason needed`
+                          : opt.outcome === "blocked"
+                            ? `${opt.label} · blocked`
+                            : opt.label}
+                    </option>
+                  ))
+                : statusOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
             </select>
+            {isEdit ? (
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-white/50">
+                {legalNextLoading
+                  ? "Showing the next steps from the lifecycle graph. Confirming checks…"
+                  : "Only the next allowed steps are listed. Blocked steps can’t be chosen until their checks pass."}
+              </p>
+            ) : null}
             <FieldError message={fieldErrors.status} />
           </div>
 
@@ -824,6 +960,38 @@ export function ReleaseFormModal({
             onChange={(e) => set("notes", e.target.value)}
           />
         </div>
+
+        {selectedNext && selectedNext.outcome !== "allowed" ? (
+          <div className="mt-4">
+            <LifecycleExceptionConfirm
+              targetLabel={selectedNext.label}
+              isReturn={selectedNext.isPreviousStatus}
+              needsException={selectedNext.outcome === "needs_override"}
+              blocked={selectedNext.outcome === "blocked"}
+              exceptionReason={overrideReason}
+              onExceptionReasonChange={setOverrideReason}
+              busy={saving}
+              confirmDisabled={
+                saving ||
+                selectedNext.outcome === "blocked" ||
+                (selectedNext.outcome === "needs_override" &&
+                  overrideReason.trim().length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH)
+              }
+              onCancel={() => {
+                set("status", initial?.status ?? form.status);
+                setOverrideReason("");
+              }}
+              onConfirm={() => void save()}
+              checks={selectedNext.gates.map((gate) => ({
+                label: gate.label,
+                passed: gate.passed,
+                reason: gate.reason,
+                hard: gate.hard,
+                soft: gate.soft,
+              }))}
+            />
+          </div>
+        ) : null}
 
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={taBtnSecondary} onClick={onClose}>

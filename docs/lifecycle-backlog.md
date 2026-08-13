@@ -3,6 +3,12 @@
 Requirements that are **agreed and mandatory**, but intentionally deferred
 or only partially shipped.
 
+## Status roles — names must not drive enforcement (Wave 0 shipped 2026-08-13; Wave 1 shipped 2026-08-13)
+
+**Status:** Contract + Settings shipped. Waves 1–2 read live flags (facts, VR-13, cascades, crons). Guards/UI graphs and `statusKey` persist remain Waves 3–4.
+
+See `docs/lifecycle-status-roles.md`. Do not add new `fromKey === "open"` (etc.) checks.
+
 ## Effective-dating / config versioning (Wave 1 mid-flight guard)
 
 **Status:** Snapshot + pin shipped for **new** releases (2026-08-07).
@@ -71,3 +77,10 @@ environment-snapshot ingest path to compare against. A cron slot that only logs
 3. What entity/alert is created on drift (likely Drift +/or MonitoringAlert)
 
 Do **not** add an AV-13 stub to `/api/cron/lifecycle-automations`.
+
+## Blocker Owner / role enforcement (parked)
+
+**Status:** Informational only (2026-08-13). Settings shows the sheet’s
+accountable role per status (Release Manager / Blocker Owner / Manager).
+Clerk roles are not checked per status. Do not build permission gates until
+product defines how those roles map to users.

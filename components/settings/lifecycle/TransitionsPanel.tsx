@@ -10,6 +10,7 @@ import type {
   ReleaseLifecycleTransitionConfig,
 } from "@/lib/release-lifecycle-config";
 import {
+  isCfg06EnforcementLocked,
   releaseLifecycleTargetKey,
   transitionRemovalBlockReason,
   transitionTargetLabel,
@@ -155,23 +156,33 @@ export function TransitionsPanel({
                         }
                         label={transition.enabled ? "On" : "Off"}
                         disabled={!editing}
-                        title="When On, this move appears as a legal next status. Off hides it without deleting."
+                        title="When On, this move appears as a next step. Off hides it without deleting."
                         aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} ${transition.enabled ? "On" : "Off"}`}
                         data-testid={`lifecycle-transition-enabled-${rowKey}`}
                       />
-                      <LifecycleToggle
-                        checked={transition.enforcement === "required"}
-                        onCheckedChange={(required) =>
-                          onToggleEnforcement(transition.fromKey, targetKey, required)
-                        }
-                        label={
-                          transition.enforcement === "required" ? "Required" : "Flexible"
-                        }
-                        disabled={!editing}
-                        title="Required = checks must pass (must fix first — no exception). Flexible = continue with a reason when checks fail."
-                        aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} enforcement`}
-                        data-testid={`lifecycle-transition-required-${rowKey}`}
-                      />
+                      {isCfg06EnforcementLocked(transition.fromKey) ? (
+                        <span
+                          className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-white/10 dark:text-white/70"
+                          title="Checks on this move must pass. A reason cannot skip them."
+                          data-testid={`lifecycle-transition-required-${rowKey}`}
+                        >
+                          Always required
+                        </span>
+                      ) : (
+                        <LifecycleToggle
+                          checked={transition.enforcement === "required"}
+                          onCheckedChange={(required) =>
+                            onToggleEnforcement(transition.fromKey, targetKey, required)
+                          }
+                          label={
+                            transition.enforcement === "required" ? "Required" : "Flexible"
+                          }
+                          disabled={!editing}
+                          title="Required = checks must pass (must fix first — no exception). Flexible = continue with a reason when checks fail."
+                          aria-label={`Transition ${transitionTargetLabel(transition, config.statuses)} enforcement`}
+                          data-testid={`lifecycle-transition-required-${rowKey}`}
+                        />
+                      )}
                       {editing ? (
                         <button
                           type="button"

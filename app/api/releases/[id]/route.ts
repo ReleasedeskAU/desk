@@ -36,6 +36,7 @@ import {
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 import { validateReleaseDateOrder } from "@/lib/release-planning-entry-rules";
 import { buildCabScopeSnapshot } from "@/lib/release-cab-scope-snapshot";
+import { keysWithActualReleasePatchChanges } from "@/lib/release-patch-changed-keys";
 import { Prisma } from "@releasedesk/database";
 
 const releaseInclude = {
@@ -95,13 +96,50 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const realId = existing.id;
 
+  // Full-form saves echo unchanged identity fields (Release ID, apps, dates).
+  // Only real edits go through edit policy and field locks — otherwise an
+  // always-locked Release ID masks the actual status-transition error.
+  let currentApplicationIds: string[] | undefined;
+  let currentDependsOnReleaseIds: string[] | undefined;
+  let currentStakeholderIds: string[] | undefined;
+  if (body.applicationIds !== undefined) {
+    const apps = await prisma.releaseApplication.findMany({
+      where: { releaseId: realId },
+      select: { applicationId: true },
+    });
+    currentApplicationIds = apps.map((a) => a.applicationId);
+  }
+  if (body.dependsOnReleaseIds !== undefined) {
+    const deps = await prisma.releaseDependency.findMany({
+      where: { releaseId: realId },
+      select: { dependsOnReleaseId: true },
+    });
+    currentDependsOnReleaseIds = deps.map((d) => d.dependsOnReleaseId);
+  }
+  if (body.stakeholderIds !== undefined) {
+    const holders = await prisma.releaseStakeholder.findMany({
+      where: { releaseId: realId },
+      select: { userId: true },
+    });
+    currentStakeholderIds = holders.map((s) => s.userId);
+  }
+  const proposedKeys = keysWithActualReleasePatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body,
+    currentApplicationIds,
+    currentDependsOnReleaseIds,
+    currentStakeholderIds,
+  });
+
   // Editable? column — deny non-status field writes based on current status.
+  let pinnedReleaseConfig;
   try {
-    const { config } = await resolveLifecycleConfigForRelease(
+    const resolved = await resolveLifecycleConfigForRelease(
       user!.id,
       existing.lifecycleConfigVersionId
     );
-    const proposedKeys = Object.keys(body).filter((key) => body[key] !== undefined);
+    pinnedReleaseConfig = resolved.config;
+    const { config } = resolved;
     const { mode, denied } = deniedReleaseEditFields(
       config,
       existing.status,
@@ -135,11 +173,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Configurable field-lock matrix (live/latest) — rejects locked writes; VR-21 side effects.
-  const proposedForLocks = Object.keys(body).filter((key) => body[key] !== undefined);
   const fieldLock = await validateReleaseFieldUpdate(
     user!.id,
     existing.status,
-    proposedForLocks
+    proposedKeys
   );
   if (!fieldLock.allowed) {
     const lockedLabels = fieldLock.rejected.map((r) => r.reason).join(" ");
@@ -260,6 +297,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         });
       }
       data.status = enforcement.canonicalStatus;
+      const persisted = resolveLifecycleStatusRef(
+        pinnedReleaseConfig ?? createDefaultReleaseLifecycleConfig(),
+        enforcement.canonicalStatus
+      );
+      if (persisted) data.statusKey = persisted.key;
       if (enforcement.result.overridden) {
         statusOverrideAudit = `overrideReason=${enforcement.result.overrideReason}; unmet=${enforcement.result.unmetReasons.join("|")}`;
       }
@@ -374,7 +416,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.dependsOnReleaseIds) {
     const statusAfterPatch =
       typeof data.status === "string" ? String(data.status) : existing.status;
-    const frozen = guardDependencyGraphMutation(statusAfterPatch);
+    const frozen = guardDependencyGraphMutation(
+      statusAfterPatch,
+      pinnedReleaseConfig ?? createDefaultReleaseLifecycleConfig()
+    );
     if (!frozen.ok) return frozen.response;
   }
 
@@ -382,17 +427,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const actor = auditActorName(user!);
   data.lastModifiedBy = actor;
 
-  // CAB scope snapshot: capture on entry to CAB Approved; clear on revert to Pending CAB.
+  // CAB scope snapshot: write/clear from status roles, not cab_approved / pending_cab keys.
   if (typeof data.status === "string" && data.status !== existing.status) {
-    const nextRef = resolveLifecycleStatusRef(
-      createDefaultReleaseLifecycleConfig(),
-      String(data.status)
-    );
-    const prevRef = resolveLifecycleStatusRef(
-      createDefaultReleaseLifecycleConfig(),
-      existing.status
-    );
-    if (nextRef?.key === "cab_approved") {
+    const cabConfig =
+      pinnedReleaseConfig ?? createDefaultReleaseLifecycleConfig();
+    const nextRef = resolveLifecycleStatusRef(cabConfig, String(data.status));
+    const prevRef = resolveLifecycleStatusRef(cabConfig, existing.status);
+    if (nextRef?.writesCabScopeSnapshot && !prevRef?.writesCabScopeSnapshot) {
       data.cabScopeSnapshot = buildCabScopeSnapshot({
         releaseSize:
           typeof data.releaseSize === "string"
@@ -406,8 +447,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             : existing.scopeDescription,
       }) as unknown as Prisma.InputJsonValue;
     } else if (
-      prevRef?.key === "cab_approved" &&
-      nextRef?.key === "pending_cab"
+      prevRef?.writesCabScopeSnapshot &&
+      nextRef?.clearsCabScopeSnapshot
     ) {
       data.cabScopeSnapshot = Prisma.DbNull;
     }
@@ -415,6 +456,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // Collect audit fragments before mutating so "before" state is accurate.
   const auditParts: string[] = [];
+  const cascadeFaults: string[] = [];
   const fieldDetail = summarizeReleaseFieldEdits(
     existing as unknown as Record<string, unknown>,
     data
@@ -423,17 +465,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   await prisma.release.update({ where: { id: realId }, data });
 
-  // CASC-13: withdraw open Approvals when status lands on Cancelled.
+  // CASC-13: withdraw open Approvals when status lands on the withdraw-approvals role.
   if (
     typeof data.status === "string" &&
-    isReleaseCancelled(String(data.status)) &&
-    !isReleaseCancelled(existing.status)
+    pinnedReleaseConfig &&
+    isReleaseCancelled(String(data.status), pinnedReleaseConfig) &&
+    !isReleaseCancelled(existing.status, pinnedReleaseConfig)
   ) {
     try {
-      const withdrawn = await cascadeWithdrawApprovalsOnReleaseCancelled(realId);
-      if (withdrawn > 0) {
+      const withdrawn = await cascadeWithdrawApprovalsOnReleaseCancelled(
+        realId,
+        user!.id
+      );
+      if (withdrawn.roleFault) {
+        auditParts.push(`CASC-13 blocked: ${withdrawn.roleFault.message}`);
+        cascadeFaults.push(withdrawn.roleFault.message);
+      } else if (withdrawn.count > 0) {
         auditParts.push(
-          `CASC-13: withdrew ${withdrawn} open approval${withdrawn === 1 ? "" : "s"}`
+          `CASC-13: withdrew ${withdrawn.count} open approval${withdrawn.count === 1 ? "" : "s"}`
         );
       }
     } catch (cascErr) {
@@ -446,21 +495,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // AV-04 / AV-26 — dependency cascades after committed status change.
   if (typeof data.status === "string" && data.status !== existing.status) {
-    const releaseConfig = createDefaultReleaseLifecycleConfig();
-    const nextKey = resolveLifecycleStatusRef(
-      releaseConfig,
-      String(data.status)
-    )?.key;
-    const prevKey = resolveLifecycleStatusRef(
-      releaseConfig,
-      existing.status
-    )?.key;
-    if (nextKey === "deployed" && prevKey !== "deployed") {
+    const releaseConfig =
+      pinnedReleaseConfig ?? createDefaultReleaseLifecycleConfig();
+    const nextRef = resolveLifecycleStatusRef(releaseConfig, String(data.status));
+    const prevRef = resolveLifecycleStatusRef(releaseConfig, existing.status);
+    if (nextRef?.deployedMilestone && !prevRef?.deployedMilestone) {
       try {
-        const met = await cascadeDependenciesMetOnDeploy(realId);
-        if (met > 0) {
+        const met = await cascadeDependenciesMetOnDeploy(realId, user!.id);
+        if (met.roleFault) {
+          auditParts.push(`AV-04 blocked: ${met.roleFault.message}`);
+          cascadeFaults.push(met.roleFault.message);
+        } else if (met.count > 0) {
           auditParts.push(
-            `AV-04: marked ${met} dependent${met === 1 ? "" : "s"} Met`
+            `AV-04: marked ${met.count} dependent${met.count === 1 ? "" : "s"} Met`
           );
         }
       } catch (hookErr) {
@@ -470,7 +517,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         });
       }
     }
-    if (nextKey === "rolled_back" && prevKey !== "rolled_back") {
+    if (nextRef?.key === "rolled_back" && prevRef?.key !== "rolled_back") {
       try {
         const atRisk = await cascadeDependenciesAtRiskOnRollback(realId);
         if (atRisk > 0) {
@@ -500,11 +547,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       try {
         const created = await detectScheduleConflictsOnDeployDate(
           realId,
-          data.releaseDate
+          data.releaseDate,
+          user!.id
         );
-        if (created > 0) {
+        if (created.roleFault) {
+          auditParts.push(`AV-05 blocked: ${created.roleFault.message}`);
+          cascadeFaults.push(created.roleFault.message);
+        } else if (created.count > 0) {
           auditParts.push(
-            `AV-05: created ${created} schedule conflict${created === 1 ? "" : "s"}`
+            `AV-05: created ${created.count} schedule conflict${created.count === 1 ? "" : "s"}`
           );
         }
       } catch (hookErr) {
@@ -595,7 +646,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // VR-21: Size/Priority edits at CAB Approved revert to Pending CAB via lifecycle engine.
-  const uxNotices: UxNotice[] = [];
+  const uxNotices: UxNotice[] = cascadeFaults.map((message) => ({
+    title: "Automation needs a Settings fix",
+    message,
+  }));
   if (
     fieldLock.sideEffects.some((s) => s.effect === "revert_to_pending_cab") &&
     body.status === undefined
@@ -608,6 +662,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           afterFields.lifecycleConfigVersionId
         );
         const pendingLabel =
+          liveConfig.statuses.find((s) => s.clearsCabScopeSnapshot)?.label ??
           liveConfig.statuses.find((s) => s.key === "pending_cab")?.label ??
           "Pending CAB";
         if (afterFields.status !== pendingLabel) {

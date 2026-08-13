@@ -10,7 +10,10 @@ import { createEnvBookingRow, getDefaultOrganizationId } from "@/lib/org-compat"
 import { prisma } from "@/lib/prisma";
 import { bookingWhere, mapDbEnvBookingRow, sp } from "@/lib/list-api-filters";
 import { jsonError } from "@/lib/api-errors";
-import { guardEnvBookingMutationWhileDeploying } from "@/lib/release-related-entity-guards";
+import {
+  guardEnvBookingMutationWhileDeploying,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 /** Availability check only (readonly+). Prefer environmentId for env-conflict checks. */
 export async function POST(req: Request) {
@@ -90,7 +93,12 @@ export async function PUT(req: Request) {
       getDefaultOrganizationId(),
       prisma.release.findUnique({
         where: { id: releaseId },
-        select: { id: true, releaseCode: true, status: true },
+        select: {
+          id: true,
+          releaseCode: true,
+          status: true,
+          lifecycleConfigVersionId: true,
+        },
       }),
       prisma.application.findUnique({
         where: { id: applicationId },
@@ -102,7 +110,14 @@ export async function PUT(req: Request) {
     if (!release) {
       return NextResponse.json({ error: "Release not found" }, { status: 400 });
     }
-    const bookingLocked = guardEnvBookingMutationWhileDeploying(release.status);
+    const releaseConfig = await loadGuardReleaseConfig(
+      user!.id,
+      release.lifecycleConfigVersionId
+    );
+    const bookingLocked = guardEnvBookingMutationWhileDeploying(
+      release.status,
+      releaseConfig
+    );
     if (!bookingLocked.ok) return bookingLocked.response;
     if (!app) {
       return NextResponse.json({ error: "Application not found" }, { status: 400 });

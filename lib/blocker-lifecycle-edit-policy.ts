@@ -1,5 +1,6 @@
 /**
  * Field-edit policy for blockers by lifecycle status.
+ * Resolved locks how-it-was-resolved fields; status (including Reopened) stays allowed.
  */
 import type { BlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config";
 import { resolveBlockerLifecycleStatusRef } from "@/lib/blocker-lifecycle-transition";
@@ -8,11 +9,9 @@ import type { BlockerEditMode } from "@/lib/blocker-lifecycle-config";
 const LIMITED_ALLOWED = new Set([
   "status",
   "overrideReason",
-  "resolutionNotes",
-  "rootCause",
-  "actualResolutionDate",
   "assignedTo",
   "escalationLevel",
+  "actualResolutionDate",
 ]);
 
 const READ_ONLY_ALLOWED = new Set(["status", "overrideReason"]);

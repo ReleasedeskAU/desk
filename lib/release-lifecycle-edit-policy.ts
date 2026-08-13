@@ -2,10 +2,14 @@
  * Field-edit policy by release status (lifecycle “Editable?” column).
  * Status transitions stay in the transition engine; this gates non-status PATCH fields.
  */
+import {
+  defaultReleaseEditModeForStatusKey,
+  type ReleaseEditMode,
+  type ReleaseLifecycleConfig,
+} from "@/lib/release-lifecycle-config";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
-import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 
-export type ReleaseEditMode = "full" | "limited" | "read_only" | "immutable";
+export type { ReleaseEditMode };
 
 /** Fields treated as scope / schedule — locked in limited and read_only modes. */
 const SCOPE_AND_DATE_FIELDS = new Set([
@@ -68,22 +72,9 @@ export function resolveReleaseEditMode(
   status: string
 ): ReleaseEditMode {
   const resolved = resolveLifecycleStatusRef(config, status);
+  if (resolved?.editMode) return resolved.editMode;
   const key = resolved?.key ?? status.trim().toLowerCase().replace(/\s+/g, "_");
-
-  switch (key) {
-    case "closed":
-    case "cancelled":
-      return "immutable";
-    case "deploying":
-    case "deployed":
-      return "read_only";
-    case "pending_cab":
-    case "cab_approved":
-    case "ready_to_deploy":
-      return "limited";
-    default:
-      return "full";
-  }
+  return defaultReleaseEditModeForStatusKey(key);
 }
 
 /**

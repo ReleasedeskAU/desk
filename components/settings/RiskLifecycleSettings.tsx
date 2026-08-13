@@ -12,6 +12,14 @@ import {
 } from "@/lib/risk-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
+import {
+  applyStatusRolePatch,
+  exclusiveRoleIds,
+  RISK_STATUS_ROLE_IDS,
+  statusRoleFieldsFor,
+} from "@/lib/lifecycle-status-roles";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -201,6 +209,11 @@ export function RiskLifecycleSettings() {
       </div>
 
       {panel === "statuses" ? (
+        <div className="space-y-3">
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={RISK_STATUS_ROLE_IDS}
+        />
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {sortedStatuses.map((status) => (
             <li
@@ -221,10 +234,32 @@ export function RiskLifecycleSettings() {
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {lifecycleEditModeLabel(status.editMode)}
-                  {status.escalateAfterDays != null
-                    ? ` · escalate ${status.escalateAfterDays}d`
-                    : ""}
                 </p>
+                <StatusMeaningEditor
+                  fields={statusRoleFieldsFor(RISK_STATUS_ROLE_IDS)}
+                  values={status}
+                  editing={editing}
+                  statusLabel={status.label}
+                  onToggle={(id, checked) => {
+                    setDraft((prev) => ({
+                      ...prev,
+                      statuses: applyStatusRolePatch(
+                        prev.statuses,
+                        status.key,
+                        { [id]: checked } as Partial<(typeof prev.statuses)[number]>,
+                        exclusiveRoleIds(RISK_STATUS_ROLE_IDS)
+                      ),
+                    }));
+                  }}
+                  onDaysChange={(id, days) => {
+                    setDraft((prev) => ({
+                      ...prev,
+                      statuses: prev.statuses.map((s) =>
+                        s.key === status.key ? { ...s, [id]: days } : s
+                      ),
+                    }));
+                  }}
+                />
               </div>
               <LifecycleToggle
                 checked={status.enabled}
@@ -242,6 +277,7 @@ export function RiskLifecycleSettings() {
             </li>
           ))}
         </ul>
+        </div>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions

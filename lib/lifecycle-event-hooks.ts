@@ -3,10 +3,19 @@
  * Wired from entity write paths after committed mutations — not from gate evaluation alone.
  */
 import { prisma } from "@/lib/prisma";
-import { createDefaultConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config";
+import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
+import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
+import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
 import { createDefaultDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
+import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
 import { validateDependencyTransition } from "@/lib/dependency-lifecycle-transition";
-import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  enabledStatusMatchValues,
+  reportLifecycleRoleFault,
+  resolveExclusiveRole,
+  type LifecycleRoleFault,
+} from "@/lib/lifecycle-status-roles";
+import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
 import {
   emptyLifecycleGateFacts,
   resolveLifecycleStatusRef,
@@ -21,41 +30,61 @@ import {
 
 export { isDriftEscalatedStatus, orderedReleaseCodes };
 
-const OPEN_BLOCKER_EXCLUDED = [
-  "Resolved",
-  "Closed",
-  "Done",
-  "Cancelled",
-  "Canceled",
-  "Mitigated",
-] as const;
+export type CascadeHookResult = {
+  count: number;
+  roleFault?: LifecycleRoleFault;
+};
 
-const TERMINAL_RELEASE_KEYS = new Set([
-  "deployed",
-  "closed",
-  "cancelled",
-]);
+function statusInOrNone(values: string[]): { in: string[] } {
+  return { in: values.length > 0 ? values : ["__lifecycle_no_match__"] };
+}
+
+function skipFinishedRelease(status: {
+  terminal: boolean;
+  deployedMilestone: boolean;
+}): boolean {
+  return status.terminal || status.deployedMilestone;
+}
 
 /**
- * AV-04 — when a release becomes Deployed, mark Pending/At Risk deps that point at it as Met.
- * @param deployedReleaseId - Release that just landed on Deployed
- * @returns Count of dependency rows updated
+ * AV-04 — when a release enters the Deployed milestone, mark open deps that
+ * point at it as the first legal “counts as met” status (sort order).
+ * @param deployedReleaseId - Release that just landed on the Deployed milestone
+ * @param clerkUserId - Caller whose dependency config to read
  */
 export async function cascadeDependenciesMetOnDeploy(
-  deployedReleaseId: string
-): Promise<number> {
-  const config = createDefaultDependencyLifecycleConfig();
-  const metLabel =
-    config.statuses.find((s) => s.key === "met")?.label ?? "Met";
-  const openLabels = config.statuses
-    .filter((s) => s.key === "pending" || s.key === "at_risk")
-    .map((s) => s.label);
+  deployedReleaseId: string,
+  clerkUserId: string
+): Promise<CascadeHookResult> {
+  const { config } = await loadDependencyLifecycleConfig(clerkUserId);
+  const metStatuses = config.statuses
+    .filter((s) => s.enabled && s.satisfiesHardGate)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  if (metStatuses.length === 0) {
+    const resolved = resolveExclusiveRole(
+      config.statuses,
+      (s) => s.satisfiesHardGate,
+      "satisfiesHardGate",
+      "AV-04"
+    );
+    const fault = resolved.ok
+      ? undefined
+      : resolved.fault;
+    if (fault) reportLifecycleRoleFault(fault);
+    return { count: 0, roleFault: fault };
+  }
+  const openValues = enabledStatusMatchValues(
+    config.statuses,
+    (s) => !s.satisfiesHardGate
+  );
+  const intake = config.statuses.find((s) => s.enabled && s.isIntake);
+  const fallbackFrom = intake?.label ?? "Pending";
 
   const deps = await prisma.releaseDependency.findMany({
     where: {
       dependsOnReleaseId: deployedReleaseId,
       OR: [
-        { status: { in: openLabels } },
+        { status: statusInOrNone(openValues) },
         { status: null },
         { status: "" },
       ],
@@ -65,11 +94,20 @@ export async function cascadeDependenciesMetOnDeploy(
 
   let updated = 0;
   for (const dep of deps) {
-    const fromStatus = dep.status?.trim() || "Pending";
+    const fromStatus = dep.status?.trim() || fallbackFrom;
+    const dest = metStatuses.find((to) =>
+      validateDependencyTransition({
+        config,
+        fromStatus,
+        toStatus: to.label,
+        facts: { notes: dep.notes },
+      }).allowed
+    );
+    if (!dest) continue;
     const transition = validateDependencyTransition({
       config,
       fromStatus,
-      toStatus: metLabel,
+      toStatus: dest.label,
       facts: { notes: dep.notes },
     });
     if (!transition.allowed) continue;
@@ -85,7 +123,7 @@ export async function cascadeDependenciesMetOnDeploy(
       updated,
     });
   }
-  return updated;
+  return { count: updated };
 }
 
 /**
@@ -199,9 +237,10 @@ export async function cascadeDependenciesAtRiskOnRollback(
  */
 export async function detectScheduleConflictsOnDeployDate(
   releaseId: string,
-  releaseDate: Date | null | undefined
-): Promise<number> {
-  if (!releaseDate || Number.isNaN(releaseDate.getTime())) return 0;
+  releaseDate: Date | null | undefined,
+  clerkUserId: string
+): Promise<CascadeHookResult> {
+  if (!releaseDate || Number.isNaN(releaseDate.getTime())) return { count: 0 };
 
   const release = await prisma.release.findUnique({
     where: { id: releaseId },
@@ -209,6 +248,7 @@ export async function detectScheduleConflictsOnDeployDate(
       id: true,
       releaseCode: true,
       status: true,
+      lifecycleConfigVersionId: true,
       department: { select: { name: true } },
       applications: {
         select: {
@@ -218,14 +258,17 @@ export async function detectScheduleConflictsOnDeployDate(
       },
     },
   });
-  if (!release) return 0;
+  if (!release) return { count: 0 };
 
-  const config = createDefaultReleaseLifecycleConfig();
-  const selfKey = resolveLifecycleStatusRef(config, release.status)?.key;
-  if (selfKey && TERMINAL_RELEASE_KEYS.has(selfKey)) return 0;
+  const { config } = await resolveLifecycleConfigForRelease(
+    clerkUserId,
+    release.lifecycleConfigVersionId
+  );
+  const self = resolveLifecycleStatusRef(config, release.status);
+  if (self && skipFinishedRelease(self)) return { count: 0 };
 
   const appIds = release.applications.map((a) => a.applicationId);
-  if (appIds.length === 0) return 0;
+  if (appIds.length === 0) return { count: 0 };
 
   const others = await prisma.release.findMany({
     where: {
@@ -261,18 +304,30 @@ export async function detectScheduleConflictsOnDeployDate(
     take: 50,
   });
 
-  const conflictConfig = createDefaultConflictLifecycleConfig();
-  const detectedLabel =
-    conflictConfig.statuses.find((s) => s.key === "detected")?.label ??
-    "Detected";
+  const { config: conflictConfig } = await loadConflictLifecycleConfig(clerkUserId);
+  const intake = resolveExclusiveRole(
+    conflictConfig.statuses,
+    (s) => s.isIntake,
+    "isIntake",
+    "AV-05"
+  );
+  if (!intake.ok) {
+    reportLifecycleRoleFault(intake.fault);
+    return { count: 0, roleFault: intake.fault };
+  }
+  const detectedLabel = intake.status.label;
+  const openConflictValues = enabledStatusMatchValues(
+    conflictConfig.statuses,
+    (s) => !s.terminal
+  );
   const scheduleType =
     conflictConfig.types.find((t) => t.key === "schedule")?.label ?? "Schedule";
 
   let created = 0;
   for (const other of others) {
     if (!sameUtcDeployDay(releaseDate, other.releaseDate)) continue;
-    const otherKey = resolveLifecycleStatusRef(config, other.status)?.key;
-    if (otherKey && TERMINAL_RELEASE_KEYS.has(otherKey)) continue;
+    const otherStatus = resolveLifecycleStatusRef(config, other.status);
+    if (otherStatus && skipFinishedRelease(otherStatus)) continue;
 
     const [r1, r2] = orderedReleaseCodes(
       release.releaseCode,
@@ -282,7 +337,7 @@ export async function detectScheduleConflictsOnDeployDate(
       where: {
         release1Code: r1,
         release2Code: r2,
-        status: { in: ["Detected", "Under Review"] },
+        status: statusInOrNone(openConflictValues),
       },
       select: { id: true },
     });
@@ -328,7 +383,7 @@ export async function detectScheduleConflictsOnDeployDate(
       created,
     });
   }
-  return created;
+  return { count: created };
 }
 
 /**
@@ -376,14 +431,16 @@ export async function createMonitoringAlertOnDriftEscalated(args: {
 }
 
 /**
- * CASC-02 — when a blocker becomes Resolved, auto-return Blocked release to previous status
- * if no other open blockers remain. Trigger is Resolved only (not Closed).
+ * CASC-02 — when a blocker enters the unblock-parent status, auto-return an
+ * interrupt (Blocked) release to its previous status if no other blockers
+ * still marked “blocks Ready” remain.
  *
  * @param releaseCode - Denormalized Blocker.releaseCode
  */
 export async function cascadeUnblockReleaseOnBlockerResolved(
-  releaseCode: string
-): Promise<boolean> {
+  releaseCode: string,
+  clerkUserId: string
+): Promise<{ unblocked: boolean; roleFault?: LifecycleRoleFault }> {
   const release = await prisma.release.findUnique({
     where: { releaseCode },
     select: {
@@ -404,19 +461,29 @@ export async function cascadeUnblockReleaseOnBlockerResolved(
       securityClearance: true,
     },
   });
-  if (!release) return false;
+  if (!release) return { unblocked: false };
 
-  const config = createDefaultReleaseLifecycleConfig();
-  const statusKey = resolveLifecycleStatusRef(config, release.status)?.key;
-  if (statusKey !== "blocked") return false;
+  const { config } = await resolveLifecycleConfigForRelease(
+    clerkUserId,
+    release.lifecycleConfigVersionId
+  );
+  const current = resolveLifecycleStatusRef(config, release.status);
+  // Wait-for-unblock is the interrupt kind (Blocked). Rolled Back is also
+  // interrupt — the transition engine denies that path if the graph says so.
+  if (!current || current.kind !== "interrupt") return { unblocked: false };
 
+  const { config: blockerConfig } = await loadBlockerLifecycleConfig(clerkUserId);
+  const blockingValues = enabledStatusMatchValues(
+    blockerConfig.statuses,
+    (s) => s.blocksReleaseReady
+  );
   const openCount = await prisma.blocker.count({
     where: {
       releaseCode,
-      status: { notIn: [...OPEN_BLOCKER_EXCLUDED] },
+      status: statusInOrNone(blockingValues),
     },
   });
-  if (openCount > 0) return false;
+  if (openCount > 0) return { unblocked: false };
 
   const previousStatus = await loadPreviousReleaseStatus(
     release.id,
@@ -426,7 +493,7 @@ export async function cascadeUnblockReleaseOnBlockerResolved(
     console.warn("[lifecycle-hook] CASC-02 skipped — no previous status", {
       releaseCode,
     });
-    return false;
+    return { unblocked: false };
   }
 
   const gateFacts = emptyLifecycleGateFacts({
@@ -447,7 +514,7 @@ export async function cascadeUnblockReleaseOnBlockerResolved(
     fromStatus: release.status,
     toStatus: previousStatus,
     previousStatus,
-    overrideReason: "CASC-02: auto-unblock after blocker Resolved",
+    overrideReason: "CASC-02: auto-unblock after blocker entered the unblock status",
     gateFacts,
   });
   if (!transition.allowed) {
@@ -455,7 +522,7 @@ export async function cascadeUnblockReleaseOnBlockerResolved(
       releaseCode,
       reason: transition.reason,
     });
-    return false;
+    return { unblocked: false };
   }
 
   await prisma.release.update({
@@ -474,5 +541,135 @@ export async function cascadeUnblockReleaseOnBlockerResolved(
     releaseCode,
     to: transition.canonicalStatus,
   });
-  return true;
+  return { unblocked: true };
+}
+
+/**
+ * When an incident enters the unblock-parent status, auto-return a Blocked
+ * release to its previous status if no other blocking incidents or blockers remain.
+ *
+ * @param releaseCode - Incident.relatedReleaseCode
+ */
+export async function cascadeUnblockReleaseOnIncidentResolved(
+  releaseCode: string,
+  clerkUserId: string
+): Promise<{ unblocked: boolean; roleFault?: LifecycleRoleFault }> {
+  const trimmed = releaseCode.trim();
+  if (!trimmed) return { unblocked: false };
+
+  const release = await prisma.release.findUnique({
+    where: { releaseCode: trimmed },
+    select: {
+      id: true,
+      releaseCode: true,
+      status: true,
+      owner: true,
+      releaseSize: true,
+      priority: true,
+      releaseDate: true,
+      rollbackPlan: true,
+      notes: true,
+      goLiveChecklistPercent: true,
+      lifecycleConfigVersionId: true,
+      devSignoff: true,
+      testSignoff: true,
+      uatSignoff: true,
+      securityClearance: true,
+    },
+  });
+  if (!release) return { unblocked: false };
+
+  const { config } = await resolveLifecycleConfigForRelease(
+    clerkUserId,
+    release.lifecycleConfigVersionId
+  );
+  const current = resolveLifecycleStatusRef(config, release.status);
+  if (!current || current.kind !== "interrupt") return { unblocked: false };
+
+  const [{ config: incidentConfig }, { config: blockerConfig }] = await Promise.all([
+    loadIncidentLifecycleConfig(clerkUserId),
+    loadBlockerLifecycleConfig(clerkUserId),
+  ]);
+  const blockingIncidentValues = enabledStatusMatchValues(
+    incidentConfig.statuses,
+    (s) => s.blocksLinkedRelease
+  );
+  const blockingBlockerValues = enabledStatusMatchValues(
+    blockerConfig.statuses,
+    (s) => s.blocksReleaseReady
+  );
+  const [openIncidentCount, openBlockerCount] = await Promise.all([
+    prisma.incident.count({
+      where: {
+        relatedReleaseCode: trimmed,
+        status: statusInOrNone(blockingIncidentValues),
+      },
+    }),
+    prisma.blocker.count({
+      where: {
+        releaseCode: trimmed,
+        status: statusInOrNone(blockingBlockerValues),
+      },
+    }),
+  ]);
+  if (openIncidentCount > 0 || openBlockerCount > 0) return { unblocked: false };
+
+  const previousStatus = await loadPreviousReleaseStatus(
+    release.id,
+    release.status
+  );
+  if (!previousStatus) {
+    console.warn("[lifecycle-hook] incident unblock skipped — no previous status", {
+      releaseCode: trimmed,
+    });
+    return { unblocked: false };
+  }
+
+  const gateFacts = emptyLifecycleGateFacts({
+    owner: release.owner,
+    releaseSize: release.releaseSize,
+    priority: release.priority,
+    releaseDate: release.releaseDate,
+    rollbackPlan: release.rollbackPlan,
+    notes: release.notes,
+    goLiveChecklistPercent: release.goLiveChecklistPercent,
+    openBlockerCount: 0,
+    blockingIncidentCount: 0,
+    hardDependenciesMet: true,
+    signoffsComplete: true,
+  });
+
+  const transition = validateReleaseTransition({
+    config,
+    fromStatus: release.status,
+    toStatus: previousStatus,
+    previousStatus,
+    overrideReason: "Incident resolved: auto-unblock after incident entered the unblock status",
+    gateFacts,
+  });
+  if (!transition.allowed) {
+    console.warn("[lifecycle-hook] incident unblock transition denied", {
+      releaseCode: trimmed,
+      reason: transition.reason,
+    });
+    return { unblocked: false };
+  }
+
+  await prisma.release.update({
+    where: { id: release.id },
+    data: { status: transition.canonicalStatus },
+  });
+  await prisma.releaseAuditEvent.create({
+    data: {
+      releaseId: release.id,
+      actor: "system",
+      action: "status_change",
+      detail: `Status changed to ${transition.canonicalStatus}`,
+    },
+  });
+  console.warn("[lifecycle-hook] incident auto-unblocked release", {
+    releaseCode: trimmed,
+    to: transition.canonicalStatus,
+  });
+  return { unblocked: true };
 }

@@ -102,11 +102,13 @@ export async function POST(req: Request) {
   }
 
   let status = String(body.status ?? "").trim();
+  let statusKey: string | undefined;
   try {
     const loaded = await loadIncidentLifecycleConfig(user!.id);
     const resolved = resolveCreateLifecycleStatus(loaded.config, status, "incident");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
+    statusKey = resolved.statusKey;
   } catch (err) {
     console.error("[incidents-create] lifecycle config load failed", {
       message: err instanceof Error ? err.message : "unknown",
@@ -126,6 +128,7 @@ export async function POST(req: Request) {
       severity: body.severity,
       title: body.title,
       status,
+      statusKey,
       impact: body.impact,
       assignedTo: body.assignedTo ?? null,
       relatedReleaseCode: body.relatedReleaseCode ?? null,

@@ -19,6 +19,19 @@ import { APPLICATION_NAME_ALIASES } from "./seed-data/app-name-aliases";
 
 const prisma = new PrismaClient();
 
+/** Seed Status display → canonical statusKey (Wave 4). */
+const INCIDENT_SEED_STATUS_KEY: Readonly<Record<string, string>> = {
+  Active: "open",
+  Open: "open",
+  Acknowledged: "acknowledged",
+  Investigating: "investigating",
+  Escalated: "escalated",
+  Resolving: "resolving",
+  Resolved: "resolved",
+  Closed: "closed",
+  Reopened: "reopened",
+};
+
 type RawIncident = {
   "Incident ID": string;
   Timestamp: string;
@@ -62,6 +75,7 @@ async function main() {
         severity: row.Severity,
         title: row.Title,
         status: row.Status,
+        statusKey: INCIDENT_SEED_STATUS_KEY[row.Status] ?? null,
         impact: row.Impact,
         assignedTo: row["Assigned To"] ?? null,
         relatedReleaseCode: row["Related Release"] ?? null,
@@ -75,6 +89,7 @@ async function main() {
         severity: row.Severity,
         title: row.Title,
         status: row.Status,
+        statusKey: INCIDENT_SEED_STATUS_KEY[row.Status] ?? null,
         impact: row.Impact,
         assignedTo: row["Assigned To"] ?? null,
         relatedReleaseCode: row["Related Release"] ?? null,

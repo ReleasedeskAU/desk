@@ -39,11 +39,13 @@ export async function POST(req: Request) {
   const body = parsed.data;
 
   let status = String(body.status ?? "").trim();
+  let statusKey: string | undefined;
   try {
     const loaded = await loadAlertLifecycleConfig(user!.id);
     const resolved = resolveCreateLifecycleStatus(loaded.config, status, "alert");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
+    statusKey = resolved.statusKey;
   } catch (err) {
     console.error("[monitoring-alerts-create] lifecycle config load failed", {
       message: err instanceof Error ? err.message : "unknown",
@@ -74,6 +76,7 @@ export async function POST(req: Request) {
       threshold: body.threshold ?? null,
       currentValue: body.currentValue ?? null,
       status,
+      statusKey,
       assignedTo: body.assignedTo ?? null,
       environmentName: body.environmentName,
       sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,

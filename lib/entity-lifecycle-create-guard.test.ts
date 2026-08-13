@@ -36,13 +36,19 @@ describe("resolveCreateLifecycleStatus", () => {
   it("accepts an enabled status label", () => {
     const result = resolveCreateLifecycleStatus(config, "Met", "dependency");
     assert.equal(result.ok, true);
-    if (result.ok) assert.equal(result.status, "Met");
+    if (result.ok) {
+      assert.equal(result.status, "Met");
+      assert.equal(result.statusKey, "met");
+    }
   });
 
   it("defaults to the first enabled non-terminal when status is empty", () => {
     const result = resolveCreateLifecycleStatus(config, "", "dependency");
     assert.equal(result.ok, true);
-    if (result.ok) assert.equal(result.status, "Pending");
+    if (result.ok) {
+      assert.equal(result.status, "Pending");
+      assert.equal(result.statusKey, "pending");
+    }
   });
 
   it("rejects a disabled status", async () => {

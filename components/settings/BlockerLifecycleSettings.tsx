@@ -6,19 +6,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { Ban, Pencil, Save, X } from "lucide-react";
 import {
+  BLOCKER_STATUS_OWNER_HINT,
   createDefaultBlockerLifecycleConfig,
   type BlockerLifecycleConfig,
   type BlockerLifecycleEnforcement,
 } from "@/lib/blocker-lifecycle-config";
+import { blockerGate, type BlockerLifecycleGateType } from "@/lib/blocker-lifecycle-gates";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { BlockerGatesPanel } from "@/components/settings/lifecycle/BlockerGatesPanel";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
+import {
+  applyStatusRolePatch,
+  BLOCKER_STATUS_ROLE_IDS,
+  exclusiveRoleIds,
+  statusRoleFieldsFor,
+} from "@/lib/lifecycle-status-roles";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
 function cloneConfig(config: BlockerLifecycleConfig): BlockerLifecycleConfig {
   return {
     statuses: config.statuses.map((s) => ({ ...s })),
-    transitions: config.transitions.map((t) => ({ ...t })),
+    transitions: config.transitions.map((t) => ({
+      ...t,
+      gates: (t.gates ?? []).map((g) => ({ ...g })),
+    })),
   };
 }
 
@@ -32,7 +46,7 @@ export function BlockerLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions">("statuses");
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">("statuses");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +97,28 @@ export function BlockerLifecycleSettings() {
     }
   };
 
+  const toggleGate = (
+    fromKey: string,
+    toKey: string,
+    gateType: BlockerLifecycleGateType,
+    enabled: boolean
+  ) => {
+    setDraft((prev) => ({
+      ...prev,
+      transitions: prev.transitions.map((t) => {
+        if (t.fromKey !== fromKey || t.toKey !== toKey) return t;
+        const gates = [...(t.gates ?? [])];
+        const idx = gates.findIndex((g) => g.gateType === gateType);
+        if (idx >= 0) {
+          gates[idx] = { ...gates[idx]!, enabled };
+        } else if (enabled) {
+          gates.push(blockerGate(gateType, (gates.length + 1) * 10));
+        }
+        return { ...t, gates };
+      }),
+    }));
+  };
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 dark:border-[var(--border)] dark:bg-[var(--card)]">
@@ -105,8 +141,9 @@ export function BlockerLifecycleSettings() {
               Blocker Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure blocker statuses, allowed moves, cascade effects on releases, and edit
-              rules. Changes apply to your blocker workflow.
+              Configure blocker statuses, allowed moves, homework checks, cascade
+              effects on releases, and edit rules. Owner labels are informational
+              only — they are not permission checks.
             </p>
           </div>
         </div>
@@ -162,11 +199,16 @@ export function BlockerLifecycleSettings() {
         <p className="font-semibold">Quick help · Blockers</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
           <li>Statuses with “blocks Ready” keep a release from moving to Ready.</li>
-          <li>Closed / Cancelled are terminal (Required). Other moves are Flexible.</li>
-          <li>In Progress can show a stale alert after 5 days (AV-03).</li>
+          <li>Closed / Cancelled are terminal (Required). Other moves are Flexible unless you change them.</li>
+          <li>Flexible = unmet checks need a written exception. Required = the move is blocked.</li>
+          <li>In Progress can raise a stale alert after N days — set “Stale after (days)” on that status.</li>
           <li>
-            Daily stale-alert timing always uses the shared default (not your personal
-            stale days). Blocker rows have no owner link we can use for personalization.
+            “What this status does” (blocks Ready, starting status, unblocks release) is how
+            automations find the right stage if you rename labels.
+          </li>
+          <li>
+            Accountable owner (Release Manager / Blocker Owner / Manager) is display-only
+            for now — not enforced against Clerk roles.
           </li>
         </ul>
       </div>
@@ -176,6 +218,7 @@ export function BlockerLifecycleSettings() {
           [
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
+            ["gates", "Checks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -195,7 +238,18 @@ export function BlockerLifecycleSettings() {
         ))}
       </div>
 
-      {panel === "statuses" ? (
+      {panel === "gates" ? (
+        <BlockerGatesPanel
+          config={draft}
+          editing={editing}
+          onToggleGate={toggleGate}
+        />
+      ) : panel === "statuses" ? (
+        <div className="space-y-3">
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={BLOCKER_STATUS_ROLE_IDS}
+        />
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {sortedStatuses.map((status) => (
             <li
@@ -216,11 +270,35 @@ export function BlockerLifecycleSettings() {
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {lifecycleEditModeLabel(status.editMode)}
-                  {status.blocksReleaseReady ? " · blocks Ready" : ""}
-                  {status.staleAlertDays != null
-                    ? ` · stale ${status.staleAlertDays}d`
+                  {BLOCKER_STATUS_OWNER_HINT[status.key]
+                    ? ` · accountable (display): ${BLOCKER_STATUS_OWNER_HINT[status.key]}`
                     : ""}
                 </p>
+                <StatusMeaningEditor
+                  fields={statusRoleFieldsFor(BLOCKER_STATUS_ROLE_IDS)}
+                  values={status}
+                  editing={editing}
+                  statusLabel={status.label}
+                  onToggle={(id, checked) => {
+                    setDraft((prev) => ({
+                      ...prev,
+                      statuses: applyStatusRolePatch(
+                        prev.statuses,
+                        status.key,
+                        { [id]: checked } as Partial<(typeof prev.statuses)[number]>,
+                        exclusiveRoleIds(BLOCKER_STATUS_ROLE_IDS)
+                      ),
+                    }));
+                  }}
+                  onDaysChange={(id, days) => {
+                    setDraft((prev) => ({
+                      ...prev,
+                      statuses: prev.statuses.map((s) =>
+                        s.key === status.key ? { ...s, [id]: days } : s
+                      ),
+                    }));
+                  }}
+                />
               </div>
               <LifecycleToggle
                 checked={status.enabled}
@@ -238,6 +316,7 @@ export function BlockerLifecycleSettings() {
             </li>
           ))}
         </ul>
+        </div>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions

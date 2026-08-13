@@ -130,6 +130,38 @@ function orphanKeys(
   return [...orphans].sort();
 }
 
+/**
+ * Existing matrices locked Rejected like later mainline stages. Rework requires
+ * those fields to reopen. Only upgrades locked → editable; never overwrites a
+ * user-chosen side-effect cell.
+ *
+ * @param rows - Stored matrix rows.
+ * @returns Rows plus field keys that need a persist.
+ */
+export function reconcileRejectedReworkUnlock(rows: ReleaseFieldLockRow[]): {
+  rows: ReleaseFieldLockRow[];
+  changedFieldKeys: string[];
+} {
+  const changedFieldKeys: string[] = [];
+  const next = rows.map((row) => {
+    const catalog = RELEASE_FIELD_LOCK_CATALOG.find((e) => e.fieldKey === row.fieldKey);
+    if (!catalog || !catalog.isConfigurable) return row;
+    if (catalog.defaultRules.rejected !== "editable") return row;
+    if (
+      row.statusRules.rejected === "editable" ||
+      row.statusRules.rejected === "editable_with_side_effect"
+    ) {
+      return row;
+    }
+    changedFieldKeys.push(row.fieldKey);
+    return {
+      ...row,
+      statusRules: { ...row.statusRules, rejected: "editable" as const },
+    };
+  });
+  return { rows: next, changedFieldKeys };
+}
+
 async function seedDefaults(
   clerkUserId: string,
   lifecycle: ReleaseLifecycleConfig
@@ -219,6 +251,22 @@ export async function loadReleaseFieldLockConfig(
           });
           rows = [...rows, ...added].sort((a, b) =>
             a.fieldKey.localeCompare(b.fieldKey)
+          );
+        }
+        const unlocked = reconcileRejectedReworkUnlock(rows);
+        if (unlocked.changedFieldKeys.length > 0) {
+          rows = unlocked.rows;
+          await Promise.all(
+            unlocked.changedFieldKeys.map((fieldKey) => {
+              const row = rows.find((r) => r.fieldKey === fieldKey);
+              if (!row) return Promise.resolve();
+              return prisma.userReleaseFieldLockConfig.updateMany({
+                where: { clerkUserId, fieldKey },
+                data: {
+                  statusRules: row.statusRules as unknown as Prisma.InputJsonValue,
+                },
+              });
+            })
           );
         }
       }

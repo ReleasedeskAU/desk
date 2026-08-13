@@ -35,6 +35,46 @@ export const RELEASE_LIFECYCLE_GATE_ENFORCEMENTS = [
 export type ReleaseLifecycleGateEnforcement =
   (typeof RELEASE_LIFECYCLE_GATE_ENFORCEMENTS)[number];
 
+export const RELEASE_EDIT_MODES = [
+  "full",
+  "limited",
+  "read_only",
+  "immutable",
+] as const;
+export type ReleaseEditMode = (typeof RELEASE_EDIT_MODES)[number];
+
+/**
+ * Sheet “Editable?” column defaults. Deployed is Limited (not view-only).
+ * Used when a stored snapshot predates `editMode`.
+ *
+ * @param key - Status key (e.g. deployed).
+ * @returns Edit mode for that key.
+ */
+export function defaultReleaseEditModeForStatusKey(key: string): ReleaseEditMode {
+  switch (key) {
+    case "closed":
+    case "cancelled":
+      return "immutable";
+    case "deploying":
+      return "read_only";
+    case "pending_cab":
+    case "cab_approved":
+    case "ready_to_deploy":
+    case "deployed":
+      return "limited";
+    default:
+      return "full";
+  }
+}
+
+/** True when a value is a known Release edit-mode token. */
+export function isReleaseEditMode(value: unknown): value is ReleaseEditMode {
+  return (
+    typeof value === "string" &&
+    (RELEASE_EDIT_MODES as readonly string[]).includes(value)
+  );
+}
+
 export type ReleaseLifecycleStatusConfig = {
   key: string;
   label: string;
@@ -43,7 +83,131 @@ export type ReleaseLifecycleStatusConfig = {
   kind: ReleaseLifecycleStatusKind;
   isSystem: boolean;
   enabled: boolean;
+  /** Sheet Editable? column — configurable on Statuses tab. */
+  editMode: ReleaseEditMode;
+  /** New records land here. */
+  isIntake: boolean;
+  /** This stage and later freeze the dependency list (VR-36). */
+  readyMilestone: boolean;
+  /** This stage and later lock bookings / new blockers (VR-35, §3-06). */
+  deployingMilestone: boolean;
+  /** Entering this status marks matching dependencies Met (AV-04). */
+  deployedMilestone: boolean;
+  /** Entering this status withdraws open CAB approvals (CASC-13). */
+  withdrawApprovalsOnEnter: boolean;
+  /** Entering this status writes the CAB scope snapshot (VR-21). */
+  writesCabScopeSnapshot: boolean;
+  /** Entering this status clears the CAB scope snapshot (VR-21 revert). */
+  clearsCabScopeSnapshot: boolean;
+  /** Linked release lands here when an approval decision reverts it. */
+  approvalRejectLanding: boolean;
 };
+
+const EMPTY_RELEASE_ROLES = {
+  isIntake: false,
+  readyMilestone: false,
+  deployingMilestone: false,
+  deployedMilestone: false,
+  withdrawApprovalsOnEnter: false,
+  writesCabScopeSnapshot: false,
+  clearsCabScopeSnapshot: false,
+  approvalRejectLanding: false,
+} as const;
+
+/**
+ * Enterprise-default roles for a release status key (seed / fill-missing only).
+ * Runtime must read the flags on the live status object, not call this.
+ */
+export function defaultReleaseStatusRoles(
+  key: string
+): Pick<
+  ReleaseLifecycleStatusConfig,
+  | "isIntake"
+    | "readyMilestone"
+    | "deployingMilestone"
+    | "deployedMilestone"
+    | "withdrawApprovalsOnEnter"
+    | "writesCabScopeSnapshot"
+    | "clearsCabScopeSnapshot"
+    | "approvalRejectLanding"
+> {
+  return {
+    isIntake: key === "draft",
+    readyMilestone: key === "ready_to_deploy",
+    deployingMilestone: key === "deploying",
+    deployedMilestone: key === "deployed",
+    withdrawApprovalsOnEnter: key === "cancelled",
+    writesCabScopeSnapshot: key === "cab_approved",
+    clearsCabScopeSnapshot: key === "pending_cab",
+    approvalRejectLanding: key === "planning",
+  };
+}
+
+/**
+ * Fill role flags on a stored release status (explicit false/null kept).
+ */
+export function withReleaseStatusRoles(
+  status: Omit<
+    ReleaseLifecycleStatusConfig,
+    | "isIntake"
+    | "readyMilestone"
+    | "deployingMilestone"
+    | "deployedMilestone"
+    | "withdrawApprovalsOnEnter"
+    | "writesCabScopeSnapshot"
+    | "clearsCabScopeSnapshot"
+    | "approvalRejectLanding"
+  > &
+    Partial<
+      Pick<
+        ReleaseLifecycleStatusConfig,
+        | "isIntake"
+        | "readyMilestone"
+        | "deployingMilestone"
+        | "deployedMilestone"
+        | "withdrawApprovalsOnEnter"
+        | "writesCabScopeSnapshot"
+        | "clearsCabScopeSnapshot"
+        | "approvalRejectLanding"
+      >
+    >
+): ReleaseLifecycleStatusConfig {
+  const fallback = defaultReleaseStatusRoles(status.key);
+  return {
+    ...EMPTY_RELEASE_ROLES,
+    ...status,
+    isIntake:
+      typeof status.isIntake === "boolean" ? status.isIntake : fallback.isIntake,
+    readyMilestone:
+      typeof status.readyMilestone === "boolean"
+        ? status.readyMilestone
+        : fallback.readyMilestone,
+    deployingMilestone:
+      typeof status.deployingMilestone === "boolean"
+        ? status.deployingMilestone
+        : fallback.deployingMilestone,
+    deployedMilestone:
+      typeof status.deployedMilestone === "boolean"
+        ? status.deployedMilestone
+        : fallback.deployedMilestone,
+    withdrawApprovalsOnEnter:
+      typeof status.withdrawApprovalsOnEnter === "boolean"
+        ? status.withdrawApprovalsOnEnter
+        : fallback.withdrawApprovalsOnEnter,
+    writesCabScopeSnapshot:
+      typeof status.writesCabScopeSnapshot === "boolean"
+        ? status.writesCabScopeSnapshot
+        : fallback.writesCabScopeSnapshot,
+    clearsCabScopeSnapshot:
+      typeof status.clearsCabScopeSnapshot === "boolean"
+        ? status.clearsCabScopeSnapshot
+        : fallback.clearsCabScopeSnapshot,
+    approvalRejectLanding:
+      typeof status.approvalRejectLanding === "boolean"
+        ? status.approvalRejectLanding
+        : fallback.approvalRejectLanding,
+  };
+}
 
 export type ReleaseLifecycleGateAttachment = {
   gateType: ReleaseLifecycleGateType;
@@ -73,23 +237,33 @@ export const MAX_RELEASE_LIFECYCLE_STATUSES = 30;
 export const MAX_RELEASE_LIFECYCLE_TRANSITIONS = 200;
 export const PREVIOUS_STATUS_TARGET_KEY = "__previous__";
 
-/** Locked default status vocabulary and display order. */
-export const DEFAULT_RELEASE_LIFECYCLE_STATUSES: readonly ReleaseLifecycleStatusConfig[] = [
-  { key: "draft", label: "Draft", sortOrder: 10, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "planning", label: "Planning", sortOrder: 20, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "testing", label: "Testing", sortOrder: 30, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "uat", label: "UAT", sortOrder: 40, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "pending_cab", label: "Pending CAB", sortOrder: 50, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "cab_approved", label: "CAB Approved", sortOrder: 60, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "ready_to_deploy", label: "Ready to deploy", sortOrder: 70, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "deploying", label: "Deploying", sortOrder: 80, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "deployed", label: "Deployed", sortOrder: 90, terminal: false, kind: "mainline", isSystem: true, enabled: true },
-  { key: "closed", label: "Closed", sortOrder: 100, terminal: true, kind: "terminal", isSystem: true, enabled: true },
-  { key: "cancelled", label: "Cancelled", sortOrder: 110, terminal: true, kind: "terminal", isSystem: true, enabled: true },
-  { key: "blocked", label: "Blocked", sortOrder: 120, terminal: false, kind: "interrupt", isSystem: true, enabled: true },
-  { key: "rolled_back", label: "Rolled Back", sortOrder: 130, terminal: false, kind: "interrupt", isSystem: true, enabled: true },
-  { key: "deferred", label: "Deferred", sortOrder: 140, terminal: false, kind: "branch", isSystem: true, enabled: true },
-  { key: "rejected", label: "Rejected", sortOrder: 150, terminal: false, kind: "branch", isSystem: true, enabled: true },
+/** Locked default status vocabulary and display order (roles filled on seed). */
+export const DEFAULT_RELEASE_LIFECYCLE_STATUSES: readonly Omit<
+  ReleaseLifecycleStatusConfig,
+  | "isIntake"
+  | "readyMilestone"
+  | "deployingMilestone"
+  | "deployedMilestone"
+  | "withdrawApprovalsOnEnter"
+  | "writesCabScopeSnapshot"
+  | "clearsCabScopeSnapshot"
+  | "approvalRejectLanding"
+>[] = [
+  { key: "draft", label: "Draft", sortOrder: 10, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "full" },
+  { key: "planning", label: "Planning", sortOrder: 20, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "full" },
+  { key: "testing", label: "Testing", sortOrder: 30, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "full" },
+  { key: "uat", label: "UAT", sortOrder: 40, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "full" },
+  { key: "pending_cab", label: "Pending CAB", sortOrder: 50, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "limited" },
+  { key: "cab_approved", label: "CAB Approved", sortOrder: 60, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "limited" },
+  { key: "ready_to_deploy", label: "Ready to deploy", sortOrder: 70, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "limited" },
+  { key: "deploying", label: "Deploying", sortOrder: 80, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "read_only" },
+  { key: "deployed", label: "Deployed", sortOrder: 90, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "limited" },
+  { key: "closed", label: "Closed", sortOrder: 100, terminal: true, kind: "terminal", isSystem: true, enabled: true, editMode: "immutable" },
+  { key: "cancelled", label: "Cancelled", sortOrder: 110, terminal: true, kind: "terminal", isSystem: true, enabled: true, editMode: "immutable" },
+  { key: "blocked", label: "Blocked", sortOrder: 120, terminal: false, kind: "interrupt", isSystem: true, enabled: true, editMode: "full" },
+  { key: "rolled_back", label: "Rolled Back", sortOrder: 130, terminal: false, kind: "interrupt", isSystem: true, enabled: true, editMode: "full" },
+  { key: "deferred", label: "Deferred", sortOrder: 140, terminal: false, kind: "branch", isSystem: true, enabled: true, editMode: "full" },
+  { key: "rejected", label: "Rejected", sortOrder: 150, terminal: false, kind: "branch", isSystem: true, enabled: true, editMode: "full" },
 ];
 
 function gate(
@@ -172,6 +346,8 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
     gate("no_open_environment_conflicts", 60),
     // VR-26: warning-only for Large releases missing Dress Rehearsal.
     gate("dress_rehearsal_for_large", 70, "flexible"),
+    // VR-27: High-score risks need a mitigation plan before Ready.
+    gate("high_risks_mitigated", 75),
     gate("ops_signoff_complete", 80),
   ]),
   transition("cab_approved", "pending_cab", 20),
@@ -226,7 +402,9 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
 /** Fresh default object so consumers cannot mutate shared constants. */
 export function createDefaultReleaseLifecycleConfig(): ReleaseLifecycleConfig {
   return {
-    statuses: DEFAULT_RELEASE_LIFECYCLE_STATUSES.map((status) => ({ ...status })),
+    statuses: DEFAULT_RELEASE_LIFECYCLE_STATUSES.map((status) =>
+      withReleaseStatusRoles({ ...status })
+    ),
     transitions: DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS.map((item) => ({
       ...item,
       gates: item.gates.map((itemGate) => ({
@@ -280,6 +458,9 @@ export function validateReleaseLifecycleConfig(
     }
     if (status.terminal !== (status.kind === "terminal")) {
       return `Status ${key} terminal flag and kind must agree`;
+    }
+    if (!isReleaseEditMode(status.editMode)) {
+      return `Invalid editMode for ${key}`;
     }
     keys.add(key);
     labels.add(normalizedLabel);
@@ -391,7 +572,14 @@ export function normalizeReleaseLifecycleConfigResult(
   }
   const graph = raw as ReleaseLifecycleConfig;
   const candidate: ReleaseLifecycleConfig = {
-    statuses: graph.statuses.map((status) => ({ ...status })),
+    statuses: graph.statuses.map((status) =>
+      withReleaseStatusRoles({
+        ...status,
+        editMode: isReleaseEditMode(status.editMode)
+          ? status.editMode
+          : defaultReleaseEditModeForStatusKey(status.key),
+      })
+    ),
     transitions: graph.transitions.map((item) => ({
       ...item,
       gates: item.gates.map((itemGate) => ({

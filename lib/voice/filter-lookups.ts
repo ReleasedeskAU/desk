@@ -49,7 +49,7 @@ async function loadFilterLookups(deps?: {
   if (typeof fetcher !== "function") return cache;
 
   try {
-    const res = await fetcher("/api/release-lookups");
+    const res = await fetcher("/api/release-lookups?include=directories");
     if (!res.ok) return cache;
     const data = (await res.json()) as {
       departments?: LookupRow[];

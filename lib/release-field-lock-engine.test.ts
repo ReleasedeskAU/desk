@@ -5,7 +5,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createDefaultReleaseLifecycleConfig } from "./release-lifecycle-config";
-import { defaultFieldLockRowsFromCatalog } from "./release-field-lock-config-db";
+import {
+  defaultFieldLockRowsFromCatalog,
+  reconcileRejectedReworkUnlock,
+} from "./release-field-lock-config-db";
 import {
   getFieldLockStateFromRows,
   validateReleaseFieldUpdateWithRows,
@@ -79,5 +82,50 @@ describe("release field-lock engine", () => {
     ]);
     assert.equal(result.allowed, true);
     assert.equal(result.rejected.length, 0);
+  });
+
+  it("unlocks rework fields at Rejected (sheet: gates unlocked)", () => {
+    const name = getFieldLockStateFromRows(rows, "name", "rejected");
+    const size = getFieldLockStateFromRows(rows, "releaseSize", "rejected");
+    const code = getFieldLockStateFromRows(rows, "releaseCode", "rejected");
+    assert.equal(name, "editable");
+    assert.equal(size, "editable");
+    assert.equal(code, "locked");
+    const result = validateReleaseFieldUpdateWithRows(rows, "rejected", [
+      "name",
+      "releaseSize",
+    ]);
+    assert.equal(result.allowed, true);
+  });
+
+  it("names the status in lock-denial copy", () => {
+    const result = validateReleaseFieldUpdateWithRows(rows, "deployed", [
+      "name",
+    ]);
+    assert.equal(result.allowed, false);
+    assert.match(result.rejected[0]?.reason ?? "", /Deployed/);
+  });
+
+  it("upgrades stored Rejected locked cells to editable", () => {
+    const lockedName = rows.map((row) =>
+      row.fieldKey === "name"
+        ? { ...row, statusRules: { ...row.statusRules, rejected: "locked" as const } }
+        : row
+    );
+    const next = reconcileRejectedReworkUnlock(lockedName);
+    assert.ok(next.changedFieldKeys.includes("name"));
+    assert.equal(
+      next.rows.find((r) => r.fieldKey === "name")?.statusRules.rejected,
+      "editable"
+    );
+  });
+
+  it("still rejects a real Release ID change even when status is also sent", () => {
+    const result = validateReleaseFieldUpdateWithRows(rows, "pending_cab", [
+      "status",
+      "releaseCode",
+    ]);
+    assert.equal(result.allowed, false);
+    assert.ok(result.rejected.some((r) => r.field === "releaseCode"));
   });
 });

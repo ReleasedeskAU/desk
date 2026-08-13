@@ -8,6 +8,7 @@ import { createApprovalRow } from "@/lib/org-compat";
 import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 import { defaultEntityStatusLabel } from "@/lib/entity-lifecycle-status-ui";
+import { resolveApprovalLifecycleStatusRef } from "@/lib/approval-lifecycle-transition";
 
 async function nextApprovalCode(): Promise<string> {
   const rows = await prisma.approval.findMany({ select: { approvalCode: true } });
@@ -43,12 +44,14 @@ export async function POST(req: Request) {
   const body = parsed.data;
 
   let decision = String(body.decision ?? "").trim();
+  let decisionKey: string | undefined;
   try {
     const loaded = await loadApprovalLifecycleConfig(user!.id);
     // Decision labels are treated as lifecycle statuses for create validation.
     const resolved = resolveCreateLifecycleStatus(loaded.config, decision, "approval");
     if (!resolved.ok) return resolved.response;
     decision = resolved.status;
+    decisionKey = resolved.statusKey;
     const defaultDecision = defaultEntityStatusLabel(loaded.config);
     // Non-default decisions require a decision date (same rule as the create form).
     if (
@@ -57,6 +60,17 @@ export async function POST(req: Request) {
     ) {
       return NextResponse.json(
         { error: "Decision date is required when a decision has been made" },
+        { status: 400 }
+      );
+    }
+    const dest = resolveApprovalLifecycleStatusRef(loaded.config, decision);
+    if (dest?.requiresConditions && !String(body.conditions ?? "").trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "This decision needs the conditions written down — the terms this approval is subject to. Add them, then save.",
+          code: "CONDITIONS_REQUIRED",
+        },
         { status: 400 }
       );
     }
@@ -92,7 +106,9 @@ export async function POST(req: Request) {
     submittedDate: new Date(body.submittedDate),
     decisionDate: body.decisionDate ? new Date(body.decisionDate) : null,
     decision,
+    decisionKey,
     comments: body.comments ?? null,
+    conditions: body.conditions ?? null,
     cabMeetingId: body.cabMeetingId ?? null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

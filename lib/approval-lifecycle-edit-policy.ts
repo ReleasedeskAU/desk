@@ -13,9 +13,15 @@ const LIMITED_ALLOWED = new Set([
   "comments",
   "decisionDate",
   "cabMeetingId",
+  "conditions",
 ]);
 
-const READ_ONLY_ALLOWED = new Set(["decision", "overrideReason", "comments"]);
+const READ_ONLY_ALLOWED = new Set([
+  "decision",
+  "overrideReason",
+  "comments",
+  "conditions",
+]);
 
 /**
  * Resolve edit mode for the current approval decision.

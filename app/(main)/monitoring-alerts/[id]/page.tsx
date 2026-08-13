@@ -29,6 +29,9 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { alertWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
+import type { AlertLifecycleConfig } from "@/lib/alert-lifecycle-config";
 
 type AlertDetail = {
   id: string;
@@ -83,15 +86,6 @@ const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low", "Info"].map((v) =
   label: v,
 }));
 
-const STATUS_OPTIONS = [
-  "Pending",
-  "Acknowledged",
-  "Actioned",
-  "Dismissed",
-  "Expired",
-].map(
-  (v) => ({ value: v, label: v })
-);
 
 function toDateInput(iso: string | null) {
   if (!iso) return "";
@@ -161,6 +155,7 @@ export default function MonitoringAlertDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const lifecycle = useEntityLifecycleStatuses("/api/alert-lifecycle-config");
   const [row, setRow] = useState<AlertDetail | null>(null);
   const [options, setOptions] = useState<AlertOption[]>([]);
   const [applications, setApplications] = useState<ApplicationOption[]>([]);
@@ -251,13 +246,10 @@ export default function MonitoringAlertDetailPage({
     return SEVERITY_OPTIONS;
   }, [row?.severity]);
 
-  const statusOptions = useMemo(() => {
-    const set = new Set(STATUS_OPTIONS.map((o) => o.value));
-    if (row?.status && !set.has(row.status)) {
-      return [{ value: row.status, label: row.status }, ...STATUS_OPTIONS];
-    }
-    return STATUS_OPTIONS;
-  }, [row?.status]);
+  const statusOptions = useMemo(
+    () => statusSelectOptions(lifecycle.createOptions, row?.status),
+    [lifecycle.createOptions, row?.status]
+  );
 
   const save = async () => {
     if (!row || !edit.draft) return;
@@ -367,7 +359,10 @@ export default function MonitoringAlertDetailPage({
   const daysOpen = daysSince(v.timestamp || row.timestamp);
   const highSeverity = severityTone(v.severity) === "bad";
   const assignee = v.assignedTo.trim();
-  const workflow = alertWorkflow(v.status);
+  const workflow = alertWorkflow(
+    v.status,
+    (lifecycle.config as AlertLifecycleConfig | null) ?? undefined
+  );
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,

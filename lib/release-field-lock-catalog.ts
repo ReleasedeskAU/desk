@@ -85,6 +85,10 @@ function rulesEditableUntil(
       out[key] = "locked";
     }
   }
+  // Rejected is a rework branch: fields that locked on the mainline reopen so
+  // the release can be corrected (sheet: “Yes — gates unlocked”). Always-locked
+  // identity fields use rulesAlwaysLocked() and stay locked.
+  out.rejected = "editable";
   return out;
 }
 

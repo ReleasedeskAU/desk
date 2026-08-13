@@ -240,6 +240,7 @@ export type CreateRiskInput = {
   mitigationStrategy?: string | null;
   riskOwnerId?: string | null;
   status: string;
+  statusKey?: string | null;
   notes?: string | null;
   sourceOrder?: number | null;
 };
@@ -262,15 +263,15 @@ export async function createRiskRow(data: CreateRiskInput) {
         INSERT INTO "Risk" (
           id, "organizationId", "riskCode", "releaseId", "applicationName",
           "departmentName", category, description, likelihood, impact, "riskScore",
-          "affectedArea", "mitigationStrategy", "riskOwnerId", status, notes,
-          "sourceOrder", "createdAt", "updatedAt"
+          "affectedArea", "mitigationStrategy", "riskOwnerId", status, "statusKey",
+          notes, "sourceOrder", "createdAt", "updatedAt"
         ) VALUES (
           ${id}, ${orgId}, ${data.riskCode}, ${data.releaseId}, ${data.applicationName ?? null},
           ${data.departmentName ?? null}, ${data.category}, ${data.description},
           ${data.likelihood}, ${data.impact}, ${data.likelihood * data.impact},
           ${data.affectedArea ?? null}, ${data.mitigationStrategy ?? null},
-          ${data.riskOwnerId ?? null}, ${data.status}, ${data.notes ?? null},
-          ${data.sourceOrder ?? null}, ${now}, ${now}
+          ${data.riskOwnerId ?? null}, ${data.status}, ${data.statusKey ?? null},
+          ${data.notes ?? null}, ${data.sourceOrder ?? null}, ${now}, ${now}
         )
       `;
       return prisma.risk.findUniqueOrThrow({ where: { id }, include });
@@ -292,6 +293,7 @@ export type CreateDriftInput = {
   impactOnRelease?: string | null;
   remediationAction?: string | null;
   status: string;
+  statusKey?: string | null;
   etaToFix?: Date | null;
   sourceOrder?: number | null;
 };
@@ -312,14 +314,15 @@ export async function createDriftRow(data: CreateDriftInput) {
           id, "organizationId", "driftCode", "releaseId", "applicationId",
           "departmentName", "environmentName", "driftType", "driftCategory",
           "detectedDate", severity, description, "impactOnRelease",
-          "remediationAction", status, "etaToFix", "sourceOrder", "createdAt", "updatedAt"
+          "remediationAction", status, "statusKey", "etaToFix", "sourceOrder",
+          "createdAt", "updatedAt"
         ) VALUES (
           ${id}, ${orgId}, ${data.driftCode}, ${data.releaseId}, ${data.applicationId},
           ${data.departmentName ?? null}, ${data.environmentName}, ${data.driftType},
           ${data.driftCategory ?? null}, ${data.detectedDate}, ${data.severity},
           ${data.description}, ${data.impactOnRelease ?? null},
-          ${data.remediationAction ?? null}, ${data.status}, ${data.etaToFix ?? null},
-          ${data.sourceOrder ?? null}, ${now}, ${now}
+          ${data.remediationAction ?? null}, ${data.status}, ${data.statusKey ?? null},
+          ${data.etaToFix ?? null}, ${data.sourceOrder ?? null}, ${now}, ${now}
         )
       `;
       return prisma.drift.findUniqueOrThrow({ where: { id }, include });
@@ -337,7 +340,9 @@ export type CreateApprovalInput = {
   submittedDate: Date;
   decisionDate?: Date | null;
   decision: string;
+  decisionKey?: string | null;
   comments?: string | null;
+  conditions?: string | null;
   cabMeetingId?: string | null;
   sourceOrder?: number | null;
 };
@@ -349,7 +354,11 @@ export async function createApprovalRow(data: CreateApprovalInput) {
     approver: { select: { id: true, userId: true, name: true } },
   } as const;
   return createWithOrgCompatibility(
-    () => prisma.approval.create({ data, include }),
+    () =>
+      prisma.approval.create({
+        data: data as Parameters<typeof prisma.approval.create>[0]["data"],
+        include,
+      }),
     async (orgId) => {
       const id = newId();
       const now = new Date();
@@ -357,14 +366,15 @@ export async function createApprovalRow(data: CreateApprovalInput) {
         INSERT INTO "Approval" (
           id, "organizationId", "approvalCode", "releaseId", "applicationName",
           "departmentName", "approvalType", "approverId", "submittedDate",
-          "decisionDate", decision, comments, "cabMeetingId", "sourceOrder",
-          "createdAt", "updatedAt"
+          "decisionDate", decision, "decisionKey", comments, conditions, "cabMeetingId",
+          "sourceOrder", "createdAt", "updatedAt"
         ) VALUES (
           ${id}, ${orgId}, ${data.approvalCode}, ${data.releaseId},
           ${data.applicationName ?? null}, ${data.departmentName ?? null},
           ${data.approvalType}, ${data.approverId}, ${data.submittedDate},
-          ${data.decisionDate ?? null}, ${data.decision}, ${data.comments ?? null},
-          ${data.cabMeetingId ?? null}, ${data.sourceOrder ?? null}, ${now}, ${now}
+          ${data.decisionDate ?? null}, ${data.decision}, ${data.decisionKey ?? null},
+          ${data.comments ?? null}, ${data.conditions ?? null}, ${data.cabMeetingId ?? null},
+          ${data.sourceOrder ?? null}, ${now}, ${now}
         )
       `;
       return prisma.approval.findUniqueOrThrow({ where: { id }, include });
@@ -462,6 +472,7 @@ export type CreateReleaseInput = {
   programProject?: string | null;
   owner: string;
   status: string;
+  statusKey?: string | null;
   releaseDate: Date;
   priority: string;
   impact: string;
@@ -514,7 +525,7 @@ export async function createReleaseRow(data: CreateReleaseInput) {
       await prisma.$executeRaw`
         INSERT INTO "Release" (
           id, "organizationId", "releaseCode", name, "programProject", owner,
-          status, "releaseDate", priority, impact, "departmentId", notes,
+          status, "statusKey", "releaseDate", priority, impact, "departmentId", notes,
           dependencies, "releaseSize", "cabDate", "startDate", "testEnvRequired",
           "uatEnvRequired", "conflictFlag", "conflictId", "readinessPercent",
           blockers, "vendorMaintenance", "changeFreeze", regulatory,
@@ -523,7 +534,7 @@ export async function createReleaseRow(data: CreateReleaseInput) {
           "createdAt", "updatedAt"
         ) VALUES (
           ${id}, ${orgId}, ${data.releaseCode}, ${data.name}, ${data.programProject ?? null},
-          ${data.owner}, ${data.status}, ${data.releaseDate}, ${data.priority},
+          ${data.owner}, ${data.status}, ${data.statusKey ?? null}, ${data.releaseDate}, ${data.priority},
           ${data.impact}, ${data.departmentId}, ${data.notes ?? null},
           ${data.dependencies ?? null}, ${data.releaseSize ?? null}, ${data.cabDate ?? null},
           ${data.startDate ?? null}, ${data.testEnvRequired ?? null},

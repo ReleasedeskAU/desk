@@ -9,9 +9,14 @@ import {
   resolveBlockerLifecycleStatusRef,
   validateBlockerTransition,
 } from "@/lib/blocker-lifecycle-transition";
+import { keysWithActualBlockerPatchChanges } from "@/lib/blocker-patch-changed-keys";
 import { cascadeUnblockReleaseOnBlockerResolved } from "@/lib/lifecycle-event-hooks";
-import { createDefaultBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import {
+  encodeUxNoticeHeader,
+  UX_NOTICE_HEADER,
+  type UxNotice,
+} from "@/lib/ux-notice";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -98,10 +103,14 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven).
   try {
     const { config } = await loadBlockerLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
+    const proposedKeys = keysWithActualBlockerPatchChanges({
+      existing: existing as unknown as Record<string, unknown>,
+      body: body as unknown as Record<string, unknown>,
+    });
     const { mode, denied } = deniedBlockerEditFields(
       config,
       existing.status,
@@ -129,19 +138,34 @@ export async function PATCH(req: Request, { params }: Params) {
         fromStatus: existing.status,
         toStatus: String(body.status),
         overrideReason: body.overrideReason ?? null,
+        facts: {
+          assignedTo:
+            body.assignedTo !== undefined ? body.assignedTo : existing.assignedTo,
+          resolutionNotes:
+            body.resolutionNotes !== undefined
+              ? body.resolutionNotes
+              : existing.resolutionNotes,
+          rootCause:
+            body.rootCause !== undefined ? body.rootCause : existing.rootCause,
+        },
       });
       if (!transition.allowed) {
         return NextResponse.json(
           {
             error: transition.reason,
             code: transition.code,
+            unmetReasons: transition.unmetReasons ?? [],
             transition,
           },
           { status: 422 }
         );
       }
-      // Persist the lifecycle-canonical label (not the raw client string).
+      // Persist the lifecycle-canonical label and key (Wave 4).
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveBlockerLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[blockers PATCH] lifecycle enforcement failed", {
@@ -186,7 +210,10 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.blockerDescription !== undefined) data.blockerDescription = body.blockerDescription;
   if (body.severity !== undefined) data.severity = body.severity;
   if (body.raisedBy !== undefined) data.raisedBy = body.raisedBy;
-  if (body.status !== undefined) data.status = body.status;
+  if (body.status !== undefined) {
+    data.status = body.status;
+    if (nextStatusKey) data.statusKey = nextStatusKey;
+  }
   if (body.escalationLevel !== undefined) data.escalationLevel = body.escalationLevel;
   if (body.impactOnRelease !== undefined) data.impactOnRelease = body.impactOnRelease;
   if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
@@ -199,26 +226,31 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const row = await prisma.blocker.update({ where: { id: existing.id }, data });
 
-  // CASC-02: Resolved only — auto-unblock parent release when no open blockers remain.
+  const uxNotices: UxNotice[] = [];
+  // CASC-02: entering the unblock-parent status can return a Blocked release.
   if (body.status !== undefined) {
-    const blockerConfig = createDefaultBlockerLifecycleConfig();
-    const nextKey = resolveBlockerLifecycleStatusRef(
-      blockerConfig,
-      row.status
-    )?.key;
-    const prevKey = resolveBlockerLifecycleStatusRef(
-      blockerConfig,
-      existing.status
-    )?.key;
-    if (nextKey === "resolved" && prevKey !== "resolved") {
-      try {
-        await cascadeUnblockReleaseOnBlockerResolved(row.releaseCode);
-      } catch (cascErr) {
-        console.warn("[blockers PATCH] CASC-02 auto-unblock failed", {
-          blockerCode: row.blockerCode,
-          message: cascErr instanceof Error ? cascErr.message : "unknown",
-        });
+    try {
+      const { config: blockerConfig } = await loadBlockerLifecycleConfig(user!.id);
+      const next = resolveBlockerLifecycleStatusRef(blockerConfig, row.status);
+      const prev = resolveBlockerLifecycleStatusRef(blockerConfig, existing.status);
+      if (next?.unblocksParent && !prev?.unblocksParent) {
+        const casc = await cascadeUnblockReleaseOnBlockerResolved(
+          row.releaseCode,
+          user!.id
+        );
+        if (casc.roleFault) {
+          console.error("[blockers PATCH] CASC-02 role fault", casc.roleFault);
+          uxNotices.push({
+            title: "Automation needs a Settings fix",
+            message: casc.roleFault.message,
+          });
+        }
       }
+    } catch (cascErr) {
+      console.warn("[blockers PATCH] CASC-02 auto-unblock failed", {
+        blockerCode: row.blockerCode,
+        message: cascErr instanceof Error ? cascErr.message : "unknown",
+      });
     }
   }
 
@@ -227,6 +259,14 @@ export async function PATCH(req: Request, { params }: Params) {
     select: { id: true, releaseCode: true, name: true, status: true },
   });
 
+  if (uxNotices.length > 0) {
+    return NextResponse.json(mapBlocker(row, release), {
+      headers: {
+        [UX_NOTICE_HEADER]: encodeUxNoticeHeader(uxNotices),
+        "Access-Control-Expose-Headers": UX_NOTICE_HEADER,
+      },
+    });
+  }
   return NextResponse.json(mapBlocker(row, release));
 }
 

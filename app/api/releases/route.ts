@@ -12,8 +12,14 @@ import {
   defaultReleaseStatusLabel,
   isEnabledReleaseStatusLabel,
 } from "@/lib/release-lifecycle-status-ui";
+import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
 import { detectScheduleConflictsOnDeployDate } from "@/lib/lifecycle-event-hooks";
+import {
+  encodeUxNoticeHeader,
+  UX_NOTICE_HEADER,
+  type UxNotice,
+} from "@/lib/ux-notice";
 import {
   validateReleaseDateOrder,
   validateReleaseNameAndApplications,
@@ -95,6 +101,7 @@ export async function POST(req: Request) {
   // Status must be an enabled label in the creator's lifecycle config (SSOT).
   let lifecycleConfigVersionId: string | null = null;
   let status = String(body.status ?? "").trim();
+  let statusKey: string | undefined;
   try {
     const loaded = await loadReleaseLifecycleConfig(user!.id);
     const defaultStatus = defaultReleaseStatusLabel(loaded.config) || "Draft";
@@ -104,6 +111,11 @@ export async function POST(req: Request) {
         { error: "Status is not enabled in the release lifecycle configuration" },
         { status: 400 }
       );
+    }
+    const persisted = resolveLifecycleStatusRef(loaded.config, status);
+    if (persisted) {
+      status = persisted.label;
+      statusKey = persisted.key;
     }
     lifecycleConfigVersionId =
       loaded.latestVersionId ??
@@ -167,6 +179,7 @@ export async function POST(req: Request) {
       programProject: normalizeProgramProject(body.programProject ?? "") ?? "N/A",
       owner: String(body.owner ?? "Unknown"),
       status,
+      statusKey,
       releaseDate,
       priority: String(body.priority ?? "P3 - Medium"),
       impact: String(body.impact ?? "Medium"),
@@ -222,9 +235,20 @@ export async function POST(req: Request) {
   ]);
 
   // AV-05: after apps are linked so shared-application overlap can be detected.
+  const uxNotices: UxNotice[] = [];
   if (body.releaseDate && body.applicationIds?.length) {
     try {
-      await detectScheduleConflictsOnDeployDate(created.id, releaseDate);
+      const createdConflicts = await detectScheduleConflictsOnDeployDate(
+        created.id,
+        releaseDate,
+        user!.id
+      );
+      if (createdConflicts.roleFault) {
+        uxNotices.push({
+          title: "Automation needs a Settings fix",
+          message: createdConflicts.roleFault.message,
+        });
+      }
     } catch (hookErr) {
       console.warn("[releases POST] AV-05 conflict detect failed", {
         releaseId: created.id,
@@ -243,5 +267,14 @@ export async function POST(req: Request) {
       releaseOwner: { select: { id: true, userId: true, name: true } },
     },
   });
+  if (uxNotices.length > 0) {
+    return NextResponse.json(row, {
+      status: 201,
+      headers: {
+        [UX_NOTICE_HEADER]: encodeUxNoticeHeader(uxNotices),
+        "Access-Control-Expose-Headers": UX_NOTICE_HEADER,
+      },
+    });
+  }
   return NextResponse.json(row, { status: 201 });
 }

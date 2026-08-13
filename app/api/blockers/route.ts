@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { blockerWhere, sp, str } from "@/lib/list-api-filters";
 import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
-import { guardBlockerCreateWhileDeployingOrLater } from "@/lib/release-related-entity-guards";
+import {
+  guardBlockerCreateWhileDeployingOrLater,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
+import { isBlockerCategory } from "@/lib/blocker-categories";
 
 const dateOnly = (value: Date | null) => value?.toISOString().slice(0, 10) ?? null;
 
@@ -118,9 +122,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Release not found" }, { status: 404 });
   }
 
-  // VR-35: no new blockers once the parent is Deploying or later.
+  // VR-35: no new blockers once the parent is at/beyond the Deploying milestone.
+  const releaseConfig = await loadGuardReleaseConfig(
+    user!.id,
+    release.lifecycleConfigVersionId
+  );
   const blockerCreateGuard = guardBlockerCreateWhileDeployingOrLater(
-    release.status
+    release.status,
+    releaseConfig
   );
   if (!blockerCreateGuard.ok) return blockerCreateGuard.response;
 
@@ -136,6 +145,16 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  if (!isBlockerCategory(blockerType)) {
+    return NextResponse.json(
+      {
+        error:
+          "Category isn’t in the allowed list. Pick one of the 15 blocker categories (for example Technical, Approval, or Vendor).",
+        code: "INVALID_BLOCKER_CATEGORY",
+      },
+      { status: 400 }
+    );
+  }
 
   const blockerCode =
     typeof body.blockerCode === "string" && body.blockerCode.trim()
@@ -148,11 +167,13 @@ export async function POST(req: Request) {
   }
 
   let status = String(body.status ?? "").trim();
+  let statusKey: string | undefined;
   try {
     const loaded = await loadBlockerLifecycleConfig(user!.id);
     const resolved = resolveCreateLifecycleStatus(loaded.config, status, "blocker");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
+    statusKey = resolved.statusKey;
   } catch (err) {
     console.error("[blockers-create] lifecycle config load failed", {
       message: err instanceof Error ? err.message : "unknown",
@@ -186,6 +207,7 @@ export async function POST(req: Request) {
       raisedBy: String(body.raisedBy ?? "").trim() || user!.name,
       assignedTo: body.assignedTo ? String(body.assignedTo).trim() : null,
       status,
+      statusKey,
       targetResolutionDate: body.targetResolutionDate ? new Date(body.targetResolutionDate) : null,
       actualResolutionDate: null,
       daysOpen: Number.isFinite(Number(body.daysOpen)) ? Number(body.daysOpen) : 0,

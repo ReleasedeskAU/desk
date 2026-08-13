@@ -6,6 +6,7 @@ import {
   normalizeReleaseLifecycleConfig,
   normalizeReleaseLifecycleConfigResult,
   validateReleaseLifecycleConfig,
+  withReleaseStatusRoles,
   type ReleaseLifecycleConfig,
 } from "./release-lifecycle-config";
 import { RELEASE_LIFECYCLE_GATE_CATALOG } from "./release-lifecycle-gates";
@@ -63,6 +64,21 @@ describe("default Release lifecycle configuration", () => {
         (g) => g.gateType === "rework_acknowledged"
       )
     );
+    assert.ok(
+      transition("cab_approved", "ready_to_deploy")?.gates.some(
+        (g) => g.gateType === "high_risks_mitigated"
+      )
+    );
+    assert.equal(
+      DEFAULT_RELEASE_LIFECYCLE_CONFIG.statuses.find((s) => s.key === "deployed")
+        ?.editMode,
+      "limited"
+    );
+    assert.equal(
+      DEFAULT_RELEASE_LIFECYCLE_CONFIG.statuses.find((s) => s.key === "deploying")
+        ?.editMode,
+      "read_only"
+    );
   });
 
   it("returns independent default objects", () => {
@@ -116,15 +132,18 @@ describe("validateReleaseLifecycleConfig", () => {
 
   it("accepts a custom status and transition without free-form logic", () => {
     const custom = createDefaultReleaseLifecycleConfig();
-    custom.statuses.push({
-      key: "security_review",
-      label: "Security Review",
-      sortOrder: 65,
-      terminal: false,
-      kind: "branch",
-      isSystem: false,
-      enabled: true,
-    });
+    custom.statuses.push(
+      withReleaseStatusRoles({
+        key: "security_review",
+        label: "Security Review",
+        sortOrder: 65,
+        terminal: false,
+        kind: "branch",
+        isSystem: false,
+        enabled: true,
+        editMode: "full",
+      })
+    );
     custom.transitions.push({
       fromKey: "cab_approved",
       toKey: "security_review",
@@ -148,6 +167,23 @@ describe("validateReleaseLifecycleConfig", () => {
 });
 
 describe("normalizeReleaseLifecycleConfig", () => {
+  it("fills missing editMode on stored snapshots so Deployed is Limited", () => {
+    const raw = createDefaultReleaseLifecycleConfig();
+    for (const status of raw.statuses) {
+      delete (status as { editMode?: string }).editMode;
+    }
+    const result = normalizeReleaseLifecycleConfigResult(raw);
+    assert.equal(result.usedEnterpriseDefaultFallback, false);
+    assert.equal(
+      result.config.statuses.find((s) => s.key === "deployed")?.editMode,
+      "limited"
+    );
+    assert.equal(
+      result.config.statuses.find((s) => s.key === "deploying")?.editMode,
+      "read_only"
+    );
+  });
+
   it("fails open to defaults for an invalid stored graph and flags the fallback", () => {
     const invalid = createDefaultReleaseLifecycleConfig();
     invalid.transitions[0]!.fromKey = "unknown";
@@ -195,6 +231,7 @@ function createCompactReleaseLifecycleConfig(): ReleaseLifecycleConfig {
         kind: "mainline",
         isSystem: false,
         enabled: true,
+        editMode: "full",
       },
       {
         key: "in_review",
@@ -204,6 +241,7 @@ function createCompactReleaseLifecycleConfig(): ReleaseLifecycleConfig {
         kind: "mainline",
         isSystem: false,
         enabled: true,
+        editMode: "full",
       },
       {
         key: "approved",
@@ -213,6 +251,7 @@ function createCompactReleaseLifecycleConfig(): ReleaseLifecycleConfig {
         kind: "mainline",
         isSystem: false,
         enabled: true,
+        editMode: "limited",
       },
       {
         key: "live",
@@ -222,8 +261,13 @@ function createCompactReleaseLifecycleConfig(): ReleaseLifecycleConfig {
         kind: "terminal",
         isSystem: false,
         enabled: true,
+        editMode: "immutable",
       },
-    ],
+    ].map((status) =>
+      withReleaseStatusRoles(
+        status as Parameters<typeof withReleaseStatusRoles>[0]
+      )
+    ),
     transitions: [
       {
         fromKey: "draft",
@@ -360,15 +404,18 @@ describe("second config — compact 4-status lifecycle (Section 6 audit)", () =>
 
   it("allows previous-status from any interrupt status key (not only blocked)", () => {
     const withHold = createCompactReleaseLifecycleConfig();
-    withHold.statuses.push({
-      key: "on_hold",
-      label: "On Hold",
-      sortOrder: 50,
-      terminal: false,
-      kind: "interrupt",
-      isSystem: false,
-      enabled: true,
-    });
+    withHold.statuses.push(
+      withReleaseStatusRoles({
+        key: "on_hold",
+        label: "On Hold",
+        sortOrder: 50,
+        terminal: false,
+        kind: "interrupt",
+        isSystem: false,
+        enabled: true,
+        editMode: "full",
+      })
+    );
     withHold.transitions.push({
       fromKey: "in_review",
       toKey: "on_hold",

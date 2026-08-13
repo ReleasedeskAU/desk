@@ -24,6 +24,7 @@ export const RELEASE_LIFECYCLE_GATE_TYPES = [
   "dress_rehearsal_for_large",
   "scope_unchanged_since_cab",
   "ops_signoff_complete",
+  "high_risks_mitigated",
   "work_items_complete",
   "pir_complete",
   "rollback_plan_documented",
@@ -174,6 +175,13 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
     label: "Ops sign-off complete",
     description: "Ops Sign-Off must be complete before Ready.",
     ruleIds: ["VR-31"],
+    dataReliability: "reliable",
+  },
+  high_risks_mitigated: {
+    label: "High risks have a mitigation plan",
+    description:
+      "Every High-score risk on this release must have a mitigation plan before Ready. Closed, accepted, or already mitigated risks are ignored.",
+    ruleIds: ["VR-27"],
     dataReliability: "reliable",
   },
   work_items_complete: {

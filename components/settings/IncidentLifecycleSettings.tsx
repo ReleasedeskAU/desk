@@ -10,15 +10,39 @@ import {
   type IncidentLifecycleConfig,
   type IncidentLifecycleEnforcement,
 } from "@/lib/incident-lifecycle-config";
+import { incidentGate, type IncidentLifecycleGateType } from "@/lib/incident-lifecycle-gates";
+import { IncidentGatesPanel } from "@/components/settings/lifecycle/IncidentGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
+import {
+  applyStatusRolePatch,
+  exclusiveRoleIds,
+  INCIDENT_STATUS_ROLE_IDS,
+  statusRoleFieldsFor,
+} from "@/lib/lifecycle-status-roles";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+
+const INCIDENT_STATUS_OWNER_HINT: Record<string, string> = {
+  open: "Service Desk",
+  acknowledged: "Incident Owner",
+  investigating: "Incident Owner",
+  escalated: "Escalation Manager",
+  resolving: "Incident Owner",
+  resolved: "Incident Owner",
+  closed: "Service Desk",
+  reopened: "Incident Owner",
+};
 
 function cloneConfig(config: IncidentLifecycleConfig): IncidentLifecycleConfig {
   return {
     statuses: config.statuses.map((s) => ({ ...s })),
-    transitions: config.transitions.map((t) => ({ ...t })),
+    transitions: config.transitions.map((t) => ({
+      ...t,
+      gates: (t.gates ?? []).map((g) => ({ ...g })),
+    })),
   };
 }
 
@@ -32,7 +56,29 @@ export function IncidentLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions">("statuses");
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">("statuses");
+
+  const toggleGate = (
+    fromKey: string,
+    toKey: string,
+    gateType: IncidentLifecycleGateType,
+    enabled: boolean
+  ) => {
+    setDraft((prev) => ({
+      ...prev,
+      transitions: prev.transitions.map((t) => {
+        if (t.fromKey !== fromKey || t.toKey !== toKey) return t;
+        const gates = [...(t.gates ?? [])];
+        const idx = gates.findIndex((g) => g.gateType === gateType);
+        if (idx >= 0) {
+          gates[idx] = { ...gates[idx]!, enabled };
+        } else {
+          gates.push(incidentGate(gateType, (gates.length + 1) * 10));
+        }
+        return { ...t, gates };
+      }),
+    }));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,10 +210,17 @@ export function IncidentLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Incidents</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Open → Investigating / Closed; Resolving → Resolved / Escalated.</li>
-          <li>Closed is terminal and immutable (Required).</li>
-          <li>Critical Open exits need an owner or an exception reason.</li>
-          <li>Legacy Active / Acknowledged / Mitigated map into the new vocabulary.</li>
+          <li>Active → Acknowledged / Investigating. Acknowledged → Investigating / Resolved.</li>
+          <li>Closed is terminal and immutable (Required). Other moves are Flexible unless you change them.</li>
+          <li>Critical incidents leaving the starting status need an owner or an exception reason (VR-13).</li>
+          <li>
+            “What this status does” marks the starting status, which stages block a linked
+            release, and which status unblocks it — rename labels without breaking those checks.
+          </li>
+          <li>
+            Accountable owner (Service Desk / Incident Owner / Escalation Manager) is
+            display-only — not enforced against Clerk roles.
+          </li>
         </ul>
       </div>
 
@@ -176,6 +229,7 @@ export function IncidentLifecycleSettings() {
           [
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
+            ["gates", "Checks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -195,7 +249,18 @@ export function IncidentLifecycleSettings() {
         ))}
       </div>
 
-      {panel === "statuses" ? (
+      {panel === "gates" ? (
+        <IncidentGatesPanel
+          config={draft}
+          editing={editing}
+          onToggleGate={toggleGate}
+        />
+      ) : panel === "statuses" ? (
+        <div className="space-y-3">
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={INCIDENT_STATUS_ROLE_IDS}
+        />
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {sortedStatuses.map((status) => (
             <li
@@ -216,7 +281,28 @@ export function IncidentLifecycleSettings() {
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {lifecycleEditModeLabel(status.editMode)}
+                  {INCIDENT_STATUS_OWNER_HINT[status.key]
+                    ? ` · accountable (display): ${INCIDENT_STATUS_OWNER_HINT[status.key]}`
+                    : ""}
                 </p>
+                <StatusMeaningEditor
+                  fields={statusRoleFieldsFor(INCIDENT_STATUS_ROLE_IDS)}
+                  values={status}
+                  editing={editing}
+                  statusLabel={status.label}
+                  onToggle={(id, checked) => {
+                    setDraft((prev) => ({
+                      ...prev,
+                      statuses: applyStatusRolePatch(
+                        prev.statuses,
+                        status.key,
+                        { [id]: checked } as Partial<(typeof prev.statuses)[number]>,
+                        exclusiveRoleIds(INCIDENT_STATUS_ROLE_IDS)
+                      ),
+                    }));
+                  }}
+                  onDaysChange={() => undefined}
+                />
               </div>
               <LifecycleToggle
                 checked={status.enabled}
@@ -234,6 +320,7 @@ export function IncidentLifecycleSettings() {
             </li>
           ))}
         </ul>
+        </div>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions

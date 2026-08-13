@@ -96,11 +96,13 @@ export async function POST(req: Request) {
   }
 
   let status = String(body.status ?? "").trim();
+  let statusKey: string | undefined;
   try {
     const loaded = await loadRiskLifecycleConfig(user!.id);
     const resolved = resolveCreateLifecycleStatus(loaded.config, status, "risk");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
+    statusKey = resolved.statusKey;
   } catch (err) {
     console.error("[risks-create] lifecycle config load failed", {
       message: err instanceof Error ? err.message : "unknown",
@@ -124,6 +126,7 @@ export async function POST(req: Request) {
     mitigationStrategy: body.mitigationStrategy ?? null,
     riskOwnerId: body.riskOwnerId ?? null,
     status,
+    statusKey,
     notes: body.notes ?? null,
     sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
   });

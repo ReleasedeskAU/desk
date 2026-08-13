@@ -11,7 +11,7 @@ import {
   loadReleaseFieldLockConfig,
   type ReleaseFieldLockRow,
 } from "@/lib/release-field-lock-config-db";
-import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { createDefaultReleaseLifecycleConfig, DEFAULT_RELEASE_LIFECYCLE_STATUSES } from "@/lib/release-lifecycle-config";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 
 export type FieldLockRejection = { field: string; reason: string };
@@ -25,6 +25,17 @@ export type ValidateReleaseFieldUpdateResult = {
   rejected: FieldLockRejection[];
   sideEffects: FieldLockSideEffect[];
 };
+
+/** Display label for a status key in lock-denial copy. */
+function statusLabelForLockKey(key: string): string {
+  const match = DEFAULT_RELEASE_LIFECYCLE_STATUSES.find((s) => s.key === key);
+  if (match) return match.label;
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 function stateAtStatus(
   row: ReleaseFieldLockRow,
@@ -150,7 +161,7 @@ export function validateReleaseFieldUpdateWithRows(
     if (state === "locked") {
       rejected.push({
         field: entry.fieldKey,
-        reason: `"${entry.label}" cannot be changed while the release is in this status.`,
+        reason: `"${entry.label}" can’t be changed while this release is ${statusLabelForLockKey(currentStatusKey)}.`,
       });
     } else if (state === "editable_with_side_effect") {
       sideEffects.push({

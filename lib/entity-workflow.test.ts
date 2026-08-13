@@ -17,14 +17,14 @@ import {
 } from "./entity-workflow";
 
 describe("blockerWorkflow", () => {
-  it("offers starting work first on an open blocker", () => {
+  it("offers assigning first on an open blocker, then legal extras", () => {
     const { primary, secondary } = blockerWorkflow("Open");
 
-    assert.equal(primary?.status, "In Progress");
-    assert.equal(primary?.label, "Start work");
+    assert.equal(primary?.status, "Assigned");
+    assert.equal(primary?.label, "Assign owner");
     assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Resolved"]
+      secondary.map((s) => s.status).sort(),
+      ["Cancelled", "Escalated", "In Progress"]
     );
   });
 
@@ -35,27 +35,24 @@ describe("blockerWorkflow", () => {
     assert.equal(primary?.stampsResolution, true);
   });
 
-  it("offers closing once resolved, and clears the date on reopen", () => {
+  it("offers closing once resolved, and reopens to Reopened not Open", () => {
     const { primary, secondary } = blockerWorkflow("Resolved");
 
     assert.equal(primary?.status, "Closed");
-    assert.equal(secondary[0]?.status, "Open");
+    assert.equal(secondary[0]?.status, "Reopened");
     assert.equal(secondary[0]?.clearsResolution, true);
   });
 
-  it("leaves a closed blocker with no primary action", () => {
+  it("leaves a closed blocker with no actions (terminal)", () => {
     const { primary, secondary } = blockerWorkflow("Closed");
 
     assert.equal(primary, null);
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Open"]
-    );
+    assert.deepEqual(secondary, []);
   });
 
   it("treats blank or unrecognised statuses as untouched work", () => {
     for (const status of ["", "   ", "Awaiting triage"]) {
-      assert.equal(blockerWorkflow(status).primary?.status, "In Progress");
+      assert.equal(blockerWorkflow(status).primary?.status, "Assigned");
     }
   });
 
@@ -65,174 +62,120 @@ describe("blockerWorkflow", () => {
 });
 
 describe("conflictWorkflow", () => {
-  it("uses conflict-specific copy and stamps no resolution date", () => {
-    const { primary } = conflictWorkflow("In Progress");
-
-    assert.equal(primary?.label, "Mark resolved");
-    assert.equal(primary?.stampsResolution, false);
+  it("follows the live graph from Detected", () => {
+    const { primary, secondary } = conflictWorkflow("Detected");
+    assert.equal(primary?.status, "Under Review");
+    assert.equal(primary?.label, "Start review");
+    assert.deepEqual(
+      secondary.map((s) => s.status).sort(),
+      ["Dismissed", "Resolved"]
+    );
   });
 
-  it("offers reopening a closed conflict without touching dates", () => {
-    const { primary, secondary } = conflictWorkflow("Closed");
-
+  it("leaves Resolved with no one-click (no outgoing edges)", () => {
+    const { primary, secondary } = conflictWorkflow("Resolved");
     assert.equal(primary, null);
-    assert.equal(secondary[0]?.label, "Reopen conflict");
-    assert.equal(secondary[0]?.clearsResolution, false);
+    assert.deepEqual(secondary, []);
   });
 });
 
 describe("driftWorkflow", () => {
-  it("uses remediation copy and stamps no resolution date", () => {
-    const { primary } = driftWorkflow("In Progress");
-
-    assert.equal(primary?.label, "Mark remediated");
-    assert.equal(primary?.status, "Resolved");
-    assert.equal(primary?.stampsResolution, false);
+  it("starts investigation from Detected", () => {
+    const { primary } = driftWorkflow("Detected");
+    assert.equal(primary?.status, "Investigating");
+    assert.equal(primary?.label, "Start investigation");
   });
 
-  it("offers starting remediation on an open drift", () => {
-    assert.equal(driftWorkflow("Open").primary?.label, "Start remediation");
+  it("falls back to Starting status when the label is unknown", () => {
+    assert.equal(driftWorkflow("Open").primary?.status, "Investigating");
   });
 });
 
 describe("dependencyWorkflow", () => {
-  it("pushes a blocked link toward cleared, with at-risk as the softer move", () => {
-    const { primary, secondary } = dependencyWorkflow("Blocked");
-
-    assert.equal(primary?.status, "Clear");
+  it("offers At Risk first from Pending, then Met/Waived/Removed", () => {
+    const { primary, secondary } = dependencyWorkflow("Pending");
+    assert.equal(primary?.status, "At Risk");
     assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["At Risk"]
+      secondary.map((s) => s.status).sort(),
+      ["Met", "Removed", "Waived"]
     );
   });
 
-  it("lets an at-risk link clear or fall back to blocked", () => {
-    const { primary, secondary } = dependencyWorkflow("At Risk");
-
-    assert.equal(primary?.status, "Clear");
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Blocked"]
-    );
+  it("moves At Risk toward Met", () => {
+    const { primary } = dependencyWorkflow("At Risk");
+    assert.equal(primary?.status, "Met");
   });
 
-  it("closes out a cleared link by resolving it", () => {
-    assert.equal(dependencyWorkflow("Clear").primary?.status, "Resolved");
-  });
-
-  it("treats resolved as terminal and reopens to at risk", () => {
-    const { primary, secondary } = dependencyWorkflow("Resolved");
-
+  it("leaves Met with no one-click (terminal / no outgoing)", () => {
+    const { primary, secondary } = dependencyWorkflow("Met");
     assert.equal(primary, null);
-    assert.equal(secondary[0]?.status, "At Risk");
-  });
-
-  it("only emits statuses the dependency schema accepts", () => {
-    const allowed = new Set(["Blocked", "At Risk", "Clear", "Resolved"]);
-    for (const status of ["Blocked", "At Risk", "Clear", "Resolved", "Unknown"]) {
-      const { primary, secondary } = dependencyWorkflow(status);
-      for (const step of [...(primary ? [primary] : []), ...secondary]) {
-        assert.ok(allowed.has(step.status), `${status} → ${step.status}`);
-      }
-    }
+    assert.deepEqual(secondary, []);
   });
 });
 
 describe("incidentWorkflow", () => {
-  it("walks the containment ladder one rung at a time", () => {
-    assert.equal(incidentWorkflow("Active").primary?.status, "Investigating");
-    assert.equal(incidentWorkflow("Investigating").primary?.status, "Mitigated");
-    assert.equal(incidentWorkflow("Mitigated").primary?.status, "Resolved");
+  it("walks the live incident graph", () => {
+    assert.equal(incidentWorkflow("Active").primary?.status, "Acknowledged");
+    assert.equal(incidentWorkflow("Open").primary?.status, "Acknowledged");
+    assert.equal(incidentWorkflow("Acknowledged").primary?.status, "Investigating");
+    assert.equal(incidentWorkflow("Investigating").primary?.status, "Resolving");
+    assert.equal(incidentWorkflow("Resolving").primary?.status, "Resolved");
     assert.equal(incidentWorkflow("Resolved").primary?.status, "Closed");
   });
 
-  it("treats closed as terminal and reopens to active", () => {
+  it("leaves Closed with no one-click (terminal)", () => {
     const { primary, secondary } = incidentWorkflow("Closed");
-
     assert.equal(primary, null);
-    assert.equal(secondary[0]?.status, "Active");
+    assert.deepEqual(secondary, []);
   });
 
-  it("treats an unrecognised status as nobody being on it yet", () => {
-    assert.equal(incidentWorkflow("Triage").primary?.status, "Investigating");
+  it("treats an unrecognised status as Starting (Open)", () => {
+    assert.equal(incidentWorkflow("Triage").primary?.status, "Acknowledged");
   });
 });
 
 describe("approvalWorkflow", () => {
-  it("offers approve, reject and defer on an open gate", () => {
+  it("offers approve first on Pending, then legal extras", () => {
     const { primary, secondary } = approvalWorkflow("Pending");
-
     assert.equal(primary?.status, "Approved");
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Rejected", "Deferred"]
-    );
-  });
-
-  it("stamps a decision date on both outcomes", () => {
-    const { primary, secondary } = approvalWorkflow("Pending");
-
     assert.equal(primary?.stampsResolution, true);
-    assert.equal(secondary[0]?.stampsResolution, true);
+    assert.ok(secondary.some((s) => s.status === "Approved with Conditions"));
+    assert.ok(secondary.some((s) => s.status === "Rejected"));
+    assert.ok(secondary.some((s) => s.status === "Deferred"));
   });
 
-  it("drops defer once the gate has already been deferred", () => {
+  it("hides the required Approved → Expired cron edge from one-click", () => {
+    const { primary, secondary } = approvalWorkflow("Approved");
+    assert.equal(primary, null);
+    assert.deepEqual(secondary, []);
+  });
+
+  it("leaves Deferred with no one-click (no outgoing edges)", () => {
     const { primary, secondary } = approvalWorkflow("Deferred");
-
-    assert.equal(primary?.status, "Approved");
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Rejected"]
-    );
-  });
-
-  it("treats a recorded decision as final, with reopen clearing the date", () => {
-    for (const decision of ["Approved", "Rejected"]) {
-      const { primary, secondary } = approvalWorkflow(decision);
-      assert.equal(primary, null, decision);
-      assert.equal(secondary[0]?.status, "Pending", decision);
-      assert.equal(secondary[0]?.clearsResolution, true, decision);
-    }
+    assert.equal(primary, null);
+    assert.deepEqual(secondary, []);
   });
 });
 
 describe("alertWorkflow", () => {
-  it("asks for acknowledgement before investigation on a fresh alert", () => {
-    const { primary, secondary } = alertWorkflow("Open");
-
-    assert.equal(primary?.status, "Acknowledged");
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Investigating", "Dismissed"]
-    );
-  });
-
-  it("moves an acknowledged alert into investigation", () => {
-    assert.equal(alertWorkflow("Acknowledged").primary?.status, "Investigating");
-    assert.ok(
-      alertWorkflow("Acknowledged").secondary.some((s) => s.status === "Dismissed")
-    );
-  });
-
-  it("offers dismiss from pending as a secondary step", () => {
+  it("acknowledges a pending alert first", () => {
     const { primary, secondary } = alertWorkflow("Pending");
     assert.equal(primary?.status, "Acknowledged");
     assert.ok(secondary.some((s) => s.status === "Dismissed"));
   });
 
-  it("treats a cleared alert the same as a resolved one", () => {
-    assert.equal(alertWorkflow("Cleared").primary?.status, "Closed");
+  it("moves Acknowledged to Actioned", () => {
+    assert.equal(alertWorkflow("Acknowledged").primary?.status, "Actioned");
   });
 
-  it("treats closed as terminal and reopens to open", () => {
-    const { primary, secondary } = alertWorkflow("Closed");
+  it("falls back to Starting status when the label is unknown", () => {
+    assert.equal(alertWorkflow("Open").primary?.status, "Acknowledged");
+  });
 
+  it("leaves Actioned with no one-click (no outgoing edges)", () => {
+    const { primary, secondary } = alertWorkflow("Actioned");
     assert.equal(primary, null);
-    assert.equal(secondary[0]?.status, "Open");
-  });
-
-  it("treats a firing alert as unacknowledged", () => {
-    assert.equal(alertWorkflow("Firing").primary?.status, "Acknowledged");
+    assert.deepEqual(secondary, []);
   });
 });
 
@@ -276,45 +219,29 @@ describe("maintenanceWorkflow", () => {
 });
 
 describe("riskWorkflow", () => {
-  it("pushes an open risk toward mitigation, with escalate and accept as alternatives", () => {
+  it("walks Identified → Assessing via the Open alias", () => {
     const { primary, secondary } = riskWorkflow("Open");
-
-    assert.equal(primary?.status, "Mitigating");
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Escalated", "Accepted"]
-    );
+    assert.equal(primary?.status, "Assessing");
+    assert.ok(secondary.some((s) => s.status === "Escalated"));
   });
 
-  it("offers closing once mitigation or monitoring is under way", () => {
-    for (const status of ["Mitigating", "Monitoring", "In Progress"]) {
-      assert.equal(riskWorkflow(status).primary?.status, "Closed", status);
-    }
+  it("moves Mitigating to Mitigated", () => {
+    assert.equal(riskWorkflow("Mitigating").primary?.status, "Mitigated");
   });
 
   it("routes an escalated risk back to mitigation", () => {
     const { primary, secondary } = riskWorkflow("Escalated");
-
     assert.equal(primary?.status, "Mitigating");
-    assert.deepEqual(
-      secondary.map((s) => s.status),
-      ["Accepted"]
-    );
+    assert.ok(secondary.some((s) => s.status === "Accepted"));
   });
 
-  it("treats accepted and closed as terminal", () => {
-    for (const status of ["Accepted", "Closed"]) {
-      const { primary, secondary } = riskWorkflow(status);
-      assert.equal(primary, null, status);
-      assert.deepEqual(
-        secondary.map((s) => s.status),
-        ["Open"],
-        status
-      );
-    }
+  it("leaves Closed with no one-click (terminal)", () => {
+    const { primary, secondary } = riskWorkflow("Closed");
+    assert.equal(primary, null);
+    assert.deepEqual(secondary, []);
   });
 
-  it("treats an unrecognised status as open exposure", () => {
-    assert.equal(riskWorkflow("Needs review").primary?.status, "Mitigating");
+  it("treats an unrecognised status as Starting (Identified)", () => {
+    assert.equal(riskWorkflow("Needs review").primary?.status, "Assessing");
   });
 });

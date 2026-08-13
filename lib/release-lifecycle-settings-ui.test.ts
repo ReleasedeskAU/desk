@@ -13,13 +13,16 @@ import {
   addLifecycleStatus,
   addLifecycleTransition,
   cloneLifecycleConfig,
-  isAlwaysPassLifecycleGate,
-  isHardBoundaryStatusKey,
+    isAlwaysPassLifecycleGate,
+    isCfg06EnforcementLocked,
+    isHardBoundaryStatusKey,
   moveLifecycleStatus,
   partitionTransitionGateCatalog,
   removeLifecycleStatus,
   removeLifecycleTransition,
   reorderLifecycleStatuses,
+  setLifecycleStatusEditMode,
+  setLifecycleStatusRoles,
   setLifecycleTransitionEnforcement,
   statusRemovalBlockReason,
   toggleLifecycleGate,
@@ -77,6 +80,30 @@ describe("statusRemovalBlockReason / removeLifecycleStatus", () => {
       false
     );
     assert.equal(validateReleaseLifecycleConfig(removed.config), null);
+  });
+});
+
+describe("setLifecycleStatusRoles", () => {
+  it("moves Starting status off Draft onto Planning and leaves other exclusive roles", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const result = setLifecycleStatusRoles(config, "planning", { isIntake: true });
+    assert.ok("config" in result);
+    assert.equal(result.config.statuses.find((s) => s.key === "draft")?.isIntake, false);
+    assert.equal(result.config.statuses.find((s) => s.key === "planning")?.isIntake, true);
+    assert.equal(
+      result.config.statuses.find((s) => s.key === "ready_to_deploy")?.readyMilestone,
+      true
+    );
+  });
+
+  it("new custom statuses do not claim exclusive roles", () => {
+    const base = createDefaultReleaseLifecycleConfig();
+    const added = addLifecycleStatus(base, "Hold Desk", false);
+    assert.ok("config" in added);
+    const custom = added.config.statuses.find((s) => s.label === "Hold Desk")!;
+    assert.equal(custom.isIntake, false);
+    assert.equal(custom.readyMilestone, false);
+    assert.equal(custom.withdrawApprovalsOnEnter, false);
   });
 });
 
@@ -186,7 +213,7 @@ describe("transition toggles", () => {
 describe("gates panel helpers", () => {
   it("marks only unverifiable gates as always-pass UI warning", () => {
     // CAB scope snapshot is now reliable — no longer always-pass.
-    assert.equal(isAlwaysPassLifecycleGate("scope_unchanged_since_cab"), false);
+    assert.equal(isAlwaysPassLifecycleGate("high_risks_mitigated"), false);
     assert.equal(isAlwaysPassLifecycleGate("environment_booked_for_deploy"), false);
     assert.equal(isAlwaysPassLifecycleGate("owner_set"), false);
   });
@@ -254,5 +281,32 @@ describe("cloneLifecycleConfig", () => {
     });
     assert.equal(original.statuses[0]!.label, "Draft");
     assert.equal(original.transitions[0]!.gates.length, originalGateCount);
+  });
+});
+
+describe("CFG-06 and Editable? settings helpers", () => {
+  it("refuses to set Deploying/Deployed exits to Flexible", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    assert.equal(isCfg06EnforcementLocked("deploying"), true);
+    assert.equal(isCfg06EnforcementLocked("deployed"), true);
+    assert.equal(isCfg06EnforcementLocked("ready_to_deploy"), false);
+    const result = setLifecycleTransitionEnforcement(
+      config,
+      "deploying",
+      "deployed",
+      "flexible"
+    );
+    assert.ok("error" in result);
+    assert.match(result.error, /cannot be changed to Flexible/);
+  });
+
+  it("updates Deployed edit rule from Statuses settings", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const result = setLifecycleStatusEditMode(config, "deployed", "full");
+    assert.ok("config" in result);
+    assert.equal(
+      result.config.statuses.find((s) => s.key === "deployed")?.editMode,
+      "full"
+    );
   });
 });

@@ -5,7 +5,10 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { patchDriftSchema } from "@/lib/validation/drift";
 import { loadDriftLifecycleConfig } from "@/lib/drift-lifecycle-config-db";
 import { deniedDriftEditFields } from "@/lib/drift-lifecycle-edit-policy";
-import { validateDriftTransition } from "@/lib/drift-lifecycle-transition";
+import {
+  resolveDriftLifecycleStatusRef,
+  validateDriftTransition,
+} from "@/lib/drift-lifecycle-transition";
 import {
   createMonitoringAlertOnDriftEscalated,
   isDriftEscalatedStatus,
@@ -62,6 +65,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven).
   try {
     const { config } = await loadDriftLifecycleConfig(user!.id);
@@ -105,6 +109,10 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveDriftLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[drifts PATCH] lifecycle enforcement failed", {
@@ -177,7 +185,10 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.description !== undefined) data.description = body.description;
   if (body.impactOnRelease !== undefined) data.impactOnRelease = body.impactOnRelease;
   if (body.remediationAction !== undefined) data.remediationAction = body.remediationAction;
-  if (body.status !== undefined) data.status = body.status;
+  if (body.status !== undefined) {
+    data.status = body.status;
+    if (nextStatusKey) data.statusKey = nextStatusKey;
+  }
   if (etaToFix !== undefined) data.etaToFix = etaToFix;
 
   const row = await prisma.drift.update({
@@ -186,11 +197,12 @@ export async function PATCH(req: Request, { params }: Params) {
     include: driftInclude,
   });
 
-  // AV-14: MonitoringAlert only when status newly lands on Escalated.
+  // AV-14: MonitoringAlert only when status newly lands on the escalate target.
+  const { config: driftConfig } = await loadDriftLifecycleConfig(user!.id);
   if (
     body.status !== undefined &&
-    isDriftEscalatedStatus(String(row.status)) &&
-    !isDriftEscalatedStatus(existing.status)
+    isDriftEscalatedStatus(String(row.status), driftConfig) &&
+    !isDriftEscalatedStatus(existing.status, driftConfig)
   ) {
     try {
       await createMonitoringAlertOnDriftEscalated({

@@ -5,7 +5,10 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { patchMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
 import { loadAlertLifecycleConfig } from "@/lib/alert-lifecycle-config-db";
 import { deniedAlertEditFields } from "@/lib/alert-lifecycle-edit-policy";
-import { validateAlertTransition } from "@/lib/alert-lifecycle-transition";
+import {
+  resolveAlertLifecycleStatusRef,
+  validateAlertTransition,
+} from "@/lib/alert-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 
 type Params = { params: Promise<{ id: string }> };
@@ -56,6 +59,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadAlertLifecycleConfig(user!.id);
@@ -101,6 +105,10 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       body.status = transition.canonicalStatus;
+      nextStatusKey = resolveAlertLifecycleStatusRef(
+        config,
+        transition.canonicalStatus
+      )?.key;
     }
   } catch (err) {
     console.error("[monitoring-alerts PATCH] lifecycle enforcement failed", {
@@ -132,7 +140,10 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.metric !== undefined) data.metric = body.metric;
   if (body.threshold !== undefined) data.threshold = body.threshold;
   if (body.currentValue !== undefined) data.currentValue = body.currentValue;
-  if (body.status !== undefined) data.status = body.status;
+  if (body.status !== undefined) {
+    data.status = body.status;
+    if (nextStatusKey) data.statusKey = nextStatusKey;
+  }
   if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
   if (body.environmentName !== undefined) data.environmentName = body.environmentName;
 

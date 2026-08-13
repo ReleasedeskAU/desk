@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { Suspense } from "react";
-import { TablePageSuspenseFallback } from "@/components/ui/TableSkeleton";
+import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { buildDashboardPayload, type DashboardPayload } from "@/lib/dashboard-payload";
 import { ensureDbAwake, isRetryableDbError, withDbRetry } from "@/lib/prisma";
 import { parseDashboardPeriod, type DashboardPeriod } from "@/lib/dashboard-period";
@@ -13,14 +13,25 @@ type PageProps = {
 };
 
 /**
- * Dashboard page — prefers server-side payload so the UI is not stuck on a
- * client fetch that races Clerk session readiness under Turbopack.
+ * Dashboard route — shell streams immediately; payload loads behind Suspense.
  */
 export default async function DashboardPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
-  // Default to all-time portfolio view when the URL has no period query.
   const period: DashboardPeriod = parseDashboardPeriod(params.period ?? "all");
 
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardLoader period={period} />
+    </Suspense>
+  );
+}
+
+/**
+ * Server-prefetched dashboard payload so the client is not stuck racing Clerk
+ * session readiness under Turbopack.
+ * @param period - Validated dashboard period from the URL.
+ */
+async function DashboardLoader({ period }: { period: DashboardPeriod }) {
   const { userId } = await auth();
   let initialData: DashboardPayload | null = null;
   let initialError: string | null = null;
@@ -28,14 +39,17 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   if (userId) {
     try {
       await ensureDbAwake();
-      initialData = await withDbRetry(async () => {
-        const riskConfig = await loadRiskEngineConfig(userId);
-        return buildDashboardPayload(period, riskConfig, userId);
-      }, {
-        label: "dashboard-page",
-        attempts: 5,
-        baseDelayMs: 800,
-      });
+      initialData = await withDbRetry(
+        async () => {
+          const riskConfig = await loadRiskEngineConfig(userId);
+          return buildDashboardPayload(period, riskConfig, userId);
+        },
+        {
+          label: "dashboard-page",
+          attempts: 3,
+          baseDelayMs: 400,
+        }
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[dashboard/page]", message);
@@ -52,12 +66,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   }
 
   return (
-    <Suspense fallback={<TablePageSuspenseFallback />}>
-      <CommandDashboardContent
-        initialPeriod={period}
-        initialData={initialData}
-        initialError={initialError}
-      />
-    </Suspense>
+    <CommandDashboardContent
+      initialPeriod={period}
+      initialData={initialData}
+      initialError={initialError}
+    />
   );
 }

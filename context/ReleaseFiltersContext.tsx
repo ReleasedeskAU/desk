@@ -22,6 +22,7 @@ import {
   type ReleaseListFilters,
 } from "@/lib/release-filters";
 import type { SortDirection } from "@/lib/table-sort";
+import { lookupIncludeQueryForPath } from "@/lib/release-lookup-scope";
 
 type ReleaseFiltersContextValue = {
   filters: ReleaseListFilters;
@@ -71,7 +72,8 @@ export function ReleaseFiltersProvider({ children }: { children: ReactNode }) {
   const [bookings, setBookings] = useState<BookingFilterRow[]>([]);
   const [dbRows, setDbRows] = useState<DbReleaseFilterRow[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const includeQuery = lookupIncludeQueryForPath(pathname);
+  const [loading, setLoading] = useState(() => includeQuery != null);
 
   const refreshLookups = useCallback((signal?: AbortSignal) => {
     if (!isLoaded) return;
@@ -79,9 +81,14 @@ export function ReleaseFiltersProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    if (!includeQuery) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const listQs = filtersToSearchParams(filters).toString();
-    const url = `/api/release-lookups${listQs ? `?${listQs}` : ""}`;
+    const params = filtersToSearchParams(filters);
+    params.set("include", includeQuery);
+    const url = `/api/release-lookups?${params.toString()}`;
 
     const load = async (attempt = 0): Promise<void> => {
       if (signal?.aborted) return;
@@ -147,7 +154,7 @@ export function ReleaseFiltersProvider({ children }: { children: ReactNode }) {
     load().finally(() => {
       if (!signal?.aborted) setLoading(false);
     });
-  }, [filters, isLoaded, isSignedIn]);
+  }, [filters, includeQuery, isLoaded, isSignedIn]);
 
   useEffect(() => {
     const ac = new AbortController();

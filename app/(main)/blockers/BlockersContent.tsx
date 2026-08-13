@@ -34,6 +34,7 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { BLOCKER_CATEGORIES } from "@/lib/blocker-categories";
 
 type BlockerRow = {
   id: string;
@@ -62,20 +63,7 @@ type BlockerRow = {
 type BlockerColumnKey = (typeof BLOCKER_COLUMNS)[number]["key"];
 
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const;
-const TYPE_OPTIONS = [
-  "Business",
-  "Compliance",
-  "Defect",
-  "Dependency",
-  "Documentation",
-  "Environment",
-  "External",
-  "Infrastructure",
-  "Resource",
-  "Security",
-  "Technical",
-  "Testing",
-] as const;
+const TYPE_OPTIONS = BLOCKER_CATEGORIES;
 const ESCALATION_OPTIONS = ["L1 - Team Lead", "L2 - Manager", "L3 - Director"] as const;
 
 const SEVERITY_CLASSES: Record<string, string> = {

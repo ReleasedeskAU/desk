@@ -12,6 +12,9 @@ import {
 } from "@/lib/signoff-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
+import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
+import { INTAKE_ONLY_ROLE_IDS } from "@/lib/lifecycle-status-roles";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -208,6 +211,11 @@ export function SignoffLifecycleSettings() {
       </div>
 
       {panel === "statuses" ? (
+        <div className="space-y-3">
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={INTAKE_ONLY_ROLE_IDS}
+        />
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {sortedStatuses.map((status) => (
             <li
@@ -233,6 +241,15 @@ export function SignoffLifecycleSettings() {
                     ? ` · expiry ${status.expiryDays}d`
                     : ""}
                 </p>
+                <StatusMeaningControls
+                  roleIds={INTAKE_ONLY_ROLE_IDS}
+                  statuses={draft.statuses}
+                  statusKey={status.key}
+                  editing={editing}
+                  onStatusesChange={(statuses) =>
+                    setDraft((prev) => ({ ...prev, statuses }))
+                  }
+                />
               </div>
               <LifecycleToggle
                 checked={status.enabled}
@@ -250,6 +267,7 @@ export function SignoffLifecycleSettings() {
             </li>
           ))}
         </ul>
+        </div>
       ) : null}
 
       {panel === "transitions" ? (

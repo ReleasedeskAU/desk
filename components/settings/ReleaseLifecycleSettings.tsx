@@ -25,6 +25,8 @@ import {
   removeLifecycleStatus,
   removeLifecycleTransition,
   reorderLifecycleStatuses,
+  setLifecycleStatusEditMode,
+  setLifecycleStatusRoles,
   setLifecycleTransitionEnforcement,
   toggleLifecycleGate,
   toggleLifecycleStatus,
@@ -58,6 +60,8 @@ const LIFECYCLE_TAB_HELP: Record<
       "Statuses are the stages a release can sit in (Draft, Planning, Testing…).",
       "Use On/Off to hide a stage you don’t use — don’t delete defaults.",
       "Drag the ⋮⋮ handle to rearrange. That order is what the release detail timeline shows.",
+      "Edit rule controls how much of the release can still be changed in that stage (editable, limited, view-only, or no further edits). Field Locks can still lock individual fields.",
+      "“What this status does” tells automations the meaning of the stage (starting status, Ready/Deploying/Deployed milestones, withdraw approvals) so renaming the label does not break checks.",
       "Only unused custom statuses can be removed.",
     ],
   },
@@ -68,6 +72,7 @@ const LIFECYCLE_TAB_HELP: Record<
       "On = people can pick this move. Off = the move is hidden.",
       "Flexible = if a check fails, you can still proceed with a written reason.",
       "Required = if a check fails, the move is blocked — no exception.",
+      "Moves out of Deploying and Deployed are always required — that control is not a toggle.",
       "“1 check” means 1 homework check is attached. Click the row (or open the Checks tab) to manage checks.",
     ],
   },
@@ -540,7 +545,7 @@ export function ReleaseLifecycleSettings() {
         <SectionCard
           step="1"
           title="Statuses"
-          subtitle="Use the On/Off switch for defaults (don’t delete them). Drag the ⋮⋮ handle beside the switch to rearrange — that order drives the release detail timeline. Custom statuses can be removed only when unused."
+          subtitle="Use the On/Off switch for defaults (don’t delete them). Each status also has an edit rule you can change. Drag the ⋮⋮ handle beside the switch to rearrange — that order drives the release detail timeline. Custom statuses can be removed only when unused."
           help={LIFECYCLE_TAB_HELP.statuses}
         >
           <StatusesPanel
@@ -571,10 +576,22 @@ export function ReleaseLifecycleSettings() {
                 "Could not update status"
               );
             }}
+            onEditModeChange={(key, editMode) => {
+              applyResult(
+                setLifecycleStatusEditMode(draftRef.current, key, editMode),
+                "Could not update edit rule"
+              );
+            }}
             onReorder={(orderedKeys) => {
               applyResult(
                 reorderLifecycleStatuses(draftRef.current, orderedKeys),
                 "Could not reorder statuses"
+              );
+            }}
+            onRoleToggle={(key, id, checked) => {
+              applyResult(
+                setLifecycleStatusRoles(draftRef.current, key, { [id]: checked }),
+                "Could not update what this status does"
               );
             }}
           />
@@ -585,7 +602,7 @@ export function ReleaseLifecycleSettings() {
         <SectionCard
           step="2"
           title="Transitions"
-          subtitle="Allowed moves between statuses. On = available as a next step. Required = checks hard-block (no exception). Custom edges can be removed; defaults use Off instead."
+          subtitle="Allowed moves between statuses. On = available as a next step. Required = checks must pass (no exception). Moves out of Deploying and Deployed stay required. Custom edges can be removed; defaults use Off instead."
           help={LIFECYCLE_TAB_HELP.transitions}
         >
           <TransitionsPanel

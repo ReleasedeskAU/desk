@@ -27,6 +27,8 @@ export type DependencyLifecycleStatusConfig = {
   cascadeEffect: string;
   /** When true, Hard deps in this status satisfy VR-18 (Deploying → Deployed). */
   satisfiesHardGate: boolean;
+  /** New dependency records land here. */
+  isIntake: boolean;
 };
 
 export type DependencyLifecycleTransitionConfig = {
@@ -58,6 +60,7 @@ export const DEFAULT_DEPENDENCY_LIFECYCLE_STATUSES: readonly DependencyLifecycle
       editMode: "full",
       cascadeEffect: "Hard dependencies block Deploying",
       satisfiesHardGate: false,
+      isIntake: true,
     },
     {
       key: "at_risk",
@@ -69,6 +72,7 @@ export const DEFAULT_DEPENDENCY_LIFECYCLE_STATUSES: readonly DependencyLifecycle
       editMode: "full",
       cascadeEffect: "Warning indicator — timeline in jeopardy",
       satisfiesHardGate: false,
+      isIntake: false,
     },
     {
       key: "met",
@@ -81,6 +85,7 @@ export const DEFAULT_DEPENDENCY_LIFECYCLE_STATUSES: readonly DependencyLifecycle
       cascadeEffect:
         "FINAL — satisfied (AV-04 auto-update; AV-26: no silent revert if predecessor rolls back)",
       satisfiesHardGate: true,
+      isIntake: false,
     },
     {
       key: "waived",
@@ -92,6 +97,7 @@ export const DEFAULT_DEPENDENCY_LIFECYCLE_STATUSES: readonly DependencyLifecycle
       editMode: "immutable",
       cascadeEffect: "FINAL — requires documented approval",
       satisfiesHardGate: true,
+      isIntake: false,
     },
     {
       key: "removed",
@@ -103,6 +109,7 @@ export const DEFAULT_DEPENDENCY_LIFECYCLE_STATUSES: readonly DependencyLifecycle
       editMode: "immutable",
       cascadeEffect: "FINAL — relationship deleted / no longer a dependency",
       satisfiesHardGate: true,
+      isIntake: false,
     },
   ];
 
@@ -212,7 +219,10 @@ export function normalizeDependencyLifecycleConfig(
     const candidate = raw as DependencyLifecycleConfig;
     if (!validateDependencyLifecycleConfig(candidate)) {
       return {
-        statuses: candidate.statuses.map((s) => ({ ...s })),
+        statuses: candidate.statuses.map((s) => ({
+          ...s,
+          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "pending",
+        })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
       };
     }

@@ -101,11 +101,13 @@ export async function POST(req: Request) {
   const body = parsed.data;
 
   let status: string;
+  let statusKey: string | undefined;
   try {
     const loaded = await loadConflictLifecycleConfig(user!.id);
     const resolved = resolveCreateLifecycleStatus(loaded.config, body.status, "conflict");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
+    statusKey = resolved.statusKey;
   } catch (err) {
     console.error("[conflicts-create] lifecycle config load failed", {
       message: err instanceof Error ? err.message : "unknown",
@@ -139,6 +141,7 @@ export async function POST(req: Request) {
     data: {
       conflictCode: await nextConflictCode(),
       status,
+      statusKey,
       priority: body.priority,
       release1Code: body.release1Code,
       release2Code: body.release2Code,

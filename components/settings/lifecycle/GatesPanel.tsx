@@ -283,6 +283,11 @@ function GateListRow({
           <span className="text-[14px] font-semibold text-slate-900 dark:text-white">
             {meta.label}
           </span>
+          {meta.ruleIds.length > 0 ? (
+            <span className="text-[11px] font-medium text-slate-400 dark:text-white/40">
+              {meta.ruleIds.join(" · ")}
+            </span>
+          ) : null}
           {attached ? (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
               Active on this move

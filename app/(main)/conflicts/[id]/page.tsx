@@ -30,6 +30,9 @@ import {
   type DetailFact,
 } from "@/lib/detail-decision";
 import { conflictWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
+import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
+import type { ConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config";
 
 type ConflictDetail = {
   id: string;
@@ -87,15 +90,6 @@ const CONFLICT_FIELD_LABELS: Partial<Record<keyof ConflictDraft, string>> = {
   notes: "Notes",
 };
 
-const STATUS_OPTIONS = [
-  "Detected",
-  "Under Review",
-  "Resolved",
-  "Dismissed",
-].map((v) => ({
-  value: v,
-  label: v,
-}));
 
 const PRIORITY_OPTIONS = [
   "P1 - Critical",
@@ -136,6 +130,7 @@ function toDraft(row: ConflictDetail): ConflictDraft {
 export default function ConflictDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const lifecycle = useEntityLifecycleStatuses("/api/conflict-lifecycle-config");
   const [row, setRow] = useState<ConflictDetail | null>(null);
   const [options, setOptions] = useState<ConflictOption[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -281,7 +276,10 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Conflict not found.</p>;
 
   const openish = !/resolv|closed/i.test(v.status);
-  const workflow = conflictWorkflow(v.status);
+  const workflow = conflictWorkflow(
+    v.status,
+    (lifecycle.config as ConflictLifecycleConfig | null) ?? undefined
+  );
   const bookings = row.relatedBookings ?? [];
   const flaggedBookings = bookings.filter((b) => b.conflictFlag);
 
@@ -394,7 +392,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
               value={d.status}
               editing
               kind="select"
-              options={STATUS_OPTIONS}
+              options={statusSelectOptions(lifecycle.createOptions, row?.status)}
               onChange={(n) => edit.setField("status", n)}
               display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
             />

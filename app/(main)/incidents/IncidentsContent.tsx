@@ -45,10 +45,24 @@ type IncidentRow = {
   environmentName: string;
 };
 
+const SEVERITY_P1 =
+  "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300";
+const SEVERITY_P2 =
+  "bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300";
+const SEVERITY_P3 =
+  "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300";
+const SEVERITY_P4 =
+  "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-300";
+
 const SEVERITY_CLASSES: Record<string, string> = {
-  P1: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
-  P2: "bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300",
-  P3: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
+  P1: SEVERITY_P1,
+  "P1 - Critical": SEVERITY_P1,
+  P2: SEVERITY_P2,
+  "P2 - High": SEVERITY_P2,
+  P3: SEVERITY_P3,
+  "P3 - Medium": SEVERITY_P3,
+  P4: SEVERITY_P4,
+  "P4 - Low": SEVERITY_P4,
 };
 
 export default function IncidentsContent() {
