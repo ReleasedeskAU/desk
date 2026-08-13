@@ -164,12 +164,14 @@ function edge(
   toKey: string,
   sortOrder: number,
   gates: IncidentLifecycleGateAttachment[] = [],
-  enforcement: IncidentLifecycleEnforcement = "flexible"
+  enforcement: IncidentLifecycleEnforcement = "flexible",
+  /** Sheet next-steps On; Resolving/Reopened shortcuts Off by default. */
+  enabled = true
 ): IncidentLifecycleTransitionConfig {
   return {
     fromKey,
     toKey,
-    enabled: true,
+    enabled,
     enforcement,
     isSystem: true,
     sortOrder,
@@ -177,27 +179,38 @@ function edge(
   };
 }
 
+/**
+ * Incident transition defaults.
+ * Sheet next-steps are On; Resolving / Reopened / skip-to-Closed stays Off so
+ * Edit Status matches the incidents sheet (optional paths remain in Settings).
+ */
 export const DEFAULT_INCIDENT_LIFECYCLE_TRANSITIONS: readonly IncidentLifecycleTransitionConfig[] =
   [
+    // Sheet: Active → Acknowledged, Investigating
     edge("open", "acknowledged", 10, [
       incidentGate("responder_confirmation_set", 10),
     ]),
     edge("open", "investigating", 20),
+    // Sheet: Acknowledged → Investigating, Resolved
     edge("acknowledged", "investigating", 10),
     edge("acknowledged", "resolved", 20),
-    edge("investigating", "resolving", 10),
+    // Sheet: Investigating → Resolved, Escalated
+    edge("investigating", "resolved", 10),
     edge("investigating", "escalated", 20),
-    edge("investigating", "closed", 30),
-    edge("investigating", "resolved", 40),
+    edge("investigating", "resolving", 30, [], "flexible", false),
+    edge("investigating", "closed", 40, [], "flexible", false),
+    // Sheet: Escalated → Investigating, Resolved
     edge("escalated", "investigating", 10),
-    edge("escalated", "resolving", 20),
-    edge("escalated", "closed", 30),
-    edge("escalated", "resolved", 40),
-    edge("resolving", "resolved", 10),
-    edge("resolving", "escalated", 20),
+    edge("escalated", "resolved", 20),
+    edge("escalated", "resolving", 30, [], "flexible", false),
+    edge("escalated", "closed", 40, [], "flexible", false),
+    // Optional Resolving stage (not on sheet) — Off
+    edge("resolving", "resolved", 10, [], "flexible", false),
+    edge("resolving", "escalated", 20, [], "flexible", false),
+    // Sheet: Resolved → Closed
     edge("resolved", "closed", 10),
-    edge("resolved", "reopened", 20),
-    edge("reopened", "investigating", 10),
+    edge("resolved", "reopened", 20, [], "flexible", false),
+    edge("reopened", "investigating", 10, [], "flexible", false),
   ];
 
 /**

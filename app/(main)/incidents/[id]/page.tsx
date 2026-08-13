@@ -33,8 +33,11 @@ import {
 } from "@/lib/detail-decision";
 import { incidentWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
-import type { IncidentLifecycleConfig } from "@/lib/incident-lifecycle-config";
+import {
+  createDefaultIncidentLifecycleConfig,
+  type IncidentLifecycleConfig,
+} from "@/lib/incident-lifecycle-config";
+import { legalNextIncidentStatuses } from "@/lib/incident-lifecycle-transition";
 
 type IncidentDetail = {
   id: string;
@@ -279,10 +282,24 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     return SEVERITY_OPTIONS;
   }, [row?.severity]);
 
-  const statusOptions = useMemo(
-    () => statusSelectOptions(lifecycle.createOptions, row?.status),
-    [lifecycle.createOptions, row?.status]
-  );
+  // Legal-next only (same as Release / Blocker Edit) — not the full catalog.
+  const statusOptions = useMemo(() => {
+    const current = row?.status ?? "";
+    const config =
+      (lifecycle.config as IncidentLifecycleConfig | null) ??
+      createDefaultIncidentLifecycleConfig();
+    const next = legalNextIncidentStatuses(config, current);
+    const labels = [current, ...next.map((s) => s.label)].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const key = label.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [lifecycle.config, row?.status]);
 
   const save = async () => {
     if (!row || !edit.draft) return;

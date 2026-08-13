@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Incident Edit status = legal-next only:** Edit Incident no longer lists the full catalog (Resolving/Reopened/Closed from Active). Dropdown is current + enabled next steps. Defaults match the sheet: Active → Acknowledged/Investigating; Investigating → Resolved/Escalated; Resolving/Reopened/skip-to-Closed edges default Off (still in Settings to turn On).
 - **Lifecycle exception after Edit modal save:** `TRANSITION_NEEDS_OVERRIDE` (e.g. Blocker In Progress → Pending without resolution notes) opened the reason panel behind the Edit modal, so save looked like a silent failure. Edit modal now closes and the exception UI opens in a top-layer dialog (Blockers, Risks, Incidents, Conflicts, Dependencies, Alerts, Approvals).
 - **Blocker transition defaults match the sheet:** Open → In Progress / Cancelled, other Cancelled shortcuts, and Resolved → Reopened default **Off**. Legal next from Open is Assigned + Escalated only. Optional paths stay in Settings (Off) to turn On if needed; reconcile does not flip stored toggles.
 - **Edit Release exception reason unreachable:** Leaving Blocked (or any Flexible step) with unmet checks (e.g. open blockers / §4-13) asked for an exception note via an OK-only “Status change blocked” dialog and hid the textarea under Notes. The exception panel now sits under Status with a focusable reason field; Save focuses that field instead of the dead-end alert, including when the API returns `TRANSITION_NEEDS_OVERRIDE`.

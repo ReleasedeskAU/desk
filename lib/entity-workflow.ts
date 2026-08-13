@@ -287,7 +287,8 @@ export function incidentWorkflow(
     primaryByFrom: {
       open: "acknowledged",
       acknowledged: "investigating",
-      investigating: "resolving",
+      // Sheet: Investigating → Resolved, Escalated (Resolving defaults Off)
+      investigating: "resolved",
       escalated: "investigating",
       resolving: "resolved",
       resolved: "closed",

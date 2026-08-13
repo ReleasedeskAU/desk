@@ -277,3 +277,32 @@ export function validateIncidentTransition(args: {
     canonicalStatus: to.label,
   };
 }
+
+export type LegalNextIncidentStatus = {
+  key: string;
+  label: string;
+};
+
+/**
+ * Enabled next statuses from the current one, in transition sort order.
+ * Used by Edit Incident so the status dropdown lists legal-next only.
+ *
+ * @param config - Caller incident lifecycle config
+ * @param fromStatus - Current status key or label
+ * @returns Next status key/label pairs (empty when terminal / unknown)
+ */
+export function legalNextIncidentStatuses(
+  config: IncidentLifecycleConfig,
+  fromStatus: string
+): LegalNextIncidentStatus[] {
+  const from = resolveIncidentLifecycleStatusRef(config, fromStatus);
+  if (!from || from.terminal || !from.enabled) return [];
+  return config.transitions
+    .filter((item) => item.enabled && item.fromKey === from.key)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((item) =>
+      config.statuses.find((s) => s.key === item.toKey && s.enabled)
+    )
+    .filter((s): s is IncidentLifecycleStatusConfig => Boolean(s))
+    .map((s) => ({ key: s.key, label: s.label }));
+}

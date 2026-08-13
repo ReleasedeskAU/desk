@@ -113,12 +113,19 @@ describe("dependencyWorkflow", () => {
 });
 
 describe("incidentWorkflow", () => {
-  it("walks the live incident graph", () => {
+  it("walks the sheet incident graph (Resolving defaults Off)", () => {
     assert.equal(incidentWorkflow("Active").primary?.status, "Acknowledged");
     assert.equal(incidentWorkflow("Open").primary?.status, "Acknowledged");
+    assert.deepEqual(
+      incidentWorkflow("Active").secondary.map((s) => s.status).sort(),
+      ["Investigating"]
+    );
     assert.equal(incidentWorkflow("Acknowledged").primary?.status, "Investigating");
-    assert.equal(incidentWorkflow("Investigating").primary?.status, "Resolving");
-    assert.equal(incidentWorkflow("Resolving").primary?.status, "Resolved");
+    assert.equal(incidentWorkflow("Investigating").primary?.status, "Resolved");
+    assert.deepEqual(
+      incidentWorkflow("Investigating").secondary.map((s) => s.status).sort(),
+      ["Escalated"]
+    );
     assert.equal(incidentWorkflow("Resolved").primary?.status, "Closed");
   });
 

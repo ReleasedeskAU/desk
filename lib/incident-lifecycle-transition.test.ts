@@ -8,6 +8,7 @@ import { reconcileIncidentLifecycleSpec } from "@/lib/incident-lifecycle-spec-re
 import {
   evaluateIncidentGate,
   isCriticalIncidentSeverity,
+  legalNextIncidentStatuses,
   resolveIncidentLifecycleStatusRef,
   validateIncidentTransition,
 } from "@/lib/incident-lifecycle-transition";
@@ -36,6 +37,11 @@ describe("default incident lifecycle", () => {
         (t) => t.fromKey === "open" && t.toKey === "acknowledged"
       )
     );
+  });
+
+  it("lists only sheet next steps from Active (extras default Off)", () => {
+    const next = legalNextIncidentStatuses(config, "Active").map((s) => s.key);
+    assert.deepEqual(next, ["acknowledged", "investigating"]);
   });
 });
 
@@ -185,7 +191,7 @@ describe("validateIncidentTransition", () => {
     assert.match(fromIntake.unmetReasons?.join(" ") ?? "", /Investigating/);
   });
 
-  it("blocks exit from Closed and allows Resolved → Reopened → Investigating", () => {
+  it("blocks exit from Closed and blocks Resolved → Reopened when Off (sheet)", () => {
     assert.equal(
       validateIncidentTransition({
         config,
@@ -202,13 +208,22 @@ describe("validateIncidentTransition", () => {
         toStatus: "Reopened",
         facts: { severity: "Low", assignedTo: "Ada" },
       }).allowed,
-      true
+      false
     );
+  });
+
+  it("allows Resolved → Reopened when an admin turns the edge On", () => {
+    const withReopen = createDefaultIncidentLifecycleConfig();
+    const edge = withReopen.transitions.find(
+      (t) => t.fromKey === "resolved" && t.toKey === "reopened"
+    );
+    assert.ok(edge);
+    edge!.enabled = true;
     assert.equal(
       validateIncidentTransition({
-        config,
-        fromStatus: "Reopened",
-        toStatus: "Investigating",
+        config: withReopen,
+        fromStatus: "Resolved",
+        toStatus: "Reopened",
         facts: { severity: "Low", assignedTo: "Ada" },
       }).allowed,
       true
