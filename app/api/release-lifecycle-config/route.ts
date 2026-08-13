@@ -10,6 +10,7 @@ import { requireSession } from "@/lib/auth/api";
 import {
   MAX_RELEASE_LIFECYCLE_STATUSES,
   MAX_RELEASE_LIFECYCLE_TRANSITIONS,
+  RELEASE_EDIT_MODES,
   RELEASE_LIFECYCLE_ENFORCEMENTS,
   RELEASE_LIFECYCLE_GATE_ENFORCEMENTS,
   RELEASE_LIFECYCLE_STATUS_KINDS,
@@ -33,6 +34,17 @@ const statusSchema = z
     kind: z.enum(RELEASE_LIFECYCLE_STATUS_KINDS),
     isSystem: z.boolean(),
     enabled: z.boolean(),
+    // Status-role contract (Wave 0) — Settings draft includes these; .strict()
+    // rejected them and every Save returned "Invalid lifecycle config".
+    editMode: z.enum(RELEASE_EDIT_MODES),
+    isIntake: z.boolean(),
+    readyMilestone: z.boolean(),
+    deployingMilestone: z.boolean(),
+    deployedMilestone: z.boolean(),
+    withdrawApprovalsOnEnter: z.boolean(),
+    writesCabScopeSnapshot: z.boolean(),
+    clearsCabScopeSnapshot: z.boolean(),
+    approvalRejectLanding: z.boolean(),
   })
   .strict();
 
