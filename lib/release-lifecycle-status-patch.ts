@@ -339,22 +339,45 @@ export async function loadReleaseLifecycleGateFacts(
 }
 
 /**
- * Derive previous status from the newest status_change audit event, if any.
+ * Derive the status the release was in before the current one.
+ * Reads status_change rows and full-form edit audits (Edit Release often logs
+ * `Status: Planning → Blocked` as action `edit`, not `status_change`).
  */
 export async function loadPreviousReleaseStatus(
   releaseId: string,
   currentStatus: string
 ): Promise<string | null> {
+  const current = currentStatus.trim().toLocaleLowerCase();
   const events = await prisma.releaseAuditEvent.findMany({
-    where: { releaseId, action: "status_change" },
+    where: {
+      releaseId,
+      action: { in: ["status_change", "edit"] },
+    },
     orderBy: { createdAt: "desc" },
-    take: 5,
-    select: { detail: true },
+    take: 25,
+    select: { action: true, detail: true },
   });
   for (const event of events) {
-    const match = event.detail?.match(/^Status changed to (.+)$/);
-    const value = match?.[1]?.trim();
-    if (value && value !== currentStatus) return value;
+    const detail = event.detail?.trim() ?? "";
+    if (!detail) continue;
+
+    // status_change: "Status changed to Blocked" or "... Blocked (override…)"
+    const changed = detail.match(/^Status changed to (.+?)(?:\s*\(|$)/);
+    if (changed?.[1]) {
+      const value = changed[1].trim();
+      if (value && value.toLocaleLowerCase() !== current) return value;
+      continue;
+    }
+
+    // edit: "Status: Planning → Blocked" (may sit among other field fragments)
+    const arrow = detail.match(/Status:\s*([^·]+?)\s*→\s*([^·]+?)(?:\s*·|$)/i);
+    if (arrow?.[1] && arrow[2]) {
+      const from = arrow[1].trim();
+      const to = arrow[2].trim();
+      if (to.toLocaleLowerCase() === current && from.toLocaleLowerCase() !== current) {
+        return from;
+      }
+    }
   }
   return null;
 }

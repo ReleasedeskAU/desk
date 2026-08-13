@@ -155,6 +155,17 @@ describe("validateReleaseTransition", () => {
     });
     assert.equal(result.allowed, true);
   });
+
+  it("allows Blocked → Testing without a previousStatus hint (sheet: any previous)", () => {
+    const result = validateReleaseTransition({
+      config,
+      fromStatus: "Blocked",
+      toStatus: "Testing",
+      previousStatus: null,
+      gateFacts: emptyLifecycleGateFacts({ openBlockerCount: 0 }),
+    });
+    assert.equal(result.allowed, true);
+  });
 });
 
 describe("listLegalNextStatuses / stepper", () => {
@@ -172,6 +183,22 @@ describe("listLegalNextStatuses / stepper", () => {
       next.some((n) => n.key === "deployed"),
       false
     );
+  });
+
+  it("lists mainline returns from Blocked, not only Cancelled", () => {
+    const next = listLegalNextStatuses({
+      config,
+      fromStatus: "Blocked",
+      previousStatus: null,
+      gateFacts: emptyLifecycleGateFacts({ openBlockerCount: 0 }),
+    });
+    const labels = next.map((n) => n.label).sort();
+    assert.ok(labels.includes("Cancelled"));
+    assert.ok(labels.includes("Planning"));
+    assert.ok(labels.includes("Testing"));
+    assert.ok(labels.includes("UAT"));
+    assert.equal(labels.includes("Blocked"), false);
+    assert.equal(labels.includes("Closed"), false);
   });
 
   it("builds mainline rail and interrupt panels", () => {

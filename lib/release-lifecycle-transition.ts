@@ -383,6 +383,19 @@ function findEnabledTransition(
 }
 
 /**
+ * Sheet “any previous status” from an interrupt (Blocked): return to an enabled
+ * mainline or branch stage — not another interrupt and not a final status.
+ */
+function isEligiblePreviousReturnTarget(
+  from: ReleaseLifecycleStatusConfig,
+  to: ReleaseLifecycleStatusConfig
+): boolean {
+  if (from.kind !== "interrupt") return false;
+  if (!to.enabled || to.terminal || to.key === from.key) return false;
+  return to.kind === "mainline" || to.kind === "branch";
+}
+
+/**
  * Validate a status transition against the supplied lifecycle config.
  *
  * @param args.fromStatus - Current Release.status (key or label)
@@ -446,10 +459,8 @@ export function validateReleaseTransition(args: {
     };
   }
 
-  const previous = resolveLifecycleStatusRef(args.config, args.previousStatus);
-  const isPreviousReturn =
-    Boolean(previous) && previous!.key === toRequested.key;
-
+  // Sheet: Blocked → any previous working status (mainline/branch), not only
+  // the single audit-derived prior label.
   const transition =
     findEnabledTransition(
       args.config,
@@ -457,7 +468,7 @@ export function validateReleaseTransition(args: {
       toRequested.key,
       false
     ) ??
-    (isPreviousReturn
+    (isEligiblePreviousReturnTarget(from, toRequested)
       ? findEnabledTransition(args.config, from.key, toRequested.key, true)
       : null);
 
@@ -611,16 +622,10 @@ export function listLegalNextStatuses(args: {
   );
 
   const results: LegalNextStatusView[] = [];
-  for (const edge of edges) {
-    let to: ReleaseLifecycleStatusConfig | null = null;
-    if (edge.isPreviousStatus) {
-      if (!previous || previous.key === from.key) continue;
-      to = previous;
-    } else if (edge.toKey) {
-      to = statusByKey.get(edge.toKey) ?? null;
-    }
-    if (!to || !to.enabled) continue;
-
+  const pushTarget = (
+    edge: (typeof edges)[number],
+    to: ReleaseLifecycleStatusConfig
+  ) => {
     const evaluations = edge.gates
       .filter((g) => g.enabled)
       .map((gate) => evaluateLifecycleGate(gate, args.gateFacts, edge));
@@ -644,6 +649,26 @@ export function listLegalNextStatuses(args: {
       gates,
       outcome: hasHard ? "blocked" : hasSoft ? "needs_override" : "allowed",
     });
+  };
+
+  for (const edge of edges) {
+    if (edge.isPreviousStatus) {
+      // Sheet: any previous working status. Prefer listing the recorded prior
+      // first; always include every eligible mainline/branch return.
+      const returns = args.config.statuses
+        .filter((status) => isEligiblePreviousReturnTarget(from, status))
+        .sort((a, b) => {
+          if (previous && a.key === previous.key) return -1;
+          if (previous && b.key === previous.key) return 1;
+          return a.sortOrder - b.sortOrder || a.label.localeCompare(b.label);
+        });
+      for (const to of returns) pushTarget(edge, to);
+      continue;
+    }
+    if (!edge.toKey) continue;
+    const to = statusByKey.get(edge.toKey) ?? null;
+    if (!to || !to.enabled) continue;
+    pushTarget(edge, to);
   }
 
   return results.sort((a, b) => a.label.localeCompare(b.label));
