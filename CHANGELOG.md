@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Status-only Edit Release vs Limited fields:** Full-form saves were treating unchanged Program/Project (`null`/`""` → `N/A`) and Owner label rewrites as real edits. At CAB Approved / Blocked those fields are limited/locked, so CAB Approved → Ready failed with a misleading programProject error. Normalization and denormalized owner churn are ignored when the value did not meaningfully change.
 - **Blocked → previous status in Edit Release:** The status dropdown only showed Cancelled because “Previous status” needed an audit-derived prior status, and full-form edits often never wrote one. Blocked now lists enabled mainline/branch returns (sheet: any previous status), and prior-status lookup also reads `Status: X → Y` edit audits.
 - **Release Lifecycle Save:** PUT `/api/release-lifecycle-config` accepts status role fields (`editMode`, milestones, intake, CAB snapshot flags, approval-reject landing). The old strict Zod schema rejected them, so Save always failed with “Invalid lifecycle config”.
 - **Off transitions stay Off:** Reconcile no longer force-enables shipped moves on every load. Turning Planning/Testing → Blocked Off and saving used to snap them back On after refresh. Turning an Inactive move On still turns its destination status On when needed.

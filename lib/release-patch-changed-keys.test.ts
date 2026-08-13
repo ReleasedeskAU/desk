@@ -60,4 +60,36 @@ describe("keysWithActualReleasePatchChanges", () => {
     });
     assert.deepEqual(keys, ["applicationIds"]);
   });
+
+  it("ignores owner label rewrite when releaseOwnerId is unchanged", () => {
+    const keys = keysWithActualReleasePatchChanges({
+      existing: {
+        ...existing,
+        status: "Blocked",
+        releaseOwnerId: "user_1",
+        owner: "USR-061 — Robert Shield",
+      },
+      body: {
+        status: "UAT",
+        releaseOwnerId: "user_1",
+        owner: "Robert Shield",
+      },
+    });
+    assert.deepEqual(keys, ["status"]);
+  });
+
+  it("ignores programProject empty → N/A normalization on a status-only save", () => {
+    const keys = keysWithActualReleasePatchChanges({
+      existing: {
+        ...existing,
+        status: "CAB Approved",
+        programProject: null,
+      },
+      body: {
+        status: "Ready to deploy",
+        programProject: "N/A",
+      },
+    });
+    assert.deepEqual(keys, ["status"]);
+  });
 });

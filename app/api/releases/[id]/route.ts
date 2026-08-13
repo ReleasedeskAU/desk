@@ -192,11 +192,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
+  const proposed = new Set(proposedKeys);
   const data: Record<string, unknown> = {};
+  // Only persist fields that actually changed — full-form echoes must not
+  // rewrite locked columns (e.g. owner label) while status is Blocked.
   for (const key of ["name", "owner", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
-    if (body[key] !== undefined) data[key] = body[key];
+    if (body[key] !== undefined && proposed.has(key)) data[key] = body[key];
   }
-  if (body.programProject !== undefined) {
+  if (body.programProject !== undefined && proposed.has("programProject")) {
     data.programProject = normalizeProgramProject(body.programProject) ?? "N/A";
   }
 
@@ -341,7 +344,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (body.conflictFlag !== undefined) data.conflictFlag = Boolean(body.conflictFlag);
-  if (body.releaseOwnerId !== undefined) {
+  if (body.releaseOwnerId !== undefined && proposed.has("releaseOwnerId")) {
     data.releaseOwnerId = optionalString(body.releaseOwnerId);
     // Keep denormalized owner string in sync when the FK is the gated source of truth.
     if (typeof data.releaseOwnerId === "string" && data.releaseOwnerId) {

@@ -6,6 +6,8 @@
  * always-locked keys like releaseCode mask status-transition errors.
  */
 
+import { normalizeProgramProject } from "@/lib/release-id";
+
 const DATE_KEYS = new Set([
   "releaseDate",
   "cabDate",
@@ -107,9 +109,28 @@ export function keysWithActualReleasePatchChanges(args: {
       }
       continue;
     }
+    // Empty / null / "n/a" all normalize to "N/A" on save — not a real edit.
+    if (key === "programProject") {
+      const next =
+        normalizeProgramProject(String(incoming ?? "")) ?? "N/A";
+      const prev =
+        normalizeProgramProject(String(args.existing[key] ?? "")) ?? "N/A";
+      if (next !== prev) changed.push(key);
+      continue;
+    }
     if (scalarKey(incoming) !== scalarKey(args.existing[key])) {
       changed.push(key);
     }
+  }
+  // `owner` is a denormalized label of releaseOwnerId. Edit Release always
+  // rewrites it from the user picker ("USR-061 — Name" → "Name"), which looks
+  // like an owner edit and trips Field Locks while Blocked — masking a status
+  // change. Ignore owner churn unless the FK actually changed.
+  if (
+    changed.includes("owner") &&
+    !changed.includes("releaseOwnerId")
+  ) {
+    return changed.filter((key) => key !== "owner");
   }
   return changed;
 }
