@@ -49,37 +49,34 @@ describe("reconcileLifecycleSpecDefaults", () => {
     );
   });
 
-  it("turns shipped sheet next-steps back On after a status was disabled", () => {
+  it("keeps shipped transitions Off after the user toggles them Off", () => {
+    const stale = createDefaultReleaseLifecycleConfig();
+    const planningBlocked = edge(stale, "planning", "blocked");
+    const testingBlocked = edge(stale, "testing", "blocked");
+    assert.ok(planningBlocked && testingBlocked);
+    planningBlocked.enabled = false;
+    testingBlocked.enabled = false;
+
+    const next = reconcileLifecycleSpecDefaults(stale);
+    assert.equal(edge(next, "planning", "blocked")?.enabled, false);
+    assert.equal(edge(next, "testing", "blocked")?.enabled, false);
+    assert.equal(edge(next, "draft", "planning")?.enabled, true);
+  });
+
+  it("repairs Planning marked terminal without forcing its edges On", () => {
     const stale = createDefaultReleaseLifecycleConfig();
     const planning = stale.statuses.find((s) => s.key === "planning")!;
-    planning.enabled = false;
+    planning.terminal = true;
+    planning.kind = "terminal";
     for (const t of stale.transitions) {
       if (t.fromKey === "planning" || t.toKey === "planning") t.enabled = false;
     }
 
     const next = reconcileLifecycleSpecDefaults(stale);
-    assert.equal(next.statuses.find((s) => s.key === "planning")?.enabled, true);
-    assert.equal(edge(next, "draft", "planning")?.enabled, true);
-    assert.equal(edge(next, "planning", "testing")?.enabled, true);
-    assert.equal(edge(next, "planning", "cancelled")?.enabled, true);
-    assert.equal(edge(next, "testing", "planning")?.enabled, true);
-    assert.equal(edge(next, "rejected", "planning")?.enabled, true);
-  });
-
-  it("does not turn a custom Off edge back On", () => {
-    const stale = createDefaultReleaseLifecycleConfig();
-    stale.transitions.push({
-      fromKey: "draft",
-      toKey: "testing",
-      isPreviousStatus: false,
-      enabled: false,
-      enforcement: "flexible",
-      isSystem: false,
-      sortOrder: 99,
-      gates: [],
-    });
-    const next = reconcileLifecycleSpecDefaults(stale);
-    assert.equal(edge(next, "draft", "testing")?.enabled, false);
+    const after = next.statuses.find((s) => s.key === "planning")!;
+    assert.equal(after.terminal, false);
+    assert.equal(after.kind, "mainline");
+    assert.equal(edge(next, "planning", "blocked")?.enabled, false);
   });
 
   it("Wave A: retargets Ready/Deploying Progression Blocker gates off one-stage-late edges", () => {
