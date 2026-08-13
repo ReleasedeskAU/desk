@@ -92,4 +92,21 @@ describe("keysWithActualReleasePatchChanges", () => {
     });
     assert.deepEqual(keys, ["status"]);
   });
+
+  it("ignores releaseOwnerId echo on a status-only save", () => {
+    const keys = keysWithActualReleasePatchChanges({
+      existing: {
+        ...existing,
+        status: "Blocked",
+        releaseOwnerId: "user_db",
+        owner: "USR-061 (Robert Shield)",
+      },
+      body: {
+        status: "UAT",
+        releaseOwnerId: null,
+        owner: "Robert Shield",
+      },
+    });
+    assert.deepEqual(keys, ["status"]);
+  });
 });

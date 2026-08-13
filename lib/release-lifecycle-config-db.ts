@@ -439,8 +439,14 @@ export async function saveReleaseLifecycleConfig(
     await writeGraph(tx, clerkUserId, config);
     await appendConfigVersion(tx, clerkUserId, config);
   }, LIFECYCLE_TX_OPTIONS);
+  // Prefer a clean readback, but never replace a successful write with the
+  // Enterprise Default — that flipped user Off toggles (e.g. CAB Approved →
+  // Cancelled) back On in the Settings UI after Save.
   const loaded = await readGraph(clerkUserId);
-  return loaded?.config ?? normalizeReleaseLifecycleConfig(config);
+  if (loaded?.config && !loaded.enterpriseDefaultFallback) {
+    return loaded.config;
+  }
+  return config;
 }
 
 /**

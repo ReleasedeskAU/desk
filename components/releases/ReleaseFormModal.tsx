@@ -29,6 +29,43 @@ import {
   type LegalNextStatusView,
 } from "@/lib/release-lifecycle-transition";
 
+/**
+ * Build a PATCH body with only fields that differ from the edit baseline.
+ * Skips denormalized `owner` unless `releaseOwnerId` changed (server syncs it).
+ */
+function sparseReleaseEditPayload(
+  baseline: ReleaseFormData,
+  full: Record<string, unknown>
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  const norm = (key: string, value: unknown): string => {
+    if (key === "programProject") {
+      return normalizeProgramProject(String(value ?? "")) ?? "N/A";
+    }
+    if (key === "applicationIds" || key === "dependsOnReleaseIds") {
+      if (!Array.isArray(value)) return "";
+      return value
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        .map((id) => id.trim())
+        .sort()
+        .join("\0");
+    }
+    if (value == null || value === "") return "";
+    return String(value).trim();
+  };
+
+  for (const [key, value] of Object.entries(full)) {
+    if (key === "id" || key === "owner") continue;
+    const before = norm(key, (baseline as Record<string, unknown>)[key]);
+    const after = norm(key, value);
+    if (before !== after) payload[key] = value;
+  }
+  if (payload.releaseOwnerId !== undefined) {
+    payload.owner = full.owner;
+  }
+  return payload;
+}
+
 /** Fields needed to create/update a release — not every table column. */
 export type ReleaseFormData = {
   id?: string;
@@ -476,7 +513,7 @@ export function ReleaseFormModal({
     const ownerName = ownerLabel?.includes(" — ")
       ? ownerLabel.split(" — ").slice(1).join(" — ")
       : form.owner;
-    const payload: Record<string, unknown> = {
+    const full: Record<string, unknown> = {
       ...form,
       programProject: normalizeProgramProject(form.programProject) ?? "N/A",
       owner: ownerName || form.owner || "Unknown",
@@ -488,6 +525,15 @@ export function ReleaseFormModal({
       uatEnvRequired: form.uatEnvRequired.trim() || null,
       releaseSize: form.releaseSize || null,
     };
+    // Edit Release must not echo unchanged fields — Limited/Locked statuses
+    // (Blocked, CAB Approved) reject owner/programProject rewrites and mask
+    // the real status transition.
+    let payload: Record<string, unknown>;
+    if (isEdit && editBaseline.current) {
+      payload = sparseReleaseEditPayload(editBaseline.current, full);
+    } else {
+      payload = full;
+    }
     if (
       isEdit &&
       selectedNext?.outcome === "needs_override" &&

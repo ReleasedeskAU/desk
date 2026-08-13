@@ -162,8 +162,13 @@ export function reconcileLifecycleSpecDefaults(
     const key = edgeKey(def);
     const existing = byKey.get(key);
     if (!existing) {
+      // Re-add missing shipped edges for gates/CFG-06 — but never revive a move
+      // the user turned Off (enabled is preserved from `config` / never forced On).
       const added: ReleaseLifecycleTransitionConfig = {
         ...def,
+        // If the edge was absent from head tables, keep default On. Callers that
+        // already have the row (enabled: false) hit the branch below instead.
+        enabled: def.enabled,
         gates: def.gates.map((gate) => ({
           ...gate,
           params: gate.params ? { ...gate.params } : undefined,
@@ -173,6 +178,9 @@ export function reconcileLifecycleSpecDefaults(
       byKey.set(key, added);
       continue;
     }
+
+    // Never flip a stored Off back to On — user toggles must survive reload.
+    // (Older builds forced shipped edges On here; that made Cancelled return.)
 
     // CFG-06: Deploying / Deployed exits must be Required.
     if (

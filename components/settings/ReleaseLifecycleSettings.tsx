@@ -377,9 +377,26 @@ export function ReleaseLifecycleSettings() {
       if (!res.ok || !body?.config) {
         throw new Error(body?.error ?? "Save failed");
       }
-      const saved = cloneLifecycleConfig(body.config);
+      // Keep the draft we just saved (includes Off toggles). Then re-load so
+      // reconcile cannot silently present a different On/Off set after Save.
+      const saved = cloneLifecycleConfig(draftRef.current);
       setBaseline(saved);
       setDraft(cloneLifecycleConfig(saved));
+      const reload = await fetch("/api/release-lifecycle-config", {
+        credentials: "same-origin",
+      });
+      if (reload.ok) {
+        const reloadBody = (await reload.json()) as {
+          config?: ReleaseLifecycleConfig;
+          warning?: { message?: string };
+        };
+        if (reloadBody.config) {
+          const reloaded = cloneLifecycleConfig(reloadBody.config);
+          setBaseline(reloaded);
+          setDraft(cloneLifecycleConfig(reloaded));
+        }
+        if (reloadBody.warning?.message) setWarning(reloadBody.warning.message);
+      }
 
       const lockRes = await fetch("/api/release-field-lock-config", {
         method: "PUT",

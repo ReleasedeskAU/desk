@@ -126,11 +126,21 @@ export function keysWithActualReleasePatchChanges(args: {
   // rewrites it from the user picker ("USR-061 — Name" → "Name"), which looks
   // like an owner edit and trips Field Locks while Blocked — masking a status
   // change. Ignore owner churn unless the FK actually changed.
-  if (
-    changed.includes("owner") &&
-    !changed.includes("releaseOwnerId")
-  ) {
-    return changed.filter((key) => key !== "owner");
+  let next = changed;
+  if (next.includes("owner") && !next.includes("releaseOwnerId")) {
+    next = next.filter((key) => key !== "owner");
   }
-  return changed;
+  // Status-only moves must not be blocked by locked ownership fields. If the
+  // client still echoes a different releaseOwnerId (missing prefill / null vs
+  // id), drop it when status is also changing — real owner edits omit status
+  // or change both deliberately from the Owner control.
+  if (
+    next.includes("status") &&
+    next.includes("releaseOwnerId") &&
+    next.filter((key) => key !== "status" && key !== "owner" && key !== "releaseOwnerId")
+      .length === 0
+  ) {
+    next = next.filter((key) => key !== "releaseOwnerId" && key !== "owner");
+  }
+  return next;
 }
