@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Release sheet next-steps stay On:** Loading a stored graph re-enables shipped statuses and default moves (Draft → Planning, Planning → Testing, and the rest of the sheet). Custom Off edges are left Off. Turning an Inactive move On also turns its destination status On so Settings no longer blocks “draft → planning” with “uses a terminal or disabled status”.
 - **Edit Release status dropdown:** Next steps (e.g. Draft → Planning, Cancelled) paint from the lifecycle graph immediately. The modal no longer waits on the 15s+ full gate-fact request before listing options.
 - **Blocker same-class bugs:** Edit Status lists legal-next only. Full-form PATCH ignores unchanged fields so Closed/Cancelled no longer mask `ILLEGAL_TRANSITION`. DECIDE buttons follow the configured graph (no Closed→Open, Resolved reopens to Reopened).
 - **Release lifecycle (Releases entity):** Edit Release lists legal-next statuses only (same as the detail picker). Full-form PATCH ignores unchanged identity fields so an always-locked Release ID no longer masks illegal-status errors. Deployed is Limited (not view-only) and configurable on Statuses → Edit rule. Rejected Field Locks reopen rework fields by default. VR-27 (high risks need a mitigation plan) is a real Ready-entry check. Deploying/Deployed exits show “Always required” instead of a Flexible toggle that silently reverted (CFG-06).

@@ -8,6 +8,7 @@ import {
   RELEASE_STATUS_ROLE_IDS,
 } from "@/lib/lifecycle-status-roles";
 import {
+  DEFAULT_RELEASE_LIFECYCLE_STATUSES,
   MAX_RELEASE_LIFECYCLE_STATUSES,
   PREVIOUS_STATUS_TARGET_KEY,
   isReleaseEditMode,
@@ -377,6 +378,8 @@ export function addLifecycleStatus(
 
 /**
  * Toggle a transition enabled flag, then re-validate.
+ * Turning a move On also turns its source/destination statuses On — otherwise
+ * validation rejects “draft → planning” when Planning was previously disabled.
  */
 export function toggleLifecycleTransition(
   config: ReleaseLifecycleConfig,
@@ -392,9 +395,49 @@ export function toggleLifecycleTransition(
   );
   if (!item) return { error: "Unknown transition" };
   item.enabled = enabled;
+  if (enabled) {
+    enableStatusesForOutgoingTransition(next, item);
+  }
   const validationError = validateReleaseLifecycleConfig(next);
   if (validationError) return { error: validationError };
   return { config: next };
+}
+
+/**
+ * An enabled edge cannot touch a disabled (or wrongly-final) status. Revive
+ * the endpoints so turning a move On does not require a prior Statuses click.
+ */
+function enableStatusesForOutgoingTransition(
+  config: ReleaseLifecycleConfig,
+  item: ReleaseLifecycleTransitionConfig
+): void {
+  const from = config.statuses.find((status) => status.key === item.fromKey);
+  if (from) reviveStatusForEnabledTransition(from, { allowTerminalSource: false });
+  if (!item.toKey) return;
+  const to = config.statuses.find((status) => status.key === item.toKey);
+  if (to) reviveStatusForEnabledTransition(to, { allowTerminalSource: true });
+}
+
+/**
+ * Turn a status On. System stages that are not Closed/Cancelled in the default
+ * graph also get their kind restored if they were saved as terminal by mistake.
+ */
+function reviveStatusForEnabledTransition(
+  status: ReleaseLifecycleStatusConfig,
+  opts: { allowTerminalSource: boolean }
+): void {
+  const shipped = DEFAULT_RELEASE_LIFECYCLE_STATUSES.find(
+    (item) => item.key === status.key
+  );
+  if (shipped && !shipped.terminal) {
+    status.enabled = true;
+    status.terminal = false;
+    status.kind = shipped.kind;
+    return;
+  }
+  if (opts.allowTerminalSource || !status.terminal) {
+    status.enabled = true;
+  }
 }
 
 /**

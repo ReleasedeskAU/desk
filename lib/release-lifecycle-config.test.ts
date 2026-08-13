@@ -110,6 +110,16 @@ describe("validateReleaseLifecycleConfig", () => {
     assert.match(validateReleaseLifecycleConfig(orphan) ?? "", /Unknown transition target/);
   });
 
+  it("names the disabled destination when an enabled edge still points at it", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const planning = config.statuses.find((s) => s.key === "planning")!;
+    planning.enabled = false;
+    assert.match(
+      validateReleaseLifecycleConfig(config) ?? "",
+      /Turn on the Planning status/
+    );
+  });
+
   it("rejects free-form gates and invalid previous-status edges", () => {
     const unknownGate = createDefaultReleaseLifecycleConfig();
     unknownGate.transitions[0]!.gates.push({

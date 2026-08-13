@@ -165,6 +165,50 @@ describe("transition toggles", () => {
     assert.equal(edge?.enabled, false);
   });
 
+  it("re-enables a disabled destination when turning the move On", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const statusOff = toggleLifecycleStatus(config, "planning", false);
+    assert.ok("config" in statusOff);
+    assert.equal(
+      statusOff.config.statuses.find((s) => s.key === "planning")?.enabled,
+      false
+    );
+    const moveOn = toggleLifecycleTransition(
+      statusOff.config,
+      "draft",
+      "planning",
+      true
+    );
+    assert.ok("config" in moveOn, "expected toggle to succeed after auto-enable");
+    assert.equal(
+      moveOn.config.statuses.find((s) => s.key === "planning")?.enabled,
+      true
+    );
+    const edge = moveOn.config.transitions.find(
+      (t) => t.fromKey === "draft" && t.toKey === "planning"
+    );
+    assert.equal(edge?.enabled, true);
+  });
+
+  it("repairs Planning marked terminal so From Planning moves can turn On", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const planning = config.statuses.find((s) => s.key === "planning")!;
+    planning.enabled = false;
+    planning.terminal = true;
+    planning.kind = "terminal";
+    for (const edge of config.transitions) {
+      if (edge.fromKey === "planning" || edge.toKey === "planning") {
+        edge.enabled = false;
+      }
+    }
+    const moveOn = toggleLifecycleTransition(config, "planning", "testing", true);
+    assert.ok("config" in moveOn, "expected Planning → Testing to turn On");
+    const after = moveOn.config.statuses.find((s) => s.key === "planning")!;
+    assert.equal(after.enabled, true);
+    assert.equal(after.terminal, false);
+    assert.equal(after.kind, "mainline");
+  });
+
   it("removes a custom transition but blocks deleting system defaults", () => {
     const config = createDefaultReleaseLifecycleConfig();
     const system = config.transitions.find(

@@ -2,7 +2,8 @@
  * Merge enterprise-spec defaults into an existing per-user lifecycle graph.
  * Additive for missing edges/gates; upgrades CFG-06 Required enforcement;
  * Wave A retargets known Progression Blocker gates from one-stage-late edges
- * onto the sheet’s intended transitions.
+ * onto the sheet’s intended transitions; re-enables shipped next-steps that
+ * were turned Off (e.g. after a status like Planning was disabled).
  */
 import {
   createDefaultReleaseLifecycleConfig,
@@ -147,7 +148,7 @@ function applyWaveAGateRetargets(
  * Reconcile a stored config toward the shipped enterprise spec.
  *
  * @param config - Current user (or pinned) lifecycle config.
- * @returns Cloned config with missing spec edges/gates, CFG-06 Required, and Wave A retargets.
+ * @returns Cloned config with missing spec edges/gates, CFG-06 Required, Wave A retargets, and shipped next-steps turned On.
  */
 export function reconcileLifecycleSpecDefaults(
   config: ReleaseLifecycleConfig
@@ -193,6 +194,34 @@ export function reconcileLifecycleSpecDefaults(
   }
 
   applyWaveAGateRetargets(byKey, defaults);
+  enableShippedDefaultToggles(next, defaults);
 
   return next;
+}
+
+/**
+ * Sheet next-steps ship enabled. If a status was turned Off, its edges were
+ * cascaded Off too — restore those shipped statuses and moves so Draft still
+ * offers Planning, Planning still offers Testing, and so on.
+ * Custom (non-default) edges are left as the user set them.
+ */
+function enableShippedDefaultToggles(
+  next: ReleaseLifecycleConfig,
+  defaults: ReleaseLifecycleConfig
+): void {
+  const shippedStatus = new Map(defaults.statuses.map((item) => [item.key, item]));
+  for (const status of next.statuses) {
+    const shipped = shippedStatus.get(status.key);
+    if (!shipped?.enabled) continue;
+    status.enabled = true;
+    if (!shipped.terminal) {
+      status.terminal = false;
+      status.kind = shipped.kind;
+    }
+  }
+
+  const shippedEdge = new Map(defaults.transitions.map((item) => [edgeKey(item), item]));
+  for (const item of next.transitions) {
+    if (shippedEdge.get(edgeKey(item))?.enabled) item.enabled = true;
+  }
 }

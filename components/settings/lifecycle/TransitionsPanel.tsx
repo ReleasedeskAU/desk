@@ -42,6 +42,24 @@ type FromGroup = {
   transitions: ReleaseLifecycleTransitionConfig[];
 };
 
+/** Extra line when an inactive move is blocked because a status is Off. */
+function inactiveEndpointHint(
+  transition: ReleaseLifecycleTransitionConfig,
+  config: ReleaseLifecycleConfig
+): string {
+  if (transition.enabled) return "";
+  const from = config.statuses.find((status) => status.key === transition.fromKey);
+  const to = transition.toKey
+    ? config.statuses.find((status) => status.key === transition.toKey)
+    : undefined;
+  const off = [from, to]
+    .filter((status): status is NonNullable<typeof status> => Boolean(status && !status.enabled))
+    .map((status) => status.label);
+  if (off.length === 0) return "";
+  const names = [...new Set(off)].join(" and ");
+  return ` · ${names} is Off — turning this move On will turn that status back on`;
+}
+
 function groupByFrom(
   transitions: ReleaseLifecycleTransitionConfig[],
   config: ReleaseLifecycleConfig
@@ -146,6 +164,7 @@ export function TransitionsPanel({
                       <p className="mt-0.5 text-[11px] text-slate-400 dark:text-white/40">
                         {enabledGateCount} check{enabledGateCount === 1 ? "" : "s"} · click to
                         open Checks for this move
+                        {inactiveEndpointHint(transition, config)}
                       </p>
                     </button>
                     <div className="flex flex-wrap items-center gap-3">

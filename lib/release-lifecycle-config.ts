@@ -484,8 +484,14 @@ export function validateReleaseLifecycleConfig(
     if (!RELEASE_LIFECYCLE_ENFORCEMENTS.includes(item.enforcement)) {
       return `Invalid enforcement for ${item.fromKey}`;
     }
-    if (item.enabled && (from.terminal || !from.enabled || (to && !to.enabled))) {
-      return `Enabled transition ${item.fromKey} → ${item.toKey ?? "previous"} uses a terminal or disabled status`;
+    if (item.enabled && from.terminal) {
+      return `Cannot enable ${from.label} → ${to?.label ?? "previous"} because ${from.label} is a final status`;
+    }
+    if (item.enabled && !from.enabled) {
+      return `Turn on the ${from.label} status (Statuses tab) before enabling this move`;
+    }
+    if (item.enabled && to && !to.enabled) {
+      return `Turn on the ${to.label} status (Statuses tab) before enabling ${from.label} → ${to.label}`;
     }
 
     const edge = `${item.fromKey}:${releaseLifecycleTargetKey(item)}`;
