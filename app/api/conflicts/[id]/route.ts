@@ -10,6 +10,7 @@ import {
   validateConflictTransition,
 } from "@/lib/conflict-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -101,11 +102,22 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  // Full-form detail saves echo every field — edit policy must only see real edits.
+  const proposedKeys = keysWithActualPatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
+    bodyToStored: {
+      application: "applicationName",
+      department: "departmentName",
+    },
+    metaKeys: new Set(["overrideReason"]),
+  });
+  const proposed = new Set(proposedKeys);
+
   let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadConflictLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
     const { mode, denied } = deniedConflictEditFields(
       config,
       existing.status,
@@ -170,19 +182,35 @@ export async function PATCH(req: Request, { params }: Params) {
     data.status = body.status;
     if (nextStatusKey) data.statusKey = nextStatusKey;
   }
-  if (body.priority !== undefined) data.priority = body.priority;
-  if (body.release1Code !== undefined) data.release1Code = body.release1Code;
-  if (body.release2Code !== undefined) data.release2Code = body.release2Code;
-  if (body.application !== undefined) data.applicationName = body.application;
-  if (body.department !== undefined) data.departmentName = body.department;
-  if (body.conflictingEnvironment !== undefined) {
+  if (body.priority !== undefined && proposed.has("priority")) data.priority = body.priority;
+  if (body.release1Code !== undefined && proposed.has("release1Code")) {
+    data.release1Code = body.release1Code;
+  }
+  if (body.release2Code !== undefined && proposed.has("release2Code")) {
+    data.release2Code = body.release2Code;
+  }
+  if (body.application !== undefined && proposed.has("application")) {
+    data.applicationName = body.application;
+  }
+  if (body.department !== undefined && proposed.has("department")) {
+    data.departmentName = body.department;
+  }
+  if (
+    body.conflictingEnvironment !== undefined &&
+    proposed.has("conflictingEnvironment")
+  ) {
     data.conflictingEnvironment = body.conflictingEnvironment;
   }
-  if (body.environmentConflictType !== undefined) {
+  if (
+    body.environmentConflictType !== undefined &&
+    proposed.has("environmentConflictType")
+  ) {
     data.environmentConflictType = body.environmentConflictType;
   }
-  if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
-  if (body.notes !== undefined) data.notes = body.notes;
+  if (body.assignedTo !== undefined && proposed.has("assignedTo")) {
+    data.assignedTo = body.assignedTo;
+  }
+  if (body.notes !== undefined && proposed.has("notes")) data.notes = body.notes;
 
   const row = await prisma.environmentConflict.update({
     where: { id: existing.id },

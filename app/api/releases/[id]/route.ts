@@ -333,17 +333,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "changeDescription",
     "justification",
   ] as const) {
+    if (!proposed.has(key)) continue;
     const v = optionalString(body[key]);
     if (v !== undefined) data[key] = v;
   }
 
-  if (body.postImplementationReviewCompleted !== undefined) {
+  if (
+    body.postImplementationReviewCompleted !== undefined &&
+    proposed.has("postImplementationReviewCompleted")
+  ) {
     data.postImplementationReviewCompleted = Boolean(
       body.postImplementationReviewCompleted
     );
   }
 
-  if (body.conflictFlag !== undefined) data.conflictFlag = Boolean(body.conflictFlag);
+  if (body.conflictFlag !== undefined && proposed.has("conflictFlag")) {
+    data.conflictFlag = Boolean(body.conflictFlag);
+  }
   if (body.releaseOwnerId !== undefined && proposed.has("releaseOwnerId")) {
     data.releaseOwnerId = optionalString(body.releaseOwnerId);
     // Keep denormalized owner string in sync when the FK is the gated source of truth.
@@ -365,10 +371,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "goLiveDate",
     "deployDate",
   ] as const) {
+    if (!proposed.has(key)) continue;
     const v = optionalDate(body[key]);
     if (v !== undefined) data[key] = v;
   }
   for (const key of ["readinessPercent", "goLiveChecklistPercent"] as const) {
+    if (!proposed.has(key)) continue;
     const v = optionalFloat(body[key]);
     if (v !== undefined) data[key] = v;
   }

@@ -14,6 +14,7 @@ import {
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -94,11 +95,17 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  const proposedKeys = keysWithActualPatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
+    metaKeys: new Set(["overrideReason"]),
+  });
+  const proposed = new Set(proposedKeys);
+
   let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadDependencyLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
     const { mode, denied } = deniedDependencyEditFields(
       config,
       existing.status ?? "Pending",
@@ -168,7 +175,11 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   // VR-36: rewiring endpoints is an add/remove of the dependency graph.
-  if (body.releaseId !== undefined || body.dependsOnReleaseId !== undefined) {
+  // Skip when full-form saves only echo unchanged release FKs.
+  if (
+    (proposed.has("releaseId") && body.releaseId !== undefined) ||
+    (proposed.has("dependsOnReleaseId") && body.dependsOnReleaseId !== undefined)
+  ) {
     const parentStatus = existing.release.status;
     const parentConfig = await loadGuardReleaseConfig(
       user!.id,
@@ -196,7 +207,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   try {
-    if (body.releaseId || body.dependsOnReleaseId) {
+    if (proposed.has("releaseId") || proposed.has("dependsOnReleaseId")) {
       const [release, dependsOn] = await Promise.all([
         prisma.release.findUnique({ where: { id: nextReleaseId }, select: { id: true } }),
         prisma.release.findUnique({ where: { id: nextDependsOnId }, select: { id: true } }),
@@ -221,19 +232,28 @@ export async function PATCH(req: Request, { params }: Params) {
     const row = await prisma.releaseDependency.update({
       where: { id: existing.id },
       data: {
-        ...(body.releaseId !== undefined ? { releaseId: body.releaseId } : {}),
-        ...(body.dependsOnReleaseId !== undefined
+        ...(body.releaseId !== undefined && proposed.has("releaseId")
+          ? { releaseId: body.releaseId }
+          : {}),
+        ...(body.dependsOnReleaseId !== undefined &&
+        proposed.has("dependsOnReleaseId")
           ? { dependsOnReleaseId: body.dependsOnReleaseId }
           : {}),
-        ...(body.dependencyType !== undefined ? { dependencyType: body.dependencyType } : {}),
+        ...(body.dependencyType !== undefined && proposed.has("dependencyType")
+          ? { dependencyType: body.dependencyType }
+          : {}),
         ...(body.status !== undefined
           ? {
               status: body.status,
               ...(nextStatusKey ? { statusKey: nextStatusKey } : {}),
             }
           : {}),
-        ...(body.impactIfBlocked !== undefined ? { impactIfBlocked: body.impactIfBlocked } : {}),
-        ...(body.notes !== undefined ? { notes: body.notes } : {}),
+        ...(body.impactIfBlocked !== undefined && proposed.has("impactIfBlocked")
+          ? { impactIfBlocked: body.impactIfBlocked }
+          : {}),
+        ...(body.notes !== undefined && proposed.has("notes")
+          ? { notes: body.notes }
+          : {}),
       },
       include: {
         release: {

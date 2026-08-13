@@ -200,7 +200,60 @@ export function ReleaseFormModal({
   const [created, setCreated] = useState<CreatedSummary | null>(null);
   const [editChanges, setEditChanges] = useState<FieldChange[] | null>(null);
   const editBaseline = useRef<ReleaseFormData | null>(null);
+  const exceptionReasonRef = useRef<HTMLTextAreaElement | null>(null);
   const isEdit = Boolean(initial?.id);
+
+  /**
+   * Scroll/focus the exception reason field (Flexible gates). Never bury this
+   * behind an OK-only alert — users need a place to type the reason.
+   */
+  const focusExceptionReason = () => {
+    window.requestAnimationFrame(() => {
+      const el = exceptionReasonRef.current;
+      if (!el) return;
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.focus();
+    });
+  };
+
+  /**
+   * Promote the selected next status to needs_override when the API (or a
+   * stale preview) said allowed but Flexible checks actually failed.
+   */
+  const markSelectedStatusNeedsOverride = (unmetReasons: string[]) => {
+    const target = form.status.trim().toLocaleLowerCase();
+    setEditLegalNext((prev) =>
+      prev.map((item) => {
+        if (item.label.trim().toLocaleLowerCase() !== target) return item;
+        const softGates =
+          unmetReasons.length > 0
+            ? unmetReasons.map((reason, index) => ({
+                gateType: "blocker_resolved" as const,
+                label: index === 0 ? "Blocker resolved" : "Check",
+                passed: false,
+                enforcement: "flexible" as const,
+                reason,
+                soft: true,
+                hard: false,
+              }))
+            : item.gates.map((gate) =>
+                gate.passed
+                  ? gate
+                  : {
+                      ...gate,
+                      soft: true,
+                      hard: false,
+                      enforcement: "flexible" as const,
+                    }
+              );
+        return {
+          ...item,
+          outcome: "needs_override" as const,
+          gates: softGates.length > 0 ? softGates : item.gates,
+        };
+      })
+    );
+  };
 
   const editStatusChoices = useMemo(
     () =>
@@ -497,14 +550,8 @@ export function ReleaseFormModal({
       selectedNext?.outcome === "needs_override" &&
       overrideReason.trim().length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH
     ) {
-      setFormAlert({
-        title: "Status change blocked",
-        message:
-          "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
-        details: selectedNext.gates
-          .filter((g) => !g.passed)
-          .map((g) => g.reason),
-      });
+      // Exception panel already has the textarea — focus it; don’t OK-only alert.
+      focusExceptionReason();
       return;
     }
     setSaving(true);
@@ -565,6 +612,28 @@ export function ReleaseFormModal({
             message:
               "The server may still be compiling or the database is slow — wait a moment and try again.",
           });
+          return;
+        }
+        const body =
+          data && typeof data === "object"
+            ? (data as {
+                code?: string;
+                unmetReasons?: unknown;
+                transition?: { unmetReasons?: unknown };
+              })
+            : null;
+        // Preview/legal-next can lag real gate facts (e.g. open blockers). Show
+        // the exception textarea instead of an OK-only “enter a reason” dialog.
+        if (body?.code === "TRANSITION_NEEDS_OVERRIDE") {
+          const unmet = [
+            ...(Array.isArray(body.unmetReasons) ? body.unmetReasons : []),
+            ...(Array.isArray(body.transition?.unmetReasons)
+              ? body.transition.unmetReasons
+              : []),
+          ].filter((r): r is string => typeof r === "string" && r.trim().length > 0);
+          markSelectedStatusNeedsOverride(unmet);
+          // Panel may mount this paint — autoFocusReason + delayed focus.
+          window.setTimeout(() => focusExceptionReason(), 50);
           return;
         }
         setFormAlert(
@@ -853,11 +922,47 @@ export function ReleaseFormModal({
               <p className="mt-1 text-[11px] text-slate-500 dark:text-white/50">
                 {legalNextLoading
                   ? "Showing the next steps from the lifecycle graph. Confirming checks…"
-                  : "Only the next allowed steps are listed. Blocked steps can’t be chosen until their checks pass."}
+                  : selectedNext?.outcome === "needs_override"
+                    ? "Some checks aren’t met. Enter an exception reason in the panel below, then continue."
+                    : "Only the next allowed steps are listed. Blocked steps can’t be chosen until their checks pass."}
               </p>
             ) : null}
             <FieldError message={fieldErrors.status} />
           </div>
+
+          {selectedNext && selectedNext.outcome !== "allowed" ? (
+            <div className="sm:col-span-2">
+              <LifecycleExceptionConfirm
+                targetLabel={selectedNext.label}
+                isReturn={selectedNext.isPreviousStatus}
+                needsException={selectedNext.outcome === "needs_override"}
+                blocked={selectedNext.outcome === "blocked"}
+                exceptionReason={overrideReason}
+                onExceptionReasonChange={setOverrideReason}
+                autoFocusReason={selectedNext.outcome === "needs_override"}
+                reasonInputRef={exceptionReasonRef}
+                busy={saving}
+                confirmDisabled={
+                  saving ||
+                  selectedNext.outcome === "blocked" ||
+                  (selectedNext.outcome === "needs_override" &&
+                    overrideReason.trim().length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH)
+                }
+                onCancel={() => {
+                  set("status", initial?.status ?? form.status);
+                  setOverrideReason("");
+                }}
+                onConfirm={() => void save()}
+                checks={selectedNext.gates.map((gate) => ({
+                  label: gate.label,
+                  passed: gate.passed,
+                  reason: gate.reason,
+                  hard: gate.hard,
+                  soft: gate.soft,
+                }))}
+              />
+            </div>
+          ) : null}
 
           <div>
             <label className="text-xs font-medium text-gray-500">Release Size</label>
@@ -1006,38 +1111,6 @@ export function ReleaseFormModal({
             onChange={(e) => set("notes", e.target.value)}
           />
         </div>
-
-        {selectedNext && selectedNext.outcome !== "allowed" ? (
-          <div className="mt-4">
-            <LifecycleExceptionConfirm
-              targetLabel={selectedNext.label}
-              isReturn={selectedNext.isPreviousStatus}
-              needsException={selectedNext.outcome === "needs_override"}
-              blocked={selectedNext.outcome === "blocked"}
-              exceptionReason={overrideReason}
-              onExceptionReasonChange={setOverrideReason}
-              busy={saving}
-              confirmDisabled={
-                saving ||
-                selectedNext.outcome === "blocked" ||
-                (selectedNext.outcome === "needs_override" &&
-                  overrideReason.trim().length < MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH)
-              }
-              onCancel={() => {
-                set("status", initial?.status ?? form.status);
-                setOverrideReason("");
-              }}
-              onConfirm={() => void save()}
-              checks={selectedNext.gates.map((gate) => ({
-                label: gate.label,
-                passed: gate.passed,
-                reason: gate.reason,
-                hard: gate.hard,
-                soft: gate.soft,
-              }))}
-            />
-          </div>
-        ) : null}
 
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={taBtnSecondary} onClick={onClose}>

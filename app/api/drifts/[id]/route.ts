@@ -14,6 +14,7 @@ import {
   isDriftEscalatedStatus,
 } from "@/lib/lifecycle-event-hooks";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -65,11 +66,70 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  const detectedDate = parseDate(body.detectedDate);
+  const etaToFix = parseDate(body.etaToFix);
+  if (body.detectedDate !== undefined && detectedDate === undefined) {
+    return NextResponse.json({ error: "Invalid detectedDate" }, { status: 400 });
+  }
+  if (body.etaToFix !== undefined && body.etaToFix !== null && etaToFix === undefined) {
+    return NextResponse.json({ error: "Invalid etaToFix" }, { status: 400 });
+  }
+
+  const nextReleaseId = body.releaseId ?? existing.releaseId;
+  const nextApplicationId = body.applicationId ?? existing.applicationId;
+  const nextEnvironmentName = body.environmentName ?? existing.environmentName;
+  let resolvedDepartmentName = body.departmentName;
+
+  // Validate scope FKs when present; department is derived from the application.
+  if (body.releaseId !== undefined || body.applicationId !== undefined || body.environmentName !== undefined) {
+    const [release, application, environment] = await Promise.all([
+      prisma.release.findUnique({
+        where: { id: nextReleaseId },
+        select: {
+          id: true,
+          departmentId: true,
+          applications: { where: { applicationId: nextApplicationId }, select: { applicationId: true } },
+        },
+      }),
+      prisma.application.findUnique({
+        where: { id: nextApplicationId },
+        select: { id: true, department: { select: { id: true, name: true } } },
+      }),
+      prisma.environment.findUnique({
+        where: { applicationId_name: { applicationId: nextApplicationId, name: nextEnvironmentName } },
+        select: { id: true },
+      }),
+    ]);
+    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+    if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+    if (!release.applications.length) {
+      return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
+    }
+    if (application.department.id !== release.departmentId) {
+      return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
+    }
+    if (!environment) {
+      return NextResponse.json({ error: "Environment not found for the selected application" }, { status: 400 });
+    }
+    resolvedDepartmentName = application.department.name;
+  }
+
+  const compareBody: Record<string, unknown> = { ...body };
+  if (resolvedDepartmentName !== undefined) {
+    compareBody.departmentName = resolvedDepartmentName;
+  }
+  const proposedKeys = keysWithActualPatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body: compareBody,
+    dateKeys: new Set(["detectedDate", "etaToFix"]),
+    metaKeys: new Set(["overrideReason"]),
+  });
+  const proposed = new Set(proposedKeys);
+
   let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven).
   try {
     const { config } = await loadDriftLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
     const { mode, denied } = deniedDriftEditFields(
       config,
       existing.status,
@@ -125,71 +185,45 @@ export async function PATCH(req: Request, { params }: Params) {
     );
   }
 
-  const detectedDate = parseDate(body.detectedDate);
-  const etaToFix = parseDate(body.etaToFix);
-  if (body.detectedDate !== undefined && detectedDate === undefined) {
-    return NextResponse.json({ error: "Invalid detectedDate" }, { status: 400 });
-  }
-  if (body.etaToFix !== undefined && body.etaToFix !== null && etaToFix === undefined) {
-    return NextResponse.json({ error: "Invalid etaToFix" }, { status: 400 });
-  }
-
-  const nextReleaseId = body.releaseId ?? existing.releaseId;
-  const nextApplicationId = body.applicationId ?? existing.applicationId;
-  const nextEnvironmentName = body.environmentName ?? existing.environmentName;
-  let resolvedDepartmentName = body.departmentName;
-
-  if (body.releaseId !== undefined || body.applicationId !== undefined || body.environmentName !== undefined) {
-    const [release, application, environment] = await Promise.all([
-      prisma.release.findUnique({
-        where: { id: nextReleaseId },
-        select: {
-          id: true,
-          departmentId: true,
-          applications: { where: { applicationId: nextApplicationId }, select: { applicationId: true } },
-        },
-      }),
-      prisma.application.findUnique({
-        where: { id: nextApplicationId },
-        select: { id: true, department: { select: { id: true, name: true } } },
-      }),
-      prisma.environment.findUnique({
-        where: { applicationId_name: { applicationId: nextApplicationId, name: nextEnvironmentName } },
-        select: { id: true },
-      }),
-    ]);
-    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
-    if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
-    if (!release.applications.length) {
-      return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
-    }
-    if (application.department.id !== release.departmentId) {
-      return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
-    }
-    if (!environment) {
-      return NextResponse.json({ error: "Environment not found for the selected application" }, { status: 400 });
-    }
-    // Department is derived from the application FK — not free-text.
-    resolvedDepartmentName = application.department.name;
-  }
-
   const data: Record<string, unknown> = {};
-  if (body.releaseId !== undefined) data.releaseId = body.releaseId;
-  if (body.applicationId !== undefined) data.applicationId = body.applicationId;
-  if (resolvedDepartmentName !== undefined) data.departmentName = resolvedDepartmentName;
-  if (body.environmentName !== undefined) data.environmentName = body.environmentName;
-  if (body.driftType !== undefined) data.driftType = body.driftType;
-  if (body.driftCategory !== undefined) data.driftCategory = body.driftCategory;
-  if (detectedDate !== undefined) data.detectedDate = detectedDate;
-  if (body.severity !== undefined) data.severity = body.severity;
-  if (body.description !== undefined) data.description = body.description;
-  if (body.impactOnRelease !== undefined) data.impactOnRelease = body.impactOnRelease;
-  if (body.remediationAction !== undefined) data.remediationAction = body.remediationAction;
+  if (body.releaseId !== undefined && proposed.has("releaseId")) {
+    data.releaseId = body.releaseId;
+  }
+  if (body.applicationId !== undefined && proposed.has("applicationId")) {
+    data.applicationId = body.applicationId;
+  }
+  if (proposed.has("departmentName") && resolvedDepartmentName !== undefined) {
+    data.departmentName = resolvedDepartmentName;
+  }
+  if (body.environmentName !== undefined && proposed.has("environmentName")) {
+    data.environmentName = body.environmentName;
+  }
+  if (body.driftType !== undefined && proposed.has("driftType")) {
+    data.driftType = body.driftType;
+  }
+  if (body.driftCategory !== undefined && proposed.has("driftCategory")) {
+    data.driftCategory = body.driftCategory;
+  }
+  if (detectedDate !== undefined && proposed.has("detectedDate")) {
+    data.detectedDate = detectedDate;
+  }
+  if (body.severity !== undefined && proposed.has("severity")) {
+    data.severity = body.severity;
+  }
+  if (body.description !== undefined && proposed.has("description")) {
+    data.description = body.description;
+  }
+  if (body.impactOnRelease !== undefined && proposed.has("impactOnRelease")) {
+    data.impactOnRelease = body.impactOnRelease;
+  }
+  if (body.remediationAction !== undefined && proposed.has("remediationAction")) {
+    data.remediationAction = body.remediationAction;
+  }
   if (body.status !== undefined) {
     data.status = body.status;
     if (nextStatusKey) data.statusKey = nextStatusKey;
   }
-  if (etaToFix !== undefined) data.etaToFix = etaToFix;
+  if (etaToFix !== undefined && proposed.has("etaToFix")) data.etaToFix = etaToFix;
 
   const row = await prisma.drift.update({
     where: { id: existing.id },

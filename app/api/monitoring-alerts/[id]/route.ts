@@ -10,6 +10,7 @@ import {
   validateAlertTransition,
 } from "@/lib/alert-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -59,11 +60,28 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  const timestamp = parseDate(body.timestamp);
+  if (body.timestamp !== undefined && timestamp === undefined) {
+    return NextResponse.json({ error: "Invalid timestamp" }, { status: 400 });
+  }
+
+  if (body.applicationId !== undefined) {
+    const app = await prisma.application.findUnique({ where: { id: body.applicationId }, select: { id: true } });
+    if (!app) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+  }
+
+  const proposedKeys = keysWithActualPatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
+    dateKeys: new Set(["timestamp"]),
+    metaKeys: new Set(["overrideReason"]),
+  });
+  const proposed = new Set(proposedKeys);
+
   let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadAlertLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
     const { mode, denied } = deniedAlertEditFields(
       config,
       existing.status,
@@ -121,31 +139,37 @@ export async function PATCH(req: Request, { params }: Params) {
     );
   }
 
-  const timestamp = parseDate(body.timestamp);
-  if (body.timestamp !== undefined && timestamp === undefined) {
-    return NextResponse.json({ error: "Invalid timestamp" }, { status: 400 });
-  }
-
-  if (body.applicationId !== undefined) {
-    const app = await prisma.application.findUnique({ where: { id: body.applicationId }, select: { id: true } });
-    if (!app) return NextResponse.json({ error: "Application not found" }, { status: 400 });
-  }
-
   const data: Record<string, unknown> = {};
-  if (timestamp !== undefined) data.timestamp = timestamp;
-  if (body.applicationId !== undefined) data.applicationId = body.applicationId;
-  if (body.departmentName !== undefined) data.departmentName = body.departmentName;
-  if (body.alertType !== undefined) data.alertType = body.alertType;
-  if (body.severity !== undefined) data.severity = body.severity;
-  if (body.metric !== undefined) data.metric = body.metric;
-  if (body.threshold !== undefined) data.threshold = body.threshold;
-  if (body.currentValue !== undefined) data.currentValue = body.currentValue;
+  if (timestamp !== undefined && proposed.has("timestamp")) data.timestamp = timestamp;
+  if (body.applicationId !== undefined && proposed.has("applicationId")) {
+    data.applicationId = body.applicationId;
+  }
+  if (body.departmentName !== undefined && proposed.has("departmentName")) {
+    data.departmentName = body.departmentName;
+  }
+  if (body.alertType !== undefined && proposed.has("alertType")) {
+    data.alertType = body.alertType;
+  }
+  if (body.severity !== undefined && proposed.has("severity")) {
+    data.severity = body.severity;
+  }
+  if (body.metric !== undefined && proposed.has("metric")) data.metric = body.metric;
+  if (body.threshold !== undefined && proposed.has("threshold")) {
+    data.threshold = body.threshold;
+  }
+  if (body.currentValue !== undefined && proposed.has("currentValue")) {
+    data.currentValue = body.currentValue;
+  }
   if (body.status !== undefined) {
     data.status = body.status;
     if (nextStatusKey) data.statusKey = nextStatusKey;
   }
-  if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
-  if (body.environmentName !== undefined) data.environmentName = body.environmentName;
+  if (body.assignedTo !== undefined && proposed.has("assignedTo")) {
+    data.assignedTo = body.assignedTo;
+  }
+  if (body.environmentName !== undefined && proposed.has("environmentName")) {
+    data.environmentName = body.environmentName;
+  }
 
   const row = await prisma.monitoringAlert.update({
     where: { id: existing.id },

@@ -4,6 +4,7 @@
  */
 "use client";
 
+import { useEffect, type RefObject } from "react";
 import { AlertTriangle, Lock, RefreshCw } from "lucide-react";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,10 @@ export type LifecycleExceptionConfirmProps = {
   reasonLabel?: string;
   /** Override the exception textarea placeholder. */
   reasonPlaceholder?: string;
+  /** Focus the reason field when the panel appears (Edit Release). */
+  autoFocusReason?: boolean;
+  /** Optional ref to the reason textarea for scroll/focus from parents. */
+  reasonInputRef?: RefObject<HTMLTextAreaElement | null>;
 };
 
 /**
@@ -59,9 +64,23 @@ export function LifecycleExceptionConfirm({
   leadMessage,
   reasonLabel,
   reasonPlaceholder,
+  autoFocusReason = false,
+  reasonInputRef,
 }: LifecycleExceptionConfirmProps) {
+  // Surface the reason field immediately when Flexible gates need an exception.
+  useEffect(() => {
+    if (!needsException || !autoFocusReason) return;
+    const el = reasonInputRef?.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [autoFocusReason, needsException, reasonInputRef, targetLabel]);
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-[var(--border)] dark:bg-white/5">
+    <div
+      className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-[var(--border)] dark:bg-white/5"
+      data-lifecycle-exception-panel
+    >
       <div className="mb-2 flex items-center gap-2">
         <RefreshCw size={16} className="text-violet-600" aria-hidden />
         <p className="text-sm font-semibold text-slate-800 dark:text-white">
@@ -116,6 +135,8 @@ export function LifecycleExceptionConfirm({
             {reasonLabel ?? "Exception reason (required)"}
           </span>
           <textarea
+            ref={reasonInputRef}
+            id="lifecycle-exception-reason"
             value={exceptionReason}
             onChange={(e) => onExceptionReasonChange(e.target.value)}
             rows={2}

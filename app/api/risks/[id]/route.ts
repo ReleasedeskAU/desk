@@ -11,6 +11,7 @@ import {
   validateRiskTransition,
 } from "@/lib/risk-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -60,11 +61,66 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  const nextReleaseId = body.releaseId ?? existing.releaseId;
+  if (body.releaseId !== undefined) {
+    const release = await prisma.release.findUnique({ where: { id: body.releaseId }, select: { id: true } });
+    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+  }
+  if (body.riskOwnerId) {
+    const owner = await prisma.user.findUnique({ where: { id: body.riskOwnerId }, select: { id: true } });
+    if (!owner) return NextResponse.json({ error: "Risk owner not found" }, { status: 400 });
+  }
+
+  // Resolve applicationId → stored names before edit policy so full-form saves
+  // don't treat the request-only FK as a denied Limited edit.
+  let resolvedApplicationName = body.applicationName;
+  let resolvedDepartmentName = body.departmentName;
+  if (body.applicationId !== undefined) {
+    const [release, application] = await Promise.all([
+      prisma.release.findUnique({
+        where: { id: nextReleaseId },
+        select: {
+          id: true,
+          department: { select: { id: true } },
+          applications: { where: { applicationId: body.applicationId }, select: { applicationId: true } },
+        },
+      }),
+      prisma.application.findUnique({
+        where: { id: body.applicationId },
+        select: { id: true, name: true, department: { select: { id: true, name: true } } },
+      }),
+    ]);
+    if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
+    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+    if (!release.applications.length) {
+      return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
+    }
+    if (application.department.id !== release.department.id) {
+      return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
+    }
+    resolvedApplicationName = application.name;
+    resolvedDepartmentName = application.department.name;
+  }
+
+  const compareBody: Record<string, unknown> = { ...body };
+  delete compareBody.applicationId;
+  if (resolvedApplicationName !== undefined) {
+    compareBody.applicationName = resolvedApplicationName;
+  }
+  if (resolvedDepartmentName !== undefined) {
+    compareBody.departmentName = resolvedDepartmentName;
+  }
+  const proposedKeys = keysWithActualPatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body: compareBody,
+    metaKeys: new Set(["overrideReason"]),
+  });
+  const proposed = new Set(proposedKeys);
+
   let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadRiskLifecycleConfig(user!.id);
-    const proposedKeys = Object.keys(body);
     const { mode, denied } = deniedRiskEditFields(
       config,
       existing.status,
@@ -133,45 +189,6 @@ export async function PATCH(req: Request, { params }: Params) {
     );
   }
 
-  const nextReleaseId = body.releaseId ?? existing.releaseId;
-  if (body.releaseId !== undefined) {
-    const release = await prisma.release.findUnique({ where: { id: body.releaseId }, select: { id: true } });
-    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
-  }
-  if (body.riskOwnerId) {
-    const owner = await prisma.user.findUnique({ where: { id: body.riskOwnerId }, select: { id: true } });
-    if (!owner) return NextResponse.json({ error: "Risk owner not found" }, { status: 400 });
-  }
-
-  let resolvedApplicationName = body.applicationName;
-  let resolvedDepartmentName = body.departmentName;
-  if (body.applicationId !== undefined) {
-    const [release, application] = await Promise.all([
-      prisma.release.findUnique({
-        where: { id: nextReleaseId },
-        select: {
-          id: true,
-          department: { select: { id: true } },
-          applications: { where: { applicationId: body.applicationId }, select: { applicationId: true } },
-        },
-      }),
-      prisma.application.findUnique({
-        where: { id: body.applicationId },
-        select: { id: true, name: true, department: { select: { id: true, name: true } } },
-      }),
-    ]);
-    if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
-    if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
-    if (!release.applications.length) {
-      return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });
-    }
-    if (application.department.id !== release.department.id) {
-      return NextResponse.json({ error: "Application and release must belong to the same department" }, { status: 400 });
-    }
-    resolvedApplicationName = application.name;
-    resolvedDepartmentName = application.department.name;
-  }
-
   const likelihood = body.likelihood ?? existing.likelihood;
   const impact = body.impact ?? existing.impact;
   const data: {
@@ -190,22 +207,38 @@ export async function PATCH(req: Request, { params }: Params) {
     statusKey?: string;
     notes?: string | null;
   } = {};
-  if (body.releaseId !== undefined) data.releaseId = body.releaseId;
-  if (resolvedApplicationName !== undefined) data.applicationName = resolvedApplicationName;
-  if (resolvedDepartmentName !== undefined) data.departmentName = resolvedDepartmentName;
-  if (body.category !== undefined) data.category = body.category;
-  if (body.description !== undefined) data.description = body.description;
-  if (body.likelihood !== undefined) data.likelihood = body.likelihood;
-  if (body.impact !== undefined) data.impact = body.impact;
-  if (body.affectedArea !== undefined) data.affectedArea = body.affectedArea;
-  if (body.mitigationStrategy !== undefined) data.mitigationStrategy = body.mitigationStrategy;
-  if (body.riskOwnerId !== undefined) data.riskOwnerId = body.riskOwnerId;
+  if (body.releaseId !== undefined && proposed.has("releaseId")) {
+    data.releaseId = body.releaseId;
+  }
+  if (proposed.has("applicationName") && resolvedApplicationName !== undefined) {
+    data.applicationName = resolvedApplicationName;
+  }
+  if (proposed.has("departmentName") && resolvedDepartmentName !== undefined) {
+    data.departmentName = resolvedDepartmentName;
+  }
+  if (body.category !== undefined && proposed.has("category")) data.category = body.category;
+  if (body.description !== undefined && proposed.has("description")) {
+    data.description = body.description;
+  }
+  if (body.likelihood !== undefined && proposed.has("likelihood")) {
+    data.likelihood = body.likelihood;
+  }
+  if (body.impact !== undefined && proposed.has("impact")) data.impact = body.impact;
+  if (body.affectedArea !== undefined && proposed.has("affectedArea")) {
+    data.affectedArea = body.affectedArea;
+  }
+  if (body.mitigationStrategy !== undefined && proposed.has("mitigationStrategy")) {
+    data.mitigationStrategy = body.mitigationStrategy;
+  }
+  if (body.riskOwnerId !== undefined && proposed.has("riskOwnerId")) {
+    data.riskOwnerId = body.riskOwnerId;
+  }
   if (body.status !== undefined) {
     data.status = body.status;
     if (nextStatusKey) data.statusKey = nextStatusKey;
   }
-  if (body.notes !== undefined) data.notes = body.notes;
-  if (body.likelihood !== undefined || body.impact !== undefined) {
+  if (body.notes !== undefined && proposed.has("notes")) data.notes = body.notes;
+  if (proposed.has("likelihood") || proposed.has("impact")) {
     data.riskScore = likelihood * impact;
   }
 
