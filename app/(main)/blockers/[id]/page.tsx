@@ -15,6 +15,7 @@ import {
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
@@ -399,6 +400,9 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           impactOnRelease: draft.impactOnRelease,
         };
         exceptionFromModalSave.current = true;
+        // Close Edit modal first — exception UI is behind it at z-50 otherwise
+        // and the 422 looks like a silent save failure.
+        edit.discard();
         statusConfirm.presentException({
           targetStatus: draft.status,
           targetLabel: draft.status,
@@ -407,7 +411,6 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
           unmetReasons,
           leadMessage: apiError || null,
         });
-        edit.setSaving(false);
         return;
       }
       edit.setSaving(false);
@@ -578,6 +581,11 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
       selectValue={row.id}
       selectOptions={selectOptions}
       onSelectChange={(next) => next !== row.id && router.push(`/blockers/${next}`)}
+      headerStatus={{
+        label: v.status,
+        tone: statusTone(v.status),
+        caption: resolved ? "Cleared" : "Blocking the release",
+      }}
       lastRefresh={lastRefresh}
       footer="Blocker Page v2.0 · Release blocker tracking · Blocker ID is locked"
       editing={edit.editing}
@@ -777,23 +785,29 @@ export default function BlockerDetailPage({ params }: { params: Promise<{ id: st
         scope={scope}
       />
 
-      {statusConfirm.pending ? (
-        <div className="mt-4">
+      <LifecycleExceptionModal
+        open={Boolean(statusConfirm.pending)}
+        onDismiss={statusConfirm.cancel}
+      >
+        {statusConfirm.pending ? (
           <LifecycleExceptionConfirm
             targetLabel={statusConfirm.pending.targetLabel}
             needsException={statusConfirm.pending.needsException}
             blocked={statusConfirm.pending.blocked}
             exceptionReason={statusConfirm.exceptionReason}
             onExceptionReasonChange={statusConfirm.setExceptionReason}
+            autoFocusReason={statusConfirm.pending.needsException}
             busy={statusConfirm.busy}
             confirmDisabled={statusConfirm.confirmDisabled}
             onCancel={statusConfirm.cancel}
             onConfirm={() => void statusConfirm.confirm()}
             checks={statusConfirm.pending.checks}
             leadMessage={statusConfirm.pending.leadMessage}
+            reasonLabel="Exception reason (required)"
+            reasonPlaceholder="e.g. Waiting on vendor CAB slot — RM approved pending hold"
           />
-        </div>
-      ) : null}
+        ) : null}
+      </LifecycleExceptionModal>
       <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection

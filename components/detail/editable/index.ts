@@ -1,4 +1,8 @@
-export { EditableDetailShell, type EntitySelectOption } from "./EditableDetailShell";
+export {
+  EditableDetailShell,
+  type EntitySelectOption,
+  type EditableDetailHeaderStatus,
+} from "./EditableDetailShell";
 export { DetailEditModal } from "./DetailEditModal";
 export { EditSuccessDialog } from "./EditSuccessDialog";
 export { DetailSection, EmptyHint, TintedCallout, type SectionTone } from "./DetailSection";

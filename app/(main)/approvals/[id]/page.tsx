@@ -15,6 +15,7 @@ import {
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
@@ -288,6 +289,7 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
       ) {
         const { decision: _decision, ...extraBody } = patchBody;
         exceptionFromModalSave.current = true;
+        edit.discard();
         statusConfirm.presentException({
           targetStatus: draft.decision,
           targetLabel: draft.decision,
@@ -298,7 +300,6 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
           leadMessage: apiError || null,
           needsConditions: code === "CONDITIONS_REQUIRED",
         });
-        edit.setSaving(false);
         return;
       }
       edit.setSaving(false);
@@ -622,14 +623,18 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
         scope={scope}
       />
 
-      {statusConfirm.pending ? (
-        <div className="mt-4">
+      <LifecycleExceptionModal
+        open={Boolean(statusConfirm.pending)}
+        onDismiss={statusConfirm.cancel}
+      >
+        {statusConfirm.pending ? (
           <LifecycleExceptionConfirm
             targetLabel={statusConfirm.pending.targetLabel}
             needsException={statusConfirm.pending.needsException}
             blocked={statusConfirm.pending.blocked}
             exceptionReason={statusConfirm.exceptionReason}
             onExceptionReasonChange={statusConfirm.setExceptionReason}
+            autoFocusReason={statusConfirm.pending.needsException}
             busy={statusConfirm.busy}
             confirmDisabled={statusConfirm.confirmDisabled}
             onCancel={statusConfirm.cancel}
@@ -647,8 +652,8 @@ export default function ApprovalDetailPage({ params }: { params: Promise<{ id: s
                 : undefined
             }
           />
-        </div>
-      ) : null}
+        ) : null}
+      </LifecycleExceptionModal>
       <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection

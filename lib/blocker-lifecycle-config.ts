@@ -191,12 +191,14 @@ function edge(
   toKey: string,
   sortOrder: number,
   gates: BlockerLifecycleGateAttachment[] = [],
-  enforcement: BlockerLifecycleEnforcement = "flexible"
+  enforcement: BlockerLifecycleEnforcement = "flexible",
+  /** Sheet next-steps On; optional Cancelled/Reopened shortcuts Off by default. */
+  enabled = true
 ): BlockerLifecycleTransitionConfig {
   return {
     fromKey,
     toKey,
-    enabled: true,
+    enabled,
     enforcement,
     isSystem: true,
     sortOrder,
@@ -204,25 +206,36 @@ function edge(
   };
 }
 
+/**
+ * Blocker transition defaults.
+ * Sheet next-steps are On; Cancelled / Reopened / Open→In Progress stay in the
+ * graph (Settings toggles) but Off so Edit Status matches the sheet.
+ */
 export const DEFAULT_BLOCKER_LIFECYCLE_TRANSITIONS: readonly BlockerLifecycleTransitionConfig[] =
   [
+    // Sheet: Open → Assigned, Escalated
     edge("open", "assigned", 10, [blockerGate("assignee_set", 10)]),
     edge("open", "escalated", 20),
-    edge("open", "in_progress", 30, [blockerGate("assignee_set", 10)]),
-    edge("open", "cancelled", 40),
+    edge("open", "in_progress", 30, [blockerGate("assignee_set", 10)], "flexible", false),
+    edge("open", "cancelled", 40, [], "flexible", false),
+    // Sheet: Assigned → In Progress
     edge("assigned", "in_progress", 10, [blockerGate("assignee_set", 10)]),
+    // Sheet: In Progress → Pending, Resolved, Escalated
     edge("in_progress", "pending", 10, [blockerGate("pending_reason_set", 10)]),
     edge("in_progress", "resolved", 20),
     edge("in_progress", "escalated", 30),
-    edge("in_progress", "cancelled", 40),
+    edge("in_progress", "cancelled", 40, [], "flexible", false),
+    // Sheet: Pending → In Progress, Escalated
     edge("pending", "in_progress", 10),
     edge("pending", "escalated", 20),
+    // Sheet: Escalated → In Progress, Resolved
     edge("escalated", "in_progress", 10),
     edge("escalated", "resolved", 20),
-    edge("escalated", "cancelled", 30),
+    edge("escalated", "cancelled", 30, [], "flexible", false),
+    // Sheet: Resolved → Closed
     edge("resolved", "closed", 10),
-    edge("resolved", "reopened", 20),
-    edge("reopened", "in_progress", 10),
+    edge("resolved", "reopened", 20, [], "flexible", false),
+    edge("reopened", "in_progress", 10, [], "flexible", false),
   ];
 
 /**

@@ -7,11 +7,28 @@ import { useNavHistoryLabel } from "@/context/NavigationHistoryContext";
 import { ConfirmDeleteDialog } from "@/components/detail/editable/ConfirmDeleteDialog";
 import { DetailEditModal } from "@/components/detail/editable/DetailEditModal";
 import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialog";
+import type { ChipTone } from "@/components/detail/editable/StatusChip";
 import type { FieldChange } from "@/lib/detail-edit-diff";
 import { taInput } from "@/lib/styles";
 import { cn, formatDateTime } from "@/lib/utils";
 
 export type EntitySelectOption = { value: string; label: string };
+
+/** Large centered status shown between the entity switcher and edit/delete. */
+export type EditableDetailHeaderStatus = {
+  label: string;
+  tone?: ChipTone;
+  caption?: string;
+};
+
+const HEADER_STATUS_TONE: Record<ChipTone, string> = {
+  neutral:
+    "bg-slate-100 text-slate-800 ring-slate-300 dark:bg-white/10 dark:text-white dark:ring-white/25",
+  good: "bg-emerald-100 text-emerald-800 ring-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/40",
+  warn: "bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-500/20 dark:text-amber-100 dark:ring-amber-500/40",
+  bad: "bg-rose-100 text-rose-800 ring-rose-300 dark:bg-rose-500/20 dark:text-rose-200 dark:ring-rose-500/40",
+  info: "bg-indigo-100 text-indigo-800 ring-indigo-300 dark:bg-indigo-500/20 dark:text-indigo-200 dark:ring-indigo-500/40",
+};
 
 type EditableDetailShellProps = {
   pageTitle: string;
@@ -25,6 +42,11 @@ type EditableDetailShellProps = {
   selectValue: string;
   selectOptions: EntitySelectOption[];
   onSelectChange: (value: string) => void;
+  /**
+   * Optional prominent status between Select and Edit/Delete (e.g. Blocker Open).
+   * Centered and large on desktop; full-width centered on small screens.
+   */
+  headerStatus?: EditableDetailHeaderStatus | null;
   lastRefresh: Date;
   footer: string;
   /** When true, the edit modal is open. */
@@ -73,6 +95,7 @@ export function EditableDetailShell({
   selectValue,
   selectOptions,
   onSelectChange,
+  headerStatus = null,
   lastRefresh,
   footer,
   editing,
@@ -97,13 +120,21 @@ export function EditableDetailShell({
   children,
 }: EditableDetailShellProps) {
   useNavHistoryLabel(entityCode);
+  const statusTone = headerStatus?.tone ?? "neutral";
 
   return (
     <div className="w-full min-w-0 space-y-5">
       <TopBar title={pageTitle} highlight />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <div
+        className={cn(
+          "grid items-start gap-4",
+          headerStatus
+            ? "grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center"
+            : "grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto]"
+        )}
+      >
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-[22px] font-bold tracking-tight text-[#1B2559] dark:text-white md:text-[26px]">
               {entityName ?? entityCode}
@@ -145,8 +176,33 @@ export function EditableDetailShell({
           </p>
         </div>
 
-        {canEdit && (
-          <div className="flex flex-wrap items-center gap-2">
+        {headerStatus ? (
+          <div className="flex w-full flex-col items-center justify-center text-center md:px-2">
+            <span
+              className={cn(
+                "inline-flex max-w-full items-center justify-center rounded-2xl px-5 py-2.5 text-base font-extrabold tracking-tight shadow-sm ring-2 sm:px-7 sm:py-3 sm:text-xl md:text-2xl",
+                HEADER_STATUS_TONE[statusTone]
+              )}
+              role="status"
+              aria-label={`Status: ${headerStatus.label}`}
+            >
+              {headerStatus.label}
+            </span>
+            {headerStatus.caption ? (
+              <span className="mt-1.5 max-w-[16rem] text-[11px] font-medium text-slate-500 dark:text-white/55 sm:text-xs">
+                {headerStatus.caption}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {canEdit ? (
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-2",
+              headerStatus ? "justify-center md:justify-end" : "justify-start md:justify-end"
+            )}
+          >
             <button
               type="button"
               onClick={onDeleteOpen}
@@ -165,7 +221,9 @@ export function EditableDetailShell({
               Edit {entityLabel}
             </button>
           </div>
-        )}
+        ) : headerStatus ? (
+          <div className="hidden md:block" aria-hidden />
+        ) : null}
       </div>
 
       {saveMessage && !editing && successChanges == null && (

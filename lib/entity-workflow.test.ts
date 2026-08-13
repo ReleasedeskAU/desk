@@ -17,14 +17,14 @@ import {
 } from "./entity-workflow";
 
 describe("blockerWorkflow", () => {
-  it("offers assigning first on an open blocker, then legal extras", () => {
+  it("offers assigning first on an open blocker, then sheet Escalated only", () => {
     const { primary, secondary } = blockerWorkflow("Open");
 
     assert.equal(primary?.status, "Assigned");
     assert.equal(primary?.label, "Assign owner");
     assert.deepEqual(
       secondary.map((s) => s.status).sort(),
-      ["Cancelled", "Escalated", "In Progress"]
+      ["Escalated"]
     );
   });
 
@@ -35,12 +35,11 @@ describe("blockerWorkflow", () => {
     assert.equal(primary?.stampsResolution, true);
   });
 
-  it("offers closing once resolved, and reopens to Reopened not Open", () => {
+  it("offers closing once resolved (Reopened exit defaults Off)", () => {
     const { primary, secondary } = blockerWorkflow("Resolved");
 
     assert.equal(primary?.status, "Closed");
-    assert.equal(secondary[0]?.status, "Reopened");
-    assert.equal(secondary[0]?.clearsResolution, true);
+    assert.deepEqual(secondary, []);
   });
 
   it("leaves a closed blocker with no actions (terminal)", () => {

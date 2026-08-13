@@ -4,10 +4,18 @@
  */
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, type Ref } from "react";
 import { AlertTriangle, Lock, RefreshCw } from "lucide-react";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+
+/** Resolve a callback/object ref for focus/scroll helpers. */
+function reasonTextareaEl(
+  ref: Ref<HTMLTextAreaElement> | undefined
+): HTMLTextAreaElement | null {
+  if (!ref || typeof ref === "function") return null;
+  return ref.current;
+}
 
 export type LifecycleExceptionCheck = {
   /** Short check name shown in bold. */
@@ -43,7 +51,7 @@ export type LifecycleExceptionConfirmProps = {
   /** Focus the reason field when the panel appears (Edit Release). */
   autoFocusReason?: boolean;
   /** Optional ref to the reason textarea for scroll/focus from parents. */
-  reasonInputRef?: RefObject<HTMLTextAreaElement | null>;
+  reasonInputRef?: Ref<HTMLTextAreaElement>;
 };
 
 /**
@@ -70,7 +78,7 @@ export function LifecycleExceptionConfirm({
   // Surface the reason field immediately when Flexible gates need an exception.
   useEffect(() => {
     if (!needsException || !autoFocusReason) return;
-    const el = reasonInputRef?.current;
+    const el = reasonTextareaEl(reasonInputRef);
     if (!el) return;
     el.focus({ preventScroll: true });
     el.scrollIntoView({ block: "nearest", behavior: "smooth" });

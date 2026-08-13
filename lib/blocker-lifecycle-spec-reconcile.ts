@@ -1,6 +1,8 @@
 /**
  * Merge enterprise blocker defaults into a stored per-user graph.
  * Additive: missing statuses, edges, and checks are inserted. Extra edges stay.
+ * New shipped edges inherit default `enabled` (non-sheet extras default Off).
+ * Never flip a stored On/Off — admin toggles must survive reload (same as Release).
  */
 import {
   createDefaultBlockerLifecycleConfig,

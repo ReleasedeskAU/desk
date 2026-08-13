@@ -37,9 +37,9 @@ describe("resolveBlockerLifecycleStatusRef", () => {
 });
 
 describe("legalNextBlockerStatuses", () => {
-  it("lists sheet next plus kept extras from Open", () => {
+  it("lists only sheet next steps from Open (extras default Off)", () => {
     const next = legalNextBlockerStatuses(config, "Open").map((s) => s.key);
-    assert.deepEqual(next, ["assigned", "escalated", "in_progress", "cancelled"]);
+    assert.deepEqual(next, ["assigned", "escalated"]);
   });
 
   it("lists no exits from Closed", () => {
@@ -115,21 +115,32 @@ describe("validateBlockerTransition", () => {
     assert.equal(result.code, "ILLEGAL_TRANSITION");
   });
 
-  it("allows Resolved → Reopened and Reopened → In Progress", () => {
+  it("blocks Resolved → Reopened when that exit is Off (sheet default)", () => {
     const reopen = validateBlockerTransition({
       config,
       fromStatus: "Resolved",
       toStatus: "Reopened",
       facts: ownedFacts,
     });
-    assert.equal(reopen.allowed, true);
-    const progress = validateBlockerTransition({
-      config,
-      fromStatus: "Reopened",
-      toStatus: "In Progress",
+    assert.equal(reopen.allowed, false);
+    if (reopen.allowed) return;
+    assert.equal(reopen.code, "ILLEGAL_TRANSITION");
+  });
+
+  it("allows Resolved → Reopened when an admin turns the edge On", () => {
+    const withReopen = createDefaultBlockerLifecycleConfig();
+    const edge = withReopen.transitions.find(
+      (t) => t.fromKey === "resolved" && t.toKey === "reopened"
+    );
+    assert.ok(edge);
+    edge!.enabled = true;
+    const reopen = validateBlockerTransition({
+      config: withReopen,
+      fromStatus: "Resolved",
+      toStatus: "Reopened",
       facts: ownedFacts,
     });
-    assert.equal(progress.allowed, true);
+    assert.equal(reopen.allowed, true);
   });
 });
 
@@ -195,5 +206,17 @@ describe("reconcileBlockerLifecycleSpec", () => {
     assert.ok(
       next.transitions.some((t) => t.fromKey === "open" && t.toKey === "assigned")
     );
+  });
+
+  it("inserts missing non-sheet edges as Off (does not revive admin Off)", () => {
+    const stale = createDefaultBlockerLifecycleConfig();
+    stale.transitions = stale.transitions.filter(
+      (t) => !(t.fromKey === "open" && t.toKey === "cancelled")
+    );
+    const next = reconcileBlockerLifecycleSpec(stale);
+    const added = next.transitions.find(
+      (t) => t.fromKey === "open" && t.toKey === "cancelled"
+    );
+    assert.equal(added?.enabled, false);
   });
 });
