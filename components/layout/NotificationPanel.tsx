@@ -54,8 +54,21 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
                   <p className="text-sm font-medium text-gray-800">{n.title}</p>
                   <p className="text-xs text-gray-600 mt-0.5">{n.message}</p>
                   <p className="text-xs text-gray-400 mt-1">{formatDateTime(n.timestamp)}</p>
-                  {n.releaseId && (
+                  {(n.href || n.releaseId) && (
                     <div className="flex flex-wrap gap-3 mt-1">
+                      {n.href ? (
+                        <ProgressLink
+                          href={n.href}
+                          onClick={() => {
+                            dismissNotification(n.id);
+                            onClose();
+                          }}
+                          className="text-xs text-brand-500 hover:underline"
+                        >
+                          {n.linkLabel || "View conflict"}
+                        </ProgressLink>
+                      ) : null}
+                      {n.releaseId && (
                       <ProgressLink
                         href={`/releases/${n.releaseId}`}
                         onClick={() => {
@@ -66,6 +79,7 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
                       >
                         View release
                       </ProgressLink>
+                      )}
                       {(n.type === "decision" || n.type === "build" || n.type === "approval") && (
                         <ProgressLink
                           href={`/history?release=${n.releaseId}`}

@@ -159,7 +159,10 @@ export default function ConflictQueueContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
-  const lifecycle = useEntityLifecycleStatuses("/api/conflict-lifecycle-config");
+  const lifecycle = useEntityLifecycleStatuses(
+    "/api/conflict-lifecycle-config",
+    (status) => Boolean(status.blocksReleaseReady)
+  );
   const statusOptions = useMemo(
     () => lifecycle.filterOptions(conflicts.map((c) => c.status)),
     [lifecycle, conflicts]
@@ -255,7 +258,7 @@ export default function ConflictQueueContent() {
         onCreated={refetch}
         conflictTypeOptions={conflictTypes}
         statusOptions={lifecycle.createOptions}
-        defaultStatus={lifecycle.defaultStatus || "Detected"}
+        defaultStatus={lifecycle.defaultStatus || "Open"}
       />
 
       {!tablePending && (

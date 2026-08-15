@@ -71,6 +71,9 @@ export async function GET(_req: Request, { params }: Params) {
     conflictingEnvironment: row.conflictingEnvironment,
     environmentConflictType: row.environmentConflictType,
     notes: row.notes,
+    conflictPeriod: row.conflictPeriod,
+    raisedBy: row.raisedBy,
+    raisedDate: row.raisedDate,
     relatedBookings: bookings.map((b) => ({
       id: b.id,
       bookingCode: b.bookingCode,
@@ -147,6 +150,8 @@ export async function PATCH(req: Request, { params }: Params) {
         overrideReason: body.overrideReason ?? null,
         facts: {
           notes: body.notes !== undefined ? body.notes : existing.notes,
+          assignedTo:
+            body.assignedTo !== undefined ? body.assignedTo : existing.assignedTo,
         },
       });
       if (!transition.allowed) {

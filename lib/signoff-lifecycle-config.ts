@@ -25,6 +25,37 @@ export const SIGNOFF_RELEASE_FIELDS = [
 ] as const;
 export type SignoffReleaseField = (typeof SIGNOFF_RELEASE_FIELDS)[number];
 
+/**
+ * The six decision types on the Sign-offs sheet (Edit Release + CAB gates).
+ * Training Status is a plain checklist, not in this set.
+ */
+export const SIGNOFF_DECISION_FIELDS = [
+  "devSignoff",
+  "testSignoff",
+  "uatSignoff",
+  "securityClearance",
+  "businessSignoff",
+  "opsSignoff",
+] as const;
+export type SignoffDecisionField = (typeof SIGNOFF_DECISION_FIELDS)[number];
+
+/** Fields the SLA expiry cron may rewrite. Training Status is a checklist, not a decision. */
+export const SIGNOFF_SLA_FIELDS: readonly SignoffReleaseField[] =
+  SIGNOFF_RELEASE_FIELDS.filter((field) => field !== "trainingStatus");
+
+/** Plain-English labels for sign-off release columns. */
+export const SIGNOFF_FIELD_LABELS: Record<SignoffReleaseField, string> = {
+  devSignoff: "Dev sign-off",
+  testSignoff: "Test sign-off",
+  uatSignoff: "UAT sign-off",
+  securityClearance: "Security sign-off",
+  businessSignoff: "Business sign-off",
+  opsSignoff: "Ops sign-off",
+  dressRehearsal: "Dress rehearsal",
+  trainingStatus: "Training status",
+  supportBriefed: "Support briefed",
+};
+
 export type SignoffLifecycleStatusConfig = {
   key: string;
   label: string;
@@ -55,14 +86,35 @@ export type SignoffLifecycleTransitionConfig = {
   sortOrder: number;
 };
 
+export const SIGNOFF_SIZE_FLOORS = ["Small", "Medium", "Large"] as const;
+export type SignoffSizeFloor = (typeof SIGNOFF_SIZE_FLOORS)[number];
+
+export const SIGNOFF_PRIORITY_FLOORS = [
+  "P4 - Low",
+  "P3 - Medium",
+  "P2 - High",
+  "P1 - Critical",
+] as const;
+export type SignoffPriorityFloor = (typeof SIGNOFF_PRIORITY_FLOORS)[number];
+
 export type SignoffTypeConfig = {
   key: string;
   label: string;
   sortOrder: number;
   enabled: boolean;
   isSystem: boolean;
-  /** When true, required for Pending CAB / signoffs_complete gate. */
+  /** When true, required for every release (Dev/Test/UAT/Security defaults). */
   mandatory: boolean;
+  /**
+   * When set and `mandatory` is false, this type is required from this size up
+   * (Small < Medium < Large). Null = no size floor.
+   */
+  mandatoryMinSize: SignoffSizeFloor | null;
+  /**
+   * When set and `mandatory` is false, this type is required from this priority
+   * up (P4 < P3 < P2 < P1). Null = no priority floor.
+   */
+  mandatoryMinPriority: SignoffPriorityFloor | null;
   /** Release column that stores this type's decision (null = config-only). */
   releaseField: SignoffReleaseField | null;
 };
@@ -189,6 +241,8 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: true,
+    mandatoryMinSize: null,
+    mandatoryMinPriority: null,
     releaseField: "devSignoff",
   },
   {
@@ -198,6 +252,8 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: true,
+    mandatoryMinSize: null,
+    mandatoryMinPriority: null,
     releaseField: "testSignoff",
   },
   {
@@ -207,6 +263,8 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: true,
+    mandatoryMinSize: null,
+    mandatoryMinPriority: null,
     releaseField: "uatSignoff",
   },
   {
@@ -216,6 +274,8 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: true,
+    mandatoryMinSize: null,
+    mandatoryMinPriority: null,
     releaseField: "securityClearance",
   },
   {
@@ -225,6 +285,9 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: false,
+    // Sheet: Business Review required for Medium+ releases.
+    mandatoryMinSize: "Medium",
+    mandatoryMinPriority: null,
     releaseField: "businessSignoff",
   },
   {
@@ -234,6 +297,9 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: false,
+    // Sheet: Operations Review required for High/Critical.
+    mandatoryMinSize: null,
+    mandatoryMinPriority: "P2 - High",
     releaseField: "opsSignoff",
   },
   {
@@ -243,6 +309,8 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: false,
+    mandatoryMinSize: null,
+    mandatoryMinPriority: null,
     releaseField: "dressRehearsal",
   },
   {
@@ -252,6 +320,8 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
     enabled: true,
     isSystem: true,
     mandatory: false,
+    mandatoryMinSize: null,
+    mandatoryMinPriority: null,
     releaseField: "trainingStatus",
   },
 ];
@@ -347,6 +417,20 @@ export function validateSignoffLifecycleConfig(
       }
       usedFields.add(type.releaseField);
     }
+    if (
+      type.mandatoryMinSize != null &&
+      !(SIGNOFF_SIZE_FLOORS as readonly string[]).includes(type.mandatoryMinSize)
+    ) {
+      return `Invalid mandatoryMinSize for type ${type.key}`;
+    }
+    if (
+      type.mandatoryMinPriority != null &&
+      !(SIGNOFF_PRIORITY_FLOORS as readonly string[]).includes(
+        type.mandatoryMinPriority
+      )
+    ) {
+      return `Invalid mandatoryMinPriority for type ${type.key}`;
+    }
     typeKeys.add(type.key);
   }
   return null;
@@ -382,7 +466,20 @@ export function normalizeSignoffLifecycleConfig(
           isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "pending",
         })),
         transitions: candidate.transitions.map((t) => ({ ...t })),
-        types: candidate.types.map((t) => ({ ...t })),
+        types: candidate.types.map((t) => {
+          const defaults = DEFAULT_SIGNOFF_TYPES.find((d) => d.key === t.key);
+          return {
+            ...t,
+            mandatoryMinSize:
+              t.mandatoryMinSize === undefined
+                ? (defaults?.mandatoryMinSize ?? null)
+                : t.mandatoryMinSize,
+            mandatoryMinPriority:
+              t.mandatoryMinPriority === undefined
+                ? (defaults?.mandatoryMinPriority ?? null)
+                : t.mandatoryMinPriority,
+          };
+        }),
       };
     }
   }

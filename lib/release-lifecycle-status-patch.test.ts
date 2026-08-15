@@ -62,8 +62,13 @@ describe("releaseGateFactStatusLists", () => {
     const lists = defaultLists();
     assert.ok(lists.openIncidentStatuses.includes("Resolved"));
     assert.equal(lists.openIncidentStatuses.includes("Closed"), false);
-    assert.ok(lists.openConflictStatuses.includes("Detected"));
-    assert.ok(lists.openConflictStatuses.includes("Under Review"));
+    assert.ok(lists.openConflictStatuses.includes("Open"));
+    assert.ok(lists.openConflictStatuses.includes("detected"));
+    assert.ok(lists.openConflictStatuses.includes("In Progress"));
+    assert.ok(lists.openConflictStatuses.includes("Pending Review"));
+    assert.ok(lists.openConflictStatuses.includes("Escalated"));
     assert.equal(lists.openConflictStatuses.includes("Resolved"), false);
+    assert.equal(lists.openConflictStatuses.includes("Closed"), false);
+    assert.equal(lists.openConflictStatuses.includes("Dismissed"), false);
   });
 });

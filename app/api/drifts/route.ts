@@ -5,6 +5,7 @@ import { driftWhere, sp } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createDriftSchema } from "@/lib/validation/drift";
 import { createDriftRow } from "@/lib/org-compat";
+import { invalidDriftTypeMessage } from "@/lib/drift-type-lookup";
 import { loadDriftLifecycleConfig } from "@/lib/drift-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 
@@ -40,13 +41,9 @@ export async function POST(req: Request) {
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
 
-  // driftType is a fixed master-data set (ReferenceData category="drift_type"),
-  // not free text — reject anything not in the active lookup list.
-  const validDriftType = await prisma.referenceData.findUnique({
-    where: { category_value: { category: "drift_type", value: body.driftType } },
-  });
-  if (!validDriftType || !validDriftType.active) {
-    return NextResponse.json({ error: "Invalid driftType — must be an active Drift Type reference value" }, { status: 400 });
+  const typeError = await invalidDriftTypeMessage(body.driftType);
+  if (typeError) {
+    return NextResponse.json({ error: typeError }, { status: 400 });
   }
 
   let status = String(body.status ?? "").trim();
@@ -113,6 +110,9 @@ export async function POST(req: Request) {
     description: body.description,
     impactOnRelease: body.impactOnRelease ?? null,
     remediationAction: body.remediationAction ?? null,
+    notes: body.notes ?? null,
+    baselineNotes: body.baselineNotes ?? null,
+    assignedTo: body.assignedTo ?? null,
     status,
     statusKey,
     etaToFix: body.etaToFix ? new Date(body.etaToFix) : null,

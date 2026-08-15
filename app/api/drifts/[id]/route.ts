@@ -15,6 +15,7 @@ import {
 } from "@/lib/lifecycle-event-hooks";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
+import { invalidDriftTypeMessage } from "@/lib/drift-type-lookup";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -73,6 +74,12 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (body.etaToFix !== undefined && body.etaToFix !== null && etaToFix === undefined) {
     return NextResponse.json({ error: "Invalid etaToFix" }, { status: 400 });
+  }
+  if (body.driftType !== undefined) {
+    const typeError = await invalidDriftTypeMessage(body.driftType);
+    if (typeError) {
+      return NextResponse.json({ error: typeError }, { status: 400 });
+    }
   }
 
   const nextReleaseId = body.releaseId ?? existing.releaseId;
@@ -157,12 +164,24 @@ export async function PATCH(req: Request, { params }: Params) {
         fromStatus: existing.status,
         toStatus: String(body.status),
         overrideReason: body.overrideReason ?? null,
+        facts: {
+          notes: body.notes !== undefined ? body.notes : existing.notes,
+          etaToFix:
+            body.etaToFix !== undefined
+              ? body.etaToFix
+              : existing.etaToFix,
+          baselineNotes:
+            body.baselineNotes !== undefined
+              ? body.baselineNotes
+              : existing.baselineNotes,
+        },
       });
       if (!transition.allowed) {
         return NextResponse.json(
           {
             error: transition.reason,
             code: transition.code,
+            unmetReasons: transition.unmetReasons,
             transition,
           },
           { status: 422 }
@@ -218,6 +237,15 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (body.remediationAction !== undefined && proposed.has("remediationAction")) {
     data.remediationAction = body.remediationAction;
+  }
+  if (body.notes !== undefined && proposed.has("notes")) {
+    data.notes = body.notes;
+  }
+  if (body.baselineNotes !== undefined && proposed.has("baselineNotes")) {
+    data.baselineNotes = body.baselineNotes;
+  }
+  if (body.assignedTo !== undefined && proposed.has("assignedTo")) {
+    data.assignedTo = body.assignedTo;
   }
   if (body.status !== undefined) {
     data.status = body.status;

@@ -9,6 +9,7 @@ import {
   validateRiskLifecycleConfig,
   type RiskLifecycleConfig,
 } from "@/lib/risk-lifecycle-config";
+import { reconcileRiskLifecycleSpec } from "@/lib/risk-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -61,7 +62,9 @@ export async function loadRiskLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeRiskLifecycleConfig(latest.snapshot),
+      config: reconcileRiskLifecycleSpec(
+        normalizeRiskLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

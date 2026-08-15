@@ -26,6 +26,26 @@ const toInt = (v: unknown): number | undefined => {
   return Number.isFinite(n) ? Math.round(n) : undefined;
 };
 
+/** Sheet / seed display labels → stable Conflict status keys. */
+const CONFLICT_SEED_STATUS_KEY: Record<string, string> = {
+  Open: "detected",
+  Detected: "detected",
+  "In Progress": "under_review",
+  "Under Review": "under_review",
+  "Pending Review": "pending_review",
+  Escalated: "escalated",
+  Resolved: "resolved",
+  Closed: "closed",
+  Dismissed: "dismissed",
+};
+
+const CONFLICT_SEED_TYPE_MAP: Record<string, string> = {
+  "Same Test/UAT env required": "Environment Booking",
+  "Same UAT env required": "Environment Booking",
+  "Overlapping Test/UAT window": "Environment Booking",
+  "UAT environment overlap": "Environment Booking",
+};
+
 function resolveAppId(
   rawName: string,
   appIdByName: Map<string, string>
@@ -440,20 +460,25 @@ async function main() {
 
   const conflicts = DATA("conflicts.json");
   await prisma.environmentConflict.createMany({
-    data: conflicts.map((c: Record<string, unknown>, sourceIndex: number) => ({
-      conflictCode: String(c["Conflict ID"]),
-      status: String(c["Status"]),
-      priority: String(c["Priority"]),
-      assignedTo: c["Assigned To"] ? String(c["Assigned To"]) : null,
-      release1Code: String(c["Release 1"]),
-      release2Code: String(c["Release 2"]),
-      applicationName: String(c["Application"]),
-      departmentName: String(c["Department"]),
-      conflictingEnvironment: String(c["Conflicting Environment"]),
-      environmentConflictType: String(c["Environment Conflict Type"]),
-      notes: c["Notes"] ? String(c["Notes"]) : null,
-      sourceOrder: sourceIndex + 1,
-    })),
+    data: conflicts.map((c: Record<string, unknown>, sourceIndex: number) => {
+      const rawStatus = String(c["Status"]);
+      const rawType = String(c["Environment Conflict Type"]);
+      return {
+        conflictCode: String(c["Conflict ID"]),
+        status: rawStatus,
+        statusKey: CONFLICT_SEED_STATUS_KEY[rawStatus] ?? null,
+        priority: String(c["Priority"]),
+        assignedTo: c["Assigned To"] ? String(c["Assigned To"]) : null,
+        release1Code: String(c["Release 1"]),
+        release2Code: String(c["Release 2"]),
+        applicationName: String(c["Application"]),
+        departmentName: String(c["Department"]),
+        conflictingEnvironment: String(c["Conflicting Environment"]),
+        environmentConflictType: CONFLICT_SEED_TYPE_MAP[rawType] ?? rawType,
+        notes: c["Notes"] ? String(c["Notes"]) : null,
+        sourceOrder: sourceIndex + 1,
+      };
+    }),
   });
 
   const blockers = DATA("blockers.json");

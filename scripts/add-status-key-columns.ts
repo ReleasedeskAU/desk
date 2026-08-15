@@ -11,6 +11,9 @@ const STATEMENTS = [
   `ALTER TABLE "EnvironmentConflict" ADD COLUMN IF NOT EXISTS "statusKey" TEXT`,
   `ALTER TABLE "Blocker" ADD COLUMN IF NOT EXISTS "statusKey" TEXT`,
   `ALTER TABLE "Risk" ADD COLUMN IF NOT EXISTS "statusKey" TEXT`,
+  // Existing status-entry times are unknowable; start their clocks at migration
+  // rather than immediately escalating from an unrelated historical updatedAt.
+  `ALTER TABLE "Risk" ADD COLUMN IF NOT EXISTS "statusChangedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
   `ALTER TABLE "Drift" ADD COLUMN IF NOT EXISTS "statusKey" TEXT`,
   `ALTER TABLE "MonitoringAlert" ADD COLUMN IF NOT EXISTS "statusKey" TEXT`,
   `ALTER TABLE "Incident" ADD COLUMN IF NOT EXISTS "statusKey" TEXT`,

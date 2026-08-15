@@ -3,6 +3,7 @@
  */
 import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
 import type { SignoffReleaseField } from "@/lib/signoff-lifecycle-config";
+import { SIGNOFF_FIELD_LABELS } from "@/lib/signoff-lifecycle-config";
 import { isSignoffChangeDeniedByEditPolicy } from "@/lib/signoff-lifecycle-edit-policy";
 import {
   isSignoffReleaseField,
@@ -64,12 +65,13 @@ export function enforceSignoffFieldChanges(args: {
       };
     }
     const next = raw === null ? null : String(raw).trim();
+    const fieldLabel = SIGNOFF_FIELD_LABELS[key];
     if (next === null || next === "") {
       return {
         ok: false,
         httpStatus: 422,
         body: {
-          error: `Sign-off field "${key}" cannot be cleared — set a lifecycle status instead`,
+          error: `${fieldLabel} can’t be cleared. Pick a decision such as Pending, Approved, or Rejected.`,
           code: "SIGNOFF_VALUE_REQUIRED",
           field: key,
         },
@@ -94,7 +96,7 @@ export function enforceSignoffFieldChanges(args: {
           ok: false,
           httpStatus: 409,
           body: {
-            error: `Sign-off "${key}" is immutable in status "${current ?? currentResolved}". Cannot change to "${next}"`,
+            error: `${fieldLabel} is already recorded as “${current ?? currentResolved}”. Recorded decisions can’t be changed — ask an admin if you need a new request.`,
             code: "EDIT_POLICY_DENIED",
             field: key,
             transition,

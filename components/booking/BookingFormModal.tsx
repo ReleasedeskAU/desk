@@ -5,6 +5,8 @@ import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { bookingPhaseLabels } from "@/lib/booking-phase";
+import { ConflictChoiceDialog } from "@/components/conflicts/ConflictChoiceDialog";
+import type { ConflictFinding } from "@/lib/conflict-finding-types";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +69,7 @@ type BookingDetails = {
   endDate: string;
   days: string;
   notes: string;
+  conflictCode?: string;
 };
 
 type ResultState =
@@ -146,6 +149,7 @@ export function BookingFormModal({
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictRow[]>([]);
   const [conflictPrompt, setConflictPrompt] = useState<string | null>(null);
+  const [highlightDates, setHighlightDates] = useState(false);
   const [result, setResult] = useState<ResultState | null>(null);
 
   useEffect(() => {
@@ -154,6 +158,7 @@ export function BookingFormModal({
     setError(null);
     setConflicts([]);
     setConflictPrompt(null);
+    setHighlightDates(false);
     setResult(null);
   }, [open]);
 
@@ -213,7 +218,7 @@ export function BookingFormModal({
     }
   };
 
-  const createBooking = async (confirmConflict = false) => {
+  const createBooking = async (confirmConflict = false, conflictNotes = "") => {
     setError(null);
     if (!confirmConflict) {
       setConflicts([]);
@@ -245,6 +250,7 @@ export function BookingFormModal({
           toDate: form.toDate,
           purpose: form.purpose || undefined,
           confirmConflict: confirmConflict || undefined,
+          conflictNotes: conflictNotes || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -252,6 +258,7 @@ export function BookingFormModal({
         conflicts?: ConflictRow[];
         requiresConfirmation?: boolean;
         bookings?: CreatedBooking[];
+        conflictCode?: string | null;
       };
 
       if (res.status === 409 && data.requiresConfirmation) {
@@ -309,6 +316,7 @@ export function BookingFormModal({
           days:
             created?.testDays != null ? String(created.testDays) : attempted.days,
           notes: created?.purpose || attempted.notes,
+          conflictCode: data.conflictCode ?? undefined,
         },
       });
       onSaved();
@@ -322,67 +330,47 @@ export function BookingFormModal({
   };
 
   if (conflictPrompt) {
+    const findings: ConflictFinding[] = conflicts.map((row) => ({
+      typeKey: "environment_booking",
+      release2Code: row.releaseCode || "UNLINKED",
+      applicationName: row.applicationName || "Unknown",
+      departmentName: "",
+      conflictingEnvironment: row.environmentName || "Environment",
+      notes: conflictPrompt,
+      conflictPeriod:
+        row.fromDate && row.toDate
+          ? `${String(row.fromDate).slice(0, 10)} – ${String(row.toDate).slice(0, 10)}`
+          : "",
+      summary: `${row.bookingCode ?? "Existing booking"} on ${row.environmentName || "this environment"}${
+        row.releaseCode ? ` (${row.releaseCode})` : ""
+      }`,
+    }));
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div
-          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg max-h-[90vh] overflow-y-auto dark:bg-[var(--card)]"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="booking-conflict-title"
-        >
-          <div className="mb-4 flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-amber-600 dark:text-amber-400" />
-            <div>
-              <h2
-                id="booking-conflict-title"
-                className="text-lg font-semibold text-amber-900 dark:text-amber-200"
-              >
-                Environment conflict
-              </h2>
-              <p className="mt-1 text-sm text-gray-700 dark:text-white/70">{conflictPrompt}</p>
-            </div>
-          </div>
-
-          {conflicts.length > 0 && (
-            <ul className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-              {conflicts.map((c, i) => (
-                <li key={c.bookingCode ?? i}>
-                  <strong>{c.bookingCode ?? "Existing booking"}</strong>
-                  {c.environmentName ? ` · ${c.environmentName}` : ""}
-                  {c.applicationName ? ` · ${c.applicationName}` : ""}
-                  {c.releaseCode ? ` · ${c.releaseCode}` : ""}
-                  {c.bookedBy ? ` — booked by ${c.bookedBy}` : ""}
-                  {c.fromDate && c.toDate
-                    ? ` · ${String(c.fromDate).slice(0, 10)} → ${String(c.toDate).slice(0, 10)}`
-                    : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="mt-5 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className={taBtnSecondary}
-              disabled={saving}
-              onClick={() => {
-                setConflictPrompt(null);
-                setConflicts([]);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className={cn(taBtnPrimary, saving && "opacity-70")}
-              disabled={saving}
-              onClick={() => void createBooking(true)}
-            >
-              {saving ? "Creating…" : "Create anyway"}
-            </button>
-          </div>
-        </div>
-      </div>
+      <ConflictChoiceDialog
+        findings={
+          findings.length > 0
+            ? findings
+            : [
+                {
+                  typeKey: "environment_booking",
+                  release2Code: "UNLINKED",
+                  applicationName: "Unknown",
+                  departmentName: "",
+                  conflictingEnvironment: "Environment",
+                  notes: conflictPrompt,
+                  conflictPeriod: "",
+                  summary: conflictPrompt,
+                },
+              ]
+        }
+        busy={saving}
+        highlightHint="Change my dates discards this booking — nothing was saved — and highlights the overlapping window so you can pick new dates."
+        onModify={() => {
+          setConflictPrompt(null);
+          setHighlightDates(true);
+        }}
+        onRaise={(notes) => void createBooking(true, notes)}
+      />
     );
   }
 
@@ -416,7 +404,9 @@ export function BookingFormModal({
               </h2>
               <p className="mt-1 text-sm text-gray-600 dark:text-white/60">
                 {result.ok
-                  ? "Your environment booking was saved. Details below."
+                  ? result.details.conflictCode
+                    ? `Booking saved and conflict ${result.details.conflictCode} was raised. The Release Manager has a notice in their inbox (bell icon).`
+                    : "Your environment booking was saved. Details below."
                   : result.message}
               </p>
             </div>
@@ -563,7 +553,7 @@ export function BookingFormModal({
             <label className="text-xs font-medium text-gray-500">{phaseLabels.startField} *</label>
             <input
               type="date"
-              className={taInput}
+              className={cn(taInput, highlightDates && "border-amber-400 ring-2 ring-amber-300")}
               value={form.fromDate}
               onChange={(e) => setForm((f) => ({ ...f, fromDate: e.target.value }))}
             />
@@ -575,7 +565,7 @@ export function BookingFormModal({
             </label>
             <input
               type="date"
-              className={taInput}
+              className={cn(taInput, highlightDates && "border-amber-400 ring-2 ring-amber-300")}
               value={form.toDate}
               onChange={(e) => setForm((f) => ({ ...f, toDate: e.target.value }))}
             />

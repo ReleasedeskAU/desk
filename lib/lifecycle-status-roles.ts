@@ -36,6 +36,10 @@ export const STATUS_ROLE_IDS = [
   "requiresConditions",
   "revertsLinkedReleaseOnEnter",
   "approvalRejectLanding",
+  "rollbackMilestone",
+  "reopensOnPredecessorRollback",
+  "rollbackWarningTarget",
+  "suppressesRepeatAlerts",
 ] as const;
 export type StatusRoleId = (typeof STATUS_ROLE_IDS)[number];
 
@@ -65,7 +69,7 @@ export const STATUS_ROLE_FIELDS: Record<StatusRoleId, StatusRoleFieldDef> = {
     id: "blocksReleaseReady",
     label: "Blocks the release from going Ready",
     description:
-      "While a blocker is in this status, the linked release cannot move to Ready.",
+      "While a record is in this status, the linked release cannot move to Ready.",
     uniqueness: "many",
     valueKind: "boolean",
   },
@@ -197,6 +201,38 @@ export const STATUS_ROLE_FIELDS: Record<StatusRoleId, StatusRoleFieldDef> = {
     uniqueness: "one",
     valueKind: "boolean",
   },
+  rollbackMilestone: {
+    id: "rollbackMilestone",
+    label: "Rollback milestone",
+    description:
+      "Entering this status flags matching met dependencies as at risk (AV-26).",
+    uniqueness: "one",
+    valueKind: "boolean",
+  },
+  reopensOnPredecessorRollback: {
+    id: "reopensOnPredecessorRollback",
+    label: "Reopen when a predecessor rolls back",
+    description:
+      "Dependencies in this status are moved to the rollback-warning status when the upstream release rolls back (AV-26).",
+    uniqueness: "many",
+    valueKind: "boolean",
+  },
+  rollbackWarningTarget: {
+    id: "rollbackWarningTarget",
+    label: "Lands here after a predecessor rollback",
+    description:
+      "AV-26 moves reopened dependencies into this status (At Risk by default).",
+    uniqueness: "one",
+    valueKind: "boolean",
+  },
+  suppressesRepeatAlerts: {
+    id: "suppressesRepeatAlerts",
+    label: "Stops repeat alerts",
+    description:
+      "While an alert is in this status, the same application, metric, and environment will not raise another alert.",
+    uniqueness: "many",
+    valueKind: "boolean",
+  },
 };
 
 /** Roles editable on Release statuses. */
@@ -209,6 +245,7 @@ export const RELEASE_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
   "writesCabScopeSnapshot",
   "clearsCabScopeSnapshot",
   "approvalRejectLanding",
+  "rollbackMilestone",
 ];
 
 /** Roles editable on Blocker statuses. */
@@ -230,6 +267,8 @@ export const INCIDENT_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
 export const DEPENDENCY_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
   "isIntake",
   "satisfiesHardGate",
+  "reopensOnPredecessorRollback",
+  "rollbackWarningTarget",
 ];
 
 /** Roles editable on Risk statuses. */
@@ -253,7 +292,19 @@ export const APPROVAL_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
   "revertsLinkedReleaseOnEnter",
 ];
 
-/** Roles editable on Conflict / Alert / Sign-off statuses. */
+/** Roles editable on Conflict statuses. */
+export const CONFLICT_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
+  "isIntake",
+  "blocksReleaseReady",
+];
+
+/** Roles editable on Alert statuses. */
+export const ALERT_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
+  "isIntake",
+  "suppressesRepeatAlerts",
+];
+
+/** Roles editable on Sign-off statuses (intake only). */
 export const INTAKE_ONLY_ROLE_IDS: readonly StatusRoleId[] = ["isIntake"];
 
 export type StatusRoleBag = Record<string, unknown> & {
@@ -472,6 +523,7 @@ export function exclusiveRoleIssues(
  */
 export const AT_LEAST_ONE_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
   "satisfiesHardGate",
+  "reopensOnPredecessorRollback",
 ];
 
 /**

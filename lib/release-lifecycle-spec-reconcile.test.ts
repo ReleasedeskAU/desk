@@ -164,6 +164,47 @@ describe("reconcileLifecycleSpecDefaults", () => {
       false
     );
   });
+
+  it("moves signoffs_complete onto UAT → Pending CAB (was one stage late)", () => {
+    const stale = createDefaultReleaseLifecycleConfig();
+    const uatCab = edge(stale, "uat", "pending_cab")!;
+    const pendingApproved = edge(stale, "pending_cab", "cab_approved")!;
+    uatCab.gates = [
+      {
+        gateType: "uat_environment_booked",
+        enabled: true,
+        enforcement: "inherit",
+        sortOrder: 10,
+      },
+    ];
+    pendingApproved.gates = [
+      {
+        gateType: "signoffs_complete",
+        enabled: true,
+        enforcement: "inherit",
+        sortOrder: 10,
+      },
+      {
+        gateType: "go_live_date_set",
+        enabled: true,
+        enforcement: "inherit",
+        sortOrder: 20,
+      },
+      {
+        gateType: "no_open_blockers",
+        enabled: true,
+        enforcement: "inherit",
+        sortOrder: 30,
+      },
+    ];
+
+    const next = reconcileLifecycleSpecDefaults(stale);
+    assert.ok(gateTypes(next, "uat", "pending_cab").includes("signoffs_complete"));
+    assert.equal(
+      gateTypes(next, "pending_cab", "cab_approved").includes("signoffs_complete"),
+      false
+    );
+  });
 });
 
 describe("Wave A default seed attachments", () => {
@@ -178,6 +219,7 @@ describe("Wave A default seed attachments", () => {
         "no_open_blockers",
         "no_open_environment_conflicts",
         "ops_signoff_complete",
+        "business_signoff_complete",
         "pre_deployment_checklist_complete",
         "rollback_plan_documented",
         "scope_unchanged_since_cab",
@@ -204,6 +246,13 @@ describe("Wave A default seed attachments", () => {
     // Pending CAB → CAB Approved still keeps no_open_blockers (unchanged).
     assert.ok(
       gateTypes(config, "pending_cab", "cab_approved").includes("no_open_blockers")
+    );
+    assert.equal(
+      gateTypes(config, "pending_cab", "cab_approved").includes("signoffs_complete"),
+      false
+    );
+    assert.ok(
+      gateTypes(config, "uat", "pending_cab").includes("signoffs_complete")
     );
   });
 });

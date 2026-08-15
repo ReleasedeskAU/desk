@@ -26,6 +26,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnSecondary } from "@/lib/styles";
 import {
   DEPENDENCY_IMPACTS,
+  DEPENDENCY_KINDS,
   DEPENDENCY_TYPES,
 } from "@/lib/validation/dependency";
 import {
@@ -36,13 +37,22 @@ import {
 } from "@/lib/detail-decision";
 import { dependencyWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
-import type { DependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
+import {
+  findEntityStatusByLabel,
+} from "@/lib/entity-lifecycle-status-ui";
+import {
+  createDefaultDependencyLifecycleConfig,
+  type DependencyLifecycleConfig,
+} from "@/lib/dependency-lifecycle-config";
+import { legalNextDependencyStatuses } from "@/lib/dependency-lifecycle-transition";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
 
 type DependencyDetail = {
   id: string;
   depCode: string;
   dependencyType: string;
+  dependencyKind: string;
   status: string;
   impactIfBlocked: string;
   notes: string | null;
@@ -57,6 +67,7 @@ type DependencyDraft = {
   releaseId: string;
   dependsOnReleaseId: string;
   dependencyType: string;
+  dependencyKind: string;
   status: string;
   impactIfBlocked: string;
   notes: string;
@@ -66,18 +77,20 @@ const DEPENDENCY_FIELD_LABELS: Partial<Record<keyof DependencyDraft, string>> = 
   releaseId: "Source Release",
   dependsOnReleaseId: "Depends On (Upstream)",
   dependencyType: "Dependency Type",
+  dependencyKind: "Dependency Kind",
   status: "Status",
   impactIfBlocked: "Impact if Blocked",
   notes: "Notes",
 };
 
 const TYPE_OPTIONS = DEPENDENCY_TYPES.map((v) => ({ value: v, label: v }));
+const KIND_OPTIONS = DEPENDENCY_KINDS.map((v) => ({ value: v, label: v }));
 const IMPACT_OPTIONS = DEPENDENCY_IMPACTS.map((v) => ({ value: v, label: v }));
 
 function statusTone(status: string): ChipTone {
   const s = status.toLowerCase();
-  if (s.includes("block") || s === "pending") return "bad";
-  if (s.includes("risk")) return "warn";
+  if (s.includes("block") || s.includes("escalat")) return "bad";
+  if (s.includes("risk") || s === "pending") return "warn";
   if (
     s.includes("met") ||
     s.includes("waiv") ||
@@ -111,6 +124,7 @@ function toDraft(row: DependencyDetail): DependencyDraft {
     releaseId: row.release.id,
     dependsOnReleaseId: row.dependsOnRelease.id,
     dependencyType: row.dependencyType,
+    dependencyKind: row.dependencyKind,
     status: row.status,
     impactIfBlocked: row.impactIfBlocked,
     notes: row.notes ?? "",
@@ -210,9 +224,38 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     () => withCurrentOption(TYPE_OPTIONS, row?.dependencyType),
     [row?.dependencyType]
   );
-  const statusOptions = useMemo(
-    () => statusSelectOptions(lifecycle.createOptions, row?.status),
-    [lifecycle.createOptions, row?.status]
+  const statusOptions = useMemo(() => {
+    const current = row?.status ?? "";
+    const config =
+      (lifecycle.config as DependencyLifecycleConfig | null) ??
+      createDefaultDependencyLifecycleConfig();
+    const next = legalNextDependencyStatuses(config, current);
+    const labels = [current, ...next.map((status) => status.label)].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const key = label.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [lifecycle.config, row?.status]);
+  const showTerminalStatusNotice = useMemo(() => {
+    const current = row?.status ?? "";
+    const config =
+      (lifecycle.config as DependencyLifecycleConfig | null) ??
+      createDefaultDependencyLifecycleConfig();
+    const next = legalNextDependencyStatuses(config, current);
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: next.length,
+      isTerminal: findEntityStatusByLabel(config, current)?.terminal,
+    });
+  }, [lifecycle.config, row?.status]);
+  const kindOptions = useMemo(
+    () => withCurrentOption(KIND_OPTIONS, row?.dependencyKind),
+    [row?.dependencyKind]
   );
   const impactOptions = useMemo(
     () => withCurrentOption(IMPACT_OPTIONS, row?.impactIfBlocked),
@@ -232,6 +275,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
       releaseId: draft.releaseId,
       dependsOnReleaseId: draft.dependsOnReleaseId,
       dependencyType: draft.dependencyType,
+      dependencyKind: draft.dependencyKind,
       status: draft.status,
       impactIfBlocked: draft.impactIfBlocked,
       notes: draft.notes.trim() ? draft.notes.trim() : null,
@@ -464,6 +508,15 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
               display={<StatusChip label={d.dependencyType} tone="neutral" />}
             />
             <EditableField
+              label="Dependency Kind"
+              value={d.dependencyKind}
+              editing
+              kind="select"
+              options={kindOptions}
+              onChange={(n) => edit.setField("dependencyKind", n)}
+              display={<StatusChip label={d.dependencyKind || "—"} tone="neutral" />}
+            />
+            <EditableField
               label="Status"
               value={d.status}
               editing
@@ -471,6 +524,11 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
               options={statusOptions}
               onChange={(n) => edit.setField("status", n)}
               display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
+              hint={
+                showTerminalStatusNotice ? (
+                  <LifecycleTerminalStatusNotice statusLabel={d.status} />
+                ) : undefined
+              }
             />
             <EditableField
               label="Impact if Blocked"

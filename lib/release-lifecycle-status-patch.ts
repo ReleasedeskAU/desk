@@ -25,6 +25,7 @@ import {
 import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
 import {
   mandatorySignoffsComplete,
+  signoffFieldCompleteWhenRequired,
   signoffStatusCountsAsComplete,
 } from "@/lib/signoff-lifecycle-transition";
 import { parseCabScopeSnapshot } from "@/lib/release-cab-scope-snapshot";
@@ -51,6 +52,7 @@ export type ReleaseStatusPatchRelease = {
   securityClearance?: string | null;
   dressRehearsal?: string | null;
   opsSignoff?: string | null;
+  businessSignoff?: string | null;
   scopeDescription?: string | null;
   postImplementationReviewCompleted?: boolean | null;
   cabScopeSnapshot?: unknown;
@@ -84,13 +86,18 @@ function signoffsLookComplete(
   release: ReleaseStatusPatchRelease,
   signoffConfig: Parameters<typeof mandatorySignoffsComplete>[0]
 ): boolean {
-  // Config-driven: mandatory types must be Approved / Approved with Conditions
-  // (legacy Yes/Done aliases resolve via the sign-off lifecycle).
+  // Config-driven: required types must be complete (Approved / Approved with
+  // Conditions, plus Size/Priority floors). All six decision fields are passed
+  // so flipping Business/Ops to mandatory in Settings can actually pass.
   return mandatorySignoffsComplete(signoffConfig, {
     devSignoff: release.devSignoff,
     testSignoff: release.testSignoff,
     uatSignoff: release.uatSignoff,
     securityClearance: release.securityClearance,
+    businessSignoff: release.businessSignoff,
+    opsSignoff: release.opsSignoff,
+    releaseSize: release.releaseSize,
+    priority: release.priority,
   });
 }
 
@@ -136,7 +143,7 @@ export function releaseGateFactStatusLists(configs: {
     ),
     openConflictStatuses: enabledStatusMatchValues(
       configs.conflict.statuses,
-      (s) => !s.terminal
+      (s) => s.blocksReleaseReady
     ),
   };
 }
@@ -315,9 +322,17 @@ export async function loadReleaseLifecycleGateFacts(
       signoffConfig,
       release.dressRehearsal
     ),
-    opsSignoffComplete: signoffStatusCountsAsComplete(
+    opsSignoffComplete: signoffFieldCompleteWhenRequired(
       signoffConfig,
-      release.opsSignoff
+      "opsSignoff",
+      release.opsSignoff,
+      { releaseSize: release.releaseSize, priority: release.priority }
+    ),
+    businessSignoffComplete: signoffFieldCompleteWhenRequired(
+      signoffConfig,
+      "businessSignoff",
+      release.businessSignoff,
+      { releaseSize: release.releaseSize, priority: release.priority }
     ),
     unmitigatedHighRiskCount,
     incompleteWorkItemCount,

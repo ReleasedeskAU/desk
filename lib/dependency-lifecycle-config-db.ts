@@ -9,6 +9,7 @@ import {
   validateDependencyLifecycleConfig,
   type DependencyLifecycleConfig,
 } from "@/lib/dependency-lifecycle-config";
+import { reconcileDependencyLifecycleSpec } from "@/lib/dependency-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -65,7 +66,9 @@ export async function loadDependencyLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeDependencyLifecycleConfig(latest.snapshot),
+      config: reconcileDependencyLifecycleSpec(
+        normalizeDependencyLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

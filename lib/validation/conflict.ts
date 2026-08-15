@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isConflictType } from "@/lib/conflict-types";
 
 const optionalNullableString = z.union([z.string().trim().max(2000), z.null()]).optional();
 
@@ -8,13 +9,25 @@ const optionalNullableString = z.union([z.string().trim().max(2000), z.null()]).
  * Escalated still resolve via aliases at enforce time.
  */
 export const CONFLICT_STATUSES = [
-  "Detected",
-  "Under Review",
+  "Open",
+  "In Progress",
+  "Pending Review",
+  "Escalated",
   "Resolved",
+  "Closed",
   "Dismissed",
 ] as const;
 
-export const CONFLICT_TYPES = ["Schedule", "Resource", "Application"] as const;
+export { CONFLICT_TYPES } from "@/lib/conflict-types";
+
+const conflictTypeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .refine(isConflictType, {
+    message: "Conflict type is not in the allowed list",
+  });
 
 /**
  * POST /api/conflicts body. Rejects unknown fields and never accepts a client-provided Conflict ID.
@@ -30,7 +43,7 @@ export const createConflictSchema = z
     application: z.string().trim().min(1).max(200),
     department: z.string().trim().min(1).max(120),
     conflictingEnvironment: z.string().trim().min(1).max(200),
-    environmentConflictType: z.string().trim().min(1).max(120),
+    environmentConflictType: conflictTypeSchema,
     assignedTo: optionalNullableString,
     notes: optionalNullableString,
   })
@@ -51,7 +64,7 @@ export const patchConflictSchema = z
     application: z.string().trim().min(1).max(200).optional(),
     department: z.string().trim().min(1).max(120).optional(),
     conflictingEnvironment: z.string().trim().min(1).max(200).optional(),
-    environmentConflictType: z.string().trim().min(1).max(120).optional(),
+    environmentConflictType: conflictTypeSchema.optional(),
     assignedTo: optionalNullableString,
     notes: optionalNullableString,
     /** Required when Flexible soft-gates are unmet (e.g. Dismiss without notes). */

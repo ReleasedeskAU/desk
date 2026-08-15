@@ -14,6 +14,11 @@ import {
   guardEnvBookingMutationWhileDeploying,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
+import {
+  createConflictRecord,
+  formatConflictPeriod,
+} from "@/lib/conflict-record";
+import { notifyConflictsRaisedForRm } from "@/lib/conflict-notify";
 
 /** Availability check only (readonly+). Prefer environmentId for env-conflict checks. */
 export async function POST(req: Request) {
@@ -74,6 +79,8 @@ export async function PUT(req: Request) {
     const purpose: string | undefined = body.purpose || undefined;
     const teamOverride: string | undefined = body.team || undefined;
     const confirmConflict = body.confirmConflict === true;
+    const conflictNotes =
+      typeof body.conflictNotes === "string" ? body.conflictNotes.trim() : "";
 
     if (!applicationId || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
       return NextResponse.json({ error: "applicationId, fromDate, and toDate are required" }, { status: 400 });
@@ -162,6 +169,47 @@ export async function PUT(req: Request) {
     const phaseDates = buildPhaseDatePayload(env.name, env.type, fromDate, toDate, days);
     const team = teamOverride?.trim() || app.department.name;
 
+    let conflictCode: string | null = null;
+    if (!check.available && confirmConflict) {
+      const first = check.conflicts[0];
+      const otherRelease = first?.releaseCode ?? null;
+      const overlapFrom = first
+        ? new Date(
+            Math.max(fromDate.getTime(), new Date(first.fromDate).getTime())
+          )
+        : fromDate;
+      const overlapTo = first
+        ? new Date(Math.min(toDate.getTime(), new Date(first.toDate).getTime()))
+        : toDate;
+      const raised = await createConflictRecord({
+        clerkUserId: user!.id,
+        typeKey: "environment_booking",
+        release1Code: release.releaseCode,
+        release2Code: otherRelease,
+        applicationName: app.name,
+        departmentName: app.department.name,
+        conflictingEnvironment: env.name,
+        notes: conflictNotes
+          ? `CNF-REQ-001: overlapping booking on ${env.name} — ${conflictNotes}`
+          : `CNF-REQ-001: overlapping booking on ${env.name}`,
+        conflictPeriod: formatConflictPeriod(overlapFrom, overlapTo),
+        raisedBy: user!.name,
+        raisedDate: new Date(),
+        automation: "CNF-REQ-001",
+      });
+      if (raised.ok) {
+        conflictCode = raised.conflictCode;
+        if (raised.created) {
+          await notifyConflictsRaisedForRm({
+            releaseId: release.id,
+            releaseCode: release.releaseCode,
+            conflicts: [{ conflictCode: raised.conflictCode }],
+            raisedBy: user!.name,
+          });
+        }
+      }
+    }
+
     const created = await createEnvBookingRow({
       bookingCode,
       applicationId: app.id,
@@ -178,7 +226,33 @@ export async function PUT(req: Request) {
       ...phaseDates,
     });
 
-    return NextResponse.json({ bookings: [mapDbEnvBookingRow(created)] }, { status: 201 });
+    if (conflictCode) {
+      await prisma.envBooking.update({
+        where: { id: created.id },
+        data: { environmentConflictId: conflictCode, conflictFlag: true },
+      });
+      const otherIds = check.conflicts.map((row) => row.bookingId).filter(Boolean);
+      if (otherIds.length > 0) {
+        await prisma.envBooking.updateMany({
+          where: { id: { in: otherIds } },
+          data: { environmentConflictId: conflictCode, conflictFlag: true },
+        });
+      }
+    }
+
+    return NextResponse.json(
+      {
+        bookings: [
+          mapDbEnvBookingRow({
+            ...created,
+            environmentConflictId: conflictCode ?? created.environmentConflictId,
+            conflictFlag: !check.available || created.conflictFlag,
+          }),
+        ],
+        conflictCode,
+      },
+      { status: 201 }
+    );
   } catch (err) {
     return jsonError(err, {
       publicMessage: "Create failed",

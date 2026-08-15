@@ -1,7 +1,7 @@
 /**
  * User-configurable risk engine settings (Simple + Weighted thresholds/labels).
  * Simple Risk bands are an ordered list (3–6): id + label + inclusive maxScore
- * (last band maxScore is null = open-ended top). Defaults match 5/11/19 + CRITICAL.
+ * (last band maxScore is null = open-ended top). Defaults match the five-band sheet.
  *
  * Per-user now (clerkUserId); shape is org-migration ready.
  * Weighted System 2 stays fixed 5 levels this pass.
@@ -47,12 +47,13 @@ export type RiskEngineConfig = {
 export const MIN_SIMPLE_BANDS = 3;
 export const MAX_SIMPLE_BANDS = 6;
 
-/** Shipped default: ≤5 / ≤11 / ≤19 / above → CRITICAL. */
+/** Sheet default: 1–9 / 10–14 / 15–19 / 20–24 / 25+. */
 export const DEFAULT_SIMPLE_BANDS: SimpleBand[] = [
-  { id: "low", label: "LOW", maxScore: 5 },
-  { id: "medium", label: "MEDIUM", maxScore: 11 },
-  { id: "high", label: "HIGH", maxScore: 19 },
-  { id: "critical", label: "CRITICAL", maxScore: null },
+  { id: "low", label: "Low", maxScore: 9 },
+  { id: "medium", label: "Medium", maxScore: 14 },
+  { id: "high", label: "High", maxScore: 19 },
+  { id: "critical", label: "Critical", maxScore: 24 },
+  { id: "severe", label: "Severe", maxScore: null },
 ];
 
 export const DEFAULT_RISK_ENGINE_CONFIG: RiskEngineConfig = {

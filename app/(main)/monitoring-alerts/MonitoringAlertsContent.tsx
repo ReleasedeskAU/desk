@@ -174,7 +174,7 @@ export default function MonitoringAlertsContent() {
         }}
         alertTypeOptions={alertTypes}
         statusOptions={lifecycle.createOptions}
-        defaultStatus={lifecycle.defaultStatus || "Pending"}
+        defaultStatus={lifecycle.defaultStatus || "Active"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

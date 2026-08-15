@@ -13,6 +13,11 @@ import { enforceReleaseStatusChange } from "@/lib/release-lifecycle-status-patch
 import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
 import { enforceSignoffFieldChanges } from "@/lib/signoff-lifecycle-enforce";
 import { SIGNOFF_RELEASE_FIELDS } from "@/lib/signoff-lifecycle-config";
+import {
+  nextSignoffIntakeAtMap,
+  readSignoffIntakeAt,
+  writeSignoffIntakeAt,
+} from "@/lib/signoff-intake-at";
 import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
 import {
   cascadeWithdrawApprovalsOnReleaseCancelled,
@@ -28,8 +33,15 @@ import {
 import {
   cascadeDependenciesAtRiskOnRollback,
   cascadeDependenciesMetOnDeploy,
-  detectScheduleConflictsOnDeployDate,
 } from "@/lib/lifecycle-event-hooks";
+import {
+  collectProposedDateConflicts,
+  raiseAndNotifyConflicts,
+} from "@/lib/conflict-detectors";
+import {
+  conflictChoiceHoldBody,
+  shouldHoldWriteForConflictChoice,
+} from "@/lib/conflict-save-gate";
 import {
   createDefaultReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
@@ -194,6 +206,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const proposed = new Set(proposedKeys);
   const data: Record<string, unknown> = {};
+  let signoffIntakeWrite: ReturnType<typeof nextSignoffIntakeAtMap> | null = null;
   // Only persist fields that actually changed — full-form echoes must not
   // rewrite locked columns (e.g. owner label) while status is Blocked.
   for (const key of ["name", "owner", "priority", "impact", "decision", "departmentId", "releaseCode"]) {
@@ -204,7 +217,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Sign-off checklist fields — config-driven transitions + immutability.
-  const signoffKeysInBody = SIGNOFF_RELEASE_FIELDS.filter((key) => body[key] !== undefined);
+  // Training Status is a sheet checklist (Not Started / Draft / Ready), not a
+  // sign-off decision — persist as a scalar. Other SIGNOFF_RELEASE_FIELDS still
+  // go through the sign-off graph (no status-key hardcoding).
+  const signoffKeysInBody = SIGNOFF_RELEASE_FIELDS.filter(
+    (key) => body[key] !== undefined && key !== "trainingStatus"
+  );
   if (signoffKeysInBody.length > 0) {
     try {
       const { config: signoffConfig } = await loadSignoffLifecycleConfig(user!.id);
@@ -230,6 +248,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
       for (const [key, value] of Object.entries(signoffResult.canonical)) {
         data[key] = value;
+      }
+      if (Object.keys(signoffResult.canonical).length > 0) {
+        const existingSignoff = {
+          devSignoff: existing.devSignoff,
+          testSignoff: existing.testSignoff,
+          uatSignoff: existing.uatSignoff,
+          securityClearance: existing.securityClearance,
+          businessSignoff: existing.businessSignoff,
+          opsSignoff: existing.opsSignoff,
+          dressRehearsal: existing.dressRehearsal,
+          trainingStatus: existing.trainingStatus,
+          supportBriefed: existing.supportBriefed,
+        };
+        const previousIntake = await readSignoffIntakeAt(realId);
+        signoffIntakeWrite = nextSignoffIntakeAtMap({
+          config: signoffConfig,
+          existingValues: existingSignoff,
+          writes: signoffResult.canonical,
+          previous: previousIntake,
+          now: new Date(),
+        });
       }
     } catch (err) {
       console.error("[releases PATCH] sign-off lifecycle enforcement failed", {
@@ -267,12 +306,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             changeFreeze: existing.changeFreeze,
             goLiveChecklistPercent: existing.goLiveChecklistPercent,
             lifecycleConfigVersionId: existing.lifecycleConfigVersionId,
-            devSignoff: existing.devSignoff,
-            testSignoff: existing.testSignoff,
-            uatSignoff: existing.uatSignoff,
-            securityClearance: existing.securityClearance,
-            dressRehearsal: existing.dressRehearsal,
-            opsSignoff: existing.opsSignoff,
+            devSignoff: (data.devSignoff as string | undefined) ?? existing.devSignoff,
+            testSignoff: (data.testSignoff as string | undefined) ?? existing.testSignoff,
+            uatSignoff: (data.uatSignoff as string | undefined) ?? existing.uatSignoff,
+            securityClearance:
+              (data.securityClearance as string | undefined) ?? existing.securityClearance,
+            dressRehearsal:
+              (data.dressRehearsal as string | undefined) ?? existing.dressRehearsal,
+            opsSignoff: (data.opsSignoff as string | undefined) ?? existing.opsSignoff,
+            businessSignoff:
+              (data.businessSignoff as string | undefined) ?? existing.businessSignoff,
             scopeDescription: existing.scopeDescription,
             postImplementationReviewCompleted:
               existing.postImplementationReviewCompleted,
@@ -324,6 +367,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "regulatory",
     "approvalStatus",
     "rollbackPlan",
+    "hypercarePlan",
+    "commsPlan",
+    "trainingStatus",
     "deploymentWindow",
     "releaseType",
     "backupOwner",
@@ -474,7 +520,78 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   );
   if (fieldDetail) auditParts.push(fieldDetail);
 
+  const proposedDate =
+    data.releaseDate instanceof Date ? data.releaseDate : existing.releaseDate;
+  const proposedStart =
+    data.startDate instanceof Date
+      ? data.startDate
+      : data.startDate === null
+        ? null
+        : existing.startDate;
+  const dateChanged =
+    (data.releaseDate instanceof Date &&
+      existing.releaseDate.getTime() !== data.releaseDate.getTime()) ||
+    (data.startDate instanceof Date &&
+      (existing.startDate?.getTime() ?? 0) !== data.startDate.getTime()) ||
+    (data.startDate === null && existing.startDate != null);
+  const proposedAppIds = Array.isArray(body.applicationIds)
+    ? body.applicationIds.filter(
+        (id: unknown): id is string => typeof id === "string" && id.trim().length > 0
+      )
+    : undefined;
+  const appsChanged =
+    proposedAppIds !== undefined &&
+    currentApplicationIds !== undefined &&
+    (proposedAppIds.length !== currentApplicationIds.length ||
+      proposedAppIds.some((id) => !currentApplicationIds!.includes(id)));
+
+  let pendingToRaise: Awaited<ReturnType<typeof collectProposedDateConflicts>> = [];
+  if (
+    proposedDate &&
+    (dateChanged || appsChanged || body.raiseConflicts === true)
+  ) {
+    try {
+      const appIds =
+        proposedAppIds ??
+        (
+          await prisma.releaseApplication.findMany({
+            where: { releaseId: realId },
+            select: { applicationId: true },
+          })
+        ).map((row) => row.applicationId);
+      pendingToRaise = await collectProposedDateConflicts({
+        clerkUserId: user!.id,
+        releaseDate: proposedDate,
+        startDate: proposedStart,
+        applicationIds: appIds,
+        excludeReleaseId: realId,
+        lifecycleConfigVersionId: existing.lifecycleConfigVersionId,
+        selfStatus: existing.status,
+      });
+    } catch (hookErr) {
+      console.warn("[releases PATCH] conflict detect failed", {
+        releaseId: realId,
+        message: hookErr instanceof Error ? hookErr.message : "unknown",
+      });
+    }
+    if (shouldHoldWriteForConflictChoice(pendingToRaise, body.raiseConflicts === true)) {
+      return NextResponse.json(conflictChoiceHoldBody(pendingToRaise), {
+        status: 409,
+      });
+    }
+  }
+
   await prisma.release.update({ where: { id: realId }, data });
+  if (signoffIntakeWrite) {
+    try {
+      await writeSignoffIntakeAt(realId, signoffIntakeWrite);
+    } catch (err) {
+      console.error("[releases PATCH] sign-off intake clock write failed", {
+        releaseId: realId,
+        message: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  }
 
   // CASC-13: withdraw open Approvals when status lands on the withdraw-approvals role.
   if (
@@ -528,49 +645,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         });
       }
     }
-    if (nextRef?.key === "rolled_back" && prevRef?.key !== "rolled_back") {
+    if (nextRef?.rollbackMilestone && !prevRef?.rollbackMilestone) {
       try {
-        const atRisk = await cascadeDependenciesAtRiskOnRollback(realId);
-        if (atRisk > 0) {
+        const atRisk = await cascadeDependenciesAtRiskOnRollback(realId, user!.id);
+        if (atRisk.roleFault) {
+          auditParts.push(`AV-26 blocked: ${atRisk.roleFault.message}`);
+          cascadeFaults.push(atRisk.roleFault.message);
+        } else if (atRisk.count > 0) {
           auditParts.push(
-            `AV-26: flagged ${atRisk} Met dependenc${atRisk === 1 ? "y" : "ies"} At Risk`
+            `AV-26: flagged ${atRisk.count} dependenc${atRisk.count === 1 ? "y" : "ies"} after rollback`
           );
         }
       } catch (hookErr) {
         console.warn("[releases PATCH] AV-26 At Risk cascade failed", {
-          releaseId: realId,
-          message: hookErr instanceof Error ? hookErr.message : "unknown",
-        });
-      }
-    }
-  }
-
-  // AV-05 — schedule conflict detect when deploy date is saved/changed.
-  if (data.releaseDate instanceof Date) {
-    const before = existing.releaseDate?.getTime?.() ?? existing.releaseDate;
-    const after = data.releaseDate.getTime();
-    const changed =
-      before == null ||
-      (typeof before === "number"
-        ? before !== after
-        : new Date(before as string | Date).getTime() !== after);
-    if (changed) {
-      try {
-        const created = await detectScheduleConflictsOnDeployDate(
-          realId,
-          data.releaseDate,
-          user!.id
-        );
-        if (created.roleFault) {
-          auditParts.push(`AV-05 blocked: ${created.roleFault.message}`);
-          cascadeFaults.push(created.roleFault.message);
-        } else if (created.count > 0) {
-          auditParts.push(
-            `AV-05: created ${created.count} schedule conflict${created.count === 1 ? "" : "s"}`
-          );
-        }
-      } catch (hookErr) {
-        console.warn("[releases PATCH] AV-05 conflict detect failed", {
           releaseId: realId,
           message: hookErr instanceof Error ? hookErr.message : "unknown",
         });
@@ -636,7 +723,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  if (body.stakeholderIds) {
+  if (body.stakeholderIds !== undefined && proposed.has("stakeholderIds")) {
+    if (!Array.isArray(body.stakeholderIds)) {
+      return NextResponse.json(
+        { error: "Stakeholders must be a list of people." },
+        { status: 400 }
+      );
+    }
     const beforeStakeholders = await prisma.releaseStakeholder.findMany({
       where: { releaseId: realId },
       select: { userId: true },
@@ -644,7 +737,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const stakeholderChange = summarizeIdListChange(
       "Stakeholders",
       beforeStakeholders.map((s) => s.userId),
-      body.stakeholderIds as string[]
+      body.stakeholderIds
     );
     if (stakeholderChange) auditParts.push(stakeholderChange);
 
@@ -724,6 +817,41 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
+  if (body.raiseConflicts === true && pendingToRaise.length > 0) {
+    try {
+      const extraNotes =
+        typeof body.conflictNotes === "string" ? body.conflictNotes.trim() : "";
+      const raised = await raiseAndNotifyConflicts({
+        clerkUserId: user!.id,
+        release1Code: existing.releaseCode,
+        releaseId: realId,
+        findings: extraNotes
+          ? pendingToRaise.map((finding) => ({
+              ...finding,
+              notes: `${finding.notes} — ${extraNotes}`,
+            }))
+          : pendingToRaise,
+        raisedBy: user!.name,
+        automation: "CNF-REQ-CHOICE",
+      });
+      if (raised.roleFault) {
+        uxNotices.push({
+          title: "Automation needs a Settings fix",
+          message: raised.roleFault.message,
+        });
+      } else if (raised.count > 0) {
+        auditParts.push(
+          `Raised ${raised.count} conflict${raised.count === 1 ? "" : "s"} for RM review`
+        );
+      }
+    } catch (hookErr) {
+      console.warn("[releases PATCH] conflict raise failed", {
+        releaseId: realId,
+        message: hookErr instanceof Error ? hookErr.message : "unknown",
+      });
+    }
+  }
+
   // Every edit is recorded with who made it — status-only patches keep a clearer action label.
   if (auditParts.length) {
     const statusOnly =
@@ -756,8 +884,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const updated = await prisma.release.findUnique({ where: { id: realId }, include: releaseInclude });
+  const payload = updated;
   if (uxNotices.length > 0) {
-    return NextResponse.json(updated, {
+    return NextResponse.json(payload, {
       headers: {
         [UX_NOTICE_HEADER]: encodeUxNoticeHeader(uxNotices),
         // Expose custom header to browser JS (same-origin fetch still needs this for read).
@@ -765,7 +894,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       },
     });
   }
-  return NextResponse.json(updated);
+  return NextResponse.json(payload);
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

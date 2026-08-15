@@ -249,7 +249,7 @@ export default function DependencyListContent() {
         onClose={() => setModalOpen(false)}
         onSaved={() => refetch()}
         statusOptions={lifecycle.createOptions}
-        defaultStatus={lifecycle.defaultStatus || "Pending"}
+        defaultStatus={lifecycle.defaultStatus || "Identified"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

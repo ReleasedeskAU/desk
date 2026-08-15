@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
@@ -9,6 +11,10 @@ import {
   resolveSignoffLifecycleStatusRef,
   signoffStatusCountsAsComplete,
   validateSignoffTransition,
+  legalNextSignoffStatuses,
+  signoffDecisionTypesForForm,
+  signoffFieldCompleteWhenRequired,
+  signoffTypeRequiredForRelease,
 } from "@/lib/signoff-lifecycle-transition";
 import { enforceSignoffFieldChanges } from "@/lib/signoff-lifecycle-enforce";
 
@@ -133,6 +139,124 @@ describe("mandatorySignoffsComplete", () => {
     );
     assert.equal(signoffStatusCountsAsComplete(config, "Rejected"), false);
   });
+
+  it("does not require Business or Ops unless Settings marks them mandatory", () => {
+    assert.equal(
+      mandatorySignoffsComplete(config, {
+        devSignoff: "Approved",
+        testSignoff: "Approved",
+        uatSignoff: "Approved",
+        securityClearance: "Approved",
+        businessSignoff: "Rejected",
+        opsSignoff: "Pending",
+      }),
+      true
+    );
+  });
+
+  it("requires Business from Medium+ and Ops from High/Critical via type floors (no hardcoded keys)", () => {
+    const approved = {
+      devSignoff: "Approved",
+      testSignoff: "Approved",
+      uatSignoff: "Approved",
+      securityClearance: "Approved",
+      businessSignoff: "Pending",
+      opsSignoff: "Pending",
+    };
+    assert.equal(
+      mandatorySignoffsComplete(config, {
+        ...approved,
+        releaseSize: "Small",
+        priority: "P3 - Medium",
+      }),
+      true
+    );
+    assert.equal(
+      mandatorySignoffsComplete(config, {
+        ...approved,
+        releaseSize: "Medium",
+        priority: "P3 - Medium",
+      }),
+      false
+    );
+    assert.equal(
+      mandatorySignoffsComplete(config, {
+        ...approved,
+        businessSignoff: "Approved",
+        releaseSize: "Medium",
+        priority: "P3 - Medium",
+      }),
+      true
+    );
+    assert.equal(
+      mandatorySignoffsComplete(config, {
+        ...approved,
+        businessSignoff: "Approved",
+        releaseSize: "Medium",
+        priority: "P2 - High",
+      }),
+      false
+    );
+    assert.equal(
+      mandatorySignoffsComplete(config, {
+        ...approved,
+        businessSignoff: "Approved",
+        opsSignoff: "Approved",
+        releaseSize: "Large",
+        priority: "P1 - Critical",
+      }),
+      true
+    );
+
+    const business = config.types.find((t) => t.key === "business")!;
+    const ops = config.types.find((t) => t.key === "ops")!;
+    assert.equal(
+      signoffTypeRequiredForRelease(business, { releaseSize: "Medium" }),
+      true
+    );
+    assert.equal(
+      signoffTypeRequiredForRelease(business, { releaseSize: "Small" }),
+      false
+    );
+    assert.equal(
+      signoffTypeRequiredForRelease(ops, { priority: "P2 - High" }),
+      true
+    );
+    assert.equal(
+      signoffTypeRequiredForRelease(ops, { priority: "P3 - Medium" }),
+      false
+    );
+  });
+
+  it("makes field-specific Ready gates conditional on Size/Priority", () => {
+    assert.equal(
+      signoffFieldCompleteWhenRequired(
+        config,
+        "businessSignoff",
+        "Pending",
+        { releaseSize: "Small", priority: "P3 - Medium" }
+      ),
+      true
+    );
+    assert.equal(
+      signoffFieldCompleteWhenRequired(
+        config,
+        "businessSignoff",
+        "Pending",
+        { releaseSize: "Medium", priority: "P3 - Medium" }
+      ),
+      false
+    );
+    assert.equal(
+      signoffFieldCompleteWhenRequired(
+        config,
+        "opsSignoff",
+        "Approved",
+        { releaseSize: "Medium", priority: "P2 - High" }
+      ),
+      true
+    );
+  });
 });
 
 describe("enforceSignoffFieldChanges", () => {
@@ -154,5 +278,82 @@ describe("enforceSignoffFieldChanges", () => {
     assert.equal(denied.ok, false);
     if (denied.ok) return;
     assert.equal(denied.httpStatus, 409);
+  });
+
+  it("blocks flipping a recorded decision on all six types (Dev/Test/UAT/Security/Business/Ops)", () => {
+    const fields = [
+      "devSignoff",
+      "testSignoff",
+      "uatSignoff",
+      "securityClearance",
+      "businessSignoff",
+      "opsSignoff",
+    ] as const;
+    for (const field of fields) {
+      const denied = enforceSignoffFieldChanges({
+        config,
+        existing: { [field]: "Approved" },
+        body: { [field]: "Rejected" },
+      });
+      assert.equal(denied.ok, false, field);
+      if (denied.ok) continue;
+      assert.equal(denied.httpStatus, 409, field);
+      assert.equal(denied.body.code, "EDIT_POLICY_DENIED", field);
+      assert.match(denied.body.error, /can’t be changed|can't be changed|Recorded decisions/i, field);
+    }
+  });
+});
+
+describe("legalNextSignoffStatuses / Edit Release picker", () => {
+  it("lists Approved / Rejected / Approved with Conditions / Withdrawn from Pending, not Expired", () => {
+    const next = legalNextSignoffStatuses(config, "Pending").map((s) => s.label);
+    assert.deepEqual(next, [
+      "Approved",
+      "Rejected",
+      "Approved with Conditions",
+      "Withdrawn",
+    ]);
+  });
+
+  it("returns no next steps from a recorded Approved decision", () => {
+    assert.deepEqual(legalNextSignoffStatuses(config, "Approved"), []);
+    assert.deepEqual(legalNextSignoffStatuses(config, "Rejected"), []);
+  });
+
+  it("exposes all six decision types for the Edit Release form", () => {
+    const rows = signoffDecisionTypesForForm(config);
+    assert.deepEqual(
+      rows.map((r) => r.field),
+      [
+        "devSignoff",
+        "testSignoff",
+        "uatSignoff",
+        "securityClearance",
+        "businessSignoff",
+        "opsSignoff",
+      ]
+    );
+    assert.ok(rows.some((r) => r.field === "businessSignoff" && /business/i.test(r.label)));
+    assert.ok(rows.some((r) => r.field === "opsSignoff" && /ops/i.test(r.label)));
+  });
+});
+
+describe("Edit Release form wiring", () => {
+  it("renders all six sign-off fields on ReleaseFormModal", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "components", "releases", "ReleaseFormModal.tsx"),
+      "utf8"
+    );
+    for (const field of [
+      "devSignoff",
+      "testSignoff",
+      "uatSignoff",
+      "securityClearance",
+      "businessSignoff",
+      "opsSignoff",
+    ]) {
+      assert.match(src, new RegExp(field));
+    }
+    assert.match(src, /signoffDecisionTypesForForm/);
   });
 });

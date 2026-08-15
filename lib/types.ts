@@ -183,7 +183,10 @@ export interface AppNotification {
   message: string;
   releaseId?: string;
   read: boolean;
-  type: "approval" | "build" | "cab" | "comms" | "decision";
+  type: "approval" | "build" | "cab" | "comms" | "decision" | "conflict";
+  /** Deep link shown in the header inbox (e.g. /conflicts/CNF-0001). */
+  href?: string;
+  linkLabel?: string;
 }
 
 export interface Release {

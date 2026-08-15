@@ -16,6 +16,7 @@ import {
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
 import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
@@ -32,8 +33,15 @@ import {
 } from "@/lib/detail-decision";
 import { conflictWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
-import type { ConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config";
+import { findEntityStatusByLabel } from "@/lib/entity-lifecycle-status-ui";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
+import { buildFormSaveAlert } from "@/lib/form-save-alert";
+import {
+  createDefaultConflictLifecycleConfig,
+  type ConflictLifecycleConfig,
+} from "@/lib/conflict-lifecycle-config";
+import { legalNextConflictStatuses } from "@/lib/conflict-lifecycle-transition";
+import { conflictTypeOptions } from "@/lib/conflict-types";
 
 type ConflictDetail = {
   id: string;
@@ -107,6 +115,9 @@ function priorityTone(priority: string): ChipTone {
 
 function statusTone(status: string): ChipTone {
   const s = status.toLowerCase();
+  if (s.includes("dismiss")) return "neutral";
+  if (s.includes("escalat")) return "bad";
+  if (s.includes("pending")) return "warn";
   if (s.includes("open")) return "warn";
   if (s.includes("progress")) return "info";
   if (s.includes("resolv") || s.includes("closed")) return "good";
@@ -131,7 +142,10 @@ function toDraft(row: ConflictDetail): ConflictDraft {
 export default function ConflictDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const lifecycle = useEntityLifecycleStatuses("/api/conflict-lifecycle-config");
+  const lifecycle = useEntityLifecycleStatuses(
+    "/api/conflict-lifecycle-config",
+    (status) => Boolean(status.blocksReleaseReady)
+  );
   const [row, setRow] = useState<ConflictDetail | null>(null);
   const [options, setOptions] = useState<ConflictOption[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -192,6 +206,40 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
     [options]
   );
 
+  const conflictConfig =
+    (lifecycle.config as ConflictLifecycleConfig | null) ??
+    createDefaultConflictLifecycleConfig();
+
+  const statusOptions = useMemo(() => {
+    const current = row?.status ?? "";
+    const next = legalNextConflictStatuses(conflictConfig, current);
+    const labels = [current, ...next.map((status) => status.label)].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const key = label.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [conflictConfig, row?.status]);
+
+  const showTerminalStatusNotice = useMemo(() => {
+    const current = row?.status ?? "";
+    const next = legalNextConflictStatuses(conflictConfig, current);
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: next.length,
+      isTerminal: findEntityStatusByLabel(conflictConfig, current)?.terminal,
+    });
+  }, [conflictConfig, row?.status]);
+
+  const typeOptions = useMemo(
+    () => conflictTypeOptions(row?.environmentConflictType ?? d?.environmentConflictType),
+    [row?.environmentConflictType, d?.environmentConflictType]
+  );
+
   const save = async () => {
     if (!row || !edit.draft) return;
     edit.setSaving(true);
@@ -234,6 +282,15 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
       }
       edit.setSaving(false);
       edit.setError(apiError || "Couldn’t save changes. Try again.");
+      if (code === "ILLEGAL_TRANSITION") {
+        statusConfirm.setAlert(
+          buildFormSaveAlert(
+            { error: apiError, unmetReasons },
+            apiError || "This status change is not allowed.",
+            { entityLabel: "conflict" }
+          )
+        );
+      }
       return;
     }
     edit.setSaving(false);
@@ -276,7 +333,9 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   if (loading) return <p className="text-slate-500 dark:text-white/60">Loading conflict…</p>;
   if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Conflict not found.</p>;
 
-  const openish = !/resolv|closed/i.test(v.status);
+  const openish = Boolean(
+    findEntityStatusByLabel(conflictConfig, v.status)?.blocksReleaseReady
+  );
   const workflow = conflictWorkflow(
     v.status,
     (lifecycle.config as ConflictLifecycleConfig | null) ?? undefined
@@ -393,9 +452,14 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
               value={d.status}
               editing
               kind="select"
-              options={statusSelectOptions(lifecycle.createOptions, row?.status)}
+              options={statusOptions}
               onChange={(n) => edit.setField("status", n)}
               display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
+              hint={
+                showTerminalStatusNotice ? (
+                  <LifecycleTerminalStatusNotice statusLabel={d.status} />
+                ) : undefined
+              }
             />
             <EditableField
               label="Priority"
@@ -450,6 +514,8 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
               label="Conflict Type"
               value={d.environmentConflictType}
               editing
+              kind="select"
+              options={typeOptions}
               onChange={(n) => edit.setField("environmentConflictType", n)}
             />
             <EditableField

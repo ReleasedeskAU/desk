@@ -1,11 +1,23 @@
 /**
  * Pure dependency status transition validation against a lifecycle config.
- * Flexible unmet soft-gates require overrideReason (warn + override).
+ * Flexible unmet catalog gates require overrideReason (warn + override).
  */
 import type {
   DependencyLifecycleConfig,
   DependencyLifecycleStatusConfig,
+  DependencyLifecycleTransitionConfig,
 } from "@/lib/dependency-lifecycle-config";
+import {
+  DEPENDENCY_LIFECYCLE_GATE_CATALOG,
+  type DependencyLifecycleGateAttachment,
+  type DependencyLifecycleGateType,
+} from "@/lib/dependency-lifecycle-gates";
+import {
+  enabledStatusMatchValues,
+  reportLifecycleRoleFault,
+  resolveExclusiveRole,
+  type LifecycleRoleFault,
+} from "@/lib/lifecycle-status-roles";
 
 export const MIN_DEPENDENCY_OVERRIDE_REASON_LENGTH = 3;
 
@@ -13,12 +25,17 @@ export const MIN_DEPENDENCY_OVERRIDE_REASON_LENGTH = 3;
 const DEPENDENCY_STATUS_ALIASES: Readonly<Record<string, string>> = {
   clear: "met",
   resolved: "met",
-  blocked: "at_risk",
   "at risk": "at_risk",
+  "in progress": "in_progress",
 };
 
 export type DependencyGateFacts = {
   notes: string | null | undefined;
+};
+
+export type LegalNextDependencyStatus = {
+  key: string;
+  label: string;
 };
 
 /**
@@ -69,21 +86,43 @@ export type DependencyTransitionResult =
       unmetReasons?: string[];
     };
 
+function hasText(value: string | null | undefined): boolean {
+  return Boolean(value && String(value).trim());
+}
+
+function failMessage(gateType: DependencyLifecycleGateType): string {
+  return DEPENDENCY_LIFECYCLE_GATE_CATALOG[gateType].description;
+}
+
 /**
- * Soft gates for the enterprise dependencies table (Waived needs documentation).
+ * Evaluate one attached Dependency check against PATCH/row facts.
+ * @returns Plain-English unmet reason, or null when the check passes.
  */
-export function evaluateDependencySoftGates(args: {
-  fromKey: string;
-  toKey: string;
-  facts: DependencyGateFacts;
-}): string[] {
-  const unmet: string[] = [];
-  if (args.toKey === "waived") {
-    if (!args.facts.notes || !String(args.facts.notes).trim()) {
-      unmet.push("Waiving a dependency requires documented approval (notes)");
-    }
+export function evaluateDependencyGate(
+  gate: DependencyLifecycleGateAttachment,
+  facts: DependencyGateFacts
+): string | null {
+  if (!gate.enabled) return null;
+  switch (gate.gateType) {
+    case "documented_approval":
+    case "escalation_noted":
+    case "management_resolution":
+      return hasText(facts.notes) ? null : failMessage(gate.gateType);
+    default:
+      return `Unhandled dependency check: ${String(
+        (gate as { gateType: string }).gateType
+      )}`;
   }
-  return unmet;
+}
+
+function effectiveEnforcement(
+  transition: DependencyLifecycleTransitionConfig,
+  gate: DependencyLifecycleGateAttachment
+): "flexible" | "required" {
+  if (gate.enforcement === "flexible" || gate.enforcement === "required") {
+    return gate.enforcement;
+  }
+  return transition.enforcement;
 }
 
 /**
@@ -96,17 +135,83 @@ export function dependencyStatusSatisfiesHardGate(
 ): boolean {
   const resolved = resolveDependencyLifecycleStatusRef(config, status);
   if (resolved) return resolved.enabled && resolved.satisfiesHardGate;
-  // Fail closed for unknown open-like statuses.
   const s = (status ?? "").toLowerCase();
   return ["met", "waived", "removed", "clear", "resolved"].includes(s);
 }
 
 /**
- * Validate a dependency status change against the config graph + soft gates.
+ * Enabled next statuses from the live graph (edit dropdown).
+ * @param config - Caller's dependency lifecycle config.
+ * @param fromStatus - Current status key or label.
+ */
+export function legalNextDependencyStatuses(
+  config: DependencyLifecycleConfig,
+  fromStatus: string
+): LegalNextDependencyStatus[] {
+  const from = resolveDependencyLifecycleStatusRef(config, fromStatus);
+  if (!from || from.terminal || !from.enabled) return [];
+  return config.transitions
+    .filter((item) => item.enabled && item.fromKey === from.key)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((item) =>
+      config.statuses.find((status) => status.key === item.toKey && status.enabled)
+    )
+    .filter((status): status is DependencyLifecycleStatusConfig => Boolean(status))
+    .map((status) => ({ key: status.key, label: status.label }));
+}
+
+/**
+ * Resolve AV-26 source labels and exclusive warning dest from the live graph.
+ * @param config - Caller's dependency lifecycle config.
+ */
+export function resolveDependencyRollbackCascade(config: DependencyLifecycleConfig):
+  | {
+      ok: true;
+      sourceValues: string[];
+      dest: DependencyLifecycleStatusConfig;
+    }
+  | { ok: false; fault: LifecycleRoleFault } {
+  const dest = resolveExclusiveRole(
+    config.statuses,
+    (s) => s.rollbackWarningTarget,
+    "rollbackWarningTarget",
+    "AV-26"
+  );
+  if (!dest.ok) {
+    reportLifecycleRoleFault(dest.fault);
+    return dest;
+  }
+  const sources = config.statuses.filter(
+    (s) => s.enabled && s.reopensOnPredecessorRollback
+  );
+  if (sources.length === 0) {
+    const missing = resolveExclusiveRole(
+      config.statuses,
+      (s) => s.reopensOnPredecessorRollback,
+      "reopensOnPredecessorRollback",
+      "AV-26"
+    );
+    if (!missing.ok) {
+      reportLifecycleRoleFault(missing.fault);
+      return missing;
+    }
+  }
+  return {
+    ok: true,
+    sourceValues: enabledStatusMatchValues(
+      config.statuses,
+      (s) => s.reopensOnPredecessorRollback
+    ),
+    dest: dest.status,
+  };
+}
+
+/**
+ * Validate a dependency status change against the config graph + catalog gates.
  *
- * AV-26 system exception: Met → At Risk is allowed only when
- * `isSystemTransition: true`. User PATCH must never set that flag — Met stays
- * terminal/immutable for normal edits.
+ * AV-26 system exception: a status flagged “reopen on predecessor rollback”
+ * may move to the rollback-warning status only when `isSystemTransition: true`.
+ * User PATCH must never set that flag — Met stays terminal for normal edits.
  */
 export function validateDependencyTransition(args: {
   config: DependencyLifecycleConfig;
@@ -115,8 +220,9 @@ export function validateDependencyTransition(args: {
   overrideReason?: string | null;
   facts: DependencyGateFacts;
   /**
-   * System automation marker (AV-26). When true, allows the Met → At Risk
-   * exception despite Met being terminal. Never accept this from client input.
+   * System automation marker (AV-26). When true, allows the role-flagged
+   * reopen path despite the source being terminal. Never accept this from
+   * client input.
    */
   isSystemTransition?: boolean;
 }): DependencyTransitionResult {
@@ -139,12 +245,11 @@ export function validateDependencyTransition(args: {
     };
   }
 
-  // AV-26: system-only Met → At Risk (not in the user-facing graph).
-  const isAv26SystemMetToAtRisk =
+  const isAv26SystemReopen =
     Boolean(args.isSystemTransition) &&
-    from.key === "met" &&
-    to.key === "at_risk";
-  if (isAv26SystemMetToAtRisk) {
+    from.reopensOnPredecessorRollback &&
+    to.rollbackWarningTarget;
+  if (isAv26SystemReopen) {
     if (!to.enabled) {
       return {
         allowed: false,
@@ -195,23 +300,28 @@ export function validateDependencyTransition(args: {
     };
   }
 
-  const unmet = evaluateDependencySoftGates({
-    fromKey: from.key,
-    toKey: to.key,
-    facts: args.facts,
-  });
-
-  if (unmet.length > 0) {
-    if (transition.enforcement === "required") {
-      return {
-        allowed: false,
-        code: "ILLEGAL_TRANSITION",
-        reason: unmet.join("; "),
-        unmetReasons: unmet,
-        fromKey: from.key,
-        toKey: to.key,
-      };
+  const unmetRequired: string[] = [];
+  const unmetFlexible: string[] = [];
+  for (const gate of transition.gates ?? []) {
+    const unmet = evaluateDependencyGate(gate, args.facts);
+    if (!unmet) continue;
+    if (effectiveEnforcement(transition, gate) === "required") {
+      unmetRequired.push(unmet);
+    } else {
+      unmetFlexible.push(unmet);
     }
+  }
+  if (unmetRequired.length > 0) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: unmetRequired.join("; "),
+      unmetReasons: unmetRequired,
+      fromKey: from.key,
+      toKey: to.key,
+    };
+  }
+  if (unmetFlexible.length > 0) {
     const reasonText = (args.overrideReason ?? "").trim();
     if (reasonText.length < MIN_DEPENDENCY_OVERRIDE_REASON_LENGTH) {
       return {
@@ -219,7 +329,7 @@ export function validateDependencyTransition(args: {
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
           "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
-        unmetReasons: unmet,
+        unmetReasons: unmetFlexible,
         fromKey: from.key,
         toKey: to.key,
       };
@@ -231,7 +341,7 @@ export function validateDependencyTransition(args: {
       toKey: to.key,
       canonicalStatus: to.label,
       overrideReason: reasonText,
-      unmetReasons: unmet,
+      unmetReasons: unmetFlexible,
     };
   }
 

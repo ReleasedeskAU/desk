@@ -39,6 +39,7 @@ const putSchema = z
             writesCabScopeSnapshot: z.boolean(),
             clearsCabScopeSnapshot: z.boolean(),
             approvalRejectLanding: z.boolean(),
+            rollbackMilestone: z.boolean(),
           })
           .strict()
       )

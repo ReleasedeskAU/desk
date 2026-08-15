@@ -6,8 +6,7 @@
  * standalone additive script, safe to re-run (upserts by category+value).
  *
  * Seeds category="drift_type": Infrastructure, Configuration, Data,
- * Integration, Security (sortOrder 1-5) — the fixed 5-value set the Drift
- * model's driftType field must be restricted to.
+ * Integration, Security, Code — the sheet’s 6-value Drift Type set.
  */
 import { PrismaClient } from "@releasedesk/database";
 
@@ -19,6 +18,7 @@ const DRIFT_TYPES = [
   "Data",
   "Integration",
   "Security",
+  "Code",
 ];
 
 async function main() {

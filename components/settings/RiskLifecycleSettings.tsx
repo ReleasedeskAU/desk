@@ -10,6 +10,11 @@ import {
   type RiskLifecycleConfig,
   type RiskLifecycleEnforcement,
 } from "@/lib/risk-lifecycle-config";
+import {
+  riskGate,
+  type RiskLifecycleGateType,
+} from "@/lib/risk-lifecycle-gates";
+import { RiskGatesPanel } from "@/components/settings/lifecycle/RiskGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
@@ -26,7 +31,10 @@ import { cn } from "@/lib/utils";
 function cloneConfig(config: RiskLifecycleConfig): RiskLifecycleConfig {
   return {
     statuses: config.statuses.map((s) => ({ ...s })),
-    transitions: config.transitions.map((t) => ({ ...t })),
+    transitions: config.transitions.map((t) => ({
+      ...t,
+      gates: (t.gates ?? []).map((gate) => ({ ...gate })),
+    })),
   };
 }
 
@@ -40,7 +48,36 @@ export function RiskLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions">("statuses");
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">(
+    "statuses"
+  );
+
+  const toggleGate = (
+    fromKey: string,
+    toKey: string,
+    gateType: RiskLifecycleGateType,
+    enabled: boolean
+  ) => {
+    setDraft((previous) => ({
+      ...previous,
+      transitions: previous.transitions.map((transition) => {
+        if (
+          transition.fromKey !== fromKey ||
+          transition.toKey !== toKey
+        ) {
+          return transition;
+        }
+        const gates = [...(transition.gates ?? [])];
+        const index = gates.findIndex((gate) => gate.gateType === gateType);
+        if (index >= 0) {
+          gates[index] = { ...gates[index]!, enabled };
+        } else {
+          gates.push(riskGate(gateType, (gates.length + 1) * 10));
+        }
+        return { ...transition, gates };
+      }),
+    }));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,10 +209,11 @@ export function RiskLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Risks</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Identified → Assessing / Closed; Escalated is reachable from open stages.</li>
+          <li>Open → In Progress / Accepted / Escalated; direct Close remains available.</li>
           <li>Closed is terminal and immutable (Required).</li>
-          <li>High-severity Mitigating → Mitigated needs a mitigation plan (or override).</li>
-          <li>Legacy Open / Monitoring / In Progress map to the new vocabulary.</li>
+          <li>High-severity risks leaving Mitigating need a mitigation plan (or override).</li>
+          <li>Accepted / Monitoring → Mitigating requires a documented reversal reason.</li>
+          <li>Underlying status keys stay stable when display labels are renamed.</li>
           <li>
             Daily auto-escalate uses the risk owner’s escalate-after days after that
             person has signed in at least once. Until then, the shared default timing
@@ -189,6 +227,7 @@ export function RiskLifecycleSettings() {
           [
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
+            ["gates", "Checks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -278,7 +317,7 @@ export function RiskLifecycleSettings() {
           ))}
         </ul>
         </div>
-      ) : (
+      ) : panel === "transitions" ? (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions
             .slice()
@@ -341,6 +380,12 @@ export function RiskLifecycleSettings() {
               );
             })}
         </ul>
+      ) : (
+        <RiskGatesPanel
+          config={draft}
+          editing={editing}
+          onToggleGate={toggleGate}
+        />
       )}
     </div>
   );

@@ -31,6 +31,22 @@ import {
   type LegalNextStatusView,
 } from "@/lib/release-lifecycle-transition";
 import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
+import {
+  RELEASE_APPROVAL_STATUS_OPTIONS,
+  RELEASE_PLAN_PROGRESS_OPTIONS,
+  RELEASE_ROLLBACK_PLAN_OPTIONS,
+  selectOptionsWithCurrent,
+} from "@/lib/release-checklist-options";
+import {
+  createDefaultSignoffLifecycleConfig,
+  type SignoffLifecycleConfig,
+} from "@/lib/signoff-lifecycle-config";
+import {
+  legalNextSignoffStatuses,
+  signoffDecisionTypesForForm,
+} from "@/lib/signoff-lifecycle-transition";
+import { ConflictChoiceDialog } from "@/components/conflicts/ConflictChoiceDialog";
+import type { ConflictFinding } from "@/lib/conflict-finding-types";
 
 /**
  * Build a PATCH body with only fields that differ from the edit baseline.
@@ -45,7 +61,7 @@ function sparseReleaseEditPayload(
     if (key === "programProject") {
       return normalizeProgramProject(String(value ?? "")) ?? "N/A";
     }
-    if (key === "applicationIds" || key === "dependsOnReleaseIds") {
+    if (key === "applicationIds" || key === "dependsOnReleaseIds" || key === "stakeholderIds") {
       if (!Array.isArray(value)) return "";
       return value
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
@@ -90,6 +106,18 @@ export type ReleaseFormData = {
   testEnvRequired: string;
   uatEnvRequired: string;
   releaseOwnerId: string;
+  approvalStatus: string;
+  rollbackPlan: string;
+  hypercarePlan: string;
+  commsPlan: string;
+  trainingStatus: string;
+  stakeholderIds: string[];
+  devSignoff: string;
+  testSignoff: string;
+  uatSignoff: string;
+  securityClearance: string;
+  businessSignoff: string;
+  opsSignoff: string;
 };
 
 type Option = { value: string; label: string };
@@ -115,6 +143,18 @@ const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
   testEnvRequired: "Test env",
   uatEnvRequired: "UAT env",
   releaseOwnerId: "Release owner",
+  approvalStatus: "Approval status",
+  rollbackPlan: "Rollback plan",
+  hypercarePlan: "Hypercare plan",
+  commsPlan: "Comms plan",
+  trainingStatus: "Training status",
+  stakeholderIds: "Stakeholders",
+  devSignoff: "Dev sign-off",
+  testSignoff: "Test sign-off",
+  uatSignoff: "UAT sign-off",
+  securityClearance: "Security sign-off",
+  businessSignoff: "Business sign-off",
+  opsSignoff: "Ops sign-off",
 };
 
 type CreatedSummary = {
@@ -153,6 +193,18 @@ const EMPTY_FORM: ReleaseFormData = {
   testEnvRequired: "",
   uatEnvRequired: "",
   releaseOwnerId: "",
+  approvalStatus: "",
+  rollbackPlan: "",
+  hypercarePlan: "",
+  commsPlan: "",
+  trainingStatus: "",
+  stakeholderIds: [],
+  devSignoff: "",
+  testSignoff: "",
+  uatSignoff: "",
+  securityClearance: "",
+  businessSignoff: "",
+  opsSignoff: "",
 };
 
 function dateInput(value?: string | null) {
@@ -198,8 +250,16 @@ export function ReleaseFormModal({
   const [legalNextLoading, setLegalNextLoading] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [defaultStatusLabel, setDefaultStatusLabel] = useState("Draft");
+  const [signoffConfig, setSignoffConfig] = useState<SignoffLifecycleConfig>(
+    createDefaultSignoffLifecycleConfig
+  );
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof ReleaseFormData, string>>>({});
   const [formAlert, setFormAlert] = useState<ReleaseFormAlert | null>(null);
+  const [pendingConflicts, setPendingConflicts] = useState<ConflictFinding[]>([]);
+  const [highlightReleaseDate, setHighlightReleaseDate] = useState(false);
+  const [raisingConflicts, setRaisingConflicts] = useState(false);
+  const [raisedForRm, setRaisedForRm] = useState(false);
+  const pendingReleaseCode = useRef("");
   const [created, setCreated] = useState<CreatedSummary | null>(null);
   const [editChanges, setEditChanges] = useState<FieldChange[] | null>(null);
   const editBaseline = useRef<ReleaseFormData | null>(null);
@@ -379,6 +439,17 @@ export function ReleaseFormModal({
   }, [initial?.id, initial?.status, isEdit, open, statusOptionsProp?.length, statusOptionsProp?.[0]]);
 
   useEffect(() => {
+    if (!open) return;
+    return loadJsonEffect<{ config: SignoffLifecycleConfig }>(
+      "/api/signoff-lifecycle-config",
+      (payload) => {
+        if (payload.config) setSignoffConfig(payload.config);
+      },
+      { label: "release-form-signoff-config" }
+    );
+  }, [open]);
+
+  useEffect(() => {
     if (!open || environments.length > 0) {
       setLoadedEnvs([]);
       return;
@@ -405,6 +476,8 @@ export function ReleaseFormModal({
     setEditChanges(null);
     setFieldErrors({});
     setFormAlert(null);
+    setPendingConflicts([]);
+    setHighlightReleaseDate(false);
     setOverrideReason("");
     setEditLegalNext([]);
   }, [open]);
@@ -435,6 +508,18 @@ export function ReleaseFormModal({
       testEnvRequired: initial?.testEnvRequired ?? "",
       uatEnvRequired: initial?.uatEnvRequired ?? "",
       releaseOwnerId: initial?.releaseOwnerId ?? "",
+      approvalStatus: initial?.approvalStatus ?? "",
+      rollbackPlan: initial?.rollbackPlan ?? "",
+      hypercarePlan: initial?.hypercarePlan ?? "",
+      commsPlan: initial?.commsPlan ?? "",
+      trainingStatus: initial?.trainingStatus ?? "",
+      stakeholderIds: initial?.stakeholderIds ?? [],
+      devSignoff: initial?.devSignoff ?? "",
+      testSignoff: initial?.testSignoff ?? "",
+      uatSignoff: initial?.uatSignoff ?? "",
+      securityClearance: initial?.securityClearance ?? "",
+      businessSignoff: initial?.businessSignoff ?? "",
+      opsSignoff: initial?.opsSignoff ?? "",
     };
     if (initial?.id) next.id = initial.id;
     setForm(next);
@@ -486,6 +571,11 @@ export function ReleaseFormModal({
   const releaseOptions = useMemo(
     () => releases.filter((r) => r.value !== initial?.id),
     [releases, initial?.id]
+  );
+
+  const signoffDecisionTypes = useMemo(
+    () => signoffDecisionTypesForForm(signoffConfig),
+    [signoffConfig]
   );
 
   if (!open) return null;
@@ -545,7 +635,7 @@ export function ReleaseFormModal({
     return true;
   };
 
-  const save = async () => {
+  const save = async (opts?: { raiseConflicts?: boolean; conflictNotes?: string }) => {
     if (!validate()) return;
     if (isEdit && selectedNext?.outcome === "blocked") {
       setFormAlert({
@@ -583,6 +673,18 @@ export function ReleaseFormModal({
       testEnvRequired: form.testEnvRequired.trim() || null,
       uatEnvRequired: form.uatEnvRequired.trim() || null,
       releaseSize: form.releaseSize || null,
+      approvalStatus: form.approvalStatus.trim() || null,
+      rollbackPlan: form.rollbackPlan.trim() || null,
+      hypercarePlan: form.hypercarePlan.trim() || null,
+      commsPlan: form.commsPlan.trim() || null,
+      trainingStatus: form.trainingStatus.trim() || null,
+      stakeholderIds: form.stakeholderIds,
+      devSignoff: form.devSignoff.trim() || null,
+      testSignoff: form.testSignoff.trim() || null,
+      uatSignoff: form.uatSignoff.trim() || null,
+      securityClearance: form.securityClearance.trim() || null,
+      businessSignoff: form.businessSignoff.trim() || null,
+      opsSignoff: form.opsSignoff.trim() || null,
     };
     // Edit Release must not echo unchanged fields — Limited/Locked statuses
     // (Blocked, CAB Approved) reject owner/programProject rewrites and mask
@@ -600,12 +702,21 @@ export function ReleaseFormModal({
     ) {
       payload.overrideReason = overrideReason.trim();
     }
+    if (opts?.raiseConflicts) {
+      payload.raiseConflicts = true;
+      if (opts.conflictNotes) payload.conflictNotes = opts.conflictNotes;
+    }
 
     // Dev compile + Neon cold starts can take a long time; never leave Save stuck forever.
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), 60_000);
     try {
-      const result = await safeFetchJson<{ id: string; releaseCode?: string; name?: string }>(
+      const result = await safeFetchJson<{
+        id: string;
+        releaseCode?: string;
+        name?: string;
+        pendingConflicts?: ConflictFinding[];
+      }>(
         isEdit ? `/api/releases/${initial!.id}` : "/api/releases",
         {
           method: isEdit ? "PATCH" : "POST",
@@ -618,6 +729,18 @@ export function ReleaseFormModal({
       );
       if (!result.ok || (result.status ?? 0) >= 300) {
         const data = result.ok ? result.data : null;
+        const heldConflicts =
+          (result.status ?? 0) === 409 &&
+          data &&
+          typeof data === "object" &&
+          Array.isArray((data as { pendingConflicts?: unknown }).pendingConflicts)
+            ? ((data as { pendingConflicts: ConflictFinding[] }).pendingConflicts)
+            : [];
+        if (heldConflicts.length > 0) {
+          pendingReleaseCode.current = form.releaseCode || "";
+          setPendingConflicts(heldConflicts);
+          return;
+        }
         if (!result.ok && result.code === "aborted") {
           setFormAlert({
             title: "Save timed out",
@@ -630,10 +753,16 @@ export function ReleaseFormModal({
           data && typeof data === "object"
             ? (data as {
                 code?: string;
+                field?: string;
+                error?: string;
                 unmetReasons?: unknown;
                 transition?: { unmetReasons?: unknown };
               })
             : null;
+        if (body?.field && body.field in EMPTY_FORM && typeof body.error === "string") {
+          const field = body.field as keyof ReleaseFormData;
+          setFieldErrors((prev) => ({ ...prev, [field]: body.error }));
+        }
         // Preview/legal-next can lag real gate facts (e.g. open blockers). Show
         // the exception textarea instead of an OK-only “enter a reason” dialog.
         if (body?.code === "TRANSITION_NEEDS_OVERRIDE") {
@@ -648,6 +777,7 @@ export function ReleaseFormModal({
           window.setTimeout(() => focusExceptionReason(), 50);
           return;
         }
+        setPendingConflicts([]);
         setFormAlert(
           buildReleaseFormSaveAlert(
             data,
@@ -656,6 +786,10 @@ export function ReleaseFormModal({
         );
         return;
       }
+
+      const saved = result.data;
+      setPendingConflicts([]);
+      if (opts?.raiseConflicts) setRaisedForRm(true);
 
       // VR-21 (and similar): announce status side effects after a successful save.
       if (result.ok && result.headers) {
@@ -742,7 +876,9 @@ export function ReleaseFormModal({
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Release created</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
-                Your release was saved successfully.
+                {raisedForRm
+                  ? "The date was saved and a conflict was raised. The Release Manager has a notice in their inbox (bell icon)."
+                  : "Your release was saved successfully."}
               </p>
             </div>
           </div>
@@ -784,6 +920,22 @@ export function ReleaseFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      {pendingConflicts.length > 0 ? (
+        <ConflictChoiceDialog
+          findings={pendingConflicts}
+          busy={raisingConflicts}
+          highlightHint="Change my dates discards the proposed date — nothing was saved — and highlights the end date so you can pick a free window."
+          onModify={() => {
+            setPendingConflicts([]);
+            setHighlightReleaseDate(true);
+          }}
+          onRaise={async (notes) => {
+            setRaisingConflicts(true);
+            await save({ raiseConflicts: true, conflictNotes: notes || undefined });
+            setRaisingConflicts(false);
+          }}
+        />
+      ) : null}
       <div
         className="w-full max-w-2xl rounded-2xl bg-white shadow-theme-lg p-6 max-h-[90vh] overflow-y-auto dark:bg-[var(--card)]"
         onClick={(e) => e.stopPropagation()}
@@ -1064,7 +1216,11 @@ export function ReleaseFormModal({
             </label>
             <input
               type="date"
-              className={cn(taInput, fieldErrors.releaseDate && "border-rose-400")}
+              className={cn(
+                taInput,
+                fieldErrors.releaseDate && "border-rose-400",
+                highlightReleaseDate && "border-amber-400 ring-2 ring-amber-300"
+              )}
               value={form.releaseDate}
               onChange={(e) => set("releaseDate", e.target.value)}
             />
@@ -1129,6 +1285,130 @@ export function ReleaseFormModal({
               />
             </div>
           </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Approval Status</label>
+            <select
+              className={taInput}
+              value={form.approvalStatus}
+              onChange={(e) => set("approvalStatus", e.target.value)}
+            >
+              <option value="">Not set</option>
+              {selectOptionsWithCurrent(RELEASE_APPROVAL_STATUS_OPTIONS, form.approvalStatus).map(
+                (s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Rollback Plan</label>
+            <select
+              className={taInput}
+              value={form.rollbackPlan}
+              onChange={(e) => set("rollbackPlan", e.target.value)}
+            >
+              <option value="">Not set</option>
+              {selectOptionsWithCurrent(RELEASE_ROLLBACK_PLAN_OPTIONS, form.rollbackPlan).map(
+                (s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Hypercare Plan</label>
+            <select
+              className={taInput}
+              value={form.hypercarePlan}
+              onChange={(e) => set("hypercarePlan", e.target.value)}
+            >
+              <option value="">Not set</option>
+              {selectOptionsWithCurrent(RELEASE_PLAN_PROGRESS_OPTIONS, form.hypercarePlan).map(
+                (s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Comms Plan</label>
+            <select
+              className={taInput}
+              value={form.commsPlan}
+              onChange={(e) => set("commsPlan", e.target.value)}
+            >
+              <option value="">Not set</option>
+              {selectOptionsWithCurrent(RELEASE_PLAN_PROGRESS_OPTIONS, form.commsPlan).map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Training Status</label>
+            <select
+              className={taInput}
+              value={form.trainingStatus}
+              onChange={(e) => set("trainingStatus", e.target.value)}
+            >
+              <option value="">Not set</option>
+              {selectOptionsWithCurrent(RELEASE_PLAN_PROGRESS_OPTIONS, form.trainingStatus).map(
+                (s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          {isEdit ? (
+            <div className="sm:col-span-2">
+              <p className="text-xs font-medium text-gray-500">Sign-offs</p>
+              <p className="mt-0.5 text-[11px] text-gray-400">
+                Record Approved, Rejected, or Approved with Conditions. Once recorded, a
+                decision can’t be flipped — a new request is required.
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {signoffDecisionTypes.map((type) => (
+                  <SignoffDecisionSelect
+                    key={type.field}
+                    type={type}
+                    value={form[type.field]}
+                    error={fieldErrors[type.field]}
+                    config={signoffConfig}
+                    disabled={!type.enabled}
+                    onChange={(next) => set(type.field, next)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium text-gray-500">Stakeholders</label>
+            <div className="mt-1">
+              <SearchableMultiSelect
+                values={form.stakeholderIds}
+                onChange={(v) => set("stakeholderIds", v)}
+                options={ownerOptions}
+                placeholder="Select people to keep informed…"
+                searchPlaceholder="Search people…"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="mt-4">
@@ -1158,6 +1438,61 @@ export function ReleaseFormModal({
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">{message}</p>;
+}
+
+function SignoffDecisionSelect({
+  type,
+  value,
+  error,
+  config,
+  disabled,
+  onChange,
+}: {
+  type: ReturnType<typeof signoffDecisionTypesForForm>[number];
+  value: string;
+  error?: string;
+  config: SignoffLifecycleConfig;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  const current = value.trim();
+  const next = legalNextSignoffStatuses(config, current || null);
+  const options = selectOptionsWithCurrent(
+    next.map((item) => item.label),
+    current
+  );
+  const locked = next.length === 0 && Boolean(current);
+  return (
+    <div>
+      <label className="text-xs font-medium text-gray-500">
+        {type.label}
+        {type.mandatory ? <RequiredMark /> : null}
+      </label>
+      <select
+        className={cn(taInput, error && "border-rose-400")}
+        value={current}
+        disabled={disabled || locked}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={type.label}
+      >
+        {!current ? <option value="">Pending</option> : null}
+        {options.map((label) => (
+          <option key={label} value={label}>
+            {label}
+          </option>
+        ))}
+      </select>
+      {locked ? (
+        <p className="mt-1 text-[11px] text-gray-400">
+          This decision is recorded and can’t be changed from here.
+        </p>
+      ) : null}
+      {!type.enabled ? (
+        <p className="mt-1 text-[11px] text-gray-400">Turned off in Sign-off Settings.</p>
+      ) : null}
+      <FieldError message={error} />
+    </div>
+  );
 }
 
 function SummaryRow({

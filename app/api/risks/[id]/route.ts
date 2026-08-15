@@ -118,6 +118,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const proposed = new Set(proposedKeys);
 
   let nextStatusKey: string | undefined;
+  let statusChanged = false;
   // Lifecycle: edit policy + status transitions (config-driven soft gates).
   try {
     const { config } = await loadRiskLifecycleConfig(user!.id);
@@ -159,6 +160,7 @@ export async function PATCH(req: Request, { params }: Params) {
               ? body.mitigationStrategy
               : existing.mitigationStrategy,
           notes: body.notes !== undefined ? body.notes : existing.notes,
+          reversalReason: body.overrideReason ?? null,
         },
       });
       if (!transition.allowed) {
@@ -177,6 +179,7 @@ export async function PATCH(req: Request, { params }: Params) {
         config,
         transition.canonicalStatus
       )?.key;
+      statusChanged = true;
     }
   } catch (err) {
     console.error("[risks PATCH] lifecycle enforcement failed", {
@@ -205,6 +208,7 @@ export async function PATCH(req: Request, { params }: Params) {
     riskOwnerId?: string | null;
     status?: string;
     statusKey?: string;
+    statusChangedAt?: Date;
     notes?: string | null;
   } = {};
   if (body.releaseId !== undefined && proposed.has("releaseId")) {
@@ -236,6 +240,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.status !== undefined) {
     data.status = body.status;
     if (nextStatusKey) data.statusKey = nextStatusKey;
+    if (statusChanged) data.statusChangedAt = new Date();
   }
   if (body.notes !== undefined && proposed.has("notes")) data.notes = body.notes;
   if (proposed.has("likelihood") || proposed.has("impact")) {

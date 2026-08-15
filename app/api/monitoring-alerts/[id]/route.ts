@@ -109,7 +109,7 @@ export async function PATCH(req: Request, { params }: Params) {
         fromStatus: existing.status,
         toStatus: String(body.status),
         overrideReason: body.overrideReason ?? null,
-        facts: { reason: body.overrideReason ?? null },
+        facts: { notes: body.notes ?? existing.notes },
       });
       if (!transition.allowed) {
         return NextResponse.json(
@@ -149,6 +149,12 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (body.alertType !== undefined && proposed.has("alertType")) {
     data.alertType = body.alertType;
+  }
+  if (body.alertSource !== undefined && proposed.has("alertSource")) {
+    data.alertSource = body.alertSource;
+  }
+  if (body.notes !== undefined && proposed.has("notes")) {
+    data.notes = body.notes;
   }
   if (body.severity !== undefined && proposed.has("severity")) {
     data.severity = body.severity;

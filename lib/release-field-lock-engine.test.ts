@@ -13,7 +13,10 @@ import {
   getFieldLockStateFromRows,
   validateReleaseFieldUpdateWithRows,
 } from "./release-field-lock-engine";
-import { RELEASE_FIELD_LOCK_CATALOG } from "./release-field-lock-catalog";
+import {
+  catalogEntryForBodyKey,
+  RELEASE_FIELD_LOCK_CATALOG,
+} from "./release-field-lock-catalog";
 
 describe("release field-lock engine", () => {
   const lifecycle = createDefaultReleaseLifecycleConfig();
@@ -74,6 +77,34 @@ describe("release field-lock engine", () => {
       assert.ok(entry, key);
       assert.equal(entry!.isConfigurable, false);
     }
+  });
+
+  it("covers newly editable Edit Release fields (comms, approval, stakeholders)", () => {
+    assert.equal(catalogEntryForBodyKey("hypercarePlan")?.fieldKey, "hypercarePlan");
+    assert.equal(catalogEntryForBodyKey("commsPlan")?.fieldKey, "commsPlan");
+    assert.equal(catalogEntryForBodyKey("trainingStatus")?.fieldKey, "trainingStatus");
+    assert.equal(catalogEntryForBodyKey("approvalStatus")?.fieldKey, "approvalStatus");
+    assert.equal(catalogEntryForBodyKey("rollbackPlan")?.fieldKey, "rollbackPlan");
+    assert.equal(catalogEntryForBodyKey("stakeholderIds")?.fieldKey, "stakeholders");
+    assert.equal(
+      getFieldLockStateFromRows(rows, "hypercarePlan", "deploying"),
+      "locked"
+    );
+    assert.equal(
+      getFieldLockStateFromRows(rows, "commsPlan", "planning"),
+      "editable"
+    );
+    assert.equal(
+      getFieldLockStateFromRows(rows, "stakeholders", "pending_cab"),
+      "locked"
+    );
+    const denied = validateReleaseFieldUpdateWithRows(rows, "deploying", [
+      "hypercarePlan",
+      "commsPlan",
+      "trainingStatus",
+    ]);
+    assert.equal(denied.allowed, false);
+    assert.ok(denied.rejected.some((r) => r.field === "hypercarePlan"));
   });
 
   it("does not enforce status via field locks (info-only)", () => {

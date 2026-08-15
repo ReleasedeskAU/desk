@@ -36,6 +36,7 @@ const baseFacts = emptyLifecycleGateFacts({
   testSignoffComplete: true,
   dressRehearsalComplete: true,
   opsSignoffComplete: true,
+  businessSignoffComplete: true,
   incompleteWorkItemCount: 0,
   pirComplete: true,
   scopeDescription: "Initial scope",
@@ -165,6 +166,59 @@ describe("validateReleaseTransition", () => {
       gateFacts: emptyLifecycleGateFacts({ openBlockerCount: 0 }),
     });
     assert.equal(result.allowed, true);
+  });
+
+  it("allows Blocked → Draft / Deferred via the previous-status edge, not Closed or Rolled Back", () => {
+    const facts = emptyLifecycleGateFacts({ openBlockerCount: 0 });
+    for (const to of ["Draft", "Deferred"]) {
+      const result = validateReleaseTransition({
+        config,
+        fromStatus: "Blocked",
+        toStatus: to,
+        previousStatus: null,
+        gateFacts: facts,
+      });
+      assert.equal(result.allowed, true, to);
+    }
+    for (const to of ["Closed", "Rolled Back"]) {
+      const result = validateReleaseTransition({
+        config,
+        fromStatus: "Blocked",
+        toStatus: to,
+        previousStatus: null,
+        gateFacts: facts,
+      });
+      assert.equal(result.allowed, false, to);
+    }
+  });
+
+  it("checks signoffs_complete on UAT → Pending CAB, not on leaving Pending CAB", () => {
+    const incomplete = {
+      ...baseFacts,
+      signoffsComplete: false,
+      hasUatBooking: true,
+    };
+    const intoCab = validateReleaseTransition({
+      config,
+      fromStatus: "UAT",
+      toStatus: "Pending CAB",
+      gateFacts: incomplete,
+    });
+    assert.equal(intoCab.allowed, false);
+    if (!intoCab.allowed) {
+      assert.ok(
+        (intoCab.unmetReasons ?? []).some((r) => /sign-off/i.test(r)),
+        intoCab.unmetReasons?.join("; ")
+      );
+    }
+
+    const leavingCab = validateReleaseTransition({
+      config,
+      fromStatus: "Pending CAB",
+      toStatus: "CAB Approved",
+      gateFacts: incomplete,
+    });
+    assert.equal(leavingCab.allowed, true);
   });
 });
 

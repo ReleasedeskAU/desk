@@ -12,6 +12,7 @@ const LIMITED_ALLOWED = new Set([
   "status",
   "overrideReason",
   "assignedTo",
+  "notes",
 ]);
 
 const READ_ONLY_ALLOWED = new Set(["status", "overrideReason", "assignedTo"]);

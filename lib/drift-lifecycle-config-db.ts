@@ -9,6 +9,7 @@ import {
   validateDriftLifecycleConfig,
   type DriftLifecycleConfig,
 } from "@/lib/drift-lifecycle-config";
+import { reconcileDriftLifecycleSpec } from "@/lib/drift-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -61,7 +62,9 @@ export async function loadDriftLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeDriftLifecycleConfig(latest.snapshot),
+      config: reconcileDriftLifecycleSpec(
+        normalizeDriftLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

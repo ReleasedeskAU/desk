@@ -109,4 +109,20 @@ describe("keysWithActualReleasePatchChanges", () => {
     });
     assert.deepEqual(keys, ["status"]);
   });
+
+  it("ignores unchanged stakeholderIds and keeps a real add", () => {
+    const echoed = keysWithActualReleasePatchChanges({
+      existing,
+      body: { status: "Pending CAB", stakeholderIds: ["u1", "u2"] },
+      currentStakeholderIds: ["u2", "u1"],
+    });
+    assert.deepEqual(echoed, ["status"]);
+
+    const changed = keysWithActualReleasePatchChanges({
+      existing,
+      body: { stakeholderIds: ["u1", "u3"] },
+      currentStakeholderIds: ["u1", "u2"],
+    });
+    assert.deepEqual(changed, ["stakeholderIds"]);
+  });
 });

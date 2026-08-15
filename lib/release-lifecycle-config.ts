@@ -101,6 +101,8 @@ export type ReleaseLifecycleStatusConfig = {
   clearsCabScopeSnapshot: boolean;
   /** Linked release lands here when an approval decision reverts it. */
   approvalRejectLanding: boolean;
+  /** Entering this status flags matching met dependencies At Risk (AV-26). */
+  rollbackMilestone: boolean;
 };
 
 const EMPTY_RELEASE_ROLES = {
@@ -112,6 +114,7 @@ const EMPTY_RELEASE_ROLES = {
   writesCabScopeSnapshot: false,
   clearsCabScopeSnapshot: false,
   approvalRejectLanding: false,
+  rollbackMilestone: false,
 } as const;
 
 /**
@@ -130,6 +133,7 @@ export function defaultReleaseStatusRoles(
     | "writesCabScopeSnapshot"
     | "clearsCabScopeSnapshot"
     | "approvalRejectLanding"
+    | "rollbackMilestone"
 > {
   return {
     isIntake: key === "draft",
@@ -140,6 +144,7 @@ export function defaultReleaseStatusRoles(
     writesCabScopeSnapshot: key === "cab_approved",
     clearsCabScopeSnapshot: key === "pending_cab",
     approvalRejectLanding: key === "planning",
+    rollbackMilestone: key === "rolled_back",
   };
 }
 
@@ -157,6 +162,7 @@ export function withReleaseStatusRoles(
     | "writesCabScopeSnapshot"
     | "clearsCabScopeSnapshot"
     | "approvalRejectLanding"
+    | "rollbackMilestone"
   > &
     Partial<
       Pick<
@@ -169,6 +175,7 @@ export function withReleaseStatusRoles(
         | "writesCabScopeSnapshot"
         | "clearsCabScopeSnapshot"
         | "approvalRejectLanding"
+        | "rollbackMilestone"
       >
     >
 ): ReleaseLifecycleStatusConfig {
@@ -206,6 +213,10 @@ export function withReleaseStatusRoles(
       typeof status.approvalRejectLanding === "boolean"
         ? status.approvalRejectLanding
         : fallback.approvalRejectLanding,
+    rollbackMilestone:
+      typeof status.rollbackMilestone === "boolean"
+        ? status.rollbackMilestone
+        : fallback.rollbackMilestone,
   };
 }
 
@@ -248,6 +259,7 @@ export const DEFAULT_RELEASE_LIFECYCLE_STATUSES: readonly Omit<
   | "writesCabScopeSnapshot"
   | "clearsCabScopeSnapshot"
   | "approvalRejectLanding"
+  | "rollbackMilestone"
 >[] = [
   { key: "draft", label: "Draft", sortOrder: 10, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "full" },
   { key: "planning", label: "Planning", sortOrder: 20, terminal: false, kind: "mainline", isSystem: true, enabled: true, editMode: "full" },
@@ -322,14 +334,16 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
   // Extra (product ask): Testing may return to Planning.
   transition("testing", "planning", 25),
   transition("testing", "cancelled", 30),
-  transition("uat", "pending_cab", 10, [gate("uat_environment_booked", 10)]),
+  transition("uat", "pending_cab", 10, [
+    gate("uat_environment_booked", 10),
+    gate("signoffs_complete", 20),
+  ]),
   transition("uat", "testing", 20),
   transition("uat", "blocked", 30),
   transition("uat", "cancelled", 40),
   transition("pending_cab", "cab_approved", 10, [
-    gate("signoffs_complete", 10),
-    gate("go_live_date_set", 20),
-    gate("no_open_blockers", 30),
+    gate("go_live_date_set", 10),
+    gate("no_open_blockers", 20),
   ]),
   transition("pending_cab", "deferred", 20),
   transition("pending_cab", "rejected", 30),
@@ -349,6 +363,7 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
     // VR-27: High-score risks need a mitigation plan before Ready.
     gate("high_risks_mitigated", 75),
     gate("ops_signoff_complete", 80),
+    gate("business_signoff_complete", 85),
   ]),
   transition("cab_approved", "pending_cab", 20),
   transition("cab_approved", "blocked", 30),

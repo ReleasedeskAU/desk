@@ -2,6 +2,12 @@
  * Per-user Conflicts lifecycle configuration (statuses + transitions + types).
  * Mirrors the enterprise Conflicts Lifecycle table; storage is Clerk-user scoped.
  */
+import {
+  conflictGate,
+  isConflictLifecycleGateType,
+  CONFLICT_LIFECYCLE_GATE_ENFORCEMENTS,
+  type ConflictLifecycleGateAttachment,
+} from "@/lib/conflict-lifecycle-gates";
 
 export const CONFLICT_LIFECYCLE_ENFORCEMENTS = ["flexible", "required"] as const;
 export type ConflictLifecycleEnforcement =
@@ -27,6 +33,8 @@ export type ConflictLifecycleStatusConfig = {
   cascadeEffect: string;
   /** New conflict records land here. */
   isIntake: boolean;
+  /** VR-32: unresolved statuses block Ready. */
+  blocksReleaseReady: boolean;
 };
 
 export type ConflictLifecycleTransitionConfig = {
@@ -36,6 +44,7 @@ export type ConflictLifecycleTransitionConfig = {
   enforcement: ConflictLifecycleEnforcement;
   isSystem: boolean;
   sortOrder: number;
+  gates: ConflictLifecycleGateAttachment[];
 };
 
 export type ConflictTypeConfig = {
@@ -57,57 +66,100 @@ export const MAX_CONFLICT_LIFECYCLE_STATUSES = 20;
 export const MAX_CONFLICT_LIFECYCLE_TRANSITIONS = 80;
 export const MAX_CONFLICT_TYPES = 20;
 
-export const DEFAULT_CONFLICT_LIFECYCLE_STATUSES: readonly Omit<
-  ConflictLifecycleStatusConfig,
-  "isIntake"
->[] =
+const UNRESOLVED_KEYS = new Set([
+  "detected",
+  "under_review",
+  "pending_review",
+  "escalated",
+]);
+
+function status(args: {
+  key: string;
+  label: string;
+  sortOrder: number;
+  terminal?: boolean;
+  editMode?: ConflictEditMode;
+  cascadeEffect: string;
+  isIntake?: boolean;
+  blocksReleaseReady?: boolean;
+}): ConflictLifecycleStatusConfig {
+  return {
+    key: args.key,
+    label: args.label,
+    sortOrder: args.sortOrder,
+    terminal: args.terminal ?? false,
+    enabled: true,
+    isSystem: true,
+    editMode: args.editMode ?? "full",
+    cascadeEffect: args.cascadeEffect,
+    isIntake: args.isIntake ?? false,
+    blocksReleaseReady: args.blocksReleaseReady ?? UNRESOLVED_KEYS.has(args.key),
+  };
+}
+
+export const DEFAULT_CONFLICT_LIFECYCLE_STATUSES: readonly ConflictLifecycleStatusConfig[] =
   [
-    {
+    status({
       key: "detected",
-      label: "Detected",
+      label: "Open",
       sortOrder: 10,
-      terminal: false,
-      enabled: true,
-      isSystem: true,
-      editMode: "full",
-      cascadeEffect: "System identified conflict",
-    },
-    {
+      cascadeEffect: "Intake — newly raised or auto-detected",
+      isIntake: true,
+      blocksReleaseReady: true,
+    }),
+    status({
       key: "under_review",
-      label: "Under Review",
+      label: "In Progress",
       sortOrder: 20,
-      terminal: false,
-      enabled: true,
-      isSystem: true,
-      editMode: "full",
-      cascadeEffect: "Requires RM assessment",
-    },
-    {
+      cascadeEffect: "Release Manager assessment required before review",
+      blocksReleaseReady: true,
+    }),
+    status({
+      key: "pending_review",
+      label: "Pending Review",
+      sortOrder: 30,
+      cascadeEffect: "Waiting on a decision; still blocks Ready",
+      blocksReleaseReady: true,
+    }),
+    status({
+      key: "escalated",
+      label: "Escalated",
+      sortOrder: 40,
+      cascadeEffect: "Higher-authority decision required",
+      blocksReleaseReady: true,
+    }),
+    status({
       key: "resolved",
       label: "Resolved",
-      sortOrder: 30,
+      sortOrder: 50,
+      cascadeEffect: "Addressed — close when the record should freeze",
+      blocksReleaseReady: false,
+    }),
+    status({
+      key: "closed",
+      label: "Closed",
+      sortOrder: 60,
       terminal: true,
-      enabled: true,
-      isSystem: true,
       editMode: "immutable",
-      cascadeEffect: "FINAL — conflict addressed (AV-05 auto-detect on deploy date save)",
-    },
-    {
+      cascadeEffect: "FINAL — conflict record is immutable",
+      blocksReleaseReady: false,
+    }),
+    status({
       key: "dismissed",
       label: "Dismissed",
-      sortOrder: 40,
+      sortOrder: 70,
       terminal: true,
-      enabled: true,
-      isSystem: true,
       editMode: "immutable",
-      cascadeEffect: "FINAL — false positive or accepted; requires justification",
-    },
+      cascadeEffect: "FINAL — justification required, no override",
+      blocksReleaseReady: false,
+    }),
   ];
 
 function edge(
   fromKey: string,
   toKey: string,
   sortOrder: number,
+  gates: ConflictLifecycleGateAttachment[] = [],
   enforcement: ConflictLifecycleEnforcement = "flexible"
 ): ConflictLifecycleTransitionConfig {
   return {
@@ -117,16 +169,32 @@ function edge(
     enforcement,
     isSystem: true,
     sortOrder,
+    gates: gates.map((gate) => ({ ...gate })),
   };
 }
 
 export const DEFAULT_CONFLICT_LIFECYCLE_TRANSITIONS: readonly ConflictLifecycleTransitionConfig[] =
   [
     edge("detected", "under_review", 10),
-    edge("detected", "resolved", 20),
-    edge("detected", "dismissed", 30),
-    edge("under_review", "resolved", 10),
-    edge("under_review", "dismissed", 20),
+    edge("detected", "escalated", 20),
+    edge("under_review", "pending_review", 10, [conflictGate("rm_assessment_set", 10)]),
+    edge("under_review", "escalated", 20, [conflictGate("rm_assessment_set", 10)]),
+    edge("pending_review", "resolved", 10),
+    edge("pending_review", "dismissed", 20, [
+      conflictGate("dismissal_justification_set", 10, "required"),
+    ], "required"),
+    edge("pending_review", "under_review", 30),
+    edge("escalated", "under_review", 10, [
+      conflictGate("higher_authority_decision_set", 10),
+    ]),
+    edge("escalated", "resolved", 20, [
+      conflictGate("higher_authority_decision_set", 10),
+    ]),
+    edge("escalated", "dismissed", 30, [
+      conflictGate("higher_authority_decision_set", 10),
+      conflictGate("dismissal_justification_set", 20, "required"),
+    ], "required"),
+    edge("resolved", "closed", 10),
   ];
 
 export const DEFAULT_CONFLICT_TYPES: readonly ConflictTypeConfig[] = [
@@ -136,7 +204,7 @@ export const DEFAULT_CONFLICT_TYPES: readonly ConflictTypeConfig[] = [
     sortOrder: 10,
     enabled: true,
     isSystem: true,
-    description: "Same deploy window",
+    description: "Same deploy day and shared application (AV-05)",
   },
   {
     key: "resource",
@@ -144,7 +212,7 @@ export const DEFAULT_CONFLICT_TYPES: readonly ConflictTypeConfig[] = [
     sortOrder: 20,
     enabled: true,
     isSystem: true,
-    description: "Same environment",
+    description: "Same environment resource",
   },
   {
     key: "application",
@@ -154,6 +222,30 @@ export const DEFAULT_CONFLICT_TYPES: readonly ConflictTypeConfig[] = [
     isSystem: true,
     description: "Same application",
   },
+  {
+    key: "environment_booking",
+    label: "Environment Booking",
+    sortOrder: 40,
+    enabled: true,
+    isSystem: true,
+    description: "Booking calendar overlap on the same environment",
+  },
+  {
+    key: "maintenance_window",
+    label: "Maintenance Window",
+    sortOrder: 50,
+    enabled: true,
+    isSystem: true,
+    description: "Deploy window overlaps planned infrastructure maintenance",
+  },
+  {
+    key: "freeze_period",
+    label: "Freeze Period",
+    sortOrder: 60,
+    enabled: true,
+    isSystem: true,
+    description: "Target date falls inside a recorded freeze period",
+  },
 ];
 
 /**
@@ -162,13 +254,38 @@ export const DEFAULT_CONFLICT_TYPES: readonly ConflictTypeConfig[] = [
  */
 export function createDefaultConflictLifecycleConfig(): ConflictLifecycleConfig {
   return {
-    statuses: DEFAULT_CONFLICT_LIFECYCLE_STATUSES.map((s) => ({
-      ...s,
-      isIntake: s.key === "detected",
+    statuses: DEFAULT_CONFLICT_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    transitions: DEFAULT_CONFLICT_LIFECYCLE_TRANSITIONS.map((t) => ({
+      ...t,
+      gates: t.gates.map((gate) => ({ ...gate })),
     })),
-    transitions: DEFAULT_CONFLICT_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
     types: DEFAULT_CONFLICT_TYPES.map((t) => ({ ...t })),
   };
+}
+
+function validateGates(
+  item: ConflictLifecycleTransitionConfig,
+  fromKey: string,
+  toKey: string
+): string | null {
+  const seen = new Set<string>();
+  for (const gate of item.gates ?? []) {
+    if (!isConflictLifecycleGateType(gate.gateType)) {
+      return `Unknown check "${String(gate.gateType)}" on ${fromKey} → ${toKey}`;
+    }
+    if (seen.has(gate.gateType)) {
+      return `Duplicate check ${gate.gateType} on ${fromKey} → ${toKey}`;
+    }
+    if (
+      !CONFLICT_LIFECYCLE_GATE_ENFORCEMENTS.includes(
+        gate.enforcement as (typeof CONFLICT_LIFECYCLE_GATE_ENFORCEMENTS)[number]
+      )
+    ) {
+      return `Invalid check enforcement on ${fromKey} → ${toKey}`;
+    }
+    seen.add(gate.gateType);
+  }
+  return null;
 }
 
 /**
@@ -192,18 +309,18 @@ export function validateConflictLifecycleConfig(
   }
   const keys = new Set<string>();
   const labels = new Set<string>();
-  for (const status of config.statuses) {
-    if (!/^[a-z][a-z0-9_]{0,39}$/.test(status.key)) {
-      return `Invalid conflict status key: ${status.key}`;
+  for (const item of config.statuses) {
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(item.key)) {
+      return `Invalid conflict status key: ${item.key}`;
     }
-    if (!status.label.trim()) return `Invalid label for ${status.key}`;
-    if (keys.has(status.key)) return `Duplicate status key: ${status.key}`;
-    const lower = status.label.trim().toLocaleLowerCase();
-    if (labels.has(lower)) return `Duplicate status label: ${status.label}`;
-    if (!CONFLICT_EDIT_MODES.includes(status.editMode)) {
-      return `Invalid editMode for ${status.key}`;
+    if (!item.label.trim()) return `Invalid label for ${item.key}`;
+    if (keys.has(item.key)) return `Duplicate status key: ${item.key}`;
+    const lower = item.label.trim().toLocaleLowerCase();
+    if (labels.has(lower)) return `Duplicate status label: ${item.label}`;
+    if (!CONFLICT_EDIT_MODES.includes(item.editMode)) {
+      return `Invalid editMode for ${item.key}`;
     }
-    keys.add(status.key);
+    keys.add(item.key);
     labels.add(lower);
   }
   const byKey = new Map(config.statuses.map((s) => [s.key, s]));
@@ -222,6 +339,8 @@ export function validateConflictLifecycleConfig(
     const edgeId = `${item.fromKey}:${item.toKey}`;
     if (edges.has(edgeId)) return `Duplicate transition: ${edgeId}`;
     edges.add(edgeId);
+    const gateError = validateGates(item, item.fromKey, item.toKey);
+    if (gateError) return gateError;
   }
   const typeKeys = new Set<string>();
   for (const type of config.types) {
@@ -233,6 +352,26 @@ export function validateConflictLifecycleConfig(
     typeKeys.add(type.key);
   }
   return null;
+}
+
+function coerceTransition(
+  raw: ConflictLifecycleTransitionConfig
+): ConflictLifecycleTransitionConfig {
+  const gates = Array.isArray(raw.gates)
+    ? raw.gates
+        .filter((gate) => isConflictLifecycleGateType(gate.gateType))
+        .map((gate) => ({
+          gateType: gate.gateType,
+          enabled: Boolean(gate.enabled),
+          enforcement: CONFLICT_LIFECYCLE_GATE_ENFORCEMENTS.includes(
+            gate.enforcement as (typeof CONFLICT_LIFECYCLE_GATE_ENFORCEMENTS)[number]
+          )
+            ? gate.enforcement
+            : "inherit",
+          sortOrder: Number(gate.sortOrder) || 0,
+        }))
+    : [];
+  return { ...raw, gates };
 }
 
 /**
@@ -250,15 +389,21 @@ export function normalizeConflictLifecycleConfig(
     Array.isArray((raw as ConflictLifecycleConfig).types)
   ) {
     const candidate = raw as ConflictLifecycleConfig;
-    if (!validateConflictLifecycleConfig(candidate)) {
-      return {
-        statuses: candidate.statuses.map((s) => ({
-          ...s,
-          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "detected",
-        })),
-        transitions: candidate.transitions.map((t) => ({ ...t })),
-        types: candidate.types.map((t) => ({ ...t })),
-      };
+    const statuses = candidate.statuses.map((s) => ({
+      ...s,
+      isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "detected",
+      blocksReleaseReady:
+        typeof s.blocksReleaseReady === "boolean"
+          ? s.blocksReleaseReady
+          : UNRESOLVED_KEYS.has(s.key),
+    }));
+    const normalized = {
+      statuses,
+      transitions: candidate.transitions.map(coerceTransition),
+      types: candidate.types.map((t) => ({ ...t })),
+    };
+    if (!validateConflictLifecycleConfig(normalized)) {
+      return normalized;
     }
   }
   return createDefaultConflictLifecycleConfig();
@@ -266,3 +411,15 @@ export function normalizeConflictLifecycleConfig(
 
 export const DEFAULT_CONFLICT_LIFECYCLE_CONFIG =
   createDefaultConflictLifecycleConfig();
+
+/**
+ * True when an enabled attached check is Required — Settings must not offer
+ * Flexible (CFG-06 class). Driven by gate enforcement, not a status key.
+ */
+export function conflictTransitionEnforcementLocked(
+  transition: ConflictLifecycleTransitionConfig
+): boolean {
+  return (transition.gates ?? []).some(
+    (gate) => gate.enabled && gate.enforcement === "required"
+  );
+}

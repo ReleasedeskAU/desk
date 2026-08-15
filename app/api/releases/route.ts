@@ -14,7 +14,14 @@ import {
 } from "@/lib/release-lifecycle-status-ui";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
-import { detectScheduleConflictsOnDeployDate } from "@/lib/lifecycle-event-hooks";
+import {
+  collectProposedDateConflicts,
+  raiseAndNotifyConflicts,
+} from "@/lib/conflict-detectors";
+import {
+  conflictChoiceHoldBody,
+  shouldHoldWriteForConflictChoice,
+} from "@/lib/conflict-save-gate";
 import {
   encodeUxNoticeHeader,
   UX_NOTICE_HEADER,
@@ -173,6 +180,30 @@ export async function POST(req: Request) {
   }
 
   const actorName = user!.name?.trim() || user!.id;
+  const applicationIds: string[] = Array.isArray(body.applicationIds)
+    ? body.applicationIds.filter(
+        (id: unknown): id is string => typeof id === "string" && id.trim().length > 0
+      )
+    : [];
+  let pendingToRaise: Awaited<ReturnType<typeof collectProposedDateConflicts>> = [];
+  if (body.releaseDate && applicationIds.length > 0) {
+    try {
+      pendingToRaise = await collectProposedDateConflicts({
+        clerkUserId: user!.id,
+        releaseDate,
+        startDate,
+        applicationIds,
+      });
+    } catch (hookErr) {
+      console.warn("[releases POST] conflict detect failed", {
+        message: hookErr instanceof Error ? hookErr.message : "unknown",
+      });
+    }
+    if (shouldHoldWriteForConflictChoice(pendingToRaise, body.raiseConflicts === true)) {
+      return NextResponse.json(conflictChoiceHoldBody(pendingToRaise), { status: 409 });
+    }
+  }
+
   const created = await createReleaseRow({
       releaseCode,
       name: String(body.name ?? ""),
@@ -200,6 +231,9 @@ export async function POST(req: Request) {
       regulatory: optionalString(body.regulatory) ?? null,
       approvalStatus: optionalString(body.approvalStatus) ?? null,
       rollbackPlan: optionalString(body.rollbackPlan) ?? null,
+      hypercarePlan: optionalString(body.hypercarePlan) ?? null,
+      commsPlan: optionalString(body.commsPlan) ?? null,
+      trainingStatus: optionalString(body.trainingStatus) ?? null,
       goLiveChecklistPercent: optionalFloat(body.goLiveChecklistPercent) ?? null,
       deploymentWindow: optionalString(body.deploymentWindow) ?? null,
       releaseOwnerId: optionalString(body.releaseOwnerId) ?? null,
@@ -234,23 +268,32 @@ export async function POST(req: Request) {
       : Promise.resolve(),
   ]);
 
-  // AV-05: after apps are linked so shared-application overlap can be detected.
   const uxNotices: UxNotice[] = [];
-  if (body.releaseDate && body.applicationIds?.length) {
+  if (body.raiseConflicts === true && pendingToRaise.length > 0) {
     try {
-      const createdConflicts = await detectScheduleConflictsOnDeployDate(
-        created.id,
-        releaseDate,
-        user!.id
-      );
-      if (createdConflicts.roleFault) {
+      const extraNotes =
+        typeof body.conflictNotes === "string" ? body.conflictNotes.trim() : "";
+      const raised = await raiseAndNotifyConflicts({
+        clerkUserId: user!.id,
+        release1Code: created.releaseCode,
+        releaseId: created.id,
+        findings: extraNotes
+          ? pendingToRaise.map((finding) => ({
+              ...finding,
+              notes: `${finding.notes} — ${extraNotes}`,
+            }))
+          : pendingToRaise,
+        raisedBy: user!.name,
+        automation: "CNF-REQ-CHOICE",
+      });
+      if (raised.roleFault) {
         uxNotices.push({
           title: "Automation needs a Settings fix",
-          message: createdConflicts.roleFault.message,
+          message: raised.roleFault.message,
         });
       }
     } catch (hookErr) {
-      console.warn("[releases POST] AV-05 conflict detect failed", {
+      console.warn("[releases POST] conflict raise failed", {
         releaseId: created.id,
         message: hookErr instanceof Error ? hookErr.message : "unknown",
       });
@@ -267,8 +310,9 @@ export async function POST(req: Request) {
       releaseOwner: { select: { id: true, userId: true, name: true } },
     },
   });
+  const payload = row;
   if (uxNotices.length > 0) {
-    return NextResponse.json(row, {
+    return NextResponse.json(payload, {
       status: 201,
       headers: {
         [UX_NOTICE_HEADER]: encodeUxNoticeHeader(uxNotices),
@@ -276,5 +320,5 @@ export async function POST(req: Request) {
       },
     });
   }
-  return NextResponse.json(row, { status: 201 });
+  return NextResponse.json(payload, { status: 201 });
 }

@@ -107,7 +107,11 @@ async function appendHistory(
   });
 }
 
-async function appendNotification(data: {
+/**
+ * Append one row to the in-app inbox (header bell / live-state).
+ * Org-aware insert matches other release notices — no parallel channel.
+ */
+export async function appendAppNotification(data: {
   title: string;
   message: string;
   releaseId?: string;
@@ -170,7 +174,7 @@ export async function recordDecision(
     "human"
   );
 
-  await appendNotification({
+  await appendAppNotification({
     title: `${decision} decision — ${version}`,
     message: opts.rationale ?? `${opts.actor} recorded a ${decision} decision`,
     releaseId,
@@ -191,7 +195,7 @@ export async function recordReminderSent(
     `Sent ${gate} approval reminder via ${channel} for ${version}`,
     "human"
   );
-  await appendNotification({
+  await appendAppNotification({
     title: "Reminder sent",
     message: `${gate} reminder queued to ${channel} for ${version}`,
     releaseId,
@@ -240,7 +244,7 @@ async function persistDeploymentRollback(
     auto ? "agent" : "human",
     auto ? "Risk Agent" : undefined
   );
-  await appendNotification({
+  await appendAppNotification({
     title: "Auto-rollback triggered",
     message: `${release.version}: ${reason}`,
     releaseId,
@@ -254,7 +258,7 @@ async function persistDeploymentVerified(releaseId: string, release: Release) {
     data: { phase: "Verified" },
   });
   await appendHistory(releaseId, "System", "Deployment verified — smoke tests passed", "human");
-  await appendNotification({
+  await appendAppNotification({
     title: "Deployment verified",
     message: `${release.version} live and healthy`,
     releaseId,
@@ -314,7 +318,7 @@ export async function startDeployment(release: Release, actor: string) {
     `Started deployment to ${release.deployment?.environment ?? "production"} (${release.deployment?.pipeline ?? "Argo CD"})`,
     "human"
   );
-  await appendNotification({
+  await appendAppNotification({
     title: "Deployment started",
     message: `${release.version} rolling out to ${release.deployment?.environment ?? "production"}`,
     releaseId: release.id,
@@ -352,7 +356,7 @@ export async function initiateRollback(
     opts?.auto ? "agent" : "human",
     opts?.auto ? "Risk Agent" : undefined
   );
-  await appendNotification({
+  await appendAppNotification({
     title: opts?.auto ? "Auto-rollback initiated" : "Rollback initiated",
     message: `${release.version} reverting via blue-green switch${opts?.reason ? ` — ${opts.reason}` : ""}`,
     releaseId: release.id,
@@ -367,18 +371,28 @@ export async function setRollbackNarrative(releaseId: string, narrative: string)
   });
 }
 
+function conflictHrefFromStoredNotice(title: string, message: string): string | undefined {
+  const match = `${title} ${message}`.match(/\bCNF-\d+\b/i);
+  return match ? `/conflicts/${match[0].toUpperCase()}` : undefined;
+}
+
 export async function getNotifications(): Promise<AppNotification[]> {
   await ensureDefaultNotifications();
   const rows = await prisma.appNotificationRow.findMany({ orderBy: { timestamp: "desc" } });
-  return rows.map((n) => ({
-    id: n.id,
-    timestamp: n.timestamp.toISOString(),
-    title: n.title,
-    message: n.message,
-    releaseId: n.releaseId ?? undefined,
-    read: n.read,
-    type: n.type as AppNotification["type"],
-  }));
+  return rows.map((n) => {
+    const href = conflictHrefFromStoredNotice(n.title, n.message);
+    return {
+      id: n.id,
+      timestamp: n.timestamp.toISOString(),
+      title: n.title,
+      message: n.message,
+      releaseId: n.releaseId ?? undefined,
+      read: n.read,
+      type: n.type as AppNotification["type"],
+      href,
+      linkLabel: href ? "View conflict" : undefined,
+    };
+  });
 }
 
 export async function markNotificationRead(id: string) {

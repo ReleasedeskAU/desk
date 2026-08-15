@@ -18,6 +18,8 @@ const LIFECYCLE_CODES = new Set([
   "CONDITIONS_REQUIRED",
   "EDIT_POLICY_DENIED",
   "FIELD_LOCK_DENIED",
+  "SIGNOFF_VALUE_REQUIRED",
+  "SIGNOFF_FIELD_DISABLED",
 ]);
 
 /**
@@ -60,8 +62,15 @@ export function buildFormSaveAlert(
       : undefined;
 
   const isFieldLock = code === "FIELD_LOCK_DENIED" || /field lock/i.test(message);
+  const isSignoff =
+    !isFieldLock &&
+    (code === "SIGNOFF_VALUE_REQUIRED" ||
+      code === "SIGNOFF_FIELD_DISABLED" ||
+      ((code === "EDIT_POLICY_DENIED" || code === "ILLEGAL_TRANSITION") &&
+        /sign-off/i.test(message)));
   const isLifecycle =
     !isFieldLock &&
+    !isSignoff &&
     (LIFECYCLE_CODES.has(code) ||
       /lifecycle|transition|not allowed|edit policy/i.test(message));
 
@@ -69,9 +78,11 @@ export function buildFormSaveAlert(
   return {
     title: isFieldLock
       ? "This field is locked"
-      : isLifecycle
-        ? "Status change blocked"
-        : `Could not save ${entity}`,
+      : isSignoff
+        ? "This sign-off can’t be changed"
+        : isLifecycle
+          ? "Status change blocked"
+          : `Could not save ${entity}`,
     message,
     details: details?.length ? details : undefined,
   };

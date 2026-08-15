@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, FileText, List, Package, Server, Wrench } from "lucide-react";
 import {
@@ -13,8 +13,13 @@ import {
   type ChipTone,
 } from "@/components/detail/editable";
 import { DetailDecisionHeader } from "@/components/detail/decision";
+import { LifecycleExceptionConfirm } from "@/components/detail/LifecycleExceptionConfirm";
+import { LifecycleExceptionModal } from "@/components/detail/LifecycleExceptionModal";
+import { LifecycleTerminalStatusNotice } from "@/components/detail/LifecycleTerminalStatusNotice";
+import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { useEditableDetail } from "@/hooks/useEditableDetail";
+import { useLifecycleStatusConfirm } from "@/hooks/useLifecycleStatusConfirm";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -30,8 +35,15 @@ import {
 } from "@/lib/detail-decision";
 import { driftWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
-import type { DriftLifecycleConfig } from "@/lib/drift-lifecycle-config";
+import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
+import {
+  createDefaultDriftLifecycleConfig,
+  type DriftLifecycleConfig,
+} from "@/lib/drift-lifecycle-config";
+import {
+  legalNextDriftStatuses,
+  resolveDriftLifecycleStatusRef,
+} from "@/lib/drift-lifecycle-transition";
 
 type DriftDetail = {
   id: string;
@@ -49,6 +61,9 @@ type DriftDetail = {
   remediationAction: string | null;
   status: string;
   etaToFix: string | null;
+  notes: string | null;
+  baselineNotes: string | null;
+  assignedTo: string | null;
   release: { id: string; releaseCode: string; name: string; status: string };
   application: { id: string; name: string };
 };
@@ -80,6 +95,9 @@ type DriftDraft = {
   remediationAction: string;
   status: string;
   etaToFix: string;
+  notes: string;
+  baselineNotes: string;
+  assignedTo: string;
 };
 
 const DRIFT_FIELD_LABELS: Partial<Record<keyof DriftDraft, string>> = {
@@ -96,6 +114,9 @@ const DRIFT_FIELD_LABELS: Partial<Record<keyof DriftDraft, string>> = {
   remediationAction: "Remediation Action",
   status: "Status",
   etaToFix: "ETA to Fix",
+  notes: "Notes",
+  baselineNotes: "Baseline notes",
+  assignedTo: "Assigned To",
 };
 
 function toDateInput(iso: string | null) {
@@ -117,12 +138,13 @@ function severityTone(severity: string): ChipTone {
   return "neutral";
 }
 
-function statusTone(status: string): ChipTone {
-  const s = status.toLowerCase();
-  if (s.includes("open")) return "warn";
-  if (s.includes("progress")) return "info";
-  if (s.includes("resolv") || s.includes("closed") || s.includes("fixed")) return "good";
-  return "neutral";
+function statusToneFromFlags(args: {
+  terminal?: boolean;
+  isIntake?: boolean;
+}): ChipTone {
+  if (args.terminal) return "good";
+  if (args.isIntake) return "warn";
+  return "info";
 }
 
 /** A drift open past this many days needs escalation rather than more waiting. */
@@ -152,6 +174,9 @@ function toDraft(
     remediationAction: row.remediationAction ?? "",
     status: row.status,
     etaToFix: toDateInput(row.etaToFix),
+    notes: row.notes ?? "",
+    baselineNotes: row.baselineNotes ?? "",
+    assignedTo: row.assignedTo ?? "",
   };
 }
 
@@ -178,6 +203,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   /** Id of the workflow step currently being written, so its button can spin. */
   const [pendingStep, setPendingStep] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
+  const exceptionFromModalSave = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, deptList, releaseList, appList, envList, typeList, me] = await Promise.all([
@@ -249,6 +275,16 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   const canEdit = sessionCanEdit(user);
   const v = edit.values;
   const d = edit.draft;
+  const statusConfirm = useLifecycleStatusConfirm({
+    entityLabel: "drift",
+    onSuccess: async () => {
+      if (exceptionFromModalSave.current) {
+        exceptionFromModalSave.current = false;
+        edit.completeSaveSuccess(DRIFT_FIELD_LABELS);
+      }
+      await load();
+    },
+  });
 
   const selectOptions = useMemo(
     () =>
@@ -340,10 +376,34 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     return SEVERITY_OPTIONS;
   }, [row?.severity]);
 
-  const statusOptions = useMemo(
-    () => statusSelectOptions(lifecycle.createOptions, row?.status),
-    [lifecycle.createOptions, row?.status]
-  );
+  const driftConfig =
+    (lifecycle.config as DriftLifecycleConfig | null) ??
+    createDefaultDriftLifecycleConfig();
+
+  const statusOptions = useMemo(() => {
+    const current = row?.status ?? "";
+    const next = legalNextDriftStatuses(driftConfig, current);
+    const labels = [current, ...next.map((status) => status.label)].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const key = label.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [driftConfig, row?.status]);
+
+  const showTerminalStatusNotice = useMemo(() => {
+    const current = row?.status ?? "";
+    const next = legalNextDriftStatuses(driftConfig, current);
+    return shouldShowTerminalLifecycleEditNotice({
+      currentLabel: current,
+      legalNextCount: next.length,
+      isTerminal: resolveDriftLifecycleStatusRef(driftConfig, current)?.terminal,
+    });
+  }, [driftConfig, row?.status]);
 
   const save = async () => {
     if (!row || !edit.draft) return;
@@ -371,19 +431,61 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         remediationAction: draft.remediationAction || null,
         status: draft.status,
         etaToFix: draft.etaToFix || null,
+        notes: draft.notes || null,
+        baselineNotes: draft.baselineNotes || null,
+        assignedTo: draft.assignedTo || null,
       }),
       label: "drift-patch",
       rejectHttpErrors: false,
     });
-    edit.setSaving(false);
-    if (!res.ok || res.status >= 300) {
-      const message =
-        res.ok && res.data && typeof res.data === "object" && "error" in res.data
-          ? String((res.data as { error?: string }).error || "")
-          : "";
-      edit.setError(message || "Couldn’t save changes. Try again.");
+    if (!res.ok || (res.status ?? 0) >= 300) {
+      const data =
+        res.ok && res.data && typeof res.data === "object"
+          ? (res.data as {
+              error?: string;
+              code?: string;
+              unmetReasons?: unknown;
+            })
+          : null;
+      const apiError = typeof data?.error === "string" ? data.error : "";
+      const code = typeof data?.code === "string" ? data.code : "";
+      const unmetReasons = Array.isArray(data?.unmetReasons)
+        ? data.unmetReasons.filter((r): r is string => typeof r === "string")
+        : [];
+      if (code === "TRANSITION_NEEDS_OVERRIDE" && draft.status !== row.status) {
+        const extraBody = {
+          releaseId: draft.releaseId,
+          applicationId: draft.applicationId,
+          environmentName: draft.environmentName,
+          driftType: draft.driftType,
+          driftCategory: draft.driftCategory || null,
+          detectedDate: draft.detectedDate,
+          severity: draft.severity,
+          description: draft.description,
+          impactOnRelease: draft.impactOnRelease || null,
+          remediationAction: draft.remediationAction || null,
+          etaToFix: draft.etaToFix || null,
+          notes: draft.notes || null,
+          baselineNotes: draft.baselineNotes || null,
+          assignedTo: draft.assignedTo || null,
+        };
+        exceptionFromModalSave.current = true;
+        edit.discard();
+        statusConfirm.presentException({
+          targetStatus: draft.status,
+          targetLabel: draft.status,
+          patchUrl: `/api/drifts/${row.id}`,
+          extraBody,
+          unmetReasons,
+          leadMessage: apiError || null,
+        });
+        return;
+      }
+      edit.setSaving(false);
+      edit.setError(apiError || "Couldn’t save changes. Try again.");
       return;
     }
+    edit.setSaving(false);
     edit.completeSaveSuccess(DRIFT_FIELD_LABELS);
     await load();
   };
@@ -397,19 +499,12 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     if (!row) return;
     setPendingStep(step.id);
     setStepError(null);
-    const res = await safeFetchJson(`/api/drifts/${row.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: step.status }),
-      label: "drift-status-step",
-      rejectHttpErrors: false,
+    await statusConfirm.requestStatusChange({
+      targetStatus: step.status,
+      targetLabel: step.label,
+      patchUrl: `/api/drifts/${row.id}`,
     });
     setPendingStep(null);
-    if (!res.ok || res.status >= 300) {
-      setStepError(`Couldn’t set this drift to ${step.status}. Try again.`);
-      return;
-    }
-    await load();
   };
 
   const remove = async () => {
@@ -433,16 +528,13 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
   if (!row || !v) return <p className="text-slate-500 dark:text-white/60">Drift not found.</p>;
 
   const daysOpen = daysSinceDetected(v.detectedDate || row.detectedDate);
-  // Approved/Reverted are terminal lifecycle statuses on main (not just Resolved/Closed).
-  const resolved = /approved|reverted|resolv|closed|fixed/i.test(v.status);
+  const statusRef = resolveDriftLifecycleStatusRef(driftConfig, v.status);
+  const resolved = Boolean(statusRef?.terminal);
   const selectedRelease = releases.find((r) => r.id === v.releaseId);
   const selectedApp = applications.find((a) => a.id === v.applicationId);
   const selectedDept = departments.find((dept) => dept.id === v.departmentId);
   const etaDue = describeDue(v.etaToFix);
-  const workflow = driftWorkflow(
-    v.status,
-    (lifecycle.config as DriftLifecycleConfig | null) ?? undefined
-  );
+  const workflow = driftWorkflow(v.status, driftConfig);
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,
@@ -525,6 +617,7 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
     { label: "Environment", value: v.environmentName || "—" },
     { label: "Application", value: selectedApp?.name ?? row.application.name },
     { label: "Department", value: selectedDept?.name ?? v.departmentName ?? "—" },
+    { label: "Assigned to", value: v.assignedTo.trim() || "Unassigned" },
   ];
 
   return (
@@ -574,6 +667,18 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
               kind="select"
               options={statusOptions}
               onChange={(n) => edit.setField("status", n)}
+              hint={
+                showTerminalStatusNotice ? (
+                  <LifecycleTerminalStatusNotice statusLabel={d.status} />
+                ) : undefined
+              }
+            />
+            <EditableField
+              label="Assigned To"
+              value={d.assignedTo}
+              editing
+              onChange={(n) => edit.setField("assignedTo", n)}
+              placeholder="Owner name…"
             />
             <EditableField
               label="Detected Date"
@@ -677,6 +782,24 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
               placeholder="How this drift will be fixed…"
               className="sm:col-span-2"
             />
+            <EditableField
+              label="Notes"
+              value={d.notes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("notes", n)}
+              placeholder="Manual review notes…"
+              className="sm:col-span-2"
+            />
+            <EditableField
+              label="Baseline notes"
+              value={d.baselineNotes}
+              editing
+              kind="textarea"
+              onChange={(n) => edit.setField("baselineNotes", n)}
+              placeholder="Describe the accepted new baseline…"
+              className="sm:col-span-2"
+            />
           </EditableFieldGrid>
         ) : null
       }
@@ -703,9 +826,12 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
       <DetailDecisionHeader
         status={{
           label: v.status,
-          tone: statusTone(v.status),
-          caption: resolved
-            ? "Baseline restored"
+          tone: statusToneFromFlags({
+            terminal: statusRef?.terminal,
+            isIntake: statusRef?.isIntake,
+          }),
+          caption: statusRef?.terminal
+            ? v.status
             : `Open ${daysOpen} day${daysOpen === 1 ? "" : "s"} on ${v.environmentName || "this environment"}`,
         }}
         signals={signals}
@@ -718,6 +844,29 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         timing={timing}
         scope={scope}
       />
+
+      <LifecycleExceptionModal
+        open={Boolean(statusConfirm.pending)}
+        onDismiss={statusConfirm.cancel}
+      >
+        {statusConfirm.pending ? (
+          <LifecycleExceptionConfirm
+            targetLabel={statusConfirm.pending.targetLabel}
+            needsException={statusConfirm.pending.needsException}
+            blocked={statusConfirm.pending.blocked}
+            exceptionReason={statusConfirm.exceptionReason}
+            onExceptionReasonChange={statusConfirm.setExceptionReason}
+            autoFocusReason={statusConfirm.pending.needsException}
+            busy={statusConfirm.busy}
+            confirmDisabled={statusConfirm.confirmDisabled}
+            onCancel={statusConfirm.cancel}
+            onConfirm={() => void statusConfirm.confirm()}
+            checks={statusConfirm.pending.checks}
+            leadMessage={statusConfirm.pending.leadMessage}
+          />
+        ) : null}
+      </LifecycleExceptionModal>
+      <FormAlertDialog alert={statusConfirm.alert} onDismiss={statusConfirm.dismissAlert} />
 
       <DetailSection
         icon={Calendar}
@@ -796,6 +945,32 @@ export default function DriftDetailPage({ params }: { params: Promise<{ id: stri
         <TintedCallout tone="emerald">
           {v.remediationAction.trim() || "No remediation action recorded yet."}
         </TintedCallout>
+      </DetailSection>
+
+      <DetailSection
+        icon={FileText}
+        tone="amber"
+        title="Review & baseline notes"
+        description="Manual review notes gate In Progress. Baseline notes record the accepted new state on the Resolved path."
+      >
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Notes
+            </p>
+            <TintedCallout tone="amber">
+              {v.notes.trim() || "No review notes recorded yet."}
+            </TintedCallout>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              Baseline notes
+            </p>
+            <TintedCallout tone="emerald">
+              {v.baselineNotes.trim() || "No new baseline recorded yet."}
+            </TintedCallout>
+          </div>
+        </div>
       </DetailSection>
     </EditableDetailShell>
   );

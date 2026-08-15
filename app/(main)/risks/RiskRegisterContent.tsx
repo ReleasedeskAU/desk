@@ -1278,7 +1278,7 @@ export default function RiskRegisterContent() {
         }}
         categoryOptions={categories}
         statusOptions={lifecycle.createOptions}
-        defaultStatus={lifecycle.defaultStatus || "Identified"}
+        defaultStatus={lifecycle.defaultStatus || "Open"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

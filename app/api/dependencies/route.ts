@@ -16,6 +16,7 @@ function mapDependencyRow(row: {
   id: string;
   dependencyCode: string | null;
   dependencyType: string | null;
+  dependencyKind?: string | null;
   status: string | null;
   impactIfBlocked: string | null;
   notes: string | null;
@@ -32,6 +33,7 @@ function mapDependencyRow(row: {
     dependsOnName: row.dependsOnRelease.name,
     dependsOnDbId: row.dependsOnRelease.id,
     dependencyType: row.dependencyType ?? "",
+    dependencyKind: row.dependencyKind ?? "",
     status: row.status ?? "",
     impactIfBlocked: row.impactIfBlocked ?? "",
     notes: row.notes,
@@ -95,7 +97,12 @@ export async function POST(req: Request) {
   let statusKey: string | undefined;
   try {
     const loaded = await loadDependencyLifecycleConfig(user!.id);
-    const resolved = resolveCreateLifecycleStatus(loaded.config, body.status, "dependency");
+    const resolved = resolveCreateLifecycleStatus(
+      loaded.config,
+      body.status,
+      "dependency",
+      { intakeOnly: true }
+    );
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
     statusKey = resolved.statusKey;
@@ -154,6 +161,7 @@ export async function POST(req: Request) {
         releaseId: body.releaseId,
         dependsOnReleaseId: body.dependsOnReleaseId,
         dependencyType: body.dependencyType,
+        dependencyKind: body.dependencyKind ?? "Release-to-Release",
         status,
         statusKey,
         impactIfBlocked: body.impactIfBlocked,

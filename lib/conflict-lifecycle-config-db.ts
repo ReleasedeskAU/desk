@@ -9,6 +9,7 @@ import {
   validateConflictLifecycleConfig,
   type ConflictLifecycleConfig,
 } from "@/lib/conflict-lifecycle-config";
+import { reconcileConflictLifecycleSpec } from "@/lib/conflict-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -65,7 +66,9 @@ export async function loadConflictLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeConflictLifecycleConfig(latest.snapshot),
+      config: reconcileConflictLifecycleSpec(
+        normalizeConflictLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

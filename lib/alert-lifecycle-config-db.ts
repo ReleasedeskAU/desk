@@ -9,6 +9,7 @@ import {
   validateAlertLifecycleConfig,
   type AlertLifecycleConfig,
 } from "@/lib/alert-lifecycle-config";
+import { reconcileAlertLifecycleSpec } from "@/lib/alert-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -65,7 +66,9 @@ export async function loadAlertLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeAlertLifecycleConfig(latest.snapshot),
+      config: reconcileAlertLifecycleSpec(
+        normalizeAlertLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

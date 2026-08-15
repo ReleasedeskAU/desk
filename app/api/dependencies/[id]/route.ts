@@ -58,6 +58,7 @@ function mapDetail(row: NonNullable<Awaited<ReturnType<typeof findDependency>>>)
     id: row.id,
     depCode: row.dependencyCode ?? "",
     dependencyType: row.dependencyType ?? "",
+    dependencyKind: row.dependencyKind ?? "",
     status: row.status ?? "",
     impactIfBlocked: row.impactIfBlocked ?? "",
     notes: row.notes,
@@ -241,6 +242,9 @@ export async function PATCH(req: Request, { params }: Params) {
           : {}),
         ...(body.dependencyType !== undefined && proposed.has("dependencyType")
           ? { dependencyType: body.dependencyType }
+          : {}),
+        ...(body.dependencyKind !== undefined && proposed.has("dependencyKind")
+          ? { dependencyKind: body.dependencyKind }
           : {}),
         ...(body.status !== undefined
           ? {

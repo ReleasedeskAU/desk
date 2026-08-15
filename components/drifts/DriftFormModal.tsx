@@ -53,7 +53,7 @@ type CreatedDrift = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const emptyForm = (defaultStatus = "Detected"): FormValues => ({
+const emptyForm = (defaultStatus = "Open"): FormValues => ({
   departmentId: "",
   applicationId: "",
   releaseId: "",
@@ -87,7 +87,7 @@ export function DriftFormModal({
   onCreated,
   categoryOptions,
   statusOptions: statusOptionsProp = [],
-  defaultStatus = "Detected",
+  defaultStatus = "Open",
 }: Props) {
   const statusOptions = useMemo(
     () => (statusOptionsProp.length > 0 ? statusOptionsProp : [...DRIFT_STATUSES]),
@@ -107,7 +107,7 @@ export function DriftFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(defaultStatus || "Detected"));
+    setForm(emptyForm(defaultStatus || "Open"));
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -245,7 +245,7 @@ export function DriftFormModal({
           <SummaryRow label="Status" value={created.status} />
         </dl>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={() => { setCreated(null); setForm(emptyForm(defaultStatus || "Detected")); }}>
+          <button type="button" className={taBtnSecondary} onClick={() => { setCreated(null); setForm(emptyForm(defaultStatus || "Open")); }}>
             Create another
           </button>
           <ProgressLink href={`/drifts/${created.id}`} className={cn(taBtnSecondary, "inline-flex items-center")}>

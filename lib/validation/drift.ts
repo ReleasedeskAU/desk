@@ -13,13 +13,15 @@ const dateInput = z
 /** Allowed impact levels for a configuration drift. */
 export const DRIFT_SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
 
-/** Allowed lifecycle states for a configuration drift. */
+/** Fallback status labels before drift lifecycle config loads. */
 export const DRIFT_STATUSES = [
-  "Detected",
-  "Investigating",
-  "Approved",
-  "Reverted",
+  "Open",
+  "In Progress",
+  "Scheduled",
   "Escalated",
+  "Resolved",
+  "Closed",
+  "Reverted",
 ] as const;
 
 /**
@@ -38,6 +40,9 @@ export const createDriftSchema = z
     description: z.string().trim().min(1).max(4000),
     impactOnRelease: optionalNullableString,
     remediationAction: optionalNullableString,
+    notes: optionalNullableString,
+    baselineNotes: optionalNullableString,
+    assignedTo: optionalNullableString,
     /** Validated against the caller's drift lifecycle config on create. */
     status: z.string().trim().min(1).max(80).optional(),
     etaToFix: z.union([dateInput, z.null()]).optional(),
@@ -63,6 +68,9 @@ export const patchDriftSchema = z
     description: z.string().trim().min(1).max(4000).optional(),
     impactOnRelease: optionalNullableString,
     remediationAction: optionalNullableString,
+    notes: optionalNullableString,
+    baselineNotes: optionalNullableString,
+    assignedTo: optionalNullableString,
     status: z.string().trim().min(1).max(80).optional(),
     etaToFix: optionalNullableDate,
     /** Soft-gate override when a Flexible transition needs justification. */

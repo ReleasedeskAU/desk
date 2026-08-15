@@ -62,6 +62,7 @@ type StatusLike = {
   terminal: boolean;
   enabled: boolean;
   sortOrder: number;
+  kind?: string;
 };
 
 type TransitionLike = {
@@ -149,6 +150,34 @@ function graphAllows(
       t.fromKey === fromKey &&
       t.toKey === toKey &&
       !t.isPreviousStatus
+  );
+}
+
+/**
+ * Release N×N expected graph: named edges plus Blocked’s “any previous working
+ * status” wildcard (same rule as validateReleaseTransition).
+ */
+function releaseGraphAllows(
+  statuses: StatusLike[],
+  transitions: TransitionLike[],
+  fromKey: string,
+  toKey: string,
+  isEligiblePrevious: (
+    from: { kind: string; key: string },
+    to: { kind: string; key: string; enabled: boolean; terminal: boolean }
+  ) => boolean
+): boolean {
+  if (graphAllows(transitions, fromKey, toKey)) return true;
+  const from = statuses.find((s) => s.key === fromKey);
+  const to = statuses.find((s) => s.key === toKey);
+  if (!from?.kind || !to?.kind) return false;
+  const hasPreviousEdge = transitions.some(
+    (t) => t.enabled && t.fromKey === fromKey && t.isPreviousStatus
+  );
+  if (!hasPreviousEdge) return false;
+  return isEligiblePrevious(
+    { kind: from.kind, key: from.key },
+    { kind: to.kind, key: to.key, enabled: to.enabled, terminal: to.terminal }
   );
 }
 
@@ -659,7 +688,8 @@ async function main(): Promise<number> {
         prisma.environmentConflict.create({
           data: {
             conflictCode: `${runTag}-CNF`,
-            status: "Detected",
+            status: "Open",
+            statusKey: "detected",
             priority: "Medium",
             release1Code: releaseCode,
             release2Code: release2Code,
@@ -680,7 +710,7 @@ async function main(): Promise<number> {
             "conflictingEnvironment", "environmentConflictType", notes,
             "sourceOrder", "createdAt", "updatedAt"
           ) VALUES (
-            ${id}, ${orgId}, ${`${runTag}-CNF`}, ${"Detected"}, ${"Medium"},
+            ${id}, ${orgId}, ${`${runTag}-CNF`}, ${"Open"}, ${"Medium"},
             ${releaseCode}, ${release2Code}, ${app.name}, ${dept.name},
             ${"UAT"}, ${"Schedule"}, ${"AUD-ST conflict"}, ${900001}, ${now}, ${now}
           )
@@ -763,6 +793,7 @@ async function main(): Promise<number> {
     );
     const {
       emptyLifecycleGateFacts,
+      isEligiblePreviousReturnTarget,
       validateReleaseTransition,
     } = await import("@/lib/release-lifecycle-transition");
     const { enforceReleaseStatusChange } = await import(
@@ -790,6 +821,7 @@ async function main(): Promise<number> {
       testSignoffComplete: true,
       dressRehearsalComplete: true,
       opsSignoffComplete: true,
+      businessSignoffComplete: true,
       incompleteWorkItemCount: 0,
       pirComplete: true,
       scopeDescription: "AUD-ST scope",
@@ -1228,7 +1260,10 @@ async function main(): Promise<number> {
             fromStatus: from,
             toStatus: to,
             overrideReason: "AUD-ST override reason",
-            facts: { notes: "AUD-ST conflict justification" },
+            facts: {
+              notes: "AUD-ST conflict justification",
+              assignedTo: "AUD-ST reviewer",
+            },
           });
           return {
             allowed: r.allowed,
@@ -1301,7 +1336,7 @@ async function main(): Promise<number> {
             fromStatus: from,
             toStatus: to,
             overrideReason: "AUD-ST override reason",
-            facts: { reason: "AUD-ST dismiss reason" },
+            facts: { notes: "AUD-ST dismiss reason" },
           });
           return {
             allowed: r.allowed,
@@ -1319,10 +1354,12 @@ async function main(): Promise<number> {
       const statuses = enabledStatuses(releaseCfg.statuses);
       for (const from of statuses) {
         for (const to of statuses) {
-          const expectedGraph = graphAllows(
+          const expectedGraph = releaseGraphAllows(
+            statuses,
             releaseCfg.transitions,
             from.key,
-            to.key
+            to.key,
+            isEligiblePreviousReturnTarget
           );
           const enforcement = edgeEnforcement(
             releaseCfg.transitions,

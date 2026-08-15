@@ -7,6 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 import { FileCheck2, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultSignoffLifecycleConfig,
+  SIGNOFF_PRIORITY_FLOORS,
+  SIGNOFF_SIZE_FLOORS,
   type SignoffLifecycleConfig,
   type SignoffLifecycleEnforcement,
 } from "@/lib/signoff-lifecycle-config";
@@ -116,7 +118,8 @@ export function SignoffLifecycleSettings() {
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
               Configure sign-off decisions, allowed moves, and which types (Dev, Test, UAT…)
-              are mandatory for CAB. Values are stored on each release.
+              are always required or required from a Size / Priority floor. Values are stored
+              on each release.
             </p>
           </div>
         </div>
@@ -368,7 +371,7 @@ export function SignoffLifecycleSettings() {
                 <LifecycleToggle
                   checked={type.mandatory}
                   disabled={!editing || !type.enabled}
-                  label={type.mandatory ? "Mandatory" : "Optional"}
+                  label={type.mandatory ? "Always required" : "Optional"}
                   onCheckedChange={(mandatory) => {
                     setDraft((prev) => ({
                       ...prev,
@@ -378,6 +381,70 @@ export function SignoffLifecycleSettings() {
                     }));
                   }}
                 />
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  From size
+                  <select
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-800 disabled:opacity-50 dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white"
+                    disabled={!editing || !type.enabled || type.mandatory}
+                    value={type.mandatoryMinSize ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDraft((prev) => ({
+                        ...prev,
+                        types: prev.types.map((t) =>
+                          t.key === type.key
+                            ? {
+                                ...t,
+                                mandatoryMinSize:
+                                  value === ""
+                                    ? null
+                                    : (value as (typeof SIGNOFF_SIZE_FLOORS)[number]),
+                              }
+                            : t
+                        ),
+                      }));
+                    }}
+                  >
+                    <option value="">Any size</option>
+                    {SIGNOFF_SIZE_FLOORS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}+
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  From priority
+                  <select
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-800 disabled:opacity-50 dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white"
+                    disabled={!editing || !type.enabled || type.mandatory}
+                    value={type.mandatoryMinPriority ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDraft((prev) => ({
+                        ...prev,
+                        types: prev.types.map((t) =>
+                          t.key === type.key
+                            ? {
+                                ...t,
+                                mandatoryMinPriority:
+                                  value === ""
+                                    ? null
+                                    : (value as (typeof SIGNOFF_PRIORITY_FLOORS)[number]),
+                              }
+                            : t
+                        ),
+                      }));
+                    }}
+                  >
+                    <option value="">Any priority</option>
+                    {SIGNOFF_PRIORITY_FLOORS.map((priority) => (
+                      <option key={priority} value={priority}>
+                        {priority}+
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </li>
           ))}

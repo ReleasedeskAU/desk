@@ -6,7 +6,17 @@ import type {
   SignoffLifecycleStatusConfig,
   SignoffReleaseField,
 } from "@/lib/signoff-lifecycle-config";
-import { SIGNOFF_RELEASE_FIELDS } from "@/lib/signoff-lifecycle-config";
+import {
+  SIGNOFF_DECISION_FIELDS,
+  SIGNOFF_FIELD_LABELS,
+  SIGNOFF_PRIORITY_FLOORS,
+  SIGNOFF_RELEASE_FIELDS,
+  SIGNOFF_SIZE_FLOORS,
+  type SignoffDecisionField,
+  type SignoffPriorityFloor,
+  type SignoffSizeFloor,
+  type SignoffTypeConfig,
+} from "@/lib/signoff-lifecycle-config";
 
 export const MIN_SIGNOFF_OVERRIDE_REASON_LENGTH = 3;
 
@@ -158,6 +168,80 @@ export function validateSignoffTransition(args: {
   };
 }
 
+export type LegalNextSignoffStatus = {
+  key: string;
+  label: string;
+};
+
+/**
+ * Enabled next sign-off statuses from the current value (graph order).
+ * Required edges (SLA auto-expiry) are hidden from the Edit Release picker
+ * unless `includeRequired` is set.
+ *
+ * @param config - Live sign-off lifecycle config.
+ * @param fromStatus - Current stored value (label, key, or empty → intake).
+ * @param opts.includeRequired - Include cron-only exits such as Expired.
+ * @returns Legal next statuses; empty when the current decision is terminal.
+ */
+export function legalNextSignoffStatuses(
+  config: SignoffLifecycleConfig,
+  fromStatus: string | null | undefined,
+  opts?: { includeRequired?: boolean }
+): LegalNextSignoffStatus[] {
+  const from = resolveSignoffLifecycleStatusRef(config, fromStatus);
+  if (!from || !from.enabled || from.terminal) return [];
+  return config.transitions
+    .filter((item) => {
+      if (!item.enabled || item.fromKey !== from.key) return false;
+      if (!opts?.includeRequired && item.enforcement === "required") return false;
+      return true;
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((item) =>
+      config.statuses.find((status) => status.enabled && status.key === item.toKey)
+    )
+    .filter((status): status is SignoffLifecycleStatusConfig => Boolean(status))
+    .map((status) => ({ key: status.key, label: status.label }));
+}
+
+export type SignoffDecisionTypeView = {
+  field: SignoffDecisionField;
+  label: string;
+  enabled: boolean;
+  mandatory: boolean;
+};
+
+/**
+ * The six sheet decision types in Settings sort order, for Edit Release.
+ *
+ * @param config - Live sign-off lifecycle config.
+ * @returns One row per decision field (Dev through Ops), even when optional.
+ */
+export function signoffDecisionTypesForForm(
+  config: SignoffLifecycleConfig
+): SignoffDecisionTypeView[] {
+  const byField = new Map(
+    config.types
+      .filter(
+        (type): type is typeof type & { releaseField: SignoffDecisionField } =>
+          type.releaseField != null &&
+          (SIGNOFF_DECISION_FIELDS as readonly string[]).includes(type.releaseField)
+      )
+      .map((type) => [type.releaseField, type] as const)
+  );
+  return SIGNOFF_DECISION_FIELDS.map((field) => {
+    const type = byField.get(field);
+    return {
+      field,
+      label: type?.label
+        ? `${type.label} sign-off`
+        : SIGNOFF_FIELD_LABELS[field],
+      enabled: type?.enabled ?? true,
+      mandatory: type?.mandatory ?? false,
+    };
+  });
+}
+
 /**
  * Whether a stored value counts as a completed sign-off for CAB gates.
  */
@@ -170,18 +254,139 @@ export function signoffStatusCountsAsComplete(
   return resolved.enabled && resolved.countsAsComplete;
 }
 
+export type SignoffRequirementFacts = {
+  releaseSize?: string | null;
+  priority?: string | null;
+};
+
+function sizeRank(value: string | null | undefined): number | null {
+  if (value == null) return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "s" || normalized === "small" || normalized.startsWith("small")) {
+    return 1;
+  }
+  if (normalized === "m" || normalized === "medium" || normalized.startsWith("medium")) {
+    return 2;
+  }
+  if (
+    normalized === "l" ||
+    normalized === "xl" ||
+    normalized === "large" ||
+    normalized.startsWith("large")
+  ) {
+    return 3;
+  }
+  const named: Record<string, number> = { small: 1, medium: 2, large: 3 };
+  return named[normalized] ?? null;
+}
+
+function priorityRank(value: string | null | undefined): number | null {
+  if (value == null) return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const p = raw.match(/\bp([1-4])\b/i);
+  if (p) {
+    // P1 Critical is highest rank.
+    return 5 - Number(p[1]);
+  }
+  const lower = raw.toLowerCase();
+  if (lower.includes("critical")) return 4;
+  if (lower.includes("high")) return 3;
+  if (lower.includes("medium")) return 2;
+  if (lower.includes("low")) return 1;
+  return null;
+}
+
+function meetsMinSize(
+  actual: string | null | undefined,
+  min: SignoffSizeFloor
+): boolean {
+  const have = sizeRank(actual);
+  const need = sizeRank(min);
+  if (have == null || need == null) return false;
+  return have >= need;
+}
+
+function meetsMinPriority(
+  actual: string | null | undefined,
+  min: SignoffPriorityFloor
+): boolean {
+  const have = priorityRank(actual);
+  const need = priorityRank(min);
+  if (have == null || need == null) return false;
+  return have >= need;
+}
+
 /**
- * Whether every enabled mandatory sign-off type is complete on the release.
+ * Whether this sign-off type is required for the given release Size/Priority.
+ * `mandatory` is always required. Otherwise Size/Priority floors apply (AND
+ * when both are set). No type keys are hardcoded.
+ */
+export function signoffTypeRequiredForRelease(
+  type: SignoffTypeConfig,
+  facts: SignoffRequirementFacts = {}
+): boolean {
+  if (!type.enabled || !type.releaseField) return false;
+  if (type.mandatory) return true;
+  const sizeFloor =
+    type.mandatoryMinSize &&
+    (SIGNOFF_SIZE_FLOORS as readonly string[]).includes(type.mandatoryMinSize)
+      ? type.mandatoryMinSize
+      : null;
+  const priorityFloor =
+    type.mandatoryMinPriority &&
+    (SIGNOFF_PRIORITY_FLOORS as readonly string[]).includes(
+      type.mandatoryMinPriority
+    )
+      ? type.mandatoryMinPriority
+      : null;
+  if (!sizeFloor && !priorityFloor) return false;
+  if (sizeFloor && !meetsMinSize(facts.releaseSize, sizeFloor)) return false;
+  if (priorityFloor && !meetsMinPriority(facts.priority, priorityFloor)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Evaluate one field-specific gate while honoring that type's requirement
+ * floors. Optional/disabled-for-this-release types pass; required types must
+ * hold a completed decision.
+ */
+export function signoffFieldCompleteWhenRequired(
+  config: SignoffLifecycleConfig,
+  field: SignoffReleaseField,
+  value: string | null | undefined,
+  facts: SignoffRequirementFacts = {}
+): boolean {
+  const type = config.types.find(
+    (candidate) => candidate.enabled && candidate.releaseField === field
+  );
+  if (!type) return false;
+  return (
+    !signoffTypeRequiredForRelease(type, facts) ||
+    signoffStatusCountsAsComplete(config, value)
+  );
+}
+
+/**
+ * Whether every required sign-off type is complete on the release.
+ * Required = Settings `mandatory` OR Size/Priority floors on the type.
  */
 export function mandatorySignoffsComplete(
   config: SignoffLifecycleConfig,
-  release: Partial<Record<SignoffReleaseField, string | null | undefined>>
+  release: Partial<Record<SignoffReleaseField, string | null | undefined>> &
+    SignoffRequirementFacts
 ): boolean {
-  const mandatory = config.types.filter(
-    (t) => t.enabled && t.mandatory && t.releaseField
+  const required = config.types.filter((type) =>
+    signoffTypeRequiredForRelease(type, {
+      releaseSize: release.releaseSize,
+      priority: release.priority,
+    })
   );
-  if (mandatory.length === 0) return true;
-  return mandatory.every((type) =>
+  if (required.length === 0) return true;
+  return required.every((type) =>
     signoffStatusCountsAsComplete(config, release[type.releaseField!])
   );
 }

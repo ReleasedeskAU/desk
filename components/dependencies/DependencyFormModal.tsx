@@ -11,8 +11,15 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import {
   DEPENDENCY_IMPACTS,
+  DEPENDENCY_KINDS,
   DEPENDENCY_TYPES,
 } from "@/lib/validation/dependency";
+import {
+  createDefaultDependencyLifecycleConfig,
+  type DependencyLifecycleConfig,
+} from "@/lib/dependency-lifecycle-config";
+import { legalNextDependencyStatuses } from "@/lib/dependency-lifecycle-transition";
+import { intakeEntityStatusLabels } from "@/lib/entity-lifecycle-status-ui";
 
 type ReleaseOption = { id: string; releaseCode: string; name: string };
 
@@ -20,6 +27,7 @@ export type DependencyFormValues = {
   releaseId: string;
   dependsOnReleaseId: string;
   dependencyType: (typeof DEPENDENCY_TYPES)[number];
+  dependencyKind: (typeof DEPENDENCY_KINDS)[number];
   status: string;
   impactIfBlocked: (typeof DEPENDENCY_IMPACTS)[number];
   notes: string;
@@ -31,6 +39,7 @@ type CreatedSummary = {
   releaseCode: string;
   dependsOnCode: string;
   dependencyType: string;
+  dependencyKind?: string;
   status: string;
   impactIfBlocked: string;
 };
@@ -71,11 +80,19 @@ export function DependencyFormModal({
 }: Props) {
   const isEdit = Boolean(editId);
   const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
-  const createOptions =
-    statusOptionsProp && statusOptionsProp.length > 0
-      ? statusOptionsProp
-      : lifecycle.createOptions;
-  const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Pending";
+  const graph =
+    (lifecycle.config as DependencyLifecycleConfig | null) ??
+    createDefaultDependencyLifecycleConfig();
+  const intakeOptions = intakeEntityStatusLabels(graph);
+  const createOptions = isEdit
+    ? []
+    : intakeOptions.length > 0
+      ? intakeOptions
+      : statusOptionsProp && statusOptionsProp.length > 0
+        ? statusOptionsProp
+        : lifecycle.createOptions;
+  const defaultStatus =
+    defaultStatusProp || lifecycle.defaultStatus || intakeOptions[0] || "Identified";
 
   const defaults = useMemo<DependencyFormValues>(() => {
     const statusFallback = defaultStatus;
@@ -84,6 +101,11 @@ export function DependencyFormModal({
       releaseId: initial?.releaseId ?? "",
       dependsOnReleaseId: initial?.dependsOnReleaseId ?? "",
       dependencyType: coerceEnum(initial?.dependencyType, DEPENDENCY_TYPES, "Hard"),
+      dependencyKind: coerceEnum(
+        initial?.dependencyKind,
+        DEPENDENCY_KINDS,
+        "Release-to-Release"
+      ),
       status:
         initialStatus &&
         (createOptions.length === 0 ||
@@ -104,9 +126,13 @@ export function DependencyFormModal({
   const [created, setCreated] = useState<CreatedSummary | null>(null);
 
   const statusSelectOptions = useMemo(() => {
+    if (isEdit) {
+      const next = legalNextDependencyStatuses(graph, form.status);
+      return [...new Set([form.status, ...next.map((s) => s.label)].filter(Boolean))];
+    }
     const base = createOptions.length > 0 ? createOptions : [defaultStatus].filter(Boolean);
-    return [...new Set([...base, form.status].filter(Boolean))];
-  }, [createOptions, defaultStatus, form.status]);
+    return [...new Set(base.filter(Boolean))];
+  }, [createOptions, defaultStatus, form.status, graph, isEdit]);
 
   useEffect(() => {
     if (!open) {
@@ -166,6 +192,7 @@ export function DependencyFormModal({
       releaseId: form.releaseId,
       dependsOnReleaseId: form.dependsOnReleaseId,
       dependencyType: form.dependencyType,
+      dependencyKind: form.dependencyKind,
       status: form.status,
       impactIfBlocked: form.impactIfBlocked,
       notes: form.notes.trim() ? form.notes.trim() : null,
@@ -341,6 +368,21 @@ export function DependencyFormModal({
                 {DEPENDENCY_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+              Kind
+              <select
+                className={cn(taInput, "mt-1")}
+                value={form.dependencyKind}
+                onChange={(e) => set("dependencyKind")(e.target.value)}
+                required
+              >
+                {DEPENDENCY_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
                   </option>
                 ))}
               </select>

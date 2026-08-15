@@ -10,6 +10,7 @@ import {
   runAv02RiskEscalations,
   runAv03BlockerStaleAlerts,
   runAv22ApprovalExpiry,
+  runAlertTtlExpiry,
   runSignoffSlaExpiry,
   type CheckRunSummary,
 } from "@/lib/lifecycle-automations/checks";
@@ -27,7 +28,7 @@ export type LifecycleCronRunResult = {
 };
 
 /**
- * Run AV-02, AV-03, AV-22, and sign-off SLA in sequence.
+ * Run AV-02, AV-03, AV-22, sign-off SLA, and Alert TTL in sequence.
  * AV-13 is intentionally not invoked (deferred — see docs/lifecycle-backlog.md).
  *
  * @param now - Optional clock for tests
@@ -43,6 +44,7 @@ export async function runLifecycleAutomations(
     runAv03BlockerStaleAlerts,
     runAv22ApprovalExpiry,
     runSignoffSlaExpiry,
+    runAlertTtlExpiry,
   ] as const) {
     try {
       checks.push(await runner(now, LIFECYCLE_CRON_BATCH_SIZE));

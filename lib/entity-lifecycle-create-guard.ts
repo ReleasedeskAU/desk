@@ -9,6 +9,11 @@ import {
   type EntityLifecycleConfigLike,
 } from "@/lib/entity-lifecycle-status-ui";
 
+export type ResolveCreateLifecycleStatusOptions = {
+  /** When true, only the Starting status may be used (new dependencies). */
+  intakeOnly?: boolean;
+};
+
 export type LifecycleCreateStatusResult =
   | { ok: true; status: string; statusKey: string }
   | { ok: false; response: NextResponse };
@@ -22,7 +27,8 @@ export type LifecycleCreateStatusResult =
 export function resolveCreateLifecycleStatus(
   config: EntityLifecycleConfigLike,
   requested: unknown,
-  entityLabel: string
+  entityLabel: string,
+  options?: ResolveCreateLifecycleStatusOptions
 ): LifecycleCreateStatusResult {
   const fallback = defaultEntityStatusLabel(config);
   const status = String(requested ?? fallback).trim() || fallback;
@@ -38,6 +44,22 @@ export function resolveCreateLifecycleStatus(
     };
   }
   const found = findEntityStatusByLabel(config, status);
+  if (options?.intakeOnly) {
+    const intake = [...config.statuses]
+      .filter((s) => s.enabled && s.isIntake === true)
+      .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+    if (intake && found?.key !== intake.key) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          {
+            error: `New ${entityLabel}s must start as ${intake.label}. You can change the status after the record is created.`,
+          },
+          { status: 400 }
+        ),
+      };
+    }
+  }
   return {
     ok: true,
     status: found?.label ?? status,

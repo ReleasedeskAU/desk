@@ -292,6 +292,9 @@ export type CreateDriftInput = {
   description: string;
   impactOnRelease?: string | null;
   remediationAction?: string | null;
+  notes?: string | null;
+  baselineNotes?: string | null;
+  assignedTo?: string | null;
   status: string;
   statusKey?: string | null;
   etaToFix?: Date | null;
@@ -314,14 +317,17 @@ export async function createDriftRow(data: CreateDriftInput) {
           id, "organizationId", "driftCode", "releaseId", "applicationId",
           "departmentName", "environmentName", "driftType", "driftCategory",
           "detectedDate", severity, description, "impactOnRelease",
-          "remediationAction", status, "statusKey", "etaToFix", "sourceOrder",
+          "remediationAction", notes, "baselineNotes", "assignedTo",
+          status, "statusKey", "etaToFix", "sourceOrder",
           "createdAt", "updatedAt"
         ) VALUES (
           ${id}, ${orgId}, ${data.driftCode}, ${data.releaseId}, ${data.applicationId},
           ${data.departmentName ?? null}, ${data.environmentName}, ${data.driftType},
           ${data.driftCategory ?? null}, ${data.detectedDate}, ${data.severity},
           ${data.description}, ${data.impactOnRelease ?? null},
-          ${data.remediationAction ?? null}, ${data.status}, ${data.statusKey ?? null},
+          ${data.remediationAction ?? null}, ${data.notes ?? null},
+          ${data.baselineNotes ?? null}, ${data.assignedTo ?? null},
+          ${data.status}, ${data.statusKey ?? null},
           ${data.etaToFix ?? null}, ${data.sourceOrder ?? null}, ${now}, ${now}
         )
       `;
@@ -493,6 +499,9 @@ export type CreateReleaseInput = {
   regulatory?: string | null;
   approvalStatus?: string | null;
   rollbackPlan?: string | null;
+  hypercarePlan?: string | null;
+  commsPlan?: string | null;
+  trainingStatus?: string | null;
   goLiveChecklistPercent?: number | null;
   deploymentWindow?: string | null;
   releaseOwnerId?: string | null;

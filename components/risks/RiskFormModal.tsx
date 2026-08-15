@@ -64,7 +64,7 @@ const EMPTY_FORM: FormValues = {
   affectedArea: "",
   mitigationStrategy: "",
   riskOwnerId: "",
-  status: "Identified",
+  status: "Open",
   notes: "",
 };
 
@@ -95,7 +95,7 @@ export function RiskFormModal({
   const defaultStatus =
     (defaultStatusProp && defaultStatusProp.trim()) ||
     lifecycle.defaultStatus ||
-    "Identified";
+    "Open";
   const [form, setForm] = useState<FormValues>({ ...EMPTY_FORM, status: defaultStatus });
   const [departments, setDepartments] = useState<Department[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);

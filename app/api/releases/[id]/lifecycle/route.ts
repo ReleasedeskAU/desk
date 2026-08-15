@@ -98,6 +98,7 @@ export async function GET(
           securityClearance: release.securityClearance,
           dressRehearsal: release.dressRehearsal,
           opsSignoff: release.opsSignoff,
+          businessSignoff: release.businessSignoff,
           scopeDescription: release.scopeDescription,
           postImplementationReviewCompleted:
             release.postImplementationReviewCompleted,

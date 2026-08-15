@@ -1,28 +1,41 @@
 /**
  * Pure conflict status transition validation against a lifecycle config.
- * Flexible unmet soft-gates require overrideReason (warn + override).
+ * Flexible unmet soft-gates require overrideReason. Required gates never override.
  */
 import type {
   ConflictLifecycleConfig,
   ConflictLifecycleStatusConfig,
+  ConflictLifecycleTransitionConfig,
 } from "@/lib/conflict-lifecycle-config";
+import {
+  CONFLICT_LIFECYCLE_GATE_CATALOG,
+  type ConflictLifecycleGateAttachment,
+  type ConflictLifecycleGateType,
+} from "@/lib/conflict-lifecycle-gates";
 
 export const MIN_CONFLICT_OVERRIDE_REASON_LENGTH = 3;
 
 /** Legacy seed / UI labels that map onto canonical lifecycle statuses. */
 const CONFLICT_STATUS_ALIASES: Readonly<Record<string, string>> = {
   open: "detected",
+  detected: "detected",
   "in progress": "under_review",
   in_progress: "under_review",
-  "pending review": "under_review",
-  pending_review: "under_review",
-  escalated: "under_review",
-  closed: "resolved",
+  "under review": "under_review",
+  "pending review": "pending_review",
+  pending_review: "pending_review",
+  escalated: "escalated",
+  closed: "closed",
 };
 
 export type ConflictGateFacts = {
   notes: string | null | undefined;
+  assignedTo: string | null | undefined;
 };
+
+function hasText(value: string | null | undefined): boolean {
+  return Boolean(value && String(value).trim());
+}
 
 /**
  * Resolve a conflict status by key or label (enabled preferred, then any).
@@ -72,25 +85,45 @@ export type ConflictTransitionResult =
       unmetReasons?: string[];
     };
 
-/**
- * Soft gates for the enterprise conflicts table (Dismissed needs justification).
- */
-export function evaluateConflictSoftGates(args: {
-  fromKey: string;
-  toKey: string;
-  facts: ConflictGateFacts;
-}): string[] {
-  const unmet: string[] = [];
-  if (args.toKey === "dismissed") {
-    if (!args.facts.notes || !String(args.facts.notes).trim()) {
-      unmet.push("Dismissing a conflict requires justification (notes)");
-    }
-  }
-  return unmet;
+function failMessage(gateType: ConflictLifecycleGateType): string {
+  return CONFLICT_LIFECYCLE_GATE_CATALOG[gateType].description;
 }
 
 /**
- * Validate a conflict status change against the config graph + soft gates.
+ * Evaluate one attached Conflict check against PATCH/row facts.
+ * @returns Plain-English unmet reason, or null when the check passes.
+ */
+export function evaluateConflictGate(
+  gate: ConflictLifecycleGateAttachment,
+  facts: ConflictGateFacts
+): string | null {
+  if (!gate.enabled) return null;
+  switch (gate.gateType) {
+    case "rm_assessment_set":
+      return hasText(facts.assignedTo) ? null : failMessage(gate.gateType);
+    case "higher_authority_decision_set":
+      return hasText(facts.notes) ? null : failMessage(gate.gateType);
+    case "dismissal_justification_set":
+      return hasText(facts.notes) ? null : failMessage(gate.gateType);
+    default:
+      return `Unhandled conflict check: ${String(
+        (gate as { gateType: string }).gateType
+      )}`;
+  }
+}
+
+function effectiveEnforcement(
+  transition: ConflictLifecycleTransitionConfig,
+  gate: ConflictLifecycleGateAttachment
+): "flexible" | "required" {
+  if (gate.enforcement === "flexible" || gate.enforcement === "required") {
+    return gate.enforcement;
+  }
+  return transition.enforcement;
+}
+
+/**
+ * Validate a conflict status change against the config graph + catalog gates.
  */
 export function validateConflictTransition(args: {
   config: ConflictLifecycleConfig;
@@ -149,23 +182,28 @@ export function validateConflictTransition(args: {
     };
   }
 
-  const unmet = evaluateConflictSoftGates({
-    fromKey: from.key,
-    toKey: to.key,
-    facts: args.facts,
-  });
-
-  if (unmet.length > 0) {
-    if (transition.enforcement === "required") {
-      return {
-        allowed: false,
-        code: "ILLEGAL_TRANSITION",
-        reason: unmet.join("; "),
-        unmetReasons: unmet,
-        fromKey: from.key,
-        toKey: to.key,
-      };
+  const unmetRequired: string[] = [];
+  const unmetFlexible: string[] = [];
+  for (const gate of transition.gates ?? []) {
+    const unmet = evaluateConflictGate(gate, args.facts);
+    if (!unmet) continue;
+    if (effectiveEnforcement(transition, gate) === "required") {
+      unmetRequired.push(unmet);
+    } else {
+      unmetFlexible.push(unmet);
     }
+  }
+  if (unmetRequired.length > 0) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: unmetRequired.join("; "),
+      unmetReasons: unmetRequired,
+      fromKey: from.key,
+      toKey: to.key,
+    };
+  }
+  if (unmetFlexible.length > 0) {
     const reasonText = (args.overrideReason ?? "").trim();
     if (reasonText.length < MIN_CONFLICT_OVERRIDE_REASON_LENGTH) {
       return {
@@ -173,7 +211,7 @@ export function validateConflictTransition(args: {
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
           "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
-        unmetReasons: unmet,
+        unmetReasons: unmetFlexible,
         fromKey: from.key,
         toKey: to.key,
       };
@@ -185,7 +223,7 @@ export function validateConflictTransition(args: {
       toKey: to.key,
       canonicalStatus: to.label,
       overrideReason: reasonText,
-      unmetReasons: unmet,
+      unmetReasons: unmetFlexible,
     };
   }
 
@@ -196,4 +234,33 @@ export function validateConflictTransition(args: {
     toKey: to.key,
     canonicalStatus: to.label,
   };
+}
+
+export type LegalNextConflictStatus = {
+  key: string;
+  label: string;
+};
+
+/**
+ * Enabled next statuses from the current Conflict status, in transition order.
+ * @param config - Caller Conflict lifecycle config.
+ * @param fromStatus - Current status key or label.
+ * @returns Legal next status key/label pairs.
+ */
+export function legalNextConflictStatuses(
+  config: ConflictLifecycleConfig,
+  fromStatus: string
+): LegalNextConflictStatus[] {
+  const from = resolveConflictLifecycleStatusRef(config, fromStatus);
+  if (!from || from.terminal || !from.enabled) return [];
+  return config.transitions
+    .filter((transition) => transition.enabled && transition.fromKey === from.key)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((transition) =>
+      config.statuses.find(
+        (item) => item.key === transition.toKey && item.enabled
+      )
+    )
+    .filter((item): item is ConflictLifecycleStatusConfig => Boolean(item))
+    .map((item) => ({ key: item.key, label: item.label }));
 }

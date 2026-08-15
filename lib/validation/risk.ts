@@ -22,10 +22,10 @@ export function riskScoreDimSchema(max: number) {
  * a fallback when config has not loaded. PATCH is validated by the lifecycle graph.
  */
 export const RISK_STATUSES = [
-  "Identified",
-  "Assessing",
+  "Open",
+  "In Progress",
   "Mitigating",
-  "Mitigated",
+  "Monitoring",
   "Accepted",
   "Closed",
   "Escalated",

@@ -52,4 +52,34 @@ describe("deniedReleaseEditFields", () => {
     assert.ok(denied.includes("name"));
     assert.equal(denied.includes("status"), false);
   });
+
+  it("allows comms, approval, rollback, and stakeholders under limited edit", () => {
+    for (const field of [
+      "commsPlan",
+      "hypercarePlan",
+      "trainingStatus",
+      "approvalStatus",
+      "rollbackPlan",
+      "stakeholderIds",
+    ]) {
+      assert.equal(isReleaseFieldEditable("limited", field), true, field);
+    }
+    const { denied } = deniedReleaseEditFields(config, "CAB Approved", [
+      "commsPlan",
+      "stakeholderIds",
+      "name",
+    ]);
+    assert.deepEqual(denied, ["name"]);
+  });
+
+  it("allows Business and Ops sign-off under limited edit", () => {
+    assert.equal(isReleaseFieldEditable("limited", "businessSignoff"), true);
+    assert.equal(isReleaseFieldEditable("limited", "opsSignoff"), true);
+    const { denied } = deniedReleaseEditFields(config, "Pending CAB", [
+      "businessSignoff",
+      "opsSignoff",
+      "name",
+    ]);
+    assert.deepEqual(denied, ["name"]);
+  });
 });

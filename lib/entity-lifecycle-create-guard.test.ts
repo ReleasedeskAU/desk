@@ -14,6 +14,7 @@ const config: EntityLifecycleConfigLike = {
       sortOrder: 10,
       terminal: false,
       enabled: true,
+      isIntake: true,
     },
     {
       key: "met",
@@ -48,6 +49,18 @@ describe("resolveCreateLifecycleStatus", () => {
     if (result.ok) {
       assert.equal(result.status, "Pending");
       assert.equal(result.statusKey, "pending");
+    }
+  });
+
+  it("rejects skip-ahead when intakeOnly is set", async () => {
+    const result = resolveCreateLifecycleStatus(config, "Met", "dependency", {
+      intakeOnly: true,
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      const body = (await result.response.json()) as { error?: string };
+      assert.equal(result.response.status, 400);
+      assert.match(String(body.error ?? ""), /must start as Pending/i);
     }
   });
 

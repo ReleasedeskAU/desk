@@ -83,7 +83,7 @@ export function enabledEntityStatusLabels(
 }
 
 /**
- * Default create status: first enabled non-terminal, else first enabled.
+ * Default create status: enabled Starting status, else first enabled non-terminal.
  */
 export function defaultEntityStatusLabel(
   config: EntityLifecycleConfigLike
@@ -91,8 +91,21 @@ export function defaultEntityStatusLabel(
   const enabled = [...config.statuses]
     .filter((s) => s.enabled)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+  const intake = enabled.find((s) => s.isIntake === true);
   const open = enabled.find((s) => !s.terminal);
-  return (open ?? enabled[0])?.label ?? "";
+  return (intake ?? open ?? enabled[0])?.label ?? "";
+}
+
+/**
+ * Enabled Starting-status labels (create path for entities that must not skip ahead).
+ */
+export function intakeEntityStatusLabels(
+  config: EntityLifecycleConfigLike
+): string[] {
+  return [...config.statuses]
+    .filter((s) => s.enabled && s.isIntake === true)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((s) => s.label);
 }
 
 /**

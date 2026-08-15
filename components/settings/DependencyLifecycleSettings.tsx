@@ -10,6 +10,11 @@ import {
   type DependencyLifecycleConfig,
   type DependencyLifecycleEnforcement,
 } from "@/lib/dependency-lifecycle-config";
+import {
+  dependencyGate,
+  type DependencyLifecycleGateType,
+} from "@/lib/dependency-lifecycle-gates";
+import { DependencyGatesPanel } from "@/components/settings/lifecycle/DependencyGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
@@ -21,7 +26,10 @@ import { cn } from "@/lib/utils";
 function cloneConfig(config: DependencyLifecycleConfig): DependencyLifecycleConfig {
   return {
     statuses: config.statuses.map((s) => ({ ...s })),
-    transitions: config.transitions.map((t) => ({ ...t })),
+    transitions: config.transitions.map((t) => ({
+      ...t,
+      gates: (t.gates ?? []).map((gate) => ({ ...gate })),
+    })),
   };
 }
 
@@ -35,7 +43,33 @@ export function DependencyLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions">("statuses");
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">(
+    "statuses"
+  );
+
+  const toggleGate = (
+    fromKey: string,
+    toKey: string,
+    gateType: DependencyLifecycleGateType,
+    enabled: boolean
+  ) => {
+    setDraft((previous) => ({
+      ...previous,
+      transitions: previous.transitions.map((transition) => {
+        if (transition.fromKey !== fromKey || transition.toKey !== toKey) {
+          return transition;
+        }
+        const gates = [...(transition.gates ?? [])];
+        const index = gates.findIndex((gate) => gate.gateType === gateType);
+        if (index >= 0) {
+          gates[index] = { ...gates[index]!, enabled };
+        } else {
+          gates.push(dependencyGate(gateType, (gates.length + 1) * 10));
+        }
+        return { ...transition, gates };
+      }),
+    }));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,8 +145,9 @@ export function DependencyLifecycleSettings() {
               Dependency Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure dependency statuses and allowed moves. Met / Waived / Removed are
-              terminal; Hard deps must be Met or Waived before Deploying.
+              Configure dependency statuses, allowed moves, and checks. Met / Waived /
+              Removed stay terminal; Hard deps must satisfy the hard-gate flag before
+              Deploying.
             </p>
           </div>
         </div>
@@ -167,10 +202,10 @@ export function DependencyLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Dependencies</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Pending → At Risk / Met / Waived / Removed (Flexible).</li>
-          <li>Met, Waived, and Removed are terminal — no silent revert (AV-26).</li>
-          <li>Waiving requires documented approval in notes (or an exception reason).</li>
-          <li>Legacy Clear / Resolved / Blocked map to Met / At Risk.</li>
+          <li>Identified is the starting status; Confirmed (dual-ack) is deferred.</li>
+          <li>Met, Waived, and Removed are terminal — no silent revert for users (AV-26 is system-only).</li>
+          <li>Waiving or removing requires documented approval in notes (or an exception reason).</li>
+          <li>Legacy Clear / Resolved still map to Met. Blocked is now a real status.</li>
         </ul>
       </div>
 
@@ -179,6 +214,7 @@ export function DependencyLifecycleSettings() {
           [
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
+            ["gates", "Checks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -198,7 +234,13 @@ export function DependencyLifecycleSettings() {
         ))}
       </div>
 
-      {panel === "statuses" ? (
+      {panel === "gates" ? (
+        <DependencyGatesPanel
+          config={draft}
+          editing={editing}
+          onToggleGate={toggleGate}
+        />
+      ) : panel === "statuses" ? (
         <div className="space-y-3">
         <ExclusiveRoleWarning
           statuses={draft.statuses}

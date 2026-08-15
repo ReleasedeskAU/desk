@@ -201,6 +201,7 @@ export function setLifecycleStatusRoles(
       | "writesCabScopeSnapshot"
       | "clearsCabScopeSnapshot"
       | "approvalRejectLanding"
+      | "rollbackMilestone"
     >
   >
 ): { config: ReleaseLifecycleConfig } | { error: string } {
@@ -368,6 +369,7 @@ export function addLifecycleStatus(
         writesCabScopeSnapshot: false,
         clearsCabScopeSnapshot: false,
         approvalRejectLanding: false,
+        rollbackMilestone: false,
       },
     ],
   };
@@ -693,6 +695,7 @@ export function groupTransitionsByFrom(
             writesCabScopeSnapshot: false,
             clearsCabScopeSnapshot: false,
             approvalRejectLanding: false,
+            rollbackMilestone: false,
           },
           transitions: (groups.get(key) ?? []).slice(),
         }))

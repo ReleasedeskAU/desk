@@ -12,6 +12,8 @@ import {
 } from "@/lib/drift-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { driftGate, type DriftLifecycleGateType } from "@/lib/drift-lifecycle-gates";
+import { DriftGatesPanel } from "@/components/settings/lifecycle/DriftGatesPanel";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { DRIFT_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
@@ -21,7 +23,10 @@ import { cn } from "@/lib/utils";
 function cloneConfig(config: DriftLifecycleConfig): DriftLifecycleConfig {
   return {
     statuses: config.statuses.map((s) => ({ ...s })),
-    transitions: config.transitions.map((t) => ({ ...t })),
+    transitions: config.transitions.map((t) => ({
+      ...t,
+      gates: (t.gates ?? []).map((gate) => ({ ...gate })),
+    })),
   };
 }
 
@@ -35,7 +40,9 @@ export function DriftLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions">("statuses");
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">(
+    "statuses"
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +66,30 @@ export function DriftLifecycleSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const toggleGate = (
+    fromKey: string,
+    toKey: string,
+    gateType: DriftLifecycleGateType,
+    enabled: boolean
+  ) => {
+    setDraft((previous) => ({
+      ...previous,
+      transitions: previous.transitions.map((transition) => {
+        if (transition.fromKey !== fromKey || transition.toKey !== toKey) {
+          return transition;
+        }
+        const gates = [...(transition.gates ?? [])];
+        const index = gates.findIndex((gate) => gate.gateType === gateType);
+        if (index >= 0) {
+          gates[index] = { ...gates[index]!, enabled };
+        } else {
+          gates.push(driftGate(gateType, (gates.length + 1) * 10));
+        }
+        return { ...transition, gates };
+      }),
+    }));
+  };
 
   const save = async () => {
     setSaving(true);
@@ -111,8 +142,9 @@ export function DriftLifecycleSettings() {
               Drift Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure config-drift statuses, allowed moves, and edit rules. Flexible edges
-              warn and allow override; Approved and Reverted are terminal and immutable.
+              Configure config-drift statuses, allowed moves, and checks.
+              Resolved stays editable until Closed. Reverted is a live-only
+              final (config restored). Closed is the freeze after Resolved.
             </p>
           </div>
         </div>
@@ -167,10 +199,10 @@ export function DriftLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Drifts</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Detected → Investigating / Approved / Reverted (daily scan AV-13).</li>
-          <li>Investigating → Approved / Reverted / Escalated; Escalated can return to Investigating.</li>
-          <li>Approved and Reverted are FINAL — terminal and immutable (Required).</li>
-          <li>Legacy Open / In Progress / Resolved / Closed map into the new vocabulary.</li>
+          <li>Open → In Progress, Scheduled, or Escalated. Direct Resolved / Reverted from Open stay as early exits.</li>
+          <li>In Progress ↔ Scheduled ↔ Escalated. Resolved is working — Close when the record should freeze.</li>
+          <li>Reverted stays a live-only final (undo / restore original baseline). It is not Closed.</li>
+          <li>In Progress needs review notes, Scheduled needs an ETA, Resolved needs baseline notes. Flexible — an exception reason can override.</li>
         </ul>
       </div>
 
@@ -179,6 +211,7 @@ export function DriftLifecycleSettings() {
           [
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
+            ["gates", "Checks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -252,7 +285,9 @@ export function DriftLifecycleSettings() {
           ))}
         </ul>
         </div>
-      ) : (
+      ) : null}
+
+      {panel === "transitions" ? (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {draft.transitions
             .slice()
@@ -315,7 +350,15 @@ export function DriftLifecycleSettings() {
               );
             })}
         </ul>
-      )}
+      ) : null}
+
+      {panel === "gates" ? (
+        <DriftGatesPanel
+          config={draft}
+          editing={editing}
+          onToggleGate={toggleGate}
+        />
+      ) : null}
     </div>
   );
 }

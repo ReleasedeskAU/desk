@@ -191,7 +191,7 @@ export default function DriftDashboardContent() {
         }}
         categoryOptions={categories}
         statusOptions={lifecycle.createOptions}
-        defaultStatus={lifecycle.defaultStatus || "Detected"}
+        defaultStatus={lifecycle.defaultStatus || "Open"}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

@@ -39,6 +39,9 @@ This file is the contract. Settings labels are in `lib/lifecycle-status-roles.ts
 | `requiresConditions` | Requires conditions text when entered | many | Approvals |
 | `revertsLinkedReleaseOnEnter` | Revert the linked release when entered | one | Approvals |
 | `approvalRejectLanding` | Landing status after an approval rejection | one | Releases |
+| `rollbackMilestone` | Rollback milestone | one | Releases |
+| `reopensOnPredecessorRollback` | Reopen when a predecessor rolls back | many | Dependencies |
+| `rollbackWarningTarget` | Lands here after a predecessor rollback | one | Dependencies |
 
 Already on the status object and still valid: `terminal`, `editMode`,
 Release `kind`, Sign-off `countsAsComplete`, Approval/Sign-off `expiryDays`.
@@ -53,7 +56,9 @@ Release `kind`, Sign-off `countsAsComplete`, Approval/Sign-off `expiryDays`.
   unblocks parent.
 - Incident: Open = starting; Open, Investigating, Escalated, Resolving, Reopened
   = block linked release.
-- Dependency: Pending = starting; Met / Waived / Removed = hard-gate satisfied.
+- Dependency: Identified = starting; Met = reopen on predecessor rollback;
+  At Risk = AV-26 landing; Met / Waived / Removed = hard-gate satisfied.
+- Release: Rolled Back = rollback milestone (AV-26).
 - Risk: Identified = starting; Identified/Assessing escalate after 3 days;
   Escalated = auto-escalate target.
 - Drift: Detected = starting; Escalated = auto-escalate target (AV-14).

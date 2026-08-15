@@ -31,6 +31,7 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { openDetailsFromHash, pickHeadlineReadiness } from "@/lib/release-detail-layout";
+import { formatStakeholderNames } from "@/lib/release-stakeholder-display";
 import {
   collectAttention,
   describeDue,
@@ -102,6 +103,8 @@ type ReleaseDetail = {
   hypercarePlan?: string | null;
   commsPlan?: string | null;
   trainingStatus?: string | null;
+  businessSignoff?: string | null;
+  opsSignoff?: string | null;
   releaseOwnerId?: string | null;
   releaseOwner?: { id: string; userId: string; name: string; email: string; role: string } | null;
   stakeholders?: { user: { id: string; userId: string; name: string; email: string; role: string } }[];
@@ -454,8 +457,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
   if (!release) return <p className="text-gray-500 dark:text-white/60">Release not found.</p>;
 
   const appNames = release.applications.map((a) => a.application.name).join(", ") || "—";
-  const stakeholderIds =
-    release.stakeholders?.map((s) => s.user.userId).filter(Boolean).join(", ") || "—";
+  const stakeholderNames = formatStakeholderNames(release.stakeholders);
   const ownerDisplay = release.releaseOwner
     ? `${release.releaseOwner.userId} (${release.releaseOwner.name})`
     : release.owner;
@@ -474,6 +476,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
     release.testSignoff,
     release.uatSignoff,
     release.securityClearance,
+    release.businessSignoff,
+    release.opsSignoff,
     release.dressRehearsal,
   ].filter((v) => signoffComplete(v, signoffConfig)).length;
   const shipPct = commandData?.prediction?.shipProbability;
@@ -888,6 +892,16 @@ export function DbReleaseDetail({ id }: { id: string }) {
                   hint="Security / InfoSec has cleared the release for production deployment."
                 />
                 <SignoffChip
+                  label="Business sign-off"
+                  done={signoffComplete(release.businessSignoff, signoffConfig)}
+                  hint="Business review of scope, impact, and go-live readiness."
+                />
+                <SignoffChip
+                  label="Ops sign-off"
+                  done={signoffComplete(release.opsSignoff, signoffConfig)}
+                  hint="Operations confirms runbooks, monitoring, and support are ready."
+                />
+                <SignoffChip
                   label="Dress rehearsal"
                   done={signoffComplete(release.dressRehearsal, signoffConfig)}
                   hint="A practice run of the deployment (or dry-run) has been completed successfully."
@@ -1023,16 +1037,16 @@ export function DbReleaseDetail({ id }: { id: string }) {
           icon={Users}
           tone="indigo"
           title="Stakeholders & Contacts"
-          description={`Stakeholders ${stakeholderIds === "—" ? "none" : stakeholderIds} · Regulatory ${release.regulatory ?? "—"}`}
+          description={`Stakeholders ${stakeholderNames === "—" ? "none" : stakeholderNames} · Regulatory ${release.regulatory ?? "—"}`}
           detail="Who else needs to be kept in the loop. Owner is already shown in the decision header."
           collapsible
           defaultOpen
         >
           <DetailFieldGrid cols={2}>
             <DetailField
-              label="Stakeholder IDs"
+              label="Stakeholders"
               hint="People who must stay informed or approve aspects of this release."
-              value={<span className="font-mono text-xs">{stakeholderIds}</span>}
+              value={stakeholderNames}
             />
             <DetailField
               label="Regulatory"
@@ -1175,6 +1189,18 @@ export function DbReleaseDetail({ id }: { id: string }) {
           testEnvRequired: release.testEnvRequired ?? "",
           uatEnvRequired: release.uatEnvRequired ?? "",
           releaseOwnerId: release.releaseOwner?.id ?? release.releaseOwnerId ?? "",
+          approvalStatus: release.approvalStatus ?? "",
+          rollbackPlan: release.rollbackPlan ?? "",
+          hypercarePlan: release.hypercarePlan ?? "",
+          commsPlan: release.commsPlan ?? "",
+          trainingStatus: release.trainingStatus ?? "",
+          stakeholderIds: (release.stakeholders ?? []).map((s) => s.user.id),
+          devSignoff: release.devSignoff ?? "",
+          testSignoff: release.testSignoff ?? "",
+          uatSignoff: release.uatSignoff ?? "",
+          securityClearance: release.securityClearance ?? "",
+          businessSignoff: release.businessSignoff ?? "",
+          opsSignoff: release.opsSignoff ?? "",
         }}
         existingReleaseCodes={lookups.releases.map((r) => r.releaseCode)}
         departments={lookups.departments.map((d) => ({ value: d.id, label: d.name }))}

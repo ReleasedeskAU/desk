@@ -50,8 +50,11 @@ import {
 } from "@/lib/detail-decision";
 import { riskWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import type { RiskLifecycleConfig } from "@/lib/risk-lifecycle-config";
-import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
+import {
+  createDefaultRiskLifecycleConfig,
+  type RiskLifecycleConfig,
+} from "@/lib/risk-lifecycle-config";
+import { legalNextRiskStatuses } from "@/lib/risk-lifecycle-transition";
 
 type RiskDetail = {
   id: string;
@@ -357,10 +360,26 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
     return [{ value: "", label: "— Unassigned —" }, ...opts];
   }, [users, departments, d?.departmentId, v?.departmentId, row?.riskOwner]);
 
-  const statusOptions = useMemo(
-    () => statusSelectOptions(lifecycle.createOptions, row?.status),
-    [lifecycle.createOptions, row?.status]
-  );
+  // Keep the current value visible, but only offer enabled legal next moves.
+  const statusOptions = useMemo(() => {
+    const current = row?.status ?? "";
+    const config =
+      (lifecycle.config as RiskLifecycleConfig | null) ??
+      createDefaultRiskLifecycleConfig();
+    const labels = [
+      current,
+      ...legalNextRiskStatuses(config, current).map((status) => status.label),
+    ].filter(Boolean);
+    const seen = new Set<string>();
+    return labels
+      .filter((label) => {
+        const normalized = label.toLocaleLowerCase();
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      })
+      .map((label) => ({ value: label, label }));
+  }, [lifecycle.config, row?.status]);
 
   const save = async () => {
     if (!row || !edit.draft) return;

@@ -12,13 +12,17 @@ import {
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
+import { ALERT_SOURCES } from "@/lib/alert-sources";
 
 const ALERT_SEVERITIES = ["Critical", "Warning"] as const;
 /** Fallback status labels before alert lifecycle config loads. */
 const ALERT_STATUSES = [
-  "Pending",
+  "Active",
   "Acknowledged",
-  "Actioned",
+  "Investigating",
+  "Escalated",
+  "Resolved",
+  "Closed",
   "Dismissed",
   "Expired",
 ] as const;
@@ -39,6 +43,7 @@ type FormValues = {
   currentValue: string;
   status: string;
   assignedTo: string;
+  alertSource: (typeof ALERT_SOURCES)[number];
 };
 
 type CreatedAlert = {
@@ -54,6 +59,7 @@ type CreatedAlert = {
   assignedTo: string | null;
   environmentName: string;
   departmentName: string | null;
+  alertSource?: string | null;
   application: { id: string; name: string };
 };
 
@@ -63,7 +69,7 @@ const nowLocalDatetime = () => {
   return date.toISOString().slice(0, 16);
 };
 
-const emptyForm = (defaultStatus = "Pending"): FormValues => ({
+const emptyForm = (defaultStatus = "Active"): FormValues => ({
   departmentId: "",
   applicationId: "",
   environmentName: "",
@@ -75,6 +81,7 @@ const emptyForm = (defaultStatus = "Pending"): FormValues => ({
   currentValue: "",
   status: defaultStatus,
   assignedTo: "",
+  alertSource: "Manual",
 });
 
 type Props = {
@@ -95,7 +102,7 @@ export function MonitoringAlertFormModal({
   onCreated,
   alertTypeOptions = [],
   statusOptions: statusOptionsProp = [],
-  defaultStatus = "Pending",
+  defaultStatus = "Active",
 }: Props) {
   const statusOptions = useMemo(
     () => (statusOptionsProp.length > 0 ? statusOptionsProp : [...ALERT_STATUSES]),
@@ -113,7 +120,7 @@ export function MonitoringAlertFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(defaultStatus || "Pending"));
+    setForm(emptyForm(defaultStatus || "Active"));
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -202,6 +209,7 @@ export function MonitoringAlertFormModal({
         status: form.status,
         assignedTo: form.assignedTo.trim() || null,
         environmentName: form.environmentName,
+        alertSource: form.alertSource,
       }),
       label: "create-monitoring-alert",
       rejectHttpErrors: false,
@@ -228,7 +236,7 @@ export function MonitoringAlertFormModal({
         onClose={onClose}
         onCreateAnother={() => {
           setCreated(null);
-          setForm(emptyForm(defaultStatus || "Pending"));
+          setForm(emptyForm(defaultStatus || "Active"));
         }}
         viewHref={`/monitoring-alerts/${created.id}`}
         viewLabel="View Alert"
@@ -239,6 +247,7 @@ export function MonitoringAlertFormModal({
           { label: "Department", value: created.departmentName ?? "—" },
           { label: "Environment", value: created.environmentName },
           { label: "Alert type", value: created.alertType },
+          { label: "Source", value: created.alertSource ?? "Manual" },
           { label: "Severity", value: created.severity },
           { label: "Metric", value: created.metric },
           { label: "Status", value: created.status },
@@ -370,6 +379,20 @@ export function MonitoringAlertFormModal({
           onChange={(event) => set("currentValue", event.target.value)}
           maxLength={4000}
         />
+        <SelectField
+          label="Source"
+          required
+          value={form.alertSource}
+          onChange={(event) =>
+            set("alertSource", event.target.value as FormValues["alertSource"])
+          }
+        >
+          {ALERT_SOURCES.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </SelectField>
         <SelectField
           label="Status"
           required

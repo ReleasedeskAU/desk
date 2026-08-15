@@ -13,6 +13,9 @@ const LIMITED_ALLOWED = new Set([
   "remediationAction",
   "etaToFix",
   "impactOnRelease",
+  "notes",
+  "baselineNotes",
+  "assignedTo",
 ]);
 
 const READ_ONLY_ALLOWED = new Set(["status", "overrideReason", "remediationAction"]);

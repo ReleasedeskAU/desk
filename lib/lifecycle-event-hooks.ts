@@ -3,12 +3,18 @@
  * Wired from entity write paths after committed mutations — not from gate evaluation alone.
  */
 import { prisma } from "@/lib/prisma";
+import { createAutoMonitoringAlert } from "@/lib/alert-repeat-suppress";
 import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
-import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
-import { createDefaultDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
+import {
+  findScheduleConflictFindings,
+  raiseConflictFindings,
+} from "@/lib/conflict-detectors";
 import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
-import { validateDependencyTransition } from "@/lib/dependency-lifecycle-transition";
+import {
+  resolveDependencyRollbackCascade,
+  validateDependencyTransition,
+} from "@/lib/dependency-lifecycle-transition";
 import {
   enabledStatusMatchValues,
   reportLifecycleRoleFault,
@@ -22,7 +28,6 @@ import {
   validateReleaseTransition,
 } from "@/lib/release-lifecycle-transition";
 import { loadPreviousReleaseStatus } from "@/lib/release-lifecycle-status-patch";
-import { sameUtcDeployDay } from "@/lib/lifecycle-automations/time";
 import {
   isDriftEscalatedStatus,
   orderedReleaseCodes,
@@ -127,23 +132,29 @@ export async function cascadeDependenciesMetOnDeploy(
 }
 
 /**
- * AV-26 — when a release rolls back, flip Met deps that depend on it to At Risk (system-only).
+ * AV-26 — when a release enters the rollback milestone, reopen deps flagged
+ * “reopen on predecessor rollback” into the rollback-warning status (system-only).
  * Creates a MonitoringAlert per affected downstream release application when possible.
  * @param rolledBackReleaseId - Predecessor that rolled back
+ * @param clerkUserId - Caller whose dependency config to read
  */
 export async function cascadeDependenciesAtRiskOnRollback(
-  rolledBackReleaseId: string
-): Promise<number> {
-  const config = createDefaultDependencyLifecycleConfig();
-  const metLabel =
-    config.statuses.find((s) => s.key === "met")?.label ?? "Met";
-  const atRiskLabel =
-    config.statuses.find((s) => s.key === "at_risk")?.label ?? "At Risk";
+  rolledBackReleaseId: string,
+  clerkUserId: string
+): Promise<CascadeHookResult> {
+  const { config } = await loadDependencyLifecycleConfig(clerkUserId);
+  const plan = resolveDependencyRollbackCascade(config);
+  if (!plan.ok) {
+    return { count: 0, roleFault: plan.fault };
+  }
 
   const deps = await prisma.releaseDependency.findMany({
     where: {
       dependsOnReleaseId: rolledBackReleaseId,
-      status: metLabel,
+      OR: [
+        { status: statusInOrNone(plan.sourceValues) },
+        { statusKey: statusInOrNone(plan.sourceValues) },
+      ],
     },
     select: {
       id: true,
@@ -167,12 +178,14 @@ export async function cascadeDependenciesAtRiskOnRollback(
 
   let updated = 0;
   const now = new Date();
+  const destLabel = plan.dest.label;
+  const destKey = plan.dest.key;
   for (const dep of deps) {
-    // Security: Met→At Risk is system-only — never expose via user PATCH without this flag.
+    // Security: reopen is system-only — never expose via user PATCH without this flag.
     const transition = validateDependencyTransition({
       config,
-      fromStatus: dep.status ?? metLabel,
-      toStatus: atRiskLabel,
+      fromStatus: dep.status ?? plan.sourceValues[0] ?? destLabel,
+      toStatus: destLabel,
       facts: { notes: dep.notes },
       isSystemTransition: true,
     });
@@ -182,6 +195,7 @@ export async function cascadeDependenciesAtRiskOnRollback(
       where: { id: dep.id },
       data: {
         status: transition.canonicalStatus,
+        statusKey: destKey,
         notes: dep.notes?.trim()
           ? dep.notes
           : `AV-26: predecessor ${dep.dependsOnRelease.releaseCode} rolled back`,
@@ -191,41 +205,29 @@ export async function cascadeDependenciesAtRiskOnRollback(
 
     const appId = dep.release.applications[0]?.applicationId;
     if (appId) {
-      const alertCode = `AV26-${dep.dependencyCode ?? dep.id}`;
-      const existing = await prisma.monitoringAlert.findUnique({
-        where: { alertCode },
-        select: { id: true },
+      const fromLabel = dep.status?.trim() || plan.sourceValues[0] || "met";
+      await createAutoMonitoringAlert({
+        clerkUserId,
+        baseAlertCode: `AV26-${dep.dependencyCode ?? dep.id}`,
+        applicationId: appId,
+        alertType: "Escalation",
+        alertSource: "Dependency",
+        severity: "High",
+        metric: "dependency_rollback",
+        threshold: fromLabel,
+        currentValue: destLabel,
+        environmentName: "n/a",
+        assignedTo: dep.release.owner || null,
       });
-      if (!existing) {
-        const maxOrder = await prisma.monitoringAlert.aggregate({
-          _max: { sourceOrder: true },
-        });
-        await prisma.monitoringAlert.create({
-          data: {
-            alertCode,
-            timestamp: now,
-            applicationId: appId,
-            alertType: "Escalation",
-            severity: "High",
-            metric: "dependency_rollback",
-            threshold: "Met",
-            currentValue: "At Risk",
-            status: "Pending",
-            environmentName: "n/a",
-            assignedTo: dep.release.owner || null,
-            sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
-          },
-        });
-      }
     }
   }
   if (updated > 0) {
-    console.warn("[lifecycle-hook] AV-26 dependencies flagged At Risk", {
+    console.warn("[lifecycle-hook] AV-26 dependencies flagged after rollback", {
       rolledBackReleaseId,
       updated,
     });
   }
-  return updated;
+  return { count: updated };
 }
 
 /**
@@ -244,146 +246,29 @@ export async function detectScheduleConflictsOnDeployDate(
 
   const release = await prisma.release.findUnique({
     where: { id: releaseId },
-    select: {
-      id: true,
-      releaseCode: true,
-      status: true,
-      lifecycleConfigVersionId: true,
-      department: { select: { name: true } },
-      applications: {
-        select: {
-          applicationId: true,
-          application: { select: { name: true } },
-        },
-      },
-    },
+    select: { releaseCode: true },
   });
   if (!release) return { count: 0 };
 
-  const { config } = await resolveLifecycleConfigForRelease(
+  const findings = await findScheduleConflictFindings({
     clerkUserId,
-    release.lifecycleConfigVersionId
-  );
-  const self = resolveLifecycleStatusRef(config, release.status);
-  if (self && skipFinishedRelease(self)) return { count: 0 };
-
-  const appIds = release.applications.map((a) => a.applicationId);
-  if (appIds.length === 0) return { count: 0 };
-
-  const others = await prisma.release.findMany({
-    where: {
-      id: { not: releaseId },
-      releaseDate: {
-        gte: new Date(
-          Date.UTC(
-            releaseDate.getUTCFullYear(),
-            releaseDate.getUTCMonth(),
-            releaseDate.getUTCDate()
-          )
-        ),
-        lt: new Date(
-          Date.UTC(
-            releaseDate.getUTCFullYear(),
-            releaseDate.getUTCMonth(),
-            releaseDate.getUTCDate() + 1
-          )
-        ),
-      },
-      applications: { some: { applicationId: { in: appIds } } },
-    },
-    select: {
-      id: true,
-      releaseCode: true,
-      status: true,
-      releaseDate: true,
-      applications: {
-        where: { applicationId: { in: appIds } },
-        select: { application: { select: { name: true } } },
-      },
-    },
-    take: 50,
+    releaseId,
+    releaseDate,
   });
-
-  const { config: conflictConfig } = await loadConflictLifecycleConfig(clerkUserId);
-  const intake = resolveExclusiveRole(
-    conflictConfig.statuses,
-    (s) => s.isIntake,
-    "isIntake",
-    "AV-05"
-  );
-  if (!intake.ok) {
-    reportLifecycleRoleFault(intake.fault);
-    return { count: 0, roleFault: intake.fault };
-  }
-  const detectedLabel = intake.status.label;
-  const openConflictValues = enabledStatusMatchValues(
-    conflictConfig.statuses,
-    (s) => !s.terminal
-  );
-  const scheduleType =
-    conflictConfig.types.find((t) => t.key === "schedule")?.label ?? "Schedule";
-
-  let created = 0;
-  for (const other of others) {
-    if (!sameUtcDeployDay(releaseDate, other.releaseDate)) continue;
-    const otherStatus = resolveLifecycleStatusRef(config, other.status);
-    if (otherStatus && skipFinishedRelease(otherStatus)) continue;
-
-    const [r1, r2] = orderedReleaseCodes(
-      release.releaseCode,
-      other.releaseCode
-    );
-    const existing = await prisma.environmentConflict.findFirst({
-      where: {
-        release1Code: r1,
-        release2Code: r2,
-        status: statusInOrNone(openConflictValues),
-      },
-      select: { id: true },
-    });
-    if (existing) continue;
-
-    const appName =
-      other.applications[0]?.application.name ??
-      release.applications[0]?.application.name ??
-      "Unknown";
-
-    const codes = await prisma.environmentConflict.findMany({
-      select: { conflictCode: true, sourceOrder: true },
-    });
-    const nextNum =
-      codes.reduce((max, row) => {
-        const match = row.conflictCode.match(/^CNF-(\d+)$/i);
-        return match ? Math.max(max, Number(match[1])) : max;
-      }, 0) + 1;
-    const conflictCode = `CNF-${String(nextNum).padStart(4, "0")}`;
-    const nextOrder =
-      codes.reduce((max, row) => Math.max(max, row.sourceOrder ?? 0), 0) + 1;
-
-    await prisma.environmentConflict.create({
-      data: {
-        conflictCode,
-        status: detectedLabel,
-        priority: "Medium",
-        release1Code: r1,
-        release2Code: r2,
-        applicationName: appName,
-        departmentName: release.department?.name ?? "",
-        conflictingEnvironment: "Deploy window",
-        environmentConflictType: scheduleType,
-        notes: "AV-05: auto-detected same deploy day + shared application",
-        sourceOrder: nextOrder,
-      },
-    });
-    created += 1;
-  }
-  if (created > 0) {
+  const raised = await raiseConflictFindings({
+    clerkUserId,
+    release1Code: release.releaseCode,
+    findings,
+    raisedBy: "System (AV-05)",
+    automation: "AV-05",
+  });
+  if (raised.count > 0) {
     console.warn("[lifecycle-hook] AV-05 schedule conflicts created", {
       releaseCode: release.releaseCode,
-      created,
+      created: raised.count,
     });
   }
-  return { count: created };
+  return raised;
 }
 
 /**
@@ -397,35 +282,22 @@ export async function createMonitoringAlertOnDriftEscalated(args: {
   environmentName: string;
   severity: string;
 }): Promise<boolean> {
-  const alertCode = `DRIFT-ESC-${args.driftCode}`;
-  const existing = await prisma.monitoringAlert.findUnique({
-    where: { alertCode },
-    select: { id: true },
+  const result = await createAutoMonitoringAlert({
+    baseAlertCode: `DRIFT-ESC-${args.driftCode}`,
+    applicationId: args.applicationId,
+    departmentName: args.departmentName,
+    alertType: "Escalation",
+    alertSource: "System",
+    severity: args.severity || "High",
+    metric: "config_drift_escalated",
+    threshold: "Escalated",
+    currentValue: "Escalated",
+    environmentName: args.environmentName,
   });
-  if (existing) return false;
-
-  const maxOrder = await prisma.monitoringAlert.aggregate({
-    _max: { sourceOrder: true },
-  });
-  await prisma.monitoringAlert.create({
-    data: {
-      alertCode,
-      timestamp: new Date(),
-      applicationId: args.applicationId,
-      departmentName: args.departmentName,
-      alertType: "Escalation",
-      severity: args.severity || "High",
-      metric: "config_drift_escalated",
-      threshold: "Escalated",
-      currentValue: "Escalated",
-      status: "Pending",
-      environmentName: args.environmentName,
-      sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
-    },
-  });
+  if (result === "suppressed") return false;
   console.warn("[lifecycle-hook] AV-14 drift escalation alert", {
     driftCode: args.driftCode,
-    alertCode,
+    alertCode: `DRIFT-ESC-${args.driftCode}`,
   });
   return true;
 }

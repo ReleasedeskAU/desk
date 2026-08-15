@@ -66,6 +66,8 @@ export type ReleaseLifecycleGateFacts = {
   dressRehearsalComplete: boolean;
   /** True when Ops Sign-Off counts as complete (VR-31). */
   opsSignoffComplete: boolean;
+  /** True when Business Sign-Off counts as complete (Ready-entry gate). */
+  businessSignoffComplete: boolean;
   /**
    * Count of High-score linked risks that still have no mitigation plan (VR-27).
    * Closed / Accepted / Mitigated risks are excluded.
@@ -260,7 +262,7 @@ export function evaluateLifecycleGate(
       return facts.openEnvironmentConflictCount === 0
         ? pass()
         : fail(
-            `${facts.openEnvironmentConflictCount} environment conflict${facts.openEnvironmentConflictCount === 1 ? "" : "s"} still Detected or Under Review`
+            `${facts.openEnvironmentConflictCount} unresolved environment conflict${facts.openEnvironmentConflictCount === 1 ? "" : "s"} still block Ready`
           );
     case "dress_rehearsal_for_large":
       // VR-26: warning only for Large; non-Large always passes.
@@ -328,6 +330,10 @@ export function evaluateLifecycleGate(
       return facts.opsSignoffComplete
         ? pass()
         : fail("Ops Sign-Off must be complete before Ready");
+    case "business_signoff_complete":
+      return facts.businessSignoffComplete
+        ? pass()
+        : fail("Business Sign-Off must be complete before Ready");
     case "high_risks_mitigated":
       return facts.unmitigatedHighRiskCount === 0
         ? pass()
@@ -385,10 +391,14 @@ function findEnabledTransition(
 /**
  * Sheet “any previous status” from an interrupt (Blocked): return to an enabled
  * mainline or branch stage — not another interrupt and not a final status.
+ *
+ * @param from - Current status (must be an interrupt for this to apply).
+ * @param to - Candidate return status.
+ * @returns True when the wildcard previous-status edge may land here.
  */
-function isEligiblePreviousReturnTarget(
-  from: ReleaseLifecycleStatusConfig,
-  to: ReleaseLifecycleStatusConfig
+export function isEligiblePreviousReturnTarget(
+  from: Pick<ReleaseLifecycleStatusConfig, "kind" | "key">,
+  to: Pick<ReleaseLifecycleStatusConfig, "kind" | "key" | "enabled" | "terminal">
 ): boolean {
   if (from.kind !== "interrupt") return false;
   if (!to.enabled || to.terminal || to.key === from.key) return false;
@@ -566,6 +576,7 @@ export function emptyLifecycleGateFacts(
     testSignoffComplete: false,
     dressRehearsalComplete: false,
     opsSignoffComplete: false,
+    businessSignoffComplete: false,
     unmitigatedHighRiskCount: 0,
     incompleteWorkItemCount: 0,
     pirComplete: false,

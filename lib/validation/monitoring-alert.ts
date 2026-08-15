@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ALERT_SOURCES } from "@/lib/alert-sources";
 
 const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).optional();
 
@@ -19,6 +20,8 @@ export const createMonitoringAlertSchema = z
     timestamp: isoTimestamp,
     applicationId: z.string().trim().min(1).max(64),
     alertType: z.string().trim().min(1).max(120),
+    alertSource: z.enum(ALERT_SOURCES).optional(),
+    notes: optionalNullableString,
     severity: z.string().trim().min(1).max(80),
     metric: z.string().trim().min(1).max(200),
     environmentName: z.string().trim().min(1).max(200),
@@ -42,6 +45,8 @@ export const patchMonitoringAlertSchema = z
     applicationId: z.string().trim().min(1).max(64).optional(),
     departmentName: optionalNullableString,
     alertType: z.string().trim().min(1).max(120).optional(),
+    alertSource: z.enum(ALERT_SOURCES).optional(),
+    notes: optionalNullableString,
     severity: z.string().trim().min(1).max(80).optional(),
     metric: z.string().trim().min(1).max(200).optional(),
     threshold: optionalNullableString,

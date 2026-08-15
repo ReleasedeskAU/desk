@@ -13,6 +13,7 @@ import {
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { conflictTypeOptions as catalogTypeOptions } from "@/lib/conflict-types";
 
 const CONFLICT_PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium"] as const;
 
@@ -72,7 +73,7 @@ export function ConflictFormModal({
     statusOptionsProp && statusOptionsProp.length > 0
       ? statusOptionsProp
       : lifecycle.createOptions;
-  const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Detected";
+  const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Open";
 
   const emptyForm = (): FormValues => ({
     status: defaultStatus,
@@ -383,20 +384,32 @@ export function ConflictFormModal({
             </option>
           ))}
         </SelectField>
-        <TextField
+        <SelectField
           label="Environment conflict type"
           required
           value={form.environmentConflictType}
           error={fieldErrors.environmentConflictType}
           onChange={(event) => set("environmentConflictType", event.target.value)}
-          list="conflict-type-options"
-          maxLength={120}
-        />
-        <datalist id="conflict-type-options">
-          {conflictTypeOptions.map((option) => (
-            <option key={option} value={option} />
+        >
+          <option value="">Select type…</option>
+          {catalogTypeOptions(form.environmentConflictType).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
           ))}
-        </datalist>
+          {conflictTypeOptions
+            .filter(
+              (option) =>
+                !catalogTypeOptions(form.environmentConflictType).some(
+                  (catalog) => catalog.value === option
+                )
+            )
+            .map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+        </SelectField>
         <TextField
           label="Assigned to"
           value={form.assignedTo}

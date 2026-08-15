@@ -6,16 +6,25 @@ import {
   RISK_HIGH_SCORE_THRESHOLD,
   type RiskLifecycleConfig,
   type RiskLifecycleStatusConfig,
+  type RiskLifecycleTransitionConfig,
 } from "@/lib/risk-lifecycle-config";
+import {
+  RISK_LIFECYCLE_GATE_CATALOG,
+  type RiskLifecycleGateAttachment,
+  type RiskLifecycleGateType,
+} from "@/lib/risk-lifecycle-gates";
 
 export const MIN_RISK_OVERRIDE_REASON_LENGTH = 3;
 
 /** Legacy seed / UI labels that map onto canonical lifecycle statuses. */
 const RISK_STATUS_ALIASES: Readonly<Record<string, string>> = {
   open: "identified",
-  monitoring: "assessing",
-  "in progress": "mitigating",
-  in_progress: "mitigating",
+  identified: "identified",
+  assessing: "assessing",
+  monitoring: "mitigated",
+  mitigated: "mitigated",
+  "in progress": "assessing",
+  in_progress: "assessing",
 };
 
 export type RiskGateFacts = {
@@ -24,6 +33,7 @@ export type RiskGateFacts = {
   riskScore: number | null | undefined;
   mitigationStrategy: string | null | undefined;
   notes: string | null | undefined;
+  reversalReason?: string | null | undefined;
 };
 
 /**
@@ -78,62 +88,75 @@ function hasText(value: string | null | undefined): boolean {
   return Boolean(value && String(value).trim());
 }
 
+function failMessage(gateType: RiskLifecycleGateType): string {
+  return RISK_LIFECYCLE_GATE_CATALOG[gateType].description;
+}
+
+function combinedRiskScore(facts: RiskGateFacts): number | null {
+  return (
+    facts.riskScore ??
+    (typeof facts.likelihood === "number" && typeof facts.impact === "number"
+      ? facts.likelihood * facts.impact
+      : null)
+  );
+}
+
 /**
- * Soft score / documentation gates for the enterprise risk table.
- * Unmet flexible gates require overrideReason.
+ * Evaluate one attached Risk check against PATCH/row facts.
+ * @returns Plain-English unmet reason, or null when the check passes.
  */
-export function evaluateRiskSoftGates(args: {
-  fromKey: string;
-  toKey: string;
-  facts: RiskGateFacts;
-}): string[] {
-  const unmet: string[] = [];
-  const score =
-    args.facts.riskScore ??
-    (typeof args.facts.likelihood === "number" &&
-    typeof args.facts.impact === "number"
-      ? args.facts.likelihood * args.facts.impact
-      : null);
-
-  if (args.fromKey === "identified") {
-    const likelihoodOk =
-      typeof args.facts.likelihood === "number" && args.facts.likelihood >= 1;
-    const impactOk =
-      typeof args.facts.impact === "number" && args.facts.impact >= 1;
-    if (!likelihoodOk || !impactOk) {
-      unmet.push("Set likelihood and impact before continuing");
+export function evaluateRiskGate(
+  gate: RiskLifecycleGateAttachment,
+  facts: RiskGateFacts
+): string | null {
+  if (!gate.enabled) return null;
+  switch (gate.gateType) {
+    case "likelihood_impact_set":
+      return typeof facts.likelihood === "number" &&
+        facts.likelihood >= 1 &&
+        typeof facts.impact === "number" &&
+        facts.impact >= 1
+        ? null
+        : failMessage(gate.gateType);
+    case "risk_score_calculated": {
+      const score = combinedRiskScore(facts);
+      return score != null && score >= 1 ? null : failMessage(gate.gateType);
     }
-  }
-
-  if (args.fromKey === "assessing") {
-    if (score == null || score < 1) {
-      unmet.push("Risk score must be calculated from likelihood and impact");
+    case "mitigation_plan_for_high": {
+      const score = combinedRiskScore(facts);
+      return score == null ||
+        score < RISK_HIGH_SCORE_THRESHOLD ||
+        hasText(facts.mitigationStrategy)
+        ? null
+        : failMessage(gate.gateType);
     }
+    case "acceptance_documented":
+      return hasText(facts.notes) ? null : failMessage(gate.gateType);
+    case "residual_risk_documented":
+      return hasText(facts.notes) || hasText(facts.mitigationStrategy)
+        ? null
+        : failMessage(gate.gateType);
+    case "reversal_reason_set":
+      return hasText(facts.reversalReason) &&
+        String(facts.reversalReason).trim().length >=
+          MIN_RISK_OVERRIDE_REASON_LENGTH
+        ? null
+        : failMessage(gate.gateType);
+    default:
+      return `Unhandled risk check: ${String(
+        (gate as { gateType: string }).gateType
+      )}`;
   }
+}
 
-  if (args.fromKey === "mitigating" && args.toKey === "mitigated") {
-    const high =
-      (score != null && score >= RISK_HIGH_SCORE_THRESHOLD) ||
-      (typeof args.facts.likelihood === "number" && args.facts.likelihood >= 4) ||
-      (typeof args.facts.impact === "number" && args.facts.impact >= 4);
-    if (high && !hasText(args.facts.mitigationStrategy)) {
-      unmet.push("High-severity risks need a mitigation plan before this step");
-    }
+function effectiveEnforcement(
+  transition: RiskLifecycleTransitionConfig,
+  gate: RiskLifecycleGateAttachment
+): "flexible" | "required" {
+  if (gate.enforcement === "flexible" || gate.enforcement === "required") {
+    return gate.enforcement;
   }
-
-  if (args.fromKey === "mitigated") {
-    if (!hasText(args.facts.notes) && !hasText(args.facts.mitigationStrategy)) {
-      unmet.push("Residual risk must be documented (notes or mitigation plan)");
-    }
-  }
-
-  if (args.fromKey === "accepted" && args.toKey === "closed") {
-    if (!hasText(args.facts.notes)) {
-      unmet.push("Documented acceptance is required before closing");
-    }
-  }
-
-  return unmet;
+  return transition.enforcement;
 }
 
 /**
@@ -196,23 +219,28 @@ export function validateRiskTransition(args: {
     };
   }
 
-  const unmet = evaluateRiskSoftGates({
-    fromKey: from.key,
-    toKey: to.key,
-    facts: args.facts,
-  });
-
-  if (unmet.length > 0) {
-    if (transition.enforcement === "required") {
-      return {
-        allowed: false,
-        code: "ILLEGAL_TRANSITION",
-        reason: unmet.join("; "),
-        unmetReasons: unmet,
-        fromKey: from.key,
-        toKey: to.key,
-      };
+  const unmetRequired: string[] = [];
+  const unmetFlexible: string[] = [];
+  for (const gate of transition.gates ?? []) {
+    const unmet = evaluateRiskGate(gate, args.facts);
+    if (!unmet) continue;
+    if (effectiveEnforcement(transition, gate) === "required") {
+      unmetRequired.push(unmet);
+    } else {
+      unmetFlexible.push(unmet);
     }
+  }
+  if (unmetRequired.length > 0) {
+    return {
+      allowed: false,
+      code: "ILLEGAL_TRANSITION",
+      reason: unmetRequired.join("; "),
+      unmetReasons: unmetRequired,
+      fromKey: from.key,
+      toKey: to.key,
+    };
+  }
+  if (unmetFlexible.length > 0) {
     const reasonText = (args.overrideReason ?? "").trim();
     if (reasonText.length < MIN_RISK_OVERRIDE_REASON_LENGTH) {
       return {
@@ -220,7 +248,7 @@ export function validateRiskTransition(args: {
         code: "TRANSITION_NEEDS_OVERRIDE",
         reason:
           "This step needs an exception note. Some checks aren’t met. Enter a short reason (at least 3 characters) explaining why you’re allowed to continue, then try again.",
-        unmetReasons: unmet,
+        unmetReasons: unmetFlexible,
         fromKey: from.key,
         toKey: to.key,
       };
@@ -232,7 +260,7 @@ export function validateRiskTransition(args: {
       toKey: to.key,
       canonicalStatus: to.label,
       overrideReason: reasonText,
-      unmetReasons: unmet,
+      unmetReasons: unmetFlexible,
     };
   }
 
@@ -243,4 +271,33 @@ export function validateRiskTransition(args: {
     toKey: to.key,
     canonicalStatus: to.label,
   };
+}
+
+export type LegalNextRiskStatus = {
+  key: string;
+  label: string;
+};
+
+/**
+ * Enabled next statuses from the current Risk status, in transition order.
+ * @param config - Caller Risk lifecycle config.
+ * @param fromStatus - Current status key or label.
+ * @returns Legal next status key/label pairs.
+ */
+export function legalNextRiskStatuses(
+  config: RiskLifecycleConfig,
+  fromStatus: string
+): LegalNextRiskStatus[] {
+  const from = resolveRiskLifecycleStatusRef(config, fromStatus);
+  if (!from || from.terminal || !from.enabled) return [];
+  return config.transitions
+    .filter((transition) => transition.enabled && transition.fromKey === from.key)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((transition) =>
+      config.statuses.find(
+        (status) => status.key === transition.toKey && status.enabled
+      )
+    )
+    .filter((status): status is RiskLifecycleStatusConfig => Boolean(status))
+    .map((status) => ({ key: status.key, label: status.label }));
 }

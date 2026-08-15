@@ -9,15 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createConflictSchema } from "@/lib/validation/conflict";
-
-async function nextConflictCode(): Promise<string> {
-  const rows = await prisma.environmentConflict.findMany({ select: { conflictCode: true } });
-  const next = rows.reduce((max, row) => {
-    const match = row.conflictCode.match(/^CNF-(\d+)$/i);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
-  return `CNF-${String(next).padStart(4, "0")}`;
-}
+import { nextConflictCode } from "@/lib/conflict-record";
 
 function mapConflictRow(
   row: {

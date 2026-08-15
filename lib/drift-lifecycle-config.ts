@@ -1,13 +1,26 @@
 /**
- * Per-user Drift lifecycle configuration (statuses + transitions).
- * Mirrors the enterprise Drift Lifecycle table; storage is Clerk-user scoped.
+ * Per-user Drift lifecycle configuration (statuses + transitions + checks).
+ * Sheet graph plus live-only Reverted. Storage is Clerk-user scoped.
  */
+
+import {
+  driftGate,
+  isDriftLifecycleGateType,
+  DRIFT_LIFECYCLE_GATE_ENFORCEMENTS,
+  type DriftLifecycleGateAttachment,
+  type DriftLifecycleGateEnforcement,
+} from "@/lib/drift-lifecycle-gates";
 
 export const DRIFT_LIFECYCLE_ENFORCEMENTS = ["flexible", "required"] as const;
 export type DriftLifecycleEnforcement =
   (typeof DRIFT_LIFECYCLE_ENFORCEMENTS)[number];
 
-export const DRIFT_EDIT_MODES = ["full", "limited", "read_only", "immutable"] as const;
+export const DRIFT_EDIT_MODES = [
+  "full",
+  "limited",
+  "read_only",
+  "immutable",
+] as const;
 export type DriftEditMode = (typeof DRIFT_EDIT_MODES)[number];
 
 export type DriftLifecycleStatusConfig = {
@@ -33,6 +46,7 @@ export type DriftLifecycleTransitionConfig = {
   enforcement: DriftLifecycleEnforcement;
   isSystem: boolean;
   sortOrder: number;
+  gates: DriftLifecycleGateAttachment[];
 };
 
 export type DriftLifecycleConfig = {
@@ -43,67 +57,96 @@ export type DriftLifecycleConfig = {
 export const MAX_DRIFT_LIFECYCLE_STATUSES = 20;
 export const MAX_DRIFT_LIFECYCLE_TRANSITIONS = 80;
 
-export const DEFAULT_DRIFT_LIFECYCLE_STATUSES: readonly Omit<
-  DriftLifecycleStatusConfig,
-  "isIntake" | "escalateTarget"
->[] = [
-  {
-    key: "detected",
-    label: "Detected",
-    sortOrder: 10,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "Delta found vs baseline — daily scan job (AV-13)",
-  },
-  {
-    key: "investigating",
-    label: "Investigating",
-    sortOrder: 20,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "Manual review required to determine cause",
-  },
-  {
-    key: "approved",
-    label: "Approved",
-    sortOrder: 30,
-    terminal: true,
-    enabled: true,
-    isSystem: true,
-    editMode: "immutable",
-    cascadeEffect: "FINAL — drift is intentional; new baseline established",
-  },
-  {
-    key: "reverted",
-    label: "Reverted",
-    sortOrder: 40,
-    terminal: true,
-    enabled: true,
-    isSystem: true,
-    editMode: "immutable",
-    cascadeEffect: "FINAL — config restored; baseline re-applied",
-  },
-  {
-    key: "escalated",
-    label: "Escalated",
-    sortOrder: 50,
-    terminal: false,
-    enabled: true,
-    isSystem: true,
-    editMode: "full",
-    cascadeEffect: "Unauthorized change suspected — security alert (AV-14)",
-  },
-];
+function driftStatus(
+  partial: Omit<DriftLifecycleStatusConfig, "isIntake" | "escalateTarget">
+): DriftLifecycleStatusConfig {
+  return {
+    ...partial,
+    isIntake: partial.key === "detected",
+    escalateTarget: partial.key === "escalated",
+  };
+}
+
+export const DEFAULT_DRIFT_LIFECYCLE_STATUSES: readonly DriftLifecycleStatusConfig[] =
+  [
+    driftStatus({
+      key: "detected",
+      label: "Open",
+      sortOrder: 10,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Delta found vs baseline — not yet being worked",
+    }),
+    driftStatus({
+      key: "investigating",
+      label: "In Progress",
+      sortOrder: 20,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Manual review in progress",
+    }),
+    driftStatus({
+      key: "scheduled",
+      label: "Scheduled",
+      sortOrder: 30,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Remediation planned for a future date",
+    }),
+    driftStatus({
+      key: "escalated",
+      label: "Escalated",
+      sortOrder: 40,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "full",
+      cascadeEffect: "Unauthorized change suspected — security alert (AV-14)",
+    }),
+    driftStatus({
+      key: "approved",
+      label: "Resolved",
+      sortOrder: 50,
+      terminal: false,
+      enabled: true,
+      isSystem: true,
+      editMode: "limited",
+      cascadeEffect: "Drift accepted as the new baseline — still editable until Closed",
+    }),
+    driftStatus({
+      key: "closed",
+      label: "Closed",
+      sortOrder: 60,
+      terminal: true,
+      enabled: true,
+      isSystem: true,
+      editMode: "immutable",
+      cascadeEffect: "FINAL — audit trail captured after Resolved",
+    }),
+    driftStatus({
+      key: "reverted",
+      label: "Reverted",
+      sortOrder: 70,
+      terminal: true,
+      enabled: true,
+      isSystem: true,
+      editMode: "immutable",
+      cascadeEffect: "FINAL — config restored; original baseline re-applied",
+    }),
+  ];
 
 function edge(
   fromKey: string,
   toKey: string,
   sortOrder: number,
-  enforcement: DriftLifecycleEnforcement = "flexible"
+  enforcement: DriftLifecycleEnforcement = "flexible",
+  gates: DriftLifecycleGateAttachment[] = []
 ): DriftLifecycleTransitionConfig {
   return {
     fromKey,
@@ -112,20 +155,33 @@ function edge(
     enforcement,
     isSystem: true,
     sortOrder,
+    gates,
   };
 }
 
+const reviewGate = [driftGate("manual_review_set", 10)];
+const etaGate = [driftGate("eta_to_fix_set", 10)];
+const baselineGate = [driftGate("new_baseline_established", 10)];
+
 export const DEFAULT_DRIFT_LIFECYCLE_TRANSITIONS: readonly DriftLifecycleTransitionConfig[] =
   [
-    edge("detected", "investigating", 10),
-    edge("detected", "approved", 20),
-    edge("detected", "reverted", 30),
-    edge("investigating", "approved", 10),
-    edge("investigating", "reverted", 20),
+    edge("detected", "investigating", 10, "flexible", reviewGate),
+    edge("detected", "scheduled", 20, "flexible", etaGate),
+    edge("detected", "escalated", 30),
+    edge("detected", "approved", 40, "flexible", baselineGate),
+    edge("detected", "reverted", 50),
+    edge("investigating", "scheduled", 10, "flexible", etaGate),
+    edge("investigating", "approved", 20, "flexible", baselineGate),
     edge("investigating", "escalated", 30),
-    edge("escalated", "investigating", 10),
-    edge("escalated", "approved", 20),
-    edge("escalated", "reverted", 30),
+    edge("investigating", "reverted", 40),
+    edge("scheduled", "investigating", 10, "flexible", reviewGate),
+    edge("scheduled", "approved", 20, "flexible", baselineGate),
+    edge("scheduled", "escalated", 30),
+    edge("escalated", "investigating", 10, "flexible", reviewGate),
+    edge("escalated", "scheduled", 20, "flexible", etaGate),
+    edge("escalated", "approved", 30, "flexible", baselineGate),
+    edge("escalated", "reverted", 40),
+    edge("approved", "closed", 10),
   ];
 
 /**
@@ -134,13 +190,34 @@ export const DEFAULT_DRIFT_LIFECYCLE_TRANSITIONS: readonly DriftLifecycleTransit
  */
 export function createDefaultDriftLifecycleConfig(): DriftLifecycleConfig {
   return {
-    statuses: DEFAULT_DRIFT_LIFECYCLE_STATUSES.map((s) => ({
-      ...s,
-      isIntake: s.key === "detected",
-      escalateTarget: s.key === "escalated",
+    statuses: DEFAULT_DRIFT_LIFECYCLE_STATUSES.map((s) => ({ ...s })),
+    transitions: DEFAULT_DRIFT_LIFECYCLE_TRANSITIONS.map((t) => ({
+      ...t,
+      gates: t.gates.map((g) => ({ ...g })),
     })),
-    transitions: DEFAULT_DRIFT_LIFECYCLE_TRANSITIONS.map((t) => ({ ...t })),
   };
+}
+
+function normalizeGates(raw: unknown): DriftLifecycleGateAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DriftLifecycleGateAttachment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Partial<DriftLifecycleGateAttachment>;
+    if (!isDriftLifecycleGateType(row.gateType)) continue;
+    const enforcement = DRIFT_LIFECYCLE_GATE_ENFORCEMENTS.includes(
+      row.enforcement as DriftLifecycleGateEnforcement
+    )
+      ? (row.enforcement as DriftLifecycleGateEnforcement)
+      : "inherit";
+    out.push({
+      gateType: row.gateType,
+      enabled: row.enabled !== false,
+      enforcement,
+      sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : out.length * 10,
+    });
+  }
+  return out;
 }
 
 /**
@@ -195,6 +272,18 @@ export function validateDriftLifecycleConfig(
   return null;
 }
 
+function coerceStatus(raw: DriftLifecycleStatusConfig): DriftLifecycleStatusConfig {
+  const defaults = DEFAULT_DRIFT_LIFECYCLE_STATUSES.find((s) => s.key === raw.key);
+  return {
+    ...raw,
+    isIntake: typeof raw.isIntake === "boolean" ? raw.isIntake : raw.key === "detected",
+    escalateTarget:
+      typeof raw.escalateTarget === "boolean"
+        ? raw.escalateTarget
+        : Boolean(defaults?.escalateTarget),
+  };
+}
+
 /**
  * Normalize stored JSON; fall back to enterprise default when invalid.
  * @param raw - Persisted snapshot or null.
@@ -207,16 +296,15 @@ export function normalizeDriftLifecycleConfig(raw: unknown): DriftLifecycleConfi
     Array.isArray((raw as DriftLifecycleConfig).transitions)
   ) {
     const candidate = raw as DriftLifecycleConfig;
-    if (!validateDriftLifecycleConfig(candidate)) {
-      return {
-        statuses: candidate.statuses.map((s) => ({
-          ...s,
-          isIntake: typeof s.isIntake === "boolean" ? s.isIntake : s.key === "detected",
-          escalateTarget:
-            typeof s.escalateTarget === "boolean" ? s.escalateTarget : s.key === "escalated",
-        })),
-        transitions: candidate.transitions.map((t) => ({ ...t })),
-      };
+    const normalized: DriftLifecycleConfig = {
+      statuses: candidate.statuses.map(coerceStatus),
+      transitions: candidate.transitions.map((t) => ({
+        ...t,
+        gates: normalizeGates(t.gates),
+      })),
+    };
+    if (!validateDriftLifecycleConfig(normalized)) {
+      return normalized;
     }
   }
   return createDefaultDriftLifecycleConfig();

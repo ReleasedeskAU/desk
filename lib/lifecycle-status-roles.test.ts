@@ -6,6 +6,9 @@ import { createDefaultIncidentLifecycleConfig } from "@/lib/incident-lifecycle-c
 import { createDefaultRiskLifecycleConfig } from "@/lib/risk-lifecycle-config";
 import { createDefaultDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
 import { createDefaultApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config";
+import { createDefaultConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config";
+import { createDefaultAlertLifecycleConfig } from "@/lib/alert-lifecycle-config";
+import { createDefaultDriftLifecycleConfig } from "@/lib/drift-lifecycle-config";
 import {
   applyStatusRolePatch,
   coalesceBoolean,
@@ -174,8 +177,21 @@ describe("lifecycle status roles", () => {
     );
 
     const deps = createDefaultDependencyLifecycleConfig();
-    assert.equal(deps.statuses.find((s) => s.key === "pending")?.isIntake, true);
+    assert.equal(deps.statuses.find((s) => s.key === "identified")?.isIntake, true);
+    assert.equal(deps.statuses.find((s) => s.key === "pending")?.isIntake, false);
     assert.equal(deps.statuses.find((s) => s.key === "met")?.satisfiesHardGate, true);
+    assert.equal(
+      deps.statuses.find((s) => s.key === "met")?.reopensOnPredecessorRollback,
+      true
+    );
+    assert.equal(
+      deps.statuses.find((s) => s.key === "at_risk")?.rollbackWarningTarget,
+      true
+    );
+    assert.equal(
+      release.statuses.find((s) => s.key === "rolled_back")?.rollbackMilestone,
+      true
+    );
 
     const approvals = createDefaultApprovalLifecycleConfig();
     assert.equal(approvals.statuses.find((s) => s.key === "pending")?.isIntake, true);
@@ -195,6 +211,53 @@ describe("lifecycle status roles", () => {
     assert.equal(
       release.statuses.find((s) => s.key === "planning")?.approvalRejectLanding,
       true
+    );
+
+    const conflicts = createDefaultConflictLifecycleConfig();
+    assert.equal(conflicts.statuses.find((s) => s.key === "detected")?.isIntake, true);
+    assert.equal(
+      conflicts.statuses.find((s) => s.key === "detected")?.blocksReleaseReady,
+      true
+    );
+    assert.equal(
+      conflicts.statuses.find((s) => s.key === "pending_review")?.blocksReleaseReady,
+      true
+    );
+    assert.equal(
+      conflicts.statuses.find((s) => s.key === "resolved")?.blocksReleaseReady,
+      false
+    );
+
+    const drifts = createDefaultDriftLifecycleConfig();
+    assert.equal(drifts.statuses.find((s) => s.isIntake)?.label, "Open");
+    assert.equal(
+      drifts.statuses.find((s) => s.label === "Escalated")?.escalateTarget,
+      true
+    );
+    assert.equal(
+      drifts.statuses.find((s) => s.label === "Resolved")?.terminal,
+      false
+    );
+    assert.equal(
+      drifts.statuses.find((s) => s.label === "Reverted")?.terminal,
+      true
+    );
+
+    const alerts = createDefaultAlertLifecycleConfig();
+    const intake = alerts.statuses.find((s) => s.isIntake);
+    assert.equal(intake?.label, "Active");
+    assert.equal(intake?.expiryDays, 7);
+    assert.equal(
+      alerts.statuses.find((s) => s.label === "Acknowledged")?.suppressesRepeatAlerts,
+      true
+    );
+    assert.equal(
+      alerts.statuses.find((s) => s.label === "Resolved")?.suppressesRepeatAlerts,
+      true
+    );
+    assert.equal(
+      alerts.statuses.find((s) => s.label === "Closed")?.suppressesRepeatAlerts,
+      false
     );
   });
 

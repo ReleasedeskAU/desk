@@ -60,6 +60,11 @@ const WAVE_A_GATE_RETARGETS: readonly {
     fromEdge: { fromKey: "deploying", toKey: "deployed" },
     toEdge: { fromKey: "ready_to_deploy", toKey: "deploying" },
   },
+  {
+    gateType: "signoffs_complete",
+    fromEdge: { fromKey: "pending_cab", toKey: "cab_approved" },
+    toEdge: { fromKey: "uat", toKey: "pending_cab" },
+  },
 ];
 
 function findEdge(

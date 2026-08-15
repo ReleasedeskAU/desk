@@ -3,6 +3,7 @@ import { inPeriod, periodRange, type Period } from "@/lib/period-range";
 import type { SearchResult } from "@/lib/dummy-data";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import { bucketReleaseStatusWithConfig } from "@/lib/release-lifecycle-status-ui";
+import { formatStakeholderNames } from "@/lib/release-stakeholder-display";
 
 export type DataSource = "database" | "demo";
 
@@ -70,7 +71,7 @@ type DbRelease = {
   applications?: { application: { name: string } }[];
   bookings?: { environment?: { name: string } | null; application?: { name: string } }[];
   dependsOn?: { dependsOnRelease: { releaseCode: string; name: string } }[];
-  stakeholders?: { user: { userId: string } }[];
+  stakeholders?: { user: { userId: string; name?: string | null } }[];
   releaseOwner?: { userId: string } | null;
   externalDependencies?: string | null;
   releaseSize?: string | null;
@@ -198,7 +199,7 @@ export function dbToUnified(r: DbRelease): UnifiedRelease {
     rollbackPlan: r.rollbackPlan,
     goLiveChecklistPercent: r.goLiveChecklistPercent,
     deploymentWindow: r.deploymentWindow,
-    stakeholderIds: r.stakeholders?.map((s) => s.user.userId).join(",") ?? "—",
+    stakeholderIds: formatStakeholderNames(r.stakeholders),
     devSignoff: r.devSignoff ?? null,
     testSignoff: r.testSignoff ?? null,
     uatSignoff: r.uatSignoff ?? null,

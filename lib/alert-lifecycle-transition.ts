@@ -1,31 +1,41 @@
 /**
  * Pure alert status transition validation against a lifecycle config.
- * Flexible unmet soft-gates require overrideReason (warn + override).
- * Dismissed requires a reason (overrideReason) — no separate notes field on alerts.
+ * Flexible unmet soft-gates require overrideReason. Required gates never override.
  */
 import type {
   AlertLifecycleConfig,
   AlertLifecycleStatusConfig,
+  AlertLifecycleTransitionConfig,
 } from "@/lib/alert-lifecycle-config";
+import {
+  ALERT_LIFECYCLE_GATE_CATALOG,
+  type AlertLifecycleGateAttachment,
+  type AlertLifecycleGateType,
+} from "@/lib/alert-lifecycle-gates";
 
 export const MIN_ALERT_OVERRIDE_REASON_LENGTH = 3;
 
-/** Legacy seed / UI labels that map onto canonical lifecycle statuses. */
-const ALERT_STATUS_ALIASES: Readonly<Record<string, string>> = {
-  active: "pending",
+/**
+ * Leftover labels that are no longer current display names.
+ * Checked only after key/label match so new statuses are never hidden.
+ */
+const ALERT_STATUS_LEFTOVER_ALIASES: Readonly<Record<string, string>> = {
+  pending: "pending",
+  actioned: "actioned",
   open: "pending",
-  investigating: "acknowledged",
-  resolved: "actioned",
-  closed: "actioned",
 };
 
 export type AlertGateFacts = {
-  /** Dismissal / override justification text. */
-  reason: string | null | undefined;
+  /** Dismissal justification stored on the alert (not overrideReason). */
+  notes: string | null | undefined;
 };
 
+function hasText(value: string | null | undefined): boolean {
+  return Boolean(value && String(value).trim());
+}
+
 /**
- * Resolve an alert status by key or label (enabled preferred, then any).
+ * Resolve an alert status by key or current label, then leftover aliases.
  */
 export function resolveAlertLifecycleStatusRef(
   config: AlertLifecycleConfig,
@@ -35,17 +45,17 @@ export function resolveAlertLifecycleStatusRef(
   const trimmed = String(raw).trim();
   if (!trimmed) return null;
   const lower = trimmed.toLocaleLowerCase();
-  const aliasKey = ALERT_STATUS_ALIASES[lower];
-  if (aliasKey) {
-    const aliased = config.statuses.find((s) => s.key === aliasKey);
-    if (aliased) return aliased;
-  }
   const byKeyEnabled = config.statuses.find((s) => s.key === trimmed && s.enabled);
   if (byKeyEnabled) return byKeyEnabled;
   const byLabelEnabled = config.statuses.find(
     (s) => s.enabled && s.label.trim().toLocaleLowerCase() === lower
   );
   if (byLabelEnabled) return byLabelEnabled;
+  const leftoverKey = ALERT_STATUS_LEFTOVER_ALIASES[lower];
+  if (leftoverKey) {
+    const aliased = config.statuses.find((s) => s.key === leftoverKey);
+    if (aliased) return aliased;
+  }
   return (
     config.statuses.find((s) => s.key === trimmed) ??
     config.statuses.find((s) => s.label.trim().toLocaleLowerCase() === lower) ??
@@ -72,28 +82,42 @@ export type AlertTransitionResult =
       unmetReasons?: string[];
     };
 
+function evaluateCatalogGate(
+  gateType: AlertLifecycleGateType,
+  facts: AlertGateFacts
+): string | null {
+  if (gateType === "dismissal_justification_set") {
+    if (!hasText(facts.notes)) {
+      return ALERT_LIFECYCLE_GATE_CATALOG.dismissal_justification_set.description;
+    }
+  }
+  return null;
+}
+
 /**
- * Soft gates for the enterprise alerts table (Dismissed needs a reason).
+ * Catalog gates attached to a transition (enabled attachments only).
  */
 export function evaluateAlertSoftGates(args: {
-  fromKey: string;
-  toKey: string;
+  transition: AlertLifecycleTransitionConfig;
   facts: AlertGateFacts;
 }): string[] {
   const unmet: string[] = [];
-  if (args.toKey === "dismissed") {
-    const reason = (args.facts.reason ?? "").trim();
-    if (reason.length < MIN_ALERT_OVERRIDE_REASON_LENGTH) {
-      unmet.push(
-        "Add a short reason before dismissing this alert."
-      );
-    }
+  const gates = [...(args.transition.gates ?? [])]
+    .filter((gate) => gate.enabled)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  for (const gate of gates) {
+    const message = evaluateCatalogGate(gate.gateType, args.facts);
+    if (message) unmet.push(message);
   }
   return unmet;
 }
 
+function gateBlocksOverride(gate: AlertLifecycleGateAttachment): boolean {
+  return gate.enforcement === "required";
+}
+
 /**
- * Validate an alert status change against the config graph + soft gates.
+ * Validate an alert status change against the config graph + catalog gates.
  */
 export function validateAlertTransition(args: {
   config: AlertLifecycleConfig;
@@ -152,18 +176,19 @@ export function validateAlertTransition(args: {
     };
   }
 
-  // Prefer explicit facts.reason; fall back to overrideReason for dismiss justification.
   const facts: AlertGateFacts = {
-    reason: args.facts?.reason ?? args.overrideReason ?? null,
+    notes: args.facts?.notes ?? null,
   };
-  const unmet = evaluateAlertSoftGates({
-    fromKey: from.key,
-    toKey: to.key,
-    facts,
-  });
+  const unmet = evaluateAlertSoftGates({ transition, facts });
 
   if (unmet.length > 0) {
-    if (transition.enforcement === "required") {
+    const requiredUnmet = (transition.gates ?? []).some(
+      (gate) =>
+        gate.enabled &&
+        gateBlocksOverride(gate) &&
+        evaluateCatalogGate(gate.gateType, facts)
+    );
+    if (transition.enforcement === "required" || requiredUnmet) {
       return {
         allowed: false,
         code: "ILLEGAL_TRANSITION",
@@ -203,4 +228,36 @@ export function validateAlertTransition(args: {
     toKey: to.key,
     canonicalStatus: to.label,
   };
+}
+
+export type LegalNextAlertStatus = {
+  key: string;
+  label: string;
+};
+
+/**
+ * Enabled next statuses from the current Alert status, in transition order.
+ * Required (cron-only) edges are omitted from the Edit dropdown.
+ * @param config - Caller Alert lifecycle config
+ * @param fromStatus - Current status key or label
+ */
+export function legalNextAlertStatuses(
+  config: AlertLifecycleConfig,
+  fromStatus: string
+): LegalNextAlertStatus[] {
+  const from = resolveAlertLifecycleStatusRef(config, fromStatus);
+  if (!from || from.terminal || !from.enabled) return [];
+  return config.transitions
+    .filter(
+      (transition) =>
+        transition.enabled &&
+        transition.fromKey === from.key &&
+        transition.enforcement !== "required"
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((transition) =>
+      config.statuses.find((item) => item.key === transition.toKey && item.enabled)
+    )
+    .filter((item): item is AlertLifecycleStatusConfig => Boolean(item))
+    .map((item) => ({ key: item.key, label: item.label }));
 }
