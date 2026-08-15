@@ -534,7 +534,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     (data.startDate instanceof Date &&
       (existing.startDate?.getTime() ?? 0) !== data.startDate.getTime()) ||
     (data.startDate === null && existing.startDate != null);
-  const proposedAppIds = Array.isArray(body.applicationIds)
+  const proposedAppIds: string[] | undefined = Array.isArray(body.applicationIds)
     ? body.applicationIds.filter(
         (id: unknown): id is string => typeof id === "string" && id.trim().length > 0
       )
@@ -543,7 +543,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     proposedAppIds !== undefined &&
     currentApplicationIds !== undefined &&
     (proposedAppIds.length !== currentApplicationIds.length ||
-      proposedAppIds.some((id) => !currentApplicationIds!.includes(id)));
+      proposedAppIds.some((id: string) => !currentApplicationIds.includes(id)));
 
   let pendingToRaise: Awaited<ReturnType<typeof collectProposedDateConflicts>> = [];
   if (

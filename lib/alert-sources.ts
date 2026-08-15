@@ -33,7 +33,9 @@ export function isAlertSource(value: unknown): value is AlertSource {
 export function alertSourceOptions(
   current?: string | null
 ): { value: string; label: string }[] {
-  const options = ALERT_SOURCES.map((value) => ({ value, label: value }));
+  const options: { value: string; label: string }[] = ALERT_SOURCES.map(
+    (value) => ({ value, label: value })
+  );
   const trimmed = current?.trim() ?? "";
   if (trimmed && !ACCEPTED.has(trimmed)) {
     options.push({ value: trimmed, label: `${trimmed} (current)` });

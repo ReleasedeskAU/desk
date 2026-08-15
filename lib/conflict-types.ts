@@ -52,7 +52,9 @@ export function isLegacyConflictType(value: string): boolean {
 export function conflictTypeOptions(
   current?: string | null
 ): { value: string; label: string }[] {
-  const options = CONFLICT_TYPES.map((value) => ({ value, label: value }));
+  const options: { value: string; label: string }[] = CONFLICT_TYPES.map(
+    (value) => ({ value, label: value })
+  );
   const trimmed = current?.trim() ?? "";
   if (trimmed && !ACCEPTED_SET.has(trimmed)) {
     options.push({ value: trimmed, label: `${trimmed} (current)` });

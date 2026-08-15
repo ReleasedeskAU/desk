@@ -1424,7 +1424,12 @@ export function ReleaseFormModal({
           <button type="button" className={taBtnSecondary} onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className={taBtnPrimary} onClick={save} disabled={saving}>
+          <button
+            type="button"
+            className={taBtnPrimary}
+            onClick={() => void save()}
+            disabled={saving}
+          >
             {saving ? "Saving…" : "Save"}
           </button>
         </div>

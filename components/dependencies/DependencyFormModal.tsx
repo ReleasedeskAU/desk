@@ -289,6 +289,7 @@ export function DependencyFormModal({
                   releaseId: "",
                   dependsOnReleaseId: "",
                   dependencyType: "Hard",
+                  dependencyKind: "Release-to-Release",
                   status: defaultStatus,
                   impactIfBlocked: "Release Delay",
                   notes: "",

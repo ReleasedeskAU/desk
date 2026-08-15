@@ -31,7 +31,9 @@ export function isDriftType(value: unknown): value is DriftType {
 export function driftTypeOptions(
   current?: string | null
 ): { value: string; label: string }[] {
-  const options = DRIFT_TYPES.map((value) => ({ value, label: value }));
+  const options: { value: string; label: string }[] = DRIFT_TYPES.map(
+    (value) => ({ value, label: value })
+  );
   const trimmed = current?.trim() ?? "";
   if (trimmed && !ACCEPTED.has(trimmed)) {
     options.push({ value: trimmed, label: `${trimmed} (current)` });
