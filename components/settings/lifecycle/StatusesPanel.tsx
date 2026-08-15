@@ -24,7 +24,7 @@ import {
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { LifecycleSection } from "@/components/settings/lifecycle/LifecycleSection";
-import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 
@@ -226,16 +226,10 @@ export function StatusesPanel({
                   ))}
                 </select>
               </label>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 onCheckedChange={(enabled) => onToggleEnabled(status.key, enabled)}
-                label={status.enabled ? "On" : "Off"}
-                title={
-                  status.enabled
-                    ? "Turn off — hides from timeline and next-status choices"
-                    : "Turn on — shows on timeline when transitions allow it"
-                }
-                aria-label={`${status.label} ${status.enabled ? "On" : "Off"}`}
+                statusLabel={status.label}
                 data-testid={`lifecycle-status-enabled-${status.key}`}
               />
               <button
@@ -264,12 +258,11 @@ export function StatusesPanel({
               </button>
             </>
           ) : (
-            <LifecycleToggle
+            <StatusAvailabilityToggle
               checked={status.enabled}
               onCheckedChange={() => undefined}
-              label={status.enabled ? "On" : "Off"}
+              statusLabel={status.label}
               disabled
-              aria-label={`${status.label} ${status.enabled ? "On" : "Off"}`}
               data-testid={`lifecycle-status-enabled-${status.key}`}
             />
           )}

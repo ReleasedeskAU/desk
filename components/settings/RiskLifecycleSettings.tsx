@@ -17,6 +17,7 @@ import {
 import { RiskGatesPanel } from "@/components/settings/lifecycle/RiskGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import {
@@ -300,10 +301,10 @@ export function RiskLifecycleSettings() {
                   }}
                 />
               </div>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 disabled={!editing}
-                label={status.enabled ? "On" : "Off"}
+                statusLabel={status.label}
                 onCheckedChange={(enabled) => {
                   setDraft((prev) => ({
                     ...prev,

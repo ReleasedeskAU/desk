@@ -292,10 +292,10 @@ function ReleasePreview() {
           description="CAB timing and go-live sign-off gates."
         >
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            <SignoffChip label="Dev sign-off" done />
-            <SignoffChip label="Test sign-off" done={false} />
-            <SignoffChip label="UAT sign-off" done={false} />
-            <SignoffChip label="Security clearance" done={false} />
+            <SignoffChip label="Tech Review" done />
+            <SignoffChip label="QA Sign-Off — Test Phase" done={false} />
+            <SignoffChip label="QA Sign-Off — UAT Phase" done={false} />
+            <SignoffChip label="Security Review" done={false} />
             <SignoffChip label="Dress rehearsal" done={false} />
             <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/5">
               <ScoreBar value={79} asPercent label="Go-live checklist" />

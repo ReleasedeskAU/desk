@@ -14,6 +14,7 @@ import {
 } from "@/lib/signoff-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { INTAKE_ONLY_ROLE_IDS } from "@/lib/lifecycle-status-roles";
@@ -117,7 +118,7 @@ export function SignoffLifecycleSettings() {
               Sign-off Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure sign-off decisions, allowed moves, and which types (Dev, Test, UAT…)
+              Configure sign-off decisions, allowed moves, and which types (Tech Review, QA, Security…)
               are always required or required from a Size / Priority floor. Values are stored
               on each release.
             </p>
@@ -254,10 +255,10 @@ export function SignoffLifecycleSettings() {
                   }
                 />
               </div>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 disabled={!editing}
-                label={status.enabled ? "On" : "Off"}
+                statusLabel={status.label}
                 onCheckedChange={(enabled) => {
                   setDraft((prev) => ({
                     ...prev,

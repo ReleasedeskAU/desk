@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   lifecycleTerminalEditNoticeText,
@@ -69,5 +71,16 @@ describe("lifecycleTerminalEditNoticeText", () => {
     const text = lifecycleTerminalEditNoticeText("Approved with Conditions", "decision");
     assert.match(text, /Approved with Conditions/);
     assert.match(text, /final decision/i);
+  });
+});
+
+describe("Edit Risk wires the final-status notice", () => {
+  it("shows the shared notice on the Risk Edit status field", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "app", "(main)", "risks", "[id]", "page.tsx"),
+      "utf8"
+    );
+    assert.match(src, /shouldShowTerminalLifecycleEditNotice/);
+    assert.match(src, /LifecycleTerminalStatusNotice/);
   });
 });

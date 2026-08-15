@@ -333,8 +333,22 @@ describe("legalNextSignoffStatuses / Edit Release picker", () => {
         "opsSignoff",
       ]
     );
-    assert.ok(rows.some((r) => r.field === "businessSignoff" && /business/i.test(r.label)));
-    assert.ok(rows.some((r) => r.field === "opsSignoff" && /ops/i.test(r.label)));
+    assert.ok(
+      rows.some((r) => r.field === "businessSignoff" && r.label === "Business Review")
+    );
+    assert.ok(
+      rows.some((r) => r.field === "opsSignoff" && r.label === "Operations Review")
+    );
+    assert.ok(
+      rows.some(
+        (r) => r.field === "testSignoff" && r.label === "QA Sign-Off — Test Phase"
+      )
+    );
+    assert.ok(
+      rows.some(
+        (r) => r.field === "uatSignoff" && r.label === "QA Sign-Off — UAT Phase"
+      )
+    );
   });
 });
 

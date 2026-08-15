@@ -48,14 +48,14 @@ describe("buildReleaseFormSaveAlert", () => {
     const alert = buildReleaseFormSaveAlert(
       {
         error:
-          "Business sign-off is already recorded as “Approved”. Recorded decisions can’t be changed — ask an admin if you need a new request.",
+          "Business Review is already recorded as “Approved”. Recorded decisions can’t be changed — ask an admin if you need a new request.",
         code: "EDIT_POLICY_DENIED",
         field: "businessSignoff",
       },
       "Failed to save release"
     );
     assert.equal(alert.title, "This sign-off can’t be changed");
-    assert.match(alert.message, /Business sign-off/);
+    assert.match(alert.message, /Business Review/);
   });
 
   it("falls back when body has no error field", () => {

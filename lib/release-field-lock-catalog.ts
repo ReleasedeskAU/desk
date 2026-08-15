@@ -271,7 +271,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "devSignoff",
-    label: "Dev Sign-Off",
+    label: "Tech Review",
     category: "Sign-Off",
     lockRuleRef: null,
     isConfigurable: true,
@@ -279,7 +279,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "testSignoff",
-    label: "Test Sign-Off",
+    label: "QA Sign-Off — Test Phase",
     category: "Sign-Off",
     lockRuleRef: null,
     isConfigurable: true,
@@ -287,7 +287,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "uatSignoff",
-    label: "UAT Sign-Off",
+    label: "QA Sign-Off — UAT Phase",
     category: "Sign-Off",
     lockRuleRef: null,
     isConfigurable: true,
@@ -295,7 +295,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "securityClearance",
-    label: "Security Sign-Off",
+    label: "Security Review",
     category: "Sign-Off",
     lockRuleRef: null,
     isConfigurable: true,
@@ -303,7 +303,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "businessSignoff",
-    label: "Business Sign-Off",
+    label: "Business Review",
     category: "Sign-Off",
     lockRuleRef: null,
     isConfigurable: true,
@@ -311,7 +311,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "opsSignoff",
-    label: "Ops Sign-Off",
+    label: "Operations Review",
     category: "Sign-Off",
     lockRuleRef: "VR-31",
     isConfigurable: true,

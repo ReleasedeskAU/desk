@@ -9,6 +9,7 @@ import {
   validateSignoffLifecycleConfig,
   type SignoffLifecycleConfig,
 } from "@/lib/signoff-lifecycle-config";
+import { reconcileSignoffLifecycleSpec } from "@/lib/signoff-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -61,7 +62,9 @@ export async function loadSignoffLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeSignoffLifecycleConfig(latest.snapshot),
+      config: reconcileSignoffLifecycleSpec(
+        normalizeSignoffLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };

@@ -14,6 +14,7 @@ import {
 import { blockerGate, type BlockerLifecycleGateType } from "@/lib/blocker-lifecycle-gates";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { BlockerGatesPanel } from "@/components/settings/lifecycle/BlockerGatesPanel";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
@@ -300,10 +301,10 @@ export function BlockerLifecycleSettings() {
                   }}
                 />
               </div>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 disabled={!editing}
-                label={status.enabled ? "On" : "Off"}
+                statusLabel={status.label}
                 onCheckedChange={(enabled) => {
                   setDraft((prev) => ({
                     ...prev,

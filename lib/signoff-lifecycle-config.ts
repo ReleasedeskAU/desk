@@ -45,12 +45,12 @@ export const SIGNOFF_SLA_FIELDS: readonly SignoffReleaseField[] =
 
 /** Plain-English labels for sign-off release columns. */
 export const SIGNOFF_FIELD_LABELS: Record<SignoffReleaseField, string> = {
-  devSignoff: "Dev sign-off",
-  testSignoff: "Test sign-off",
-  uatSignoff: "UAT sign-off",
-  securityClearance: "Security sign-off",
-  businessSignoff: "Business sign-off",
-  opsSignoff: "Ops sign-off",
+  devSignoff: "Tech Review",
+  testSignoff: "QA Sign-Off — Test Phase",
+  uatSignoff: "QA Sign-Off — UAT Phase",
+  securityClearance: "Security Review",
+  businessSignoff: "Business Review",
+  opsSignoff: "Operations Review",
   dressRehearsal: "Dress rehearsal",
   trainingStatus: "Training status",
   supportBriefed: "Support briefed",
@@ -103,7 +103,7 @@ export type SignoffTypeConfig = {
   sortOrder: number;
   enabled: boolean;
   isSystem: boolean;
-  /** When true, required for every release (Dev/Test/UAT/Security defaults). */
+  /** When true, required for every release (Tech/QA Test/QA UAT/Security defaults). */
   mandatory: boolean;
   /**
    * When set and `mandatory` is false, this type is required from this size up
@@ -236,7 +236,7 @@ export const DEFAULT_SIGNOFF_LIFECYCLE_TRANSITIONS: readonly SignoffLifecycleTra
 export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
   {
     key: "dev",
-    label: "Dev",
+    label: "Tech Review",
     sortOrder: 10,
     enabled: true,
     isSystem: true,
@@ -247,7 +247,7 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
   },
   {
     key: "test",
-    label: "Test",
+    label: "QA Sign-Off — Test Phase",
     sortOrder: 20,
     enabled: true,
     isSystem: true,
@@ -258,7 +258,7 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
   },
   {
     key: "uat",
-    label: "UAT",
+    label: "QA Sign-Off — UAT Phase",
     sortOrder: 30,
     enabled: true,
     isSystem: true,
@@ -269,7 +269,7 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
   },
   {
     key: "security",
-    label: "Security",
+    label: "Security Review",
     sortOrder: 40,
     enabled: true,
     isSystem: true,
@@ -280,7 +280,7 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
   },
   {
     key: "business",
-    label: "Business",
+    label: "Business Review",
     sortOrder: 50,
     enabled: true,
     isSystem: true,
@@ -292,7 +292,7 @@ export const DEFAULT_SIGNOFF_TYPES: readonly SignoffTypeConfig[] = [
   },
   {
     key: "ops",
-    label: "Ops",
+    label: "Operations Review",
     sortOrder: 60,
     enabled: true,
     isSystem: true,

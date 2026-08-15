@@ -150,10 +150,10 @@ export function assessReleaseReadiness(
   const missingSignoffs: string[] = [];
   const okSignoffs: string[] = [];
   const signoffPairs: Array<[string, string | null | undefined]> = [
-    ["Dev", input.devSignoff],
-    ["Test", input.testSignoff],
-    ["UAT", input.uatSignoff],
-    ["Security", input.securityClearance],
+    ["Tech Review", input.devSignoff],
+    ["QA Sign-Off — Test Phase", input.testSignoff],
+    ["QA Sign-Off — UAT Phase", input.uatSignoff],
+    ["Security Review", input.securityClearance],
   ];
   for (const [label, value] of signoffPairs) {
     if (isNegativeSignoff(value) || !value) {

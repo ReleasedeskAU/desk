@@ -12,6 +12,7 @@ import {
 } from "@/lib/drift-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { driftGate, type DriftLifecycleGateType } from "@/lib/drift-lifecycle-gates";
 import { DriftGatesPanel } from "@/components/settings/lifecycle/DriftGatesPanel";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
@@ -268,10 +269,10 @@ export function DriftLifecycleSettings() {
                   }
                 />
               </div>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 disabled={!editing}
-                label={status.enabled ? "On" : "Off"}
+                statusLabel={status.label}
                 onCheckedChange={(enabled) => {
                   setDraft((prev) => ({
                     ...prev,

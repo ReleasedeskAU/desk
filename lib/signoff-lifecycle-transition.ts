@@ -215,7 +215,7 @@ export type SignoffDecisionTypeView = {
  * The six sheet decision types in Settings sort order, for Edit Release.
  *
  * @param config - Live sign-off lifecycle config.
- * @returns One row per decision field (Dev through Ops), even when optional.
+ * @returns One row per decision field (Tech Review through Operations Review).
  */
 export function signoffDecisionTypesForForm(
   config: SignoffLifecycleConfig
@@ -233,9 +233,7 @@ export function signoffDecisionTypesForForm(
     const type = byField.get(field);
     return {
       field,
-      label: type?.label
-        ? `${type.label} sign-off`
-        : SIGNOFF_FIELD_LABELS[field],
+      label: type?.label ?? SIGNOFF_FIELD_LABELS[field],
       enabled: type?.enabled ?? true,
       mandatory: type?.mandatory ?? false,
     };

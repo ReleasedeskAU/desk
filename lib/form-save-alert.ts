@@ -1,6 +1,7 @@
 /**
  * Shared popup alert payload for create/edit save failures (lifecycle, validation, API).
  */
+import { SIGNOFF_RELEASE_FIELDS } from "@/lib/signoff-lifecycle-config";
 
 export type FormAlert = {
   title: string;
@@ -61,13 +62,18 @@ export function buildFormSaveAlert(
       ? unmetFromBody
       : undefined;
 
+  const field = body && typeof body.field === "string" ? body.field : "";
+  const isSignoffField = (SIGNOFF_RELEASE_FIELDS as readonly string[]).includes(
+    field
+  );
   const isFieldLock = code === "FIELD_LOCK_DENIED" || /field lock/i.test(message);
+  // Labels are now "Tech Review" / "Business Review" — don't rely on "sign-off" in copy.
   const isSignoff =
     !isFieldLock &&
     (code === "SIGNOFF_VALUE_REQUIRED" ||
       code === "SIGNOFF_FIELD_DISABLED" ||
       ((code === "EDIT_POLICY_DENIED" || code === "ILLEGAL_TRANSITION") &&
-        /sign-off/i.test(message)));
+        (/sign-off/i.test(message) || isSignoffField)));
   const isLifecycle =
     !isFieldLock &&
     !isSignoff &&

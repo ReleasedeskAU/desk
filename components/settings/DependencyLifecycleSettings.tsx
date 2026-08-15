@@ -17,6 +17,7 @@ import {
 import { DependencyGatesPanel } from "@/components/settings/lifecycle/DependencyGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { DEPENDENCY_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
@@ -277,10 +278,10 @@ export function DependencyLifecycleSettings() {
                   }
                 />
               </div>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 disabled={!editing}
-                label={status.enabled ? "On" : "Off"}
+                statusLabel={status.label}
                 onCheckedChange={(enabled) => {
                   setDraft((prev) => ({
                     ...prev,

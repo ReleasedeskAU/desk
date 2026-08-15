@@ -149,12 +149,12 @@ const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
   commsPlan: "Comms plan",
   trainingStatus: "Training status",
   stakeholderIds: "Stakeholders",
-  devSignoff: "Dev sign-off",
-  testSignoff: "Test sign-off",
-  uatSignoff: "UAT sign-off",
-  securityClearance: "Security sign-off",
-  businessSignoff: "Business sign-off",
-  opsSignoff: "Ops sign-off",
+  devSignoff: "Tech Review",
+  testSignoff: "QA Sign-Off — Test Phase",
+  uatSignoff: "QA Sign-Off — UAT Phase",
+  securityClearance: "Security Review",
+  businessSignoff: "Business Review",
+  opsSignoff: "Operations Review",
 };
 
 type CreatedSummary = {

@@ -553,7 +553,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
       label: "Sign-offs",
       value: `${signoffsDone}/5`,
       tone: signoffsDone >= 5 ? "good" : signoffsDone >= 3 ? "warn" : "bad",
-      hint: "Required gates: Dev, Test, UAT, Security, Dress rehearsal.",
+      hint: "Required gates: Tech Review, QA (Test + UAT), Security Review, Dress rehearsal.",
       href: "#section-dates",
     },
   ];
@@ -819,7 +819,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           tone="emerald"
           title="Sign-offs & Approvals"
           description="Required gates and approval state — go-live / CAB / window are in the header"
-          detail="Individual sign-offs (Dev, Test, UAT, Security, Dress rehearsal), overall approval status, and rollback plan. Calendar dates already shown in the decision header are not repeated here."
+          detail="Individual sign-offs (Tech Review, QA Test/UAT, Security Review, Dress rehearsal), overall approval status, and rollback plan. Calendar dates already shown in the decision header are not repeated here."
           collapsible
           defaultOpen
         >
@@ -872,32 +872,32 @@ export function DbReleaseDetail({ id }: { id: string }) {
               </DetailFieldGrid>
               <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                 <SignoffChip
-                  label="Dev sign-off"
+                  label="Tech Review"
                   done={signoffComplete(release.devSignoff, signoffConfig)}
                   hint="Development team confirms build quality and code readiness for release."
                 />
                 <SignoffChip
-                  label="Test sign-off"
+                  label="QA Sign-Off — Test Phase"
                   done={signoffComplete(release.testSignoff, signoffConfig)}
                   hint="QA confirms testing is complete and no open P1 defects remain."
                 />
                 <SignoffChip
-                  label="UAT sign-off"
+                  label="QA Sign-Off — UAT Phase"
                   done={signoffComplete(release.uatSignoff, signoffConfig)}
                   hint="Business / UAT users accept the change in the UAT environment."
                 />
                 <SignoffChip
-                  label="Security clearance"
+                  label="Security Review"
                   done={signoffComplete(release.securityClearance, signoffConfig)}
                   hint="Security / InfoSec has cleared the release for production deployment."
                 />
                 <SignoffChip
-                  label="Business sign-off"
+                  label="Business Review"
                   done={signoffComplete(release.businessSignoff, signoffConfig)}
                   hint="Business review of scope, impact, and go-live readiness."
                 />
                 <SignoffChip
-                  label="Ops sign-off"
+                  label="Operations Review"
                   done={signoffComplete(release.opsSignoff, signoffConfig)}
                   hint="Operations confirms runbooks, monitoring, and support are ready."
                 />

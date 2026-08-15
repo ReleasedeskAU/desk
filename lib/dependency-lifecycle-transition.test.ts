@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   createDefaultDependencyLifecycleConfig,
@@ -256,5 +258,20 @@ describe("dependency edit policy", () => {
       "status",
     ]);
     assert.deepEqual(denied, ["dependencyType"]);
+  });
+});
+
+describe("New Dependency releases lookup", () => {
+  it("fetches /api/releases once per open, not when form defaults change", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "components", "dependencies", "DependencyFormModal.tsx"),
+      "utf8"
+    );
+    assert.match(src, /label: "dep-form-releases"/);
+    assert.match(src, /label: "dep-form-releases"[\s\S]*?}, \[open\]\);/);
+    assert.doesNotMatch(
+      src,
+      /label: "dep-form-releases"[\s\S]*?}, \[open, defaults\]\);/
+    );
   });
 });

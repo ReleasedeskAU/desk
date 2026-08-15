@@ -230,7 +230,7 @@ export function evaluateLifecycleGate(
     case "test_signoff_complete":
       return facts.testSignoffComplete
         ? pass()
-        : fail("Test Sign-Off must be complete before UAT");
+        : fail("QA Sign-Off — Test Phase must be complete before UAT");
     case "go_live_date_set":
       return isPresent(facts.releaseDate)
         ? pass()
@@ -329,11 +329,11 @@ export function evaluateLifecycleGate(
     case "ops_signoff_complete":
       return facts.opsSignoffComplete
         ? pass()
-        : fail("Ops Sign-Off must be complete before Ready");
+        : fail("Operations Review must be complete before Ready");
     case "business_signoff_complete":
       return facts.businessSignoffComplete
         ? pass()
-        : fail("Business Sign-Off must be complete before Ready");
+        : fail("Business Review must be complete before Ready");
     case "high_risks_mitigated":
       return facts.unmitigatedHighRiskCount === 0
         ? pass()

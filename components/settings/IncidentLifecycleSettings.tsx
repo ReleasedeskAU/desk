@@ -14,6 +14,7 @@ import { incidentGate, type IncidentLifecycleGateType } from "@/lib/incident-lif
 import { IncidentGatesPanel } from "@/components/settings/lifecycle/IncidentGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
+import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import {
@@ -304,10 +305,10 @@ export function IncidentLifecycleSettings() {
                   onDaysChange={() => undefined}
                 />
               </div>
-              <LifecycleToggle
+              <StatusAvailabilityToggle
                 checked={status.enabled}
                 disabled={!editing}
-                label={status.enabled ? "On" : "Off"}
+                statusLabel={status.label}
                 onCheckedChange={(enabled) => {
                   setDraft((prev) => ({
                     ...prev,

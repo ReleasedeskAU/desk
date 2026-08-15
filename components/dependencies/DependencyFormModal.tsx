@@ -15,7 +15,7 @@ import {
   DEPENDENCY_TYPES,
 } from "@/lib/validation/dependency";
 import {
-  createDefaultDependencyLifecycleConfig,
+  DEFAULT_DEPENDENCY_LIFECYCLE_CONFIG,
   type DependencyLifecycleConfig,
 } from "@/lib/dependency-lifecycle-config";
 import { legalNextDependencyStatuses } from "@/lib/dependency-lifecycle-transition";
@@ -80,17 +80,22 @@ export function DependencyFormModal({
 }: Props) {
   const isEdit = Boolean(editId);
   const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
-  const graph =
-    (lifecycle.config as DependencyLifecycleConfig | null) ??
-    createDefaultDependencyLifecycleConfig();
-  const intakeOptions = intakeEntityStatusLabels(graph);
-  const createOptions = isEdit
-    ? []
-    : intakeOptions.length > 0
-      ? intakeOptions
-      : statusOptionsProp && statusOptionsProp.length > 0
-        ? statusOptionsProp
-        : lifecycle.createOptions;
+  const graph = useMemo(
+    () =>
+      (lifecycle.config as DependencyLifecycleConfig | null) ??
+      DEFAULT_DEPENDENCY_LIFECYCLE_CONFIG,
+    [lifecycle.config]
+  );
+  const intakeOptions = useMemo(
+    () => intakeEntityStatusLabels(graph),
+    [graph]
+  );
+  const createOptions = useMemo(() => {
+    if (isEdit) return [] as string[];
+    if (intakeOptions.length > 0) return intakeOptions;
+    if (statusOptionsProp && statusOptionsProp.length > 0) return statusOptionsProp;
+    return lifecycle.createOptions;
+  }, [isEdit, intakeOptions, lifecycle.createOptions, statusOptionsProp]);
   const defaultStatus =
     defaultStatusProp || lifecycle.defaultStatus || intakeOptions[0] || "Identified";
 
@@ -142,6 +147,13 @@ export function DependencyFormModal({
     setForm(defaults);
     setError(null);
     setCreated(null);
+  }, [open, defaults]);
+
+  // Releases list is independent of form defaults. Do not key this on `defaults` —
+  // that object was rebuilt every render (new intake-option arrays) and aborted
+  // the in-flight /api/releases call in a loop.
+  useEffect(() => {
+    if (!open) return;
     setLoadingReleases(true);
     const ac = new AbortController();
     void (async () => {
@@ -161,7 +173,7 @@ export function DependencyFormModal({
       setReleases(list);
     })();
     return () => ac.abort();
-  }, [open, defaults]);
+  }, [open]);
 
   // When lifecycle options arrive after open, snap create form to the enabled default.
   useEffect(() => {
