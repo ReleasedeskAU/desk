@@ -77,6 +77,19 @@ export function mapSeedConflictRow(
   };
 }
 
+/**
+ * True when this release is either side of the conflict.
+ * Exact code match — avoids REL-0001 matching REL-00010.
+ */
+export function conflictTouchesRelease(
+  row: Pick<ConflictViewRow, "release1Code" | "release2Code">,
+  releaseCode: string
+): boolean {
+  const exact = releaseCode.trim().toLowerCase();
+  if (!exact) return true;
+  return row.release1Code.toLowerCase() === exact || row.release2Code.toLowerCase() === exact;
+}
+
 function contains(hay: string | null | undefined, needle: string | undefined) {
   if (!needle) return true;
   return (hay ?? "").toLowerCase().includes(needle.trim().toLowerCase());
@@ -94,6 +107,8 @@ export type ConflictSeedFilters = {
   conflictingEnvironmentQ?: string;
   environmentConflictType?: string;
   notesQ?: string;
+  /** Match either release on the conflict (exact code). */
+  eitherReleaseQ?: string;
 };
 
 export function filterSeedConflicts(
@@ -107,8 +122,12 @@ export function filterSeedConflicts(
     if (filters.applicationName && !row.application.includes(filters.applicationName)) return false;
     if (!contains(row.assignedTo, filters.assignedToQ)) return false;
     if (!contains(row.conflictCode, filters.conflictCodeQ)) return false;
-    if (!contains(row.release1Code, filters.release1CodeQ)) return false;
-    if (!contains(row.release2Code, filters.release2CodeQ)) return false;
+    if (filters.eitherReleaseQ) {
+      if (!conflictTouchesRelease(row, filters.eitherReleaseQ)) return false;
+    } else {
+      if (!contains(row.release1Code, filters.release1CodeQ)) return false;
+      if (!contains(row.release2Code, filters.release2CodeQ)) return false;
+    }
     if (!contains(row.conflictingEnvironment, filters.conflictingEnvironmentQ)) return false;
     if (
       filters.environmentConflictType &&

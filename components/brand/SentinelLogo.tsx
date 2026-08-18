@@ -59,8 +59,8 @@ export function SentinelLogo({ variant = "full", className, priority }: Sentinel
         unoptimized
         className={cn(
           "object-contain object-left",
-          // Fill whatever space the sidebar header gives it (maximize) without distorting aspect ratio.
-          variant === "full" && "h-full w-full",
+          // CSS must set only one axis (plus auto on the other) so Next/Image keeps aspect ratio.
+          variant === "full" && "h-full w-auto",
           variant === "hero" && "h-auto w-full drop-shadow-2xl"
         )}
         priority={priority}

@@ -77,6 +77,8 @@ type Props = {
   statusOptions?: string[];
   /** Enabled default status from risk lifecycle config. */
   defaultStatus?: string;
+  /** When set, department / application / release are fixed to this release. */
+  lockTo?: { releaseId: string; departmentId: string; applicationId: string } | null;
 };
 
 /** Creates a validated risk and keeps its generated-ID confirmation visible after list refresh. */
@@ -87,6 +89,7 @@ export function RiskFormModal({
   categoryOptions,
   statusOptions: statusOptionsProp,
   defaultStatus: defaultStatusProp,
+  lockTo = null,
 }: Props) {
   const { config: riskConfig } = useRiskEngineConfig();
   const likelihoodOptions = scaleAxisValues(riskConfig.likelihoodMax);
@@ -119,7 +122,13 @@ export function RiskFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm({ ...EMPTY_FORM, status: defaultStatus });
+    setForm({
+      ...EMPTY_FORM,
+      status: defaultStatus,
+      releaseId: lockTo?.releaseId ?? "",
+      departmentId: lockTo?.departmentId ?? "",
+      applicationId: lockTo?.applicationId ?? "",
+    });
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -273,17 +282,17 @@ export function RiskFormModal({
       {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
       <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
         <SelectField label="Department" required value={form.departmentId} error={fieldErrors.departmentId}
-          disabled={loadingLookups} onChange={(event) => setForm((current) => ({ ...current, departmentId: event.target.value, applicationId: "", releaseId: "", riskOwnerId: "" }))}>
+          disabled={loadingLookups || Boolean(lockTo)} onChange={(event) => setForm((current) => ({ ...current, departmentId: event.target.value, applicationId: "", releaseId: "", riskOwnerId: "" }))}>
           <option value="">{loadingLookups ? "Loading…" : "Select department…"}</option>
           {departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </SelectField>
         <SelectField label="Application" required value={form.applicationId} error={fieldErrors.applicationId}
-          disabled={!form.departmentId} onChange={(event) => setForm((current) => ({ ...current, applicationId: event.target.value, releaseId: "" }))}>
+          disabled={!form.departmentId || Boolean(lockTo)} onChange={(event) => setForm((current) => ({ ...current, applicationId: event.target.value, releaseId: "" }))}>
           <option value="">{form.departmentId ? "Select application…" : "Select department first…"}</option>
           {filteredApplications.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </SelectField>
         <SelectField label="Release" required value={form.releaseId} error={fieldErrors.releaseId}
-          disabled={!form.applicationId} onChange={(event) => set("releaseId", event.target.value)}>
+          disabled={!form.applicationId || Boolean(lockTo)} onChange={(event) => set("releaseId", event.target.value)}>
           <option value="">{form.applicationId ? "Select linked release…" : "Select application first…"}</option>
           {filteredReleases.map((item) => <option key={item.id} value={item.id}>{item.releaseCode} — {item.name}</option>)}
         </SelectField>

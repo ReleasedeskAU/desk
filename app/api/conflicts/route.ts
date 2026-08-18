@@ -84,6 +84,7 @@ export async function GET(req: Request) {
     conflictCodeQ: str(params, "conflictId") ?? str(params, "conflictCode"),
     release1CodeQ: str(params, "release1"),
     release2CodeQ: str(params, "release2"),
+    eitherReleaseQ: str(params, "release"),
     conflictingEnvironmentQ: str(params, "conflictEnv"),
     environmentConflictType: str(params, "conflictType"),
     notesQ: str(params, "notes"),

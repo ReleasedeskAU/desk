@@ -77,6 +77,7 @@ export async function GET(req: Request) {
     releaseNameQ: str(params, "releaseName"),
     dependsOnNameQ: str(params, "dependsOnName"),
     notesQ: str(params, "notes"),
+    linkedReleaseQ: str(params, "linked"),
   });
   return NextResponse.json(filtered);
 }

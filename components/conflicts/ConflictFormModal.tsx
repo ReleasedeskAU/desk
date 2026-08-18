@@ -56,6 +56,10 @@ type Props = {
   statusOptions?: string[];
   /** Default create status from lifecycle config. */
   defaultStatus?: string;
+  /** When set, Release 1 is this release. */
+  lockRelease1Code?: string;
+  /** Prefill department / application from the parent release. */
+  lockOrg?: { departmentId: string; applicationId: string } | null;
 };
 
 /** Creates a validated environment conflict; Conflict ID is server-generated. */
@@ -66,6 +70,8 @@ export function ConflictFormModal({
   conflictTypeOptions = [],
   statusOptions: statusOptionsProp,
   defaultStatus: defaultStatusProp,
+  lockRelease1Code,
+  lockOrg = null,
 }: Props) {
   const lifecycle = useEntityLifecycleStatuses("/api/conflict-lifecycle-config");
   const createOptions =
@@ -108,9 +114,9 @@ export function ConflictFormModal({
     setForm({
       status: defaultStatus,
       priority: "P2 - High",
-      departmentId: "",
-      applicationId: "",
-      release1Code: "",
+      departmentId: lockOrg?.departmentId ?? "",
+      applicationId: lockOrg?.applicationId ?? "",
+      release1Code: lockRelease1Code ?? "",
       release2Code: "",
       conflictingEnvironment: "",
       environmentConflictType: "",
@@ -300,7 +306,7 @@ export function ConflictFormModal({
           required
           value={form.departmentId}
           error={fieldErrors.departmentId}
-          disabled={loadingLookups}
+          disabled={loadingLookups || Boolean(lockOrg)}
           onChange={(event) =>
             setForm((current) => ({
               ...current,
@@ -322,7 +328,7 @@ export function ConflictFormModal({
           required
           value={form.applicationId}
           error={fieldErrors.applicationId}
-          disabled={!form.departmentId}
+          disabled={!form.departmentId || Boolean(lockOrg)}
           onChange={(event) =>
             setForm((current) => ({
               ...current,
@@ -343,7 +349,7 @@ export function ConflictFormModal({
           required
           value={form.release1Code}
           error={fieldErrors.release1Code}
-          disabled={loadingLookups}
+          disabled={loadingLookups || Boolean(lockRelease1Code)}
           onChange={(event) => set("release1Code", event.target.value)}
         >
           <option value="">{loadingLookups ? "Loading…" : "Select release…"}</option>

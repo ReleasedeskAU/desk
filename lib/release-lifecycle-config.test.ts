@@ -221,6 +221,48 @@ describe("normalizeReleaseLifecycleConfig", () => {
     assert.equal(result.fallbackReason, null);
     assert.equal(result.config.statuses.length, 15);
   });
+
+  it("keeps the stored graph when the only defect is an unknown gate type", () => {
+    const raw = createDefaultReleaseLifecycleConfig();
+    raw.transitions[0]!.gates.push({
+      gateType: "run_javascript" as never,
+      enabled: true,
+      enforcement: "inherit",
+      sortOrder: 99,
+    });
+    const result = normalizeReleaseLifecycleConfigResult(raw);
+    assert.equal(result.usedEnterpriseDefaultFallback, false);
+    assert.equal(result.fallbackReason, null);
+    assert.equal(
+      result.config.transitions[0]!.gates.some((g) => String(g.gateType) === "run_javascript"),
+      false
+    );
+    assert.equal(
+      result.config.statuses.find((s) => s.key === "draft")?.label,
+      "Draft"
+    );
+  });
+
+  it("accepts business_signoff_complete on a stored Ready gate", () => {
+    const raw = createDefaultReleaseLifecycleConfig();
+    const ready = raw.transitions.find(
+      (t) => t.fromKey === "cab_approved" && t.toKey === "ready_to_deploy"
+    )!;
+    ready.gates.push({
+      gateType: "business_signoff_complete",
+      enabled: true,
+      enforcement: "inherit",
+      sortOrder: 85,
+    });
+    assert.equal(validateReleaseLifecycleConfig(raw), null);
+    const result = normalizeReleaseLifecycleConfigResult(raw);
+    assert.equal(result.usedEnterpriseDefaultFallback, false);
+    assert.ok(
+      result.config.transitions
+        .find((t) => t.fromKey === "cab_approved" && t.toKey === "ready_to_deploy")
+        ?.gates.some((g) => g.gateType === "business_signoff_complete")
+    );
+  });
 });
 
 /**

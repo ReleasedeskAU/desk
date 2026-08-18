@@ -3,8 +3,9 @@
 /**
  * Transitions panel — Active / Inactive moves; toggle enable + enforcement.
  */
-import { useMemo } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, Search, Trash2 } from "lucide-react";
+import { groupTransitionsByFrom } from "@/lib/lifecycle-transitions-ui";
 import type {
   ReleaseLifecycleConfig,
   ReleaseLifecycleTransitionConfig,
@@ -36,12 +37,6 @@ export type TransitionsPanelProps = {
   enforcementWarning: string | null;
 };
 
-type FromGroup = {
-  fromKey: string;
-  fromLabel: string;
-  transitions: ReleaseLifecycleTransitionConfig[];
-};
-
 /** Extra line when an inactive move is blocked because a status is Off. */
 function inactiveEndpointHint(
   transition: ReleaseLifecycleTransitionConfig,
@@ -58,33 +53,6 @@ function inactiveEndpointHint(
   if (off.length === 0) return "";
   const names = [...new Set(off)].join(" and ");
   return ` · ${names} is Off — turning this move On will turn that status back on`;
-}
-
-function groupByFrom(
-  transitions: ReleaseLifecycleTransitionConfig[],
-  config: ReleaseLifecycleConfig
-): FromGroup[] {
-  const statusOrder = new Map(
-    config.statuses.map((status) => [status.key, status.sortOrder] as const)
-  );
-  const labelByKey = new Map(
-    config.statuses.map((status) => [status.key, status.label] as const)
-  );
-  const byFrom = new Map<string, ReleaseLifecycleTransitionConfig[]>();
-  for (const transition of transitions) {
-    const list = byFrom.get(transition.fromKey) ?? [];
-    list.push(transition);
-    byFrom.set(transition.fromKey, list);
-  }
-  return [...byFrom.entries()]
-    .sort(
-      ([a], [b]) => (statusOrder.get(a) ?? 0) - (statusOrder.get(b) ?? 0)
-    )
-    .map(([fromKey, items]) => ({
-      fromKey,
-      fromLabel: labelByKey.get(fromKey) ?? fromKey,
-      transitions: items.sort((a, b) => a.sortOrder - b.sortOrder),
-    }));
 }
 
 /**
@@ -105,6 +73,7 @@ export function TransitionsPanel({
   onAdd,
   enforcementWarning,
 }: TransitionsPanelProps) {
+  const [query, setQuery] = useState("");
   const statusOptions = [...config.statuses].sort((a, b) => a.sortOrder - b.sortOrder);
   const active = useMemo(
     () => config.transitions.filter((t) => t.enabled),
@@ -115,15 +84,17 @@ export function TransitionsPanel({
     [config.transitions]
   );
   const activeGroups = useMemo(
-    () => groupByFrom(active, config),
-    [active, config]
+    () => groupTransitionsByFrom(active, config.statuses, query),
+    [active, config.statuses, query]
   );
   const inactiveGroups = useMemo(
-    () => groupByFrom(inactive, config),
-    [inactive, config]
+    () => groupTransitionsByFrom(inactive, config.statuses, query),
+    [inactive, config.statuses, query]
   );
 
-  const renderGroups = (groups: FromGroup[]) => (
+  const renderGroups = (
+    groups: ReturnType<typeof groupTransitionsByFrom<ReleaseLifecycleTransitionConfig>>
+  ) => (
     <div className="divide-y divide-slate-100 dark:divide-white/10">
       {groups.map(({ fromKey, fromLabel, transitions }) => (
         <div key={fromKey}>
@@ -229,8 +200,37 @@ export function TransitionsPanel({
     </div>
   );
 
+  const activeMatchCount = activeGroups.reduce(
+    (sum, group) => sum + group.transitions.length,
+    0
+  );
+  const inactiveMatchCount = inactiveGroups.reduce(
+    (sum, group) => sum + group.transitions.length,
+    0
+  );
+
   return (
     <div className="space-y-4" data-testid="lifecycle-transitions-panel">
+      <label className="block">
+        <span className="sr-only">Search transitions</span>
+        <span className="relative block">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search moves — e.g. Draft, Ready, Closed…"
+            className={cn(taInput, "h-9 pl-9")}
+            data-testid="lifecycle-transitions-search"
+          />
+        </span>
+      </label>
+      <p className="text-[12px] leading-relaxed text-slate-500 dark:text-white/55">
+        Grouped by starting status. Search by the from or to name.
+      </p>
       {enforcementWarning ? (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
@@ -243,20 +243,28 @@ export function TransitionsPanel({
 
       <LifecycleSection
         title="Active"
-        count={active.length}
-        emptyMessage="No active transitions — turn a move On below."
+        count={activeMatchCount}
+        emptyMessage={
+          query.trim()
+            ? `No active moves match “${query.trim()}”.`
+            : "No active transitions — turn a move On below."
+        }
         testId="lifecycle-transitions-active"
       >
-        {active.length > 0 ? renderGroups(activeGroups) : null}
+        {activeMatchCount > 0 ? renderGroups(activeGroups) : null}
       </LifecycleSection>
 
       <LifecycleSection
         title="Inactive"
-        count={inactive.length}
-        emptyMessage="No inactive transitions."
+        count={inactiveMatchCount}
+        emptyMessage={
+          query.trim()
+            ? `No inactive moves match “${query.trim()}”.`
+            : "No inactive transitions."
+        }
         testId="lifecycle-transitions-inactive"
       >
-        {inactive.length > 0 ? renderGroups(inactiveGroups) : null}
+        {inactiveMatchCount > 0 ? renderGroups(inactiveGroups) : null}
       </LifecycleSection>
 
       {editing ? (

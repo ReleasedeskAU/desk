@@ -18,6 +18,10 @@ import {
   listLegalNextStatuses,
   resolveLifecycleStatusRef,
 } from "@/lib/release-lifecycle-transition";
+import {
+  isReleaseAtOrBeyondDeploying,
+  isReleaseAtOrBeyondReady,
+} from "@/lib/release-related-entity-guards";
 
 export async function GET(
   req: Request,
@@ -98,6 +102,7 @@ export async function GET(
           securityClearance: release.securityClearance,
           dressRehearsal: release.dressRehearsal,
           opsSignoff: release.opsSignoff,
+          businessSignoff: release.businessSignoff,
           scopeDescription: release.scopeDescription,
           postImplementationReviewCompleted:
             release.postImplementationReviewCompleted,
@@ -125,6 +130,10 @@ export async function GET(
       currentLabel: current?.label ?? release.status,
       currentKind: current?.kind ?? null,
       currentEnabled: current?.enabled ?? false,
+      /** VR-36 — dependency graph add/remove frozen at Ready and later. */
+      dependencyGraphFrozen: isReleaseAtOrBeyondReady(release.status, resolved.config),
+      /** VR-35 — new blockers locked once Deploying or later. */
+      blockerCreateLocked: isReleaseAtOrBeyondDeploying(release.status, resolved.config),
       unknownStatus: current == null,
       configPin: resolved.configPin,
       versionId: resolved.versionId,

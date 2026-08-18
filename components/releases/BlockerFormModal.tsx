@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2 } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
@@ -54,6 +55,43 @@ type Props = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const fieldClass = cn(taInput, "mt-1 min-w-0 max-w-full");
+
+/** Overlay + dialog chrome — always on the viewport, never clipped by page overflow. */
+function BlockerModalFrame({
+  children,
+  labelledBy,
+  onClose,
+  compact = false,
+}: {
+  children: React.ReactNode;
+  labelledBy: string;
+  onClose: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/40 p-4 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "my-auto flex w-full min-w-0 flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-[var(--card)]",
+          compact
+            ? "max-h-[min(90dvh,40rem)] max-w-lg"
+            : "max-h-[min(90dvh,52rem)] max-w-[min(42rem,calc(100vw-2rem))]"
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function SummaryRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -226,71 +264,60 @@ export function BlockerFormModal({
     });
   };
 
-  if (created) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-        <div
-          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="blocker-created-title"
-        >
-          <div className="mb-4 flex items-start gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-              <CheckCircle2 className="h-5 w-5" aria-hidden />
-            </span>
-            <div>
-              <h2 id="blocker-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">
-                Blocker created
-              </h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
-                Your blocker was saved successfully.
-              </p>
-            </div>
-          </div>
-
-          <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
-            <SummaryRow label="Blocker ID" value={created.blockerCode} mono />
-            <SummaryRow label="Release" value={created.releaseCode} mono />
-            <SummaryRow label="Type" value={created.blockerType} />
-            <SummaryRow label="Severity" value={created.severity} />
-            <SummaryRow label="Status" value={created.status} />
-            <SummaryRow label="Impact" value={created.impactOnRelease} />
-          </dl>
-
-          <div className="mt-5 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className={taBtnSecondary}
-              onClick={() => {
-                setCreated(null);
-                setForm(defaults);
-                setError(null);
-              }}
-            >
-              Create another
-            </button>
-            <ProgressLink
-              href={`/blockers/${created.id}`}
-              className={cn(taBtnSecondary, "inline-flex items-center")}
-            >
-              View blocker
-            </ProgressLink>
-            <button type="button" className={taBtnPrimary} onClick={onClose}>
-              Close
-            </button>
+  const dialog = created ? (
+    <BlockerModalFrame labelledBy="blocker-created-title" onClose={onClose} compact>
+      <div className="min-w-0 p-6">
+        <div className="mb-4 flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+            <CheckCircle2 className="h-5 w-5" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h2 id="blocker-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+              Blocker created
+            </h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
+              Your blocker was saved successfully.
+            </p>
           </div>
         </div>
-      </div>
-    );
-  }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-[var(--card)]">
+        <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
+          <SummaryRow label="Blocker ID" value={created.blockerCode} mono />
+          <SummaryRow label="Release" value={created.releaseCode} mono />
+          <SummaryRow label="Type" value={created.blockerType} />
+          <SummaryRow label="Severity" value={created.severity} />
+          <SummaryRow label="Status" value={created.status} />
+          <SummaryRow label="Impact" value={created.impactOnRelease} />
+        </dl>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className={taBtnSecondary}
+            onClick={() => {
+              setCreated(null);
+              setForm(defaults);
+              setError(null);
+            }}
+          >
+            Create another
+          </button>
+          <ProgressLink
+            href={`/blockers/${created.id}`}
+            className={cn(taBtnSecondary, "inline-flex items-center")}
+          >
+            View blocker
+          </ProgressLink>
+          <button type="button" className={taBtnPrimary} onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </BlockerModalFrame>
+  ) : (
+    <BlockerModalFrame labelledBy="new-blocker-title" onClose={onClose}>
         <div className="shrink-0 border-b border-gray-200 px-5 py-4 dark:border-[var(--border)]">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Blocker</h2>
+          <h2 id="new-blocker-title" className="text-lg font-semibold text-gray-900 dark:text-white">New Blocker</h2>
           <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
             {scoped
               ? `${lockedReleaseCode} — ${lockedReleaseName}`
@@ -298,7 +325,7 @@ export function BlockerFormModal({
           </p>
         </div>
 
-        <form id="blocker-create-form" onSubmit={submit} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <form id="blocker-create-form" onSubmit={submit} className="min-h-0 min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto px-5 py-4">
           {!scoped && (
             <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
               Release <span className="text-rose-500">*</span>
@@ -325,10 +352,10 @@ export function BlockerFormModal({
             </label>
           )}
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Blocker type <span className="text-rose-500">*</span>
             <select
-              className={cn(taInput, "mt-1")}
+              className={fieldClass}
               value={form.blockerType}
               onChange={(e) => set("blockerType")(e.target.value)}
               required
@@ -341,21 +368,21 @@ export function BlockerFormModal({
             </select>
           </label>
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Description <span className="text-rose-500">*</span>
             <textarea
-              className={cn(taInput, "mt-1 min-h-[72px]")}
+              className={cn(fieldClass, "min-h-[72px]")}
               value={form.blockerDescription}
               onChange={(e) => set("blockerDescription")(e.target.value)}
               required
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Severity <span className="text-rose-500">*</span>
               <select
-                className={cn(taInput, "mt-1")}
+                className={fieldClass}
                 value={form.severity}
                 onChange={(e) => set("severity")(e.target.value)}
                 required
@@ -367,10 +394,10 @@ export function BlockerFormModal({
                 ))}
               </select>
             </label>
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Escalation
               <select
-                className={cn(taInput, "mt-1")}
+                className={fieldClass}
                 value={form.escalationLevel}
                 onChange={(e) => set("escalationLevel")(e.target.value)}
               >
@@ -383,78 +410,77 @@ export function BlockerFormModal({
             </label>
           </div>
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Impact on release <span className="text-rose-500">*</span>
             <input
-              className={cn(taInput, "mt-1")}
+              className={fieldClass}
               value={form.impactOnRelease}
               onChange={(e) => set("impactOnRelease")(e.target.value)}
               required
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Raised date <span className="text-rose-500">*</span>
               <input
                 type="date"
-                className={cn(taInput, "mt-1")}
+                className={fieldClass}
                 value={form.raisedDate}
                 onChange={(e) => set("raisedDate")(e.target.value)}
                 required
               />
             </label>
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Target resolution
               <input
                 type="date"
-                className={cn(taInput, "mt-1")}
+                className={fieldClass}
                 value={form.targetResolutionDate}
                 onChange={(e) => set("targetResolutionDate")(e.target.value)}
               />
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Raised by
               <input
-                className={cn(taInput, "mt-1")}
+                className={fieldClass}
                 value={form.raisedBy}
                 onChange={(e) => set("raisedBy")(e.target.value)}
               />
             </label>
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Assigned to
               <input
-                className={cn(taInput, "mt-1")}
+                className={fieldClass}
                 value={form.assignedTo}
                 onChange={(e) => set("assignedTo")(e.target.value)}
               />
             </label>
           </div>
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Application
             <input
-              className={cn(taInput, "mt-1")}
+              className={fieldClass}
               value={form.applicationName}
               onChange={(e) => set("applicationName")(e.target.value)}
             />
           </label>
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Root cause (optional)
             <input
-              className={cn(taInput, "mt-1")}
+              className={fieldClass}
               value={form.rootCause}
               onChange={(e) => set("rootCause")(e.target.value)}
             />
           </label>
-
         </form>
 
-        <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
           <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
             Cancel
           </button>
@@ -467,8 +493,12 @@ export function BlockerFormModal({
             {saving ? "Saving…" : "Create blocker"}
           </button>
         </div>
-      </div>
+    </BlockerModalFrame>
+  );
 
+  return (
+    <>
+      {createPortal(dialog, document.body)}
       <FormAlertDialog
         alert={
           error
@@ -477,6 +507,6 @@ export function BlockerFormModal({
         }
         onDismiss={() => setError(null)}
       />
-    </div>
+    </>
   );
 }

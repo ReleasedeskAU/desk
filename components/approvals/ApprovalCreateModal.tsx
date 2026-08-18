@@ -41,6 +41,7 @@ export function ApprovalCreateModal({
   approvalTypes: _approvalTypes = [],
   decisionOptions: decisionOptionsProp = [],
   defaultDecision = "Pending",
+  lockReleaseId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -50,6 +51,8 @@ export function ApprovalCreateModal({
   decisionOptions?: string[];
   /** Enabled default decision from approval lifecycle config. */
   defaultDecision?: string;
+  /** When set, the approval is created for this release. */
+  lockReleaseId?: string;
 }) {
   const decisionOptions = useMemo(
     () => (decisionOptionsProp.length > 0 ? decisionOptionsProp : [...APPROVAL_DECISIONS]),
@@ -66,7 +69,7 @@ export function ApprovalCreateModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(defaultDecision || "Pending"));
+    setForm({ ...emptyForm(defaultDecision || "Pending"), releaseId: lockReleaseId || "" });
     setErrors({});
     setError(null);
     setCreated(null);
@@ -179,7 +182,7 @@ export function ApprovalCreateModal({
               onChange={(value) => set("releaseId", value)}
               options={releases.map((release) => ({ value: release.id, label: `${release.releaseCode} — ${release.name}` }))}
               placeholder={loading ? "Loading…" : "Select release…"}
-              disabled={loading}
+              disabled={loading || Boolean(lockReleaseId)}
               className={errors.releaseId ? "[&_button]:border-rose-400" : undefined}
             />
           </div>

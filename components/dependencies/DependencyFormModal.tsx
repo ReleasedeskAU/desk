@@ -49,6 +49,8 @@ type Props = {
   statusOptions?: string[];
   /** Default create status from lifecycle config. */
   defaultStatus?: string;
+  /** When set, the "from" release is fixed (Release detail add). */
+  lockReleaseId?: string;
 };
 
 function coerceEnum<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
@@ -68,6 +70,7 @@ export function DependencyFormModal({
   depCode,
   statusOptions: statusOptionsProp,
   defaultStatus: defaultStatusProp,
+  lockReleaseId,
 }: Props) {
   const isEdit = Boolean(editId);
   const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
@@ -81,7 +84,7 @@ export function DependencyFormModal({
     const statusFallback = defaultStatus;
     const initialStatus = initial?.status?.trim();
     return {
-      releaseId: initial?.releaseId ?? "",
+      releaseId: lockReleaseId || initial?.releaseId || "",
       dependsOnReleaseId: initial?.dependsOnReleaseId ?? "",
       dependencyType: coerceEnum(initial?.dependencyType, DEPENDENCY_TYPES, "Hard"),
       status:
@@ -94,7 +97,7 @@ export function DependencyFormModal({
       impactIfBlocked: coerceEnum(initial?.impactIfBlocked, DEPENDENCY_IMPACTS, "Release Delay"),
       notes: initial?.notes ?? "",
     };
-  }, [initial, defaultStatus, createOptions, isEdit]);
+  }, [initial, defaultStatus, createOptions, isEdit, lockReleaseId]);
 
   const [form, setForm] = useState(defaults);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
@@ -135,7 +138,9 @@ export function DependencyFormModal({
       setReleases(list);
     })();
     return () => ac.abort();
-  }, [open, defaults]);
+    // Fetch once per open. `defaults` is applied on this open tick — do not
+    // key the effect on it or an unstable initial object refetches forever.
+  }, [open]);
 
   // When lifecycle options arrive after open, snap create form to the enabled default.
   useEffect(() => {
@@ -259,7 +264,7 @@ export function DependencyFormModal({
               onClick={() => {
                 setCreated(null);
                 setForm({
-                  releaseId: "",
+                  releaseId: lockReleaseId || "",
                   dependsOnReleaseId: "",
                   dependencyType: "Hard",
                   status: defaultStatus,
@@ -308,7 +313,7 @@ export function DependencyFormModal({
               value={form.releaseId}
               onChange={(e) => set("releaseId")(e.target.value)}
               required
-              disabled={loadingReleases}
+              disabled={loadingReleases || Boolean(lockReleaseId)}
             >
               <option value="">{loadingReleases ? "Loading…" : "Select release…"}</option>
               {releaseOptions}

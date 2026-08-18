@@ -270,6 +270,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             securityClearance: existing.securityClearance,
             dressRehearsal: existing.dressRehearsal,
             opsSignoff: existing.opsSignoff,
+            businessSignoff: existing.businessSignoff,
             scopeDescription: existing.scopeDescription,
             postImplementationReviewCompleted:
               existing.postImplementationReviewCompleted,

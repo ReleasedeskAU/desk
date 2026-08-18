@@ -7,6 +7,7 @@
  * Missing owner and missing bridge share one path: scopeSource = fallback_default.
  */
 import { prisma } from "@/lib/prisma";
+import { systemAlertCreateFields } from "@/lib/alert-source";
 import {
   createDefaultApprovalLifecycleConfig,
   type ApprovalLifecycleConfig,
@@ -381,6 +382,7 @@ export async function runAv03BlockerStaleAlerts(
           ),
           status: "Pending",
           environmentName: "n/a",
+          ...systemAlertCreateFields(),
           sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
         },
       });

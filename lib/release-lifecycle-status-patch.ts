@@ -51,6 +51,7 @@ export type ReleaseStatusPatchRelease = {
   securityClearance?: string | null;
   dressRehearsal?: string | null;
   opsSignoff?: string | null;
+  businessSignoff?: string | null;
   scopeDescription?: string | null;
   postImplementationReviewCompleted?: boolean | null;
   cabScopeSnapshot?: unknown;
@@ -318,6 +319,10 @@ export async function loadReleaseLifecycleGateFacts(
     opsSignoffComplete: signoffStatusCountsAsComplete(
       signoffConfig,
       release.opsSignoff
+    ),
+    businessSignoffComplete: signoffStatusCountsAsComplete(
+      signoffConfig,
+      release.businessSignoff
     ),
     unmitigatedHighRiskCount,
     incompleteWorkItemCount,

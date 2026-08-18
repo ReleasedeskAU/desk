@@ -265,6 +265,32 @@ describe("Tranche 1 progression gates", () => {
     assert.equal(
       evaluateLifecycleGate(
         {
+          gateType: "business_signoff_complete",
+          enabled: true,
+          enforcement: "inherit",
+          sortOrder: 85,
+        },
+        emptyLifecycleGateFacts({ businessSignoffComplete: false }),
+        ready
+      ).passed,
+      false
+    );
+    assert.equal(
+      evaluateLifecycleGate(
+        {
+          gateType: "business_signoff_complete",
+          enabled: true,
+          enforcement: "inherit",
+          sortOrder: 85,
+        },
+        emptyLifecycleGateFacts({ businessSignoffComplete: true }),
+        ready
+      ).passed,
+      true
+    );
+    assert.equal(
+      evaluateLifecycleGate(
+        {
           gateType: "work_items_complete",
           enabled: true,
           enforcement: "inherit",

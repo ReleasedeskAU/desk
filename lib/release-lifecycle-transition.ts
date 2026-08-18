@@ -66,6 +66,8 @@ export type ReleaseLifecycleGateFacts = {
   dressRehearsalComplete: boolean;
   /** True when Ops Sign-Off counts as complete (VR-31). */
   opsSignoffComplete: boolean;
+  /** True when Business Sign-Off counts as complete. */
+  businessSignoffComplete: boolean;
   /**
    * Count of High-score linked risks that still have no mitigation plan (VR-27).
    * Closed / Accepted / Mitigated risks are excluded.
@@ -328,6 +330,10 @@ export function evaluateLifecycleGate(
       return facts.opsSignoffComplete
         ? pass()
         : fail("Ops Sign-Off must be complete before Ready");
+    case "business_signoff_complete":
+      return facts.businessSignoffComplete
+        ? pass()
+        : fail("Business Sign-Off must be complete before Ready");
     case "high_risks_mitigated":
       return facts.unmitigatedHighRiskCount === 0
         ? pass()
@@ -555,6 +561,7 @@ export function emptyLifecycleGateFacts(
     testSignoffComplete: false,
     dressRehearsalComplete: false,
     opsSignoffComplete: false,
+    businessSignoffComplete: false,
     unmitigatedHighRiskCount: 0,
     incompleteWorkItemCount: 0,
     pirComplete: false,

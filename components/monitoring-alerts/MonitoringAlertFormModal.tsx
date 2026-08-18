@@ -12,6 +12,7 @@ import {
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
+import { manualAlertCreateFields } from "@/lib/alert-source";
 
 const ALERT_SEVERITIES = ["Critical", "Warning"] as const;
 /** Fallback status labels before alert lifecycle config loads. */
@@ -86,6 +87,8 @@ type Props = {
   statusOptions?: string[];
   /** Enabled default status from alert lifecycle config. */
   defaultStatus?: string;
+  /** When set, department / application are fixed to this release's app. */
+  lockTo?: { departmentId: string; applicationId: string } | null;
 };
 
 /** Creates a validated monitoring alert with department/application/environment chain. */
@@ -96,6 +99,7 @@ export function MonitoringAlertFormModal({
   alertTypeOptions = [],
   statusOptions: statusOptionsProp = [],
   defaultStatus = "Pending",
+  lockTo = null,
 }: Props) {
   const statusOptions = useMemo(
     () => (statusOptionsProp.length > 0 ? statusOptionsProp : [...ALERT_STATUSES]),
@@ -113,7 +117,11 @@ export function MonitoringAlertFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(defaultStatus || "Pending"));
+    setForm({
+      ...emptyForm(defaultStatus || "Pending"),
+      departmentId: lockTo?.departmentId ?? "",
+      applicationId: lockTo?.applicationId ?? "",
+    });
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -202,6 +210,7 @@ export function MonitoringAlertFormModal({
         status: form.status,
         assignedTo: form.assignedTo.trim() || null,
         environmentName: form.environmentName,
+        ...manualAlertCreateFields(),
       }),
       label: "create-monitoring-alert",
       rejectHttpErrors: false,
@@ -262,7 +271,7 @@ export function MonitoringAlertFormModal({
           required
           value={form.departmentId}
           error={fieldErrors.departmentId}
-          disabled={loadingLookups}
+          disabled={loadingLookups || Boolean(lockTo)}
           onChange={(event) =>
             setForm((current) => ({
               ...current,
@@ -284,7 +293,7 @@ export function MonitoringAlertFormModal({
           required
           value={form.applicationId}
           error={fieldErrors.applicationId}
-          disabled={!form.departmentId}
+          disabled={!form.departmentId || Boolean(lockTo)}
           onChange={(event) =>
             setForm((current) => ({
               ...current,

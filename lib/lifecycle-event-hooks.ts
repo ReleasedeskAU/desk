@@ -3,6 +3,7 @@
  * Wired from entity write paths after committed mutations — not from gate evaluation alone.
  */
 import { prisma } from "@/lib/prisma";
+import { systemAlertCreateFields } from "@/lib/alert-source";
 import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
 import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
@@ -213,6 +214,7 @@ export async function cascadeDependenciesAtRiskOnRollback(
             status: "Pending",
             environmentName: "n/a",
             assignedTo: dep.release.owner || null,
+            ...systemAlertCreateFields(),
             sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
           },
         });
@@ -420,6 +422,7 @@ export async function createMonitoringAlertOnDriftEscalated(args: {
       currentValue: "Escalated",
       status: "Pending",
       environmentName: args.environmentName,
+      ...systemAlertCreateFields(),
       sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
     },
   });

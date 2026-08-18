@@ -76,6 +76,10 @@ type Props = {
   statusOptions?: string[];
   /** Enabled default status from incident lifecycle config. */
   defaultStatus?: string;
+  /** When set, the incident is tied to this release code. */
+  lockRelatedReleaseCode?: string;
+  /** Prefill application when creating from a release page. */
+  preferredApplicationId?: string;
 };
 
 /** Creates a validated incident; server generates incidentCode. */
@@ -85,6 +89,8 @@ export function IncidentFormModal({
   onCreated,
   statusOptions: statusOptionsProp,
   defaultStatus: defaultStatusProp,
+  lockRelatedReleaseCode,
+  preferredApplicationId,
 }: Props) {
   const lifecycle = useEntityLifecycleStatuses("/api/incident-lifecycle-config");
   const defaultStatus =
@@ -113,7 +119,11 @@ export function IncidentFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(defaultStatus));
+    setForm({
+      ...emptyForm(defaultStatus),
+      relatedReleaseCode: lockRelatedReleaseCode ?? "",
+      applicationId: preferredApplicationId ?? "",
+    });
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -332,6 +342,7 @@ export function IncidentFormModal({
         <SelectField
           label="Related release"
           value={form.relatedReleaseCode}
+          disabled={Boolean(lockRelatedReleaseCode)}
           onChange={(event) => set("relatedReleaseCode", event.target.value)}
         >
           <option value="">None</option>

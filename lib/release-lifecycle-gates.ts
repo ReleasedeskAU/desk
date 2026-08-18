@@ -24,6 +24,7 @@ export const RELEASE_LIFECYCLE_GATE_TYPES = [
   "dress_rehearsal_for_large",
   "scope_unchanged_since_cab",
   "ops_signoff_complete",
+  "business_signoff_complete",
   "high_risks_mitigated",
   "work_items_complete",
   "pir_complete",
@@ -174,6 +175,12 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
   ops_signoff_complete: {
     label: "Ops sign-off complete",
     description: "Ops Sign-Off must be complete before Ready.",
+    ruleIds: ["VR-31"],
+    dataReliability: "reliable",
+  },
+  business_signoff_complete: {
+    label: "Business sign-off complete",
+    description: "Business Sign-Off must be complete before Ready.",
     ruleIds: ["VR-31"],
     dataReliability: "reliable",
   },

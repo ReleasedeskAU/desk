@@ -19,6 +19,12 @@ import {
 import { DetailDecisionHeader } from "@/components/detail/decision";
 import { ReleaseActionStrip } from "@/components/releases/ReleaseActionStrip";
 import { DbBlockerList } from "@/components/releases/DbBlockerList";
+import { DbReleaseDependencyList } from "@/components/releases/DbReleaseDependencyList";
+import { DbReleaseRiskList } from "@/components/releases/DbReleaseRiskList";
+import { DbReleaseIncidentList } from "@/components/releases/DbReleaseIncidentList";
+import { DbReleaseAlertList } from "@/components/releases/DbReleaseAlertList";
+import { DbReleaseApprovalList } from "@/components/releases/DbReleaseApprovalList";
+import { DbReleaseConflictList } from "@/components/releases/DbReleaseConflictList";
 import { DbReleaseDriftList } from "@/components/releases/DbReleaseDriftList";
 import { DbAIRiskPanel } from "@/components/releases/DbAIRiskPanel";
 import { DbLinkedWorkItems } from "@/components/releases/DbLinkedWorkItems";
@@ -41,10 +47,13 @@ import type { ReleaseLifecycleStatusKind } from "@/lib/release-lifecycle-config"
 import { toneForLifecycleKind } from "@/lib/release-lifecycle-status-ui";
 import { findEntityStatusByLabel } from "@/lib/entity-lifecycle-status-ui";
 import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
+import { DEFAULT_SIGNOFF_TYPES } from "@/lib/signoff-lifecycle-config";
 import {
   AlertTriangle,
+  Bell,
   Calendar,
   FileText,
+  GitBranch,
   GitCompareArrows,
   History,
   Link2,
@@ -53,6 +62,9 @@ import {
   Pencil,
   Rocket,
   Server,
+  ShieldAlert,
+  Siren,
+  Stamp,
   Trash2,
   Users,
 } from "lucide-react";
@@ -99,6 +111,8 @@ type ReleaseDetail = {
   uatSignoff?: string | null;
   securityClearance?: string | null;
   dressRehearsal?: string | null;
+  businessSignoff?: string | null;
+  opsSignoff?: string | null;
   hypercarePlan?: string | null;
   commsPlan?: string | null;
   trainingStatus?: string | null;
@@ -170,6 +184,20 @@ function signalDone(value?: string | null): boolean {
 }
 
 /** Prefer sign-off lifecycle `countsAsComplete`; fall back to heuristic. */
+function releaseSignoffValue(
+  release: ReleaseDetail,
+  field: string
+): string | null | undefined {
+  const value = (release as unknown as Record<string, unknown>)[field];
+  if (typeof value === "string" || value == null) return value as string | null | undefined;
+  return String(value);
+}
+
+function enabledSignoffTypes(signoffConfig: SignoffLifecycleConfig | null) {
+  const types = signoffConfig?.types?.length ? signoffConfig.types : [...DEFAULT_SIGNOFF_TYPES];
+  return types.filter((type) => type.enabled).sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 function signoffComplete(
   value: string | null | undefined,
   signoffConfig: SignoffLifecycleConfig | null
@@ -281,6 +309,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
     label: string;
     kind: ReleaseLifecycleStatusKind | null;
     enabled: boolean;
+    dependencyGraphFrozen: boolean;
+    blockerCreateLocked: boolean;
   } | null>(null);
   const [signoffConfig, setSignoffConfig] =
     useState<SignoffLifecycleConfig | null>(null);
@@ -309,6 +339,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
       currentLabel: string;
       currentKind: ReleaseLifecycleStatusKind | null;
       currentEnabled: boolean;
+      dependencyGraphFrozen?: boolean;
+      blockerCreateLocked?: boolean;
     }>(
       `/api/releases/${release.id}/lifecycle`,
       (payload) =>
@@ -316,6 +348,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
           label: payload.currentLabel,
           kind: payload.currentKind ?? null,
           enabled: payload.currentEnabled,
+          dependencyGraphFrozen: Boolean(payload.dependencyGraphFrozen),
+          blockerCreateLocked: Boolean(payload.blockerCreateLocked),
         }),
       { label: "release-detail-lifecycle-status" }
     );
@@ -469,13 +503,12 @@ export function DbReleaseDetail({ id }: { id: string }) {
 
   const activeStage =
     commandData?.stages.find((s) => s.status === "active" || s.status === "blocked")?.label ?? "…";
-  const signoffsDone = [
-    release.devSignoff,
-    release.testSignoff,
-    release.uatSignoff,
-    release.securityClearance,
-    release.dressRehearsal,
-  ].filter((v) => signoffComplete(v, signoffConfig)).length;
+  const signoffTypes = enabledSignoffTypes(signoffConfig);
+  const signoffsDone = signoffTypes.filter(
+    (type) =>
+      type.releaseField &&
+      signoffComplete(releaseSignoffValue(release, type.releaseField), signoffConfig)
+  ).length;
   const shipPct = commandData?.prediction?.shipProbability;
   const slipPct = commandData?.prediction?.delayRisk;
   const releaseDue = describeDue(release.releaseDate);
@@ -717,9 +750,37 @@ export function DbReleaseDetail({ id }: { id: string }) {
           id="blockers"
           icon={AlertTriangle}
           tone="rose"
-          title="Blockers & Conflicts"
-          description="Open blockers, environment conflicts, and freeze constraints"
-          detail="Everything currently blocking or threatening this release: open blocker tickets and their severity, whether the required test/UAT environment conflicts with another release's booking, and any change-freeze window that restricts deployment dates. Add or resolve blockers directly from this section."
+          title="Blockers"
+          description="Open blocker tickets and severity"
+          detail="Blocker tickets currently threatening this release. Add or resolve blockers directly from this section. VR-35 blocks new blockers once the release is Deploying or later."
+          collapsible
+          defaultOpen
+        >
+          <DbBlockerList
+            embedded
+            releaseCode={release.releaseCode}
+            releaseName={release.name}
+            departmentName={release.department.name}
+            applicationName={release.applications[0]?.application.name ?? ""}
+            canEdit={canEdit}
+            raisedByDefault={user?.name ?? ""}
+            onChanged={refreshCommandCenter}
+            onCountChange={onBlockerCountChange}
+            addDisabledReason={
+              lifecycleStatus?.blockerCreateLocked
+                ? "Blockers can’t be created now. This release is Deploying or further along."
+                : null
+            }
+          />
+        </DetailSection>
+
+        <DetailSection
+          id="conflicts"
+          icon={AlertTriangle}
+          tone="amber"
+          title="Conflicts"
+          description="Environment clashes, freeze windows, and conflict records"
+          detail="Release-level conflict fields plus Conflict register rows involving this release. Create a real conflict from here — it appears on the Conflict queue immediately."
           collapsible
           defaultOpen
         >
@@ -771,16 +832,11 @@ export function DbReleaseDetail({ id }: { id: string }) {
             </div>
           )}
           <div className="mt-3 border-t border-gray-100 pt-3 dark:border-[var(--border)]">
-            <DbBlockerList
-              embedded
+            <DbReleaseConflictList
               releaseCode={release.releaseCode}
-              releaseName={release.name}
-              departmentName={release.department.name}
-              applicationName={release.applications[0]?.application.name ?? ""}
+              departmentId={release.departmentId}
+              applicationId={release.applications[0]?.application.id ?? ""}
               canEdit={canEdit}
-              raisedByDefault={user?.name ?? ""}
-              onChanged={refreshCommandCenter}
-              onCountChange={onBlockerCountChange}
             />
           </div>
         </DetailSection>
@@ -810,12 +866,12 @@ export function DbReleaseDetail({ id }: { id: string }) {
         </DetailSection>
 
         <DetailSection
-          id="section-dates"
+          id="section-signoffs"
           icon={Calendar}
           tone="emerald"
-          title="Sign-offs & Approvals"
-          description="Required gates and approval state — go-live / CAB / window are in the header"
-          detail="Individual sign-offs (Dev, Test, UAT, Security, Dress rehearsal), overall approval status, and rollback plan. Calendar dates already shown in the decision header are not repeated here."
+          title="Sign-offs"
+          description={`${signoffsDone} of ${signoffTypes.length} complete — record via Edit Release`}
+          detail="Checklist sign-offs for this release. Values are recorded via Edit Release — this section does not create a second edit path."
           collapsible
           defaultOpen
         >
@@ -838,62 +894,69 @@ export function DbReleaseDetail({ id }: { id: string }) {
                 hint="Calendar span from start to planned go-live."
                 value={durationLabel(release.startDate, release.releaseDate)}
               />
+              <DetailField
+                label="Rollback Plan"
+                hint="Whether a plan exists to undo the deployment if go-live fails."
+                value={
+                  <StatusChip
+                    label={String(dash(release.rollbackPlan))}
+                    tone={fieldStatusTone(release.rollbackPlan)}
+                  />
+                }
+              />
             </DetailFieldGrid>
-
-            <div className="border-t border-slate-100 pt-4 dark:border-[var(--border)]">
-              <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                Sign-offs & approvals
-              </p>
-              <DetailFieldGrid cols={2}>
-                <DetailField
-                  label="Approval Status"
-                  hint="Overall approval state for the release — separate from the five individual sign-off gates below."
-                  value={
-                    <StatusChip
-                      label={String(dash(release.approvalStatus))}
-                      tone={fieldStatusTone(release.approvalStatus)}
-                    />
-                  }
-                />
-                <DetailField
-                  label="Rollback Plan"
-                  hint="Whether a plan exists to undo the deployment if go-live fails."
-                  value={
-                    <StatusChip
-                      label={String(dash(release.rollbackPlan))}
-                      tone={fieldStatusTone(release.rollbackPlan)}
-                    />
-                  }
-                />
-              </DetailFieldGrid>
-              <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                <SignoffChip
-                  label="Dev sign-off"
-                  done={signoffComplete(release.devSignoff, signoffConfig)}
-                  hint="Development team confirms build quality and code readiness for release."
-                />
-                <SignoffChip
-                  label="Test sign-off"
-                  done={signoffComplete(release.testSignoff, signoffConfig)}
-                  hint="QA confirms testing is complete and no open P1 defects remain."
-                />
-                <SignoffChip
-                  label="UAT sign-off"
-                  done={signoffComplete(release.uatSignoff, signoffConfig)}
-                  hint="Business / UAT users accept the change in the UAT environment."
-                />
-                <SignoffChip
-                  label="Security clearance"
-                  done={signoffComplete(release.securityClearance, signoffConfig)}
-                  hint="Security / InfoSec has cleared the release for production deployment."
-                />
-                <SignoffChip
-                  label="Dress rehearsal"
-                  done={signoffComplete(release.dressRehearsal, signoffConfig)}
-                  hint="A practice run of the deployment (or dry-run) has been completed successfully."
-                />
+            {signoffTypes.length === 0 ? (
+              <EmptyHint>No sign-off types are enabled.</EmptyHint>
+            ) : (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                {signoffTypes.map((type) => (
+                  <SignoffChip
+                    key={type.key}
+                    label={type.label}
+                    done={
+                      type.releaseField
+                        ? signoffComplete(
+                            releaseSignoffValue(release, type.releaseField),
+                            signoffConfig
+                          )
+                        : false
+                    }
+                    hint={
+                      type.releaseField
+                        ? `${type.label} sign-off stored on ${type.releaseField}.`
+                        : `${type.label} has no release field yet.`
+                    }
+                  />
+                ))}
               </div>
-            </div>
+            )}
+          </div>
+        </DetailSection>
+
+        <DetailSection
+          id="section-approvals"
+          icon={Stamp}
+          tone="emerald"
+          title="Approvals"
+          description="CAB / Change Manager / Executive / Emergency requests"
+          detail="Approval Status is the release-level summary. The list below is the Approval Queue — creating one here creates the same record that appears on /approvals."
+          collapsible
+          defaultOpen
+        >
+          <DetailFieldGrid cols={2}>
+            <DetailField
+              label="Approval Status"
+              hint="Overall approval state for the release — separate from individual Approval Queue rows."
+              value={
+                <StatusChip
+                  label={String(dash(release.approvalStatus))}
+                  tone={fieldStatusTone(release.approvalStatus)}
+                />
+              }
+            />
+          </DetailFieldGrid>
+          <div className="mt-3 border-t border-gray-100 pt-3 dark:border-[var(--border)]">
+            <DbReleaseApprovalList releaseId={release.id} canEdit={canEdit} />
           </div>
         </DetailSection>
 
@@ -990,6 +1053,80 @@ export function DbReleaseDetail({ id }: { id: string }) {
         </DetailSection>
 
         <DbReleaseServicesInvolved releaseId={id} />
+
+        <DetailSection
+          id="dependencies"
+          icon={GitBranch}
+          tone="indigo"
+          title="Dependencies"
+          description="Depends-on and depended-by links"
+          detail="Full Dependency register rows where this release is either side of the link. Adding one here creates the same DEP record as the Dependencies page. VR-36 freezes adds once the release is Ready or later."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseDependencyList
+            releaseId={release.id}
+            releaseCode={release.releaseCode}
+            canEdit={canEdit}
+            addDisabledReason={
+              lifecycleStatus?.dependencyGraphFrozen
+                ? "Dependencies can’t be changed now. This release is Ready to deploy or further along."
+                : null
+            }
+          />
+        </DetailSection>
+
+        <DetailSection
+          id="risks"
+          icon={ShieldAlert}
+          tone="rose"
+          title="Risk"
+          description="Risk register rows for this release"
+          detail="Risks with releaseId set to this release. Adding one here creates the same Risk row as the Risk register."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseRiskList
+            releaseId={release.id}
+            departmentId={release.departmentId}
+            applicationId={release.applications[0]?.application.id ?? ""}
+            canEdit={canEdit}
+          />
+        </DetailSection>
+
+        <DetailSection
+          id="incidents"
+          icon={Siren}
+          tone="rose"
+          title="Incidents"
+          description="Incidents tied to this release code"
+          detail="Incident register rows whose relatedReleaseCode matches this release. Adding one here creates the same Incident row as /incidents."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseIncidentList
+            releaseCode={release.releaseCode}
+            preferredApplicationId={release.applications[0]?.application.id}
+            canEdit={canEdit}
+          />
+        </DetailSection>
+
+        <DetailSection
+          id="alerts"
+          icon={Bell}
+          tone="amber"
+          title="Alerts"
+          description="Monitoring alerts for this release’s applications"
+          detail="Alerts are application-scoped. This list shows alerts for the applications on this release. Manual create sets autoGenerated false and alertSource Manual — the same MonitoringAlert row as /monitoring-alerts."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseAlertList
+            applications={release.applications.map((link) => link.application)}
+            departmentId={release.departmentId}
+            canEdit={canEdit}
+          />
+        </DetailSection>
 
         <DetailSection
           icon={Megaphone}

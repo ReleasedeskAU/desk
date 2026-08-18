@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
 import { Poppins, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { RootClientProviders } from "@/components/providers/RootClientProviders";
@@ -55,16 +54,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script id="sentinel-color-theme-prepaint" strategy="beforeInteractive">
           {COLOR_THEME_PREPAINT_SCRIPT}
         </Script>
-        <ClerkProvider
-          {...(publishableKey ? { publishableKey } : {})}
-          afterSignOutUrl="/sign-in"
-          signInFallbackRedirectUrl="/dashboard"
-          signUpFallbackRedirectUrl="/dashboard"
-          signInForceRedirectUrl="/dashboard"
-          signUpForceRedirectUrl="/dashboard"
-        >
-          <RootClientProviders>{children}</RootClientProviders>
-        </ClerkProvider>
+        {/* Clerk lives in this client wrapper so useAuth/useUser have context under Turbopack. */}
+        <RootClientProviders clerkPublishableKey={publishableKey}>
+          {children}
+        </RootClientProviders>
       </body>
     </html>
   );
