@@ -1075,6 +1075,27 @@ model UserReleaseFieldLockConfig {
   @@index([organizationId])
 }
 
+/// Per-user field-lock matrix for non-Release entities (Blocker first, then 8 more).
+/// Keyed by (clerkUserId, entityType, fieldKey); statusRules JSON is keyed by live status keys.
+/// organizationId is reserved/unenforced for the future org cutover. Live/latest only.
+model UserEntityFieldLockConfig {
+  id             String   @id @default(cuid())
+  clerkUserId    String
+  organizationId String?
+  entityType     String
+  fieldKey       String
+  category       String
+  lockRuleRef    String?
+  isConfigurable Boolean  @default(true)
+  statusRules    Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([clerkUserId, entityType, fieldKey])
+  @@index([clerkUserId, entityType])
+  @@index([organizationId])
+}
+
 /// Inbound webhook connector (Jira, etc.). Secrets encrypted with connector-engine AES-256-GCM.
 model WebhookConnector {
   id             String         @id @default(cuid())
