@@ -142,3 +142,31 @@ describe("blocker field-lock denial copy", () => {
     assert.equal(alert.message.includes("FIELD_LOCK_DENIED"), false);
   });
 });
+
+describe("blocker field-lock settings wiring", () => {
+  it("GET/PUT /api/entity-field-lock-config routes through load/save and rejects side-effect state", () => {
+    const src = readSrc("app/api/entity-field-lock-config/route.ts");
+    assert.match(src, /loadEntityFieldLockConfig/);
+    assert.match(src, /saveEntityFieldLockConfig/);
+    assert.match(src, /isEntityFieldLockType/);
+    assert.match(src, /z\.enum\(\["editable", "locked"\]\)/);
+    assert.equal(src.includes("editable_with_side_effect"), false);
+    assert.match(src, /requireSession/);
+  });
+
+  it("Blocker Lifecycle Settings exposes a Field Locks tab using live statuses", () => {
+    const src = readSrc("components/settings/BlockerLifecycleSettings.tsx");
+    assert.match(src, /\["fieldLocks", "Field Locks"\]/);
+    assert.match(src, /entityType=blocker/);
+    assert.match(src, /includeSideEffect=\{false\}/);
+    assert.match(src, /entityLabel="blocker"/);
+    assert.match(src, /FieldLocksPanel/);
+  });
+
+  it("FieldLocksPanel hides VR-21 side-effect when includeSideEffect is false", () => {
+    const src = readSrc("components/settings/lifecycle/FieldLocksPanel.tsx");
+    assert.match(src, /includeSideEffect/);
+    assert.match(src, /editable_with_side_effect/);
+    assert.match(src, /entityLabel/);
+  });
+});

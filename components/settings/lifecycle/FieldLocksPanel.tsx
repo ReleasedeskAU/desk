@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Field Locks matrix — plain-language controls for when Release fields can be edited.
+ * Field Locks matrix — plain-language controls for when entity fields can be edited.
  */
 import { useMemo } from "react";
 import { CircleHelp, Lock, Pencil, RotateCcw } from "lucide-react";
@@ -36,6 +36,13 @@ export type FieldLocksPanelProps = {
     statusKey: string,
     state: FieldLockState
   ) => void;
+  /** Noun in legend copy (“release”, “blocker”). Defaults to release. */
+  entityLabel?: string;
+  /**
+   * When false, hide “Can edit → back to Pending CAB” (Release VR-21 only).
+   * Defaults to true so existing Release Settings is unchanged.
+   */
+  includeSideEffect?: boolean;
 };
 
 /** User-facing labels — keep short for the grid, explain fully in the legend. */
@@ -62,22 +69,28 @@ const STATE_OPTIONS: {
   },
 ];
 
-const CATEGORY_BLURB: Record<string, string> = {
-  Identity: "Who / what this release is",
-  Ownership: "Who owns the release",
-  Scope: "Size, priority, and impact",
-  Schedule: "Dates and CAB timing",
-  "Sign-Off": "Checklist sign-offs",
-  Deployment: "Deploy readiness and environments",
-  Documentation: "Notes and plans",
-  Computed: "Calculated by the system — always locked",
-  Audit: "System timestamps — always locked",
-  Workflow: "Status is controlled by Transitions, not this grid",
-  Unavailable: "Listed in the rules spreadsheet but not built in the app yet",
-};
+function categoryBlurb(category: string, entityLabel: string): string | undefined {
+  const blurbs: Record<string, string> = {
+    Identity: `Who / what this ${entityLabel} is`,
+    Ownership: `Who owns the ${entityLabel}`,
+    Scope: "Size, priority, and impact",
+    Schedule: "Dates and CAB timing",
+    "Sign-Off": "Checklist sign-offs",
+    Deployment: "Deploy readiness and environments",
+    Classification: "Type, description, severity, and impact",
+    Documentation: "Notes and plans",
+    Computed: "Calculated by the system — always locked",
+    Audit: "System timestamps — always locked",
+    Workflow: "Status is controlled by Transitions, not this grid",
+    Unavailable: "Listed in the rules spreadsheet but not built in the app yet",
+  };
+  return blurbs[category];
+}
 
 /**
  * Render the field-lock matrix grouped by category, with a plain-language legend.
+ * @param entityLabel - Noun in copy (“release”, “blocker”).
+ * @param includeSideEffect - When false, only Locked / Can edit are offered.
  */
 export function FieldLocksPanel({
   statuses,
@@ -86,6 +99,8 @@ export function FieldLocksPanel({
   orphanStatusKeys,
   editing,
   onCellChange,
+  entityLabel = "release",
+  includeSideEffect = true,
 }: FieldLocksPanelProps) {
   const groups = useMemo(() => {
     const map = new Map<string, FieldLockMatrixRow[]>();
@@ -96,6 +111,16 @@ export function FieldLocksPanel({
     }
     return [...map.entries()];
   }, [rows, gapRows]);
+
+  const stateOptions = useMemo(() => {
+    const filtered = includeSideEffect
+      ? STATE_OPTIONS
+      : STATE_OPTIONS.filter((o) => o.value !== "editable_with_side_effect");
+    return filtered.map((opt) => ({
+      ...opt,
+      shortHint: opt.shortHint.replaceAll("release", entityLabel),
+    }));
+  }, [includeSideEffect, entityLabel]);
 
   if (statuses.length === 0) {
     return (
@@ -113,10 +138,10 @@ export function FieldLocksPanel({
           How to read this table
         </p>
         <p className="mt-1 text-[13px] leading-relaxed text-slate-600 dark:text-white/65">
-          Each <span className="font-semibold">row</span> is a field on a release.
-          Each <span className="font-semibold">column</span> is a status (Draft,
-          Planning, …). Pick what should happen when someone tries to change that
-          field while the release is in that status.
+          Each <span className="font-semibold">row</span> is a field on a {entityLabel}.
+          Each <span className="font-semibold">column</span> is a live status from the
+          Statuses tab. Pick what should happen when someone tries to change that
+          field while the {entityLabel} is in that status.
         </p>
         {!editing ? (
           <p className="mt-2 text-[12.5px] font-medium text-slate-500 dark:text-white/50">
@@ -126,13 +151,13 @@ export function FieldLocksPanel({
         ) : (
           <p className="mt-2 text-[12.5px] font-medium text-brand-700 dark:text-brand-300">
             Editing — change any dropdown, then Save. Changes apply the next time someone
-            edits a release.
+            edits a {entityLabel}.
           </p>
         )}
       </div>
 
-      <ul className="grid gap-2 sm:grid-cols-3">
-        {STATE_OPTIONS.map((opt) => (
+      <ul className={`grid gap-2 ${stateOptions.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+        {stateOptions.map((opt) => (
           <li
             key={opt.value}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-[var(--border)] dark:bg-[var(--card)]"
@@ -174,13 +199,13 @@ export function FieldLocksPanel({
           <thead>
             <tr className="bg-slate-50 dark:bg-white/[0.04]">
               <th className="sticky left-0 z-10 min-w-[200px] bg-slate-50 px-3 py-2.5 font-semibold text-slate-700 dark:bg-[var(--card)] dark:text-white/80">
-                Field on the release
+                Field on the {entityLabel}
               </th>
               {statuses.map((s) => (
                 <th
                   key={s.key}
                   className="min-w-[140px] px-2 py-2.5 font-semibold text-slate-600 dark:text-white/70"
-                  title={`When the release status is “${s.label}”`}
+                  title={`When the ${entityLabel} status is “${s.label}”`}
                 >
                   <span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-white/40">
                     When status is
@@ -195,9 +220,11 @@ export function FieldLocksPanel({
               <CategoryBlock
                 key={category}
                 category={category}
+                entityLabel={entityLabel}
                 rows={groupRows}
                 statuses={statuses}
                 editing={editing}
+                stateOptions={stateOptions}
                 onCellChange={onCellChange}
               />
             ))}
@@ -210,18 +237,22 @@ export function FieldLocksPanel({
 
 function CategoryBlock({
   category,
+  entityLabel,
   rows,
   statuses,
   editing,
+  stateOptions,
   onCellChange,
 }: {
   category: string;
+  entityLabel: string;
   rows: FieldLockMatrixRow[];
   statuses: FieldLockStatusCol[];
   editing: boolean;
+  stateOptions: typeof STATE_OPTIONS;
   onCellChange: FieldLocksPanelProps["onCellChange"];
 }) {
-  const blurb = CATEGORY_BLURB[category];
+  const blurb = categoryBlurb(category, entityLabel);
   return (
     <>
       <tr className="bg-slate-100/80 dark:bg-white/[0.06]">
@@ -262,7 +293,7 @@ function CategoryBlock({
             </div>
             {row.infoOnly ? (
               <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-white/50">
-                Change status on the release using allowed Transitions — not from this grid.
+                Change status on the {entityLabel} using allowed Transitions — not from this grid.
               </p>
             ) : null}
             {row.unavailable ? (
@@ -283,7 +314,9 @@ function CategoryBlock({
               row.infoOnly ||
               row.unavailable;
             const value: FieldLockState = row.statusRules[s.key] ?? "locked";
-            const opt = STATE_OPTIONS.find((o) => o.value === value);
+            const opt =
+              stateOptions.find((o) => o.value === value) ??
+              STATE_OPTIONS.find((o) => o.value === value);
             return (
               <td key={s.key} className="px-2 py-1.5 align-middle">
                 {disabled ? (
@@ -321,7 +354,7 @@ function CategoryBlock({
                     title={opt?.shortHint}
                     data-testid={`field-lock-cell-${row.fieldKey}-${s.key}`}
                   >
-                    {STATE_OPTIONS.map((option) => (
+                    {stateOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
