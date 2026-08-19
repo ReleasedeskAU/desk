@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
@@ -11,29 +12,47 @@ export function CreateModalShell({
   description,
   onClose,
   children,
+  footer,
   labelledBy = "create-modal-title",
 }: {
   title: string;
   description: string;
   onClose: () => void;
   children: React.ReactNode;
+  /** Pinned under the scroll area so Cancel / Save stay visible. */
+  footer?: React.ReactNode;
   labelledBy?: string;
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+  const dialog = (
+    <div
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/40 p-4 sm:items-center"
+      onClick={onClose}
+    >
       <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
+        className="my-auto flex w-full min-w-0 max-h-[min(90dvh,52rem)] max-w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-[var(--card)]"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
       >
-        <h2 id={labelledBy} className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
-        <p className="mt-1 text-xs text-gray-500 dark:text-white/55">{description}</p>
-        {children}
+        <div className="shrink-0 border-b border-gray-200 px-5 py-4 dark:border-[var(--border)]">
+          <h2 id={labelledBy} className="text-lg font-semibold text-gray-900 dark:text-white">
+            {title}
+          </h2>
+          <p className="mt-1 text-xs text-gray-500 dark:text-white/55">{description}</p>
+        </div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">{children}</div>
+        {footer ? (
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return dialog;
+  return createPortal(dialog, document.body);
 }
 
 /** Required-field marker used by create forms. */
@@ -76,9 +95,21 @@ export function CreateConfirmation({
       description={`Your ${entity.toLowerCase()} was saved successfully.`}
       onClose={onClose}
       labelledBy="create-confirmation-title"
+      footer={
+        <>
+          <button type="button" className={taBtnSecondary} onClick={onCreateAnother}>
+            Create another
+          </button>
+          <ProgressLink href={viewHref} className={cn(taBtnSecondary, "inline-flex items-center")}>
+            View record
+          </ProgressLink>
+          <button type="button" className={taBtnPrimary} onClick={onClose}>
+            Close
+          </button>
+        </>
+      }
     >
-      <span className="absolute sr-only"><CheckCircle2 aria-hidden /></span>
-      <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+      <div className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
           <CheckCircle2 className="h-5 w-5" aria-hidden />
         </span>
@@ -87,11 +118,6 @@ export function CreateConfirmation({
       <dl className="mt-4 space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
         {children}
       </dl>
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
-        <button type="button" className={taBtnSecondary} onClick={onCreateAnother}>Create another</button>
-        <ProgressLink href={viewHref} className={cn(taBtnSecondary, "inline-flex items-center")}>View record</ProgressLink>
-        <button type="button" className={taBtnPrimary} onClick={onClose}>Close</button>
-      </div>
     </CreateModalShell>
   );
 }

@@ -17,6 +17,14 @@ export const CONFLICT_STATUSES = [
 export const CONFLICT_TYPES = ["Schedule", "Resource", "Application"] as const;
 
 /**
+ * Lifecycle defaults plus any extra labels (seed types on the Release page).
+ * Empty / whitespace extras are dropped; order keeps defaults first.
+ */
+export function mergeConflictTypes(extra: string[] = []): string[] {
+  return [...new Set([...CONFLICT_TYPES, ...extra.map((item) => item.trim()).filter(Boolean)])];
+}
+
+/**
  * POST /api/conflicts body. Rejects unknown fields and never accepts a client-provided Conflict ID.
  * Release code existence is validated by the API.
  */

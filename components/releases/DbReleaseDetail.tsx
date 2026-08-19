@@ -141,6 +141,15 @@ const LOW_READINESS_PERCENT = 50;
 /** Slip probability at or above this warrants a review before go-live. */
 const HIGH_SLIP_RISK_PERCENT = 40;
 
+/** Pair of supporting cards; stacks on small screens. */
+function SupportingTwoCol({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 [&>*]:min-w-0">
+      {children}
+    </div>
+  );
+}
+
 function dash(v: ReactNode) {
   if (v === null || v === undefined || v === "") return "—";
   return v;
@@ -746,7 +755,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
           Critical path
         </p>
 
-        <DetailSection
+        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+          <DetailSection
           id="blockers"
           icon={AlertTriangle}
           tone="rose"
@@ -755,6 +765,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           detail="Blocker tickets currently threatening this release. Add or resolve blockers directly from this section. VR-35 blocks new blockers once the release is Deploying or later."
           collapsible
           defaultOpen
+          className="min-w-0"
         >
           <DbBlockerList
             embedded
@@ -783,6 +794,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           detail="Release-level conflict fields plus Conflict register rows involving this release. Create a real conflict from here — it appears on the Conflict queue immediately."
           collapsible
           defaultOpen
+          className="min-w-0"
         >
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusChip
@@ -794,7 +806,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
               <StatusChip label={`Vendor: ${release.vendorMaintenance}`} tone="warn" />
             )}
           </div>
-          <DetailFieldGrid cols={3}>
+          <DetailFieldGrid cols={2}>
             <DetailField
               label="Conflict Flag"
               hint="Yes means another release has booked the same Test/UAT environment for overlapping dates."
@@ -840,6 +852,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </div>
         </DetailSection>
+        </div>
 
         <DetailSection
           id="section-readiness"
@@ -933,6 +946,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           </div>
         </DetailSection>
 
+        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
         <DetailSection
           id="section-approvals"
           icon={Stamp}
@@ -942,6 +956,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           detail="Approval Status is the release-level summary. The list below is the Approval Queue — creating one here creates the same record that appears on /approvals."
           collapsible
           defaultOpen
+          className="min-w-0"
         >
           <DetailFieldGrid cols={2}>
             <DetailField
@@ -969,6 +984,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           detail="Booking rows that reserve Test/UAT (or similar) for this release. Required environment names and conflict status are already in the decision header / Blockers section."
           collapsible
           defaultOpen
+          className="min-w-0"
         >
           {release.bookings.length ? (
             <ul className="space-y-2">
@@ -996,6 +1012,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <EmptyHint>No environment bookings are linked to this release.</EmptyHint>
           )}
         </DetailSection>
+        </div>
       </div>
 
       <ReleaseActionStrip
@@ -1019,6 +1036,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           More detail · open by default · collapse any section you do not need
         </p>
 
+        <SupportingTwoCol>
         <DetailSection
           icon={Package}
           tone="indigo"
@@ -1028,7 +1046,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           collapsible
           defaultOpen
         >
-          <DetailFieldGrid cols={3}>
+          <DetailFieldGrid cols={2}>
             <DetailField
               label="Size"
               hint="Relative size of the change (e.g. Small / Medium / Large) — helps CAB prioritize review."
@@ -1052,8 +1070,52 @@ export function DbReleaseDetail({ id }: { id: string }) {
           </DetailFieldGrid>
         </DetailSection>
 
+        <DetailSection
+          icon={Megaphone}
+          tone="amber"
+          title="Communications & Training"
+          description={`Hypercare: ${release.hypercarePlan ?? "—"} · Comms: ${release.commsPlan ?? "—"} · Training: ${release.trainingStatus ?? "—"}`}
+          detail="How end users and support teams will be looked after around go-live. Hypercare Plan describes extra support coverage right after release; Comms Plan describes what will be communicated and to whom; Training Status shows whether affected teams have been trained on any changes."
+          collapsible
+          defaultOpen
+        >
+          <DetailFieldGrid cols={2}>
+            <DetailField
+              label="Hypercare Plan"
+              hint="Extra support coverage planned right after go-live to catch issues quickly."
+              value={dash(release.hypercarePlan)}
+            />
+            <DetailField
+              label="Comms Plan"
+              hint="What will be communicated, to whom, and when around this release."
+              value={dash(release.commsPlan)}
+            />
+            <DetailField
+              label="Training Status"
+              hint="Whether affected teams have been trained on the changes."
+              value={dash(release.trainingStatus)}
+            />
+          </DetailFieldGrid>
+        </DetailSection>
+        </SupportingTwoCol>
+
+        <SupportingTwoCol>
         <DbReleaseServicesInvolved releaseId={id} />
 
+        <DetailSection
+          icon={Link2}
+          tone="indigo"
+          title="Linked Work Items"
+          description="Jira / synced delivery work linked to this release"
+          detail="Jira (or other connected delivery tool) tickets linked to this release, synced automatically from your connected tools. Use this to see the underlying engineering work behind this release."
+          collapsible
+          defaultOpen
+        >
+          <DbLinkedWorkItems releaseId={id} />
+        </DetailSection>
+        </SupportingTwoCol>
+
+        <SupportingTwoCol>
         <DetailSection
           id="dependencies"
           icon={GitBranch}
@@ -1076,6 +1138,21 @@ export function DbReleaseDetail({ id }: { id: string }) {
           />
         </DetailSection>
 
+        <DetailSection
+          id="drift"
+          icon={GitCompareArrows}
+          tone="sky"
+          title="Release Drift"
+          description="Planned vs current delivery state"
+          detail="Compares what was originally planned for this release (dates, scope) against what has actually happened since. Use it to spot scope creep or schedule slippage early, before it becomes a blocker."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseDriftList releaseId={id} embedded />
+        </DetailSection>
+        </SupportingTwoCol>
+
+        <SupportingTwoCol>
         <DetailSection
           id="risks"
           icon={ShieldAlert}
@@ -1110,7 +1187,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
             canEdit={canEdit}
           />
         </DetailSection>
+        </SupportingTwoCol>
 
+        <SupportingTwoCol>
         <DetailSection
           id="alerts"
           icon={Bell}
@@ -1126,34 +1205,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             departmentId={release.departmentId}
             canEdit={canEdit}
           />
-        </DetailSection>
-
-        <DetailSection
-          icon={Megaphone}
-          tone="amber"
-          title="Communications & Training"
-          description={`Hypercare: ${release.hypercarePlan ?? "—"} · Comms: ${release.commsPlan ?? "—"} · Training: ${release.trainingStatus ?? "—"}`}
-          detail="How end users and support teams will be looked after around go-live. Hypercare Plan describes extra support coverage right after release; Comms Plan describes what will be communicated and to whom; Training Status shows whether affected teams have been trained on any changes."
-          collapsible
-          defaultOpen
-        >
-          <DetailFieldGrid cols={3}>
-            <DetailField
-              label="Hypercare Plan"
-              hint="Extra support coverage planned right after go-live to catch issues quickly."
-              value={dash(release.hypercarePlan)}
-            />
-            <DetailField
-              label="Comms Plan"
-              hint="What will be communicated, to whom, and when around this release."
-              value={dash(release.commsPlan)}
-            />
-            <DetailField
-              label="Training Status"
-              hint="Whether affected teams have been trained on the changes."
-              value={dash(release.trainingStatus)}
-            />
-          </DetailFieldGrid>
         </DetailSection>
 
         <DetailSection
@@ -1178,7 +1229,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
+        </SupportingTwoCol>
 
+        <SupportingTwoCol>
         <DetailSection
           icon={FileText}
           tone="amber"
@@ -1206,31 +1259,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
         >
           <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} />
         </DetailSection>
-
-        <DetailSection
-          id="drift"
-          icon={GitCompareArrows}
-          tone="sky"
-          title="Release Drift"
-          description="Planned vs current delivery state"
-          detail="Compares what was originally planned for this release (dates, scope) against what has actually happened since. Use it to spot scope creep or schedule slippage early, before it becomes a blocker."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseDriftList releaseId={id} embedded />
-        </DetailSection>
-
-        <DetailSection
-          icon={Link2}
-          tone="indigo"
-          title="Linked Work Items"
-          description="Jira / synced delivery work linked to this release"
-          detail="Jira (or other connected delivery tool) tickets linked to this release, synced automatically from your connected tools. Use this to see the underlying engineering work behind this release."
-          collapsible
-          defaultOpen
-        >
-          <DbLinkedWorkItems releaseId={id} />
-        </DetailSection>
+        </SupportingTwoCol>
 
         <DetailSection
           icon={History}
