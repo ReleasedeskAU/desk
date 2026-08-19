@@ -142,17 +142,174 @@ const LOW_READINESS_PERCENT = 50;
 /** Slip probability at or above this warrants a review before go-live. */
 const HIGH_SLIP_RISK_PERCENT = 40;
 
-/** One flowing column — cards hug their content (no stretched empty wells). */
-function DetailColumn({ children }: { children: ReactNode }) {
-  return <div className="flex min-w-0 flex-col gap-3">{children}</div>;
+/**
+ * A labelled band of full-width sections. Groups the page by the release
+ * manager's decision loop (critical path → governance → detail → history)
+ * instead of pairing unrelated cards side by side.
+ */
+function DetailBand({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+        {label}
+      </p>
+      {children}
+    </section>
+  );
 }
 
-/** Two independent columns so a short card never stretches to match its neighbor. */
-function DetailTwoCol({ children }: { children: ReactNode }) {
+type RailLink = { id: string; label: string };
+type RailGroup = { label: string; links: RailLink[] };
+
+/** Signal-tone → dot color for the at-a-glance rail. */
+const RAIL_DOT: Record<string, string> = {
+  good: "bg-emerald-500",
+  warn: "bg-amber-500",
+  bad: "bg-rose-500",
+  neutral: "bg-slate-300 dark:bg-white/30",
+};
+
+/**
+ * Sticky left rail for the release detail page: current status, what needs
+ * attention, at-a-glance scores, and jump-to-section nav with a scroll spy.
+ * Hidden below `xl` so smaller screens get a single clean column.
+ *
+ * @param props - Header status, attention items, score signals, and jump groups.
+ * @returns Sticky aside, or nothing meaningful on narrow viewports.
+ */
+function ReleaseDetailRail({
+  statusLabel,
+  statusTone,
+  attention,
+  signals,
+  groups,
+}: {
+  statusLabel: string;
+  statusTone: ChipTone;
+  attention: { tone: string; label: string; href?: string }[];
+  signals: DetailFact[];
+  groups: RailGroup[];
+}) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ids = groups.flatMap((g) => g.links.map((l) => l.id));
+    const els = ids
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => Boolean(el));
+    if (!els.length) return;
+    // Highlight the section whose top has scrolled just under the sticky header.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActiveId(visible[0].target.id);
+      },
+      { rootMargin: "-96px 0px -68% 0px", threshold: 0 }
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [groups]);
+
+  const cardClass =
+    "rounded-[20px] bg-white p-4 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)]";
+
   return (
-    <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 lg:auto-rows-min [&>*]:min-w-0 [&>*]:self-start">
-      {children}
-    </div>
+    <aside className="hidden xl:block xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:space-y-4 xl:overflow-y-auto xl:pr-1">
+      <div className={cardClass}>
+        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          Status
+        </p>
+        <div className="mt-1.5">
+          <StatusChip label={statusLabel} tone={statusTone} className="px-3 py-1 text-[12px] font-bold" />
+        </div>
+
+        {attention.length ? (
+          <div className="mt-3 space-y-1">
+            <p className="text-[10.5px] font-semibold uppercase tracking-wide text-rose-500 dark:text-rose-300">
+              Needs attention
+            </p>
+            {attention.map((item, i) => (
+              <a
+                key={i}
+                href={item.href ?? "#blockers"}
+                className="flex items-start gap-1.5 rounded-lg px-1.5 py-1 text-[12px] leading-snug text-slate-600 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/5"
+              >
+                <span
+                  className={cn(
+                    "mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
+                    item.tone === "critical" ? "bg-rose-500" : "bg-amber-500"
+                  )}
+                  aria-hidden
+                />
+                {item.label}
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 flex items-center gap-1.5 text-[12px] text-emerald-600 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+            No blockers, conflicts or overdue gates
+          </p>
+        )}
+      </div>
+
+      <div className={cardClass}>
+        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          At a glance
+        </p>
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
+          {signals.map((signal) => (
+            <a
+              key={signal.label}
+              href={signal.href ?? "#section-readiness"}
+              className="rounded-lg px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-white/5"
+            >
+              <dt className="flex items-center gap-1 text-[10.5px] text-slate-400 dark:text-white/45">
+                <span
+                  className={cn("h-1.5 w-1.5 rounded-full", RAIL_DOT[signal.tone ?? "neutral"])}
+                  aria-hidden
+                />
+                {signal.label}
+              </dt>
+              <dd className="mt-0.5 text-[15px] font-bold text-slate-800 dark:text-white">
+                {signal.value}
+              </dd>
+            </a>
+          ))}
+        </dl>
+      </div>
+
+      <nav className={cardClass}>
+        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
+          Jump to
+        </p>
+        <div className="mt-2 space-y-3">
+          {groups.map((group) => (
+            <div key={group.label} className="space-y-0.5">
+              <p className="px-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300 dark:text-white/30">
+                {group.label}
+              </p>
+              {group.links.map((link) => (
+                <a
+                  key={link.id}
+                  href={`#${link.id}`}
+                  className={cn(
+                    "block rounded-lg px-1.5 py-1 text-[12.5px] font-medium transition-colors",
+                    activeId === link.id
+                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-white/65 dark:hover:bg-white/5"
+                  )}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          ))}
+        </div>
+      </nav>
+    </aside>
   );
 }
 
@@ -688,6 +845,41 @@ export function DbReleaseDetail({ id }: { id: string }) {
     return toneForLifecycleKind(lifecycleStatus?.kind ?? null) as ChipTone;
   })();
 
+  // Jump-to nav mirrors the on-page band order (critical path → governance →
+  // detail → history). Static ids, so the scroll-spy effect stays stable.
+  const railGroups = useMemo<RailGroup[]>(
+    () => [
+      {
+        label: "Critical path",
+        links: [
+          { id: "blockers", label: "Blockers" },
+          { id: "conflicts", label: "Conflicts" },
+          { id: "incidents", label: "Incidents" },
+          { id: "section-readiness", label: "Readiness" },
+        ],
+      },
+      {
+        label: "Governance",
+        links: [
+          { id: "section-signoffs", label: "Sign-offs" },
+          { id: "section-approvals", label: "Approvals" },
+          { id: "section-environments", label: "Environments" },
+        ],
+      },
+      {
+        label: "Delivery detail",
+        links: [
+          { id: "dependencies", label: "Dependencies" },
+          { id: "drift", label: "Drift" },
+          { id: "risks", label: "Risk" },
+          { id: "alerts", label: "Alerts" },
+        ],
+      },
+      { label: "History", links: [{ id: "audit", label: "Audit trail" }] },
+    ],
+    []
+  );
+
   return (
     <DetailPageShell
       entityCode={release.releaseCode}
@@ -734,6 +926,16 @@ export function DbReleaseDetail({ id }: { id: string }) {
         </>
       }
     >
+      <div className="gap-6 xl:grid xl:grid-cols-[248px_minmax(0,1fr)] xl:items-start">
+        <ReleaseDetailRail
+          statusLabel={headerStatusLabel}
+          statusTone={headerStatusTone}
+          attention={decisionAttention}
+          signals={decisionSignals}
+          groups={railGroups}
+        />
+
+        <div className="min-w-0 space-y-6">
       {/* 1. Verdict — can I ship, or what's stuck? */}
       {editsLocked ? (
         <TintedCallout tone="rose">
@@ -766,16 +968,10 @@ export function DbReleaseDetail({ id }: { id: string }) {
 
       <DbAIRiskPanel releaseId={id} compact />
 
-      {/* 2–5. Critical workspace in RM order: clear blockers → prove readiness →
-          clear gates → confirm environments. No dashboard tiles — they repeated
-          the header scores. */}
-      <div className="space-y-3">
-        <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-          Critical path
-        </p>
-
-        <DetailTwoCol>
-          <DetailColumn>
+      {/* Critical path — the morning triage: what's stopping this release, in
+          the order a release manager clears it. Incidents pulled up here (live
+          problems are top-of-mind, not buried reference). */}
+      <DetailBand label="Critical path · clear these first">
           <DetailSection
           id="blockers"
           icon={AlertTriangle}
@@ -804,9 +1000,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             }
           />
         </DetailSection>
-          </DetailColumn>
-
-          <DetailColumn>
         <DetailSection
           id="conflicts"
           icon={AlertTriangle}
@@ -874,9 +1067,22 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </div>
         </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
+        <DetailSection
+          id="incidents"
+          icon={Siren}
+          tone="rose"
+          title="Incidents"
+          description="Incidents tied to this release code"
+          detail="Incident register rows whose relatedReleaseCode matches this release. Adding one here creates the same Incident row as /incidents."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseIncidentList
+            releaseCode={release.releaseCode}
+            preferredApplicationId={release.applications[0]?.application.id}
+            canEdit={canEdit}
+          />
+        </DetailSection>
         <DetailSection
           id="section-readiness"
           icon={Rocket}
@@ -900,9 +1106,11 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <div className="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-white/5" />
           )}
         </DetailSection>
+      </DetailBand>
 
-        <DetailTwoCol>
-          <DetailColumn>
+      {/* Governance gate — cleared to ship, and is there a slot? Sign-offs +
+          approvals are the permission; environment booking is the deploy slot. */}
+      <DetailBand label="Governance · cleared to ship?">
         <DetailSection
           id="section-signoffs"
           icon={Calendar}
@@ -935,9 +1143,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             }}
           />
         </DetailSection>
-          </DetailColumn>
-
-          <DetailColumn>
         <DetailSection
           id="section-approvals"
           icon={Stamp}
@@ -965,9 +1170,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <DbReleaseApprovalList releaseId={release.id} canEdit={canEdit} />
           </div>
         </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
         <DetailSection
           id="section-environments"
           icon={Server}
@@ -1005,8 +1207,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <EmptyHint>No environment bookings are linked to this release.</EmptyHint>
           )}
         </DetailSection>
-      </div>
+      </DetailBand>
 
+      {/* Actions — decide only after threats + the gate are reviewed. */}
       <ReleaseActionStrip
         releaseId={id}
         status={release.status}
@@ -1020,14 +1223,92 @@ export function DbReleaseDetail({ id }: { id: string }) {
         onRecordDecision={recordDecision}
       />
 
-      {/* Supporting detail — two independent columns so empty cards stay short. */}
-      <div className="space-y-3">
-        <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-          More detail · collapse any section you do not need
-        </p>
+      {/* Delivery detail — the engineering substance behind the release.
+          Opened when digging into "why is readiness low / what's the scope". */}
+      <DetailBand label="Delivery detail">
+        <DetailSection
+          id="dependencies"
+          icon={GitBranch}
+          tone="indigo"
+          title="Dependencies"
+          description="Depends-on and depended-by links"
+          detail="Full Dependency register rows where this release is either side of the link. Adding one here creates the same DEP record as the Dependencies page. VR-36 freezes adds once the release is Ready or later."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseDependencyList
+            releaseId={release.id}
+            releaseCode={release.releaseCode}
+            canEdit={canEdit}
+            addDisabledReason={
+              lifecycleStatus?.dependencyGraphFrozen
+                ? "Dependencies can’t be changed now. This release is Ready to deploy or further along."
+                : null
+            }
+          />
+        </DetailSection>
+        <DetailSection
+          id="drift"
+          icon={GitCompareArrows}
+          tone="sky"
+          title="Release Drift"
+          description="Planned vs current delivery state"
+          detail="Compares what was originally planned for this release (dates, scope) against what has actually happened since. Use it to spot scope creep or schedule slippage early, before it becomes a blocker."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseDriftList releaseId={id} embedded />
+        </DetailSection>
+        <DetailSection
+          id="risks"
+          icon={ShieldAlert}
+          tone="rose"
+          title="Risk"
+          description="Risk register rows for this release"
+          detail="Risks with releaseId set to this release. Adding one here creates the same Risk row as the Risk register."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseRiskList
+            releaseId={release.id}
+            departmentId={release.departmentId}
+            applicationId={release.applications[0]?.application.id ?? ""}
+            canEdit={canEdit}
+          />
+        </DetailSection>
+        <DbReleaseServicesInvolved releaseId={id} />
+        <DetailSection
+          icon={Link2}
+          tone="indigo"
+          title="Linked Work Items"
+          description="Jira / synced delivery work linked to this release"
+          detail="Jira (or other connected delivery tool) tickets linked to this release, synced automatically from your connected tools. Use this to see the underlying engineering work behind this release."
+          collapsible
+          defaultOpen
+        >
+          <DbLinkedWorkItems releaseId={id} embedded />
+        </DetailSection>
+        <DetailSection
+          id="alerts"
+          icon={Bell}
+          tone="amber"
+          title="Alerts"
+          description="Monitoring alerts for this release’s applications"
+          detail="Alerts are application-scoped. This list shows alerts for the applications on this release. Manual create sets autoGenerated false and alertSource Manual — the same MonitoringAlert row as /monitoring-alerts."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseAlertList
+            applications={release.applications.map((link) => link.application)}
+            departmentId={release.departmentId}
+            canEdit={canEdit}
+          />
+        </DetailSection>
+      </DetailBand>
 
-        <DetailTwoCol>
-          <DetailColumn>
+      {/* Context & communications — reference + outward comms; rarely drives the
+          ship decision, so it sits low but stays tidy. */}
+      <DetailBand label="Context & communications">
         <DetailSection
           icon={Package}
           tone="indigo"
@@ -1037,7 +1318,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           collapsible
           defaultOpen
         >
-          <DetailFieldGrid cols={2}>
+          <DetailFieldGrid cols={3}>
             <DetailField
               label="Size"
               hint="Relative size of the change (e.g. Small / Medium / Large) — helps CAB prioritize review."
@@ -1087,8 +1368,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
-          </DetailColumn>
-          <DetailColumn>
         <DetailSection
           icon={Megaphone}
           tone="amber"
@@ -1098,7 +1377,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           collapsible
           defaultOpen
         >
-          <DetailFieldGrid cols={2}>
+          <DetailFieldGrid cols={3}>
             <DetailField
               label="Hypercare Plan"
               hint="Extra support coverage planned right after go-live to catch issues quickly."
@@ -1116,128 +1395,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
-        <DetailTwoCol>
-          <DetailColumn>
-        <DbReleaseServicesInvolved releaseId={id} />
-          </DetailColumn>
-          <DetailColumn>
-        <DetailSection
-          icon={Link2}
-          tone="indigo"
-          title="Linked Work Items"
-          description="Jira / synced delivery work linked to this release"
-          detail="Jira (or other connected delivery tool) tickets linked to this release, synced automatically from your connected tools. Use this to see the underlying engineering work behind this release."
-          collapsible
-          defaultOpen
-        >
-          <DbLinkedWorkItems releaseId={id} embedded />
-        </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
-        <DetailTwoCol>
-          <DetailColumn>
-        <DetailSection
-          id="dependencies"
-          icon={GitBranch}
-          tone="indigo"
-          title="Dependencies"
-          description="Depends-on and depended-by links"
-          detail="Full Dependency register rows where this release is either side of the link. Adding one here creates the same DEP record as the Dependencies page. VR-36 freezes adds once the release is Ready or later."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseDependencyList
-            releaseId={release.id}
-            releaseCode={release.releaseCode}
-            canEdit={canEdit}
-            addDisabledReason={
-              lifecycleStatus?.dependencyGraphFrozen
-                ? "Dependencies can’t be changed now. This release is Ready to deploy or further along."
-                : null
-            }
-          />
-        </DetailSection>
-          </DetailColumn>
-          <DetailColumn>
-        <DetailSection
-          id="drift"
-          icon={GitCompareArrows}
-          tone="sky"
-          title="Release Drift"
-          description="Planned vs current delivery state"
-          detail="Compares what was originally planned for this release (dates, scope) against what has actually happened since. Use it to spot scope creep or schedule slippage early, before it becomes a blocker."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseDriftList releaseId={id} embedded />
-        </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
-        <DetailTwoCol>
-          <DetailColumn>
-        <DetailSection
-          id="risks"
-          icon={ShieldAlert}
-          tone="rose"
-          title="Risk"
-          description="Risk register rows for this release"
-          detail="Risks with releaseId set to this release. Adding one here creates the same Risk row as the Risk register."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseRiskList
-            releaseId={release.id}
-            departmentId={release.departmentId}
-            applicationId={release.applications[0]?.application.id ?? ""}
-            canEdit={canEdit}
-          />
-        </DetailSection>
-          </DetailColumn>
-          <DetailColumn>
-        <DetailSection
-          id="incidents"
-          icon={Siren}
-          tone="rose"
-          title="Incidents"
-          description="Incidents tied to this release code"
-          detail="Incident register rows whose relatedReleaseCode matches this release. Adding one here creates the same Incident row as /incidents."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseIncidentList
-            releaseCode={release.releaseCode}
-            preferredApplicationId={release.applications[0]?.application.id}
-            canEdit={canEdit}
-          />
-        </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
-        <DetailTwoCol>
-          <DetailColumn>
-        <DetailSection
-          id="alerts"
-          icon={Bell}
-          tone="amber"
-          title="Alerts"
-          description="Monitoring alerts for this release’s applications"
-          detail="Alerts are application-scoped. This list shows alerts for the applications on this release. Manual create sets autoGenerated false and alertSource Manual — the same MonitoringAlert row as /monitoring-alerts."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseAlertList
-            applications={release.applications.map((link) => link.application)}
-            departmentId={release.departmentId}
-            canEdit={canEdit}
-          />
-        </DetailSection>
-          </DetailColumn>
-          <DetailColumn>
         <DetailSection
           icon={Users}
           tone="indigo"
@@ -1260,11 +1417,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
-
-        <DetailTwoCol>
-          <DetailColumn>
         <DetailSection
           icon={FileText}
           tone="amber"
@@ -1280,8 +1432,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <EmptyHint>No additional release notes have been recorded.</EmptyHint>
           )}
         </DetailSection>
-          </DetailColumn>
-          <DetailColumn>
         <DetailSection
           icon={Megaphone}
           tone="violet"
@@ -1293,10 +1443,12 @@ export function DbReleaseDetail({ id }: { id: string }) {
         >
           <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} embedded />
         </DetailSection>
-          </DetailColumn>
-        </DetailTwoCol>
+      </DetailBand>
 
+      {/* History — compliance / how we got here; reviewed occasionally, last. */}
+      <DetailBand label="History">
         <DetailSection
+          id="audit"
           icon={History}
           tone="violet"
           title="Audit Trail"
@@ -1348,6 +1500,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
             )}
           </div>
         </DetailSection>
+      </DetailBand>
+        </div>
       </div>
 
       <p className="text-center text-[11px] text-slate-400 dark:text-white/40">
