@@ -19,6 +19,14 @@ describe("dependency dual acknowledgment", () => {
     assert.equal(bothDependencyPartiesAcknowledged(sourceOnly), false);
   });
 
+  it("treats omitted ack columns as not acknowledged", () => {
+    assert.equal(bothDependencyPartiesAcknowledged({}), false);
+    assert.equal(
+      bothDependencyPartiesAcknowledged({ sourceAcknowledgedAt: new Date() }),
+      false
+    );
+  });
+
   it("is complete only when both sides are recorded", () => {
     const both = {
       sourceAcknowledgedAt: new Date(),

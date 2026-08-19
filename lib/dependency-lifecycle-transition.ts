@@ -11,7 +11,10 @@ import type {
   DependencyLifecycleGateType,
 } from "@/lib/dependency-lifecycle-gates";
 import { DEPENDENCY_LIFECYCLE_GATE_CATALOG } from "@/lib/dependency-lifecycle-gates";
-import { bothDependencyPartiesAcknowledged } from "@/lib/dependency-ack";
+import {
+  bothDependencyPartiesAcknowledged,
+  type DependencyAckState,
+} from "@/lib/dependency-ack";
 
 export const MIN_DEPENDENCY_OVERRIDE_REASON_LENGTH = 3;
 
@@ -27,12 +30,8 @@ const DEPENDENCY_STATUS_ALIASES: Readonly<Record<string, string>> = {
   "in progress": "in_progress",
 };
 
-export type DependencyGateFacts = {
+export type DependencyGateFacts = DependencyAckState & {
   notes: string | null | undefined;
-  sourceAcknowledgedAt?: Date | string | null;
-  sourceAcknowledgedByUserId?: string | null;
-  targetAcknowledgedAt?: Date | string | null;
-  targetAcknowledgedByUserId?: string | null;
 };
 
 /**

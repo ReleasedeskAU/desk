@@ -8,11 +8,12 @@
 
 export type DependencyAckSide = "source" | "target";
 
+/** Ack columns are optional so gate facts and partial PATCH bodies type-check. */
 export type DependencyAckState = {
-  sourceAcknowledgedAt: Date | string | null | undefined;
-  sourceAcknowledgedByUserId: string | null | undefined;
-  targetAcknowledgedAt: Date | string | null | undefined;
-  targetAcknowledgedByUserId: string | null | undefined;
+  sourceAcknowledgedAt?: Date | string | null;
+  sourceAcknowledgedByUserId?: string | null;
+  targetAcknowledgedAt?: Date | string | null;
+  targetAcknowledgedByUserId?: string | null;
 };
 
 /**
