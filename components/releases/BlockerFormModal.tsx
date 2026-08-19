@@ -144,8 +144,15 @@ export function BlockerFormModal({
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
   const [loadingReleases, setLoadingReleases] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(null);
+  const [errorBody, setErrorBody] = useState<unknown>(null);
   const [created, setCreated] = useState<CreatedSummary | null>(null);
+
+  /** Keep the API body so FIELD_LOCK_DENIED titles as “This field is locked”. */
+  const setError = (message: string | null, body: unknown = null) => {
+    setErrorState(message);
+    setErrorBody(message ? body : null);
+  };
 
   useEffect(() => {
     if (!open) {
@@ -246,7 +253,7 @@ export function BlockerFormModal({
         result.ok && result.data && typeof result.data === "object" && "error" in result.data
           ? String((result.data as { error?: string }).error)
           : "Failed to create blocker";
-      setError(msg);
+      setError(msg, result.data);
       return;
     }
 
@@ -502,7 +509,7 @@ export function BlockerFormModal({
       <FormAlertDialog
         alert={
           error
-            ? buildFormSaveAlert(null, error, { entityLabel: "blocker" })
+            ? buildFormSaveAlert(errorBody, error, { entityLabel: "blocker" })
             : null
         }
         onDismiss={() => setError(null)}

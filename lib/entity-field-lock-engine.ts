@@ -168,7 +168,11 @@ export async function validateEntityFieldUpdate(args: {
       }`
     );
     const rows = defaultEntityFieldLockRows(entityType);
-    const statusKey = resolveStatusKey(entityType, currentStatus);
+    const fallbackStatuses =
+      entityType === "blocker"
+        ? createDefaultBlockerLifecycleConfig().statuses
+        : [];
+    const statusKey = resolveLiveStatusKey(currentStatus, fallbackStatuses);
     return validateEntityFieldUpdateWithRows(
       entityType,
       rows,
