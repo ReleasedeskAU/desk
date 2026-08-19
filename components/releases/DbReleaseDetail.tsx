@@ -161,6 +161,38 @@ function DetailBand({ label, children }: { label: string; children: ReactNode })
 type RailLink = { id: string; label: string };
 type RailGroup = { label: string; links: RailLink[] };
 
+/** Jump-to nav mirrors on-page band order. Module-level so the page never
+ *  calls `useMemo` after the loading/not-found early returns (React #310). */
+const RELEASE_DETAIL_RAIL_GROUPS: RailGroup[] = [
+  {
+    label: "Critical path",
+    links: [
+      { id: "blockers", label: "Blockers" },
+      { id: "conflicts", label: "Conflicts" },
+      { id: "incidents", label: "Incidents" },
+      { id: "section-readiness", label: "Readiness" },
+    ],
+  },
+  {
+    label: "Governance",
+    links: [
+      { id: "section-signoffs", label: "Sign-offs" },
+      { id: "section-approvals", label: "Approvals" },
+      { id: "section-environments", label: "Environments" },
+    ],
+  },
+  {
+    label: "Delivery detail",
+    links: [
+      { id: "dependencies", label: "Dependencies" },
+      { id: "drift", label: "Drift" },
+      { id: "risks", label: "Risk" },
+      { id: "alerts", label: "Alerts" },
+    ],
+  },
+  { label: "History", links: [{ id: "audit", label: "Audit trail" }] },
+];
+
 /** Signal-tone → dot color for the at-a-glance rail. */
 const RAIL_DOT: Record<string, string> = {
   good: "bg-emerald-500",
@@ -845,41 +877,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
     return toneForLifecycleKind(lifecycleStatus?.kind ?? null) as ChipTone;
   })();
 
-  // Jump-to nav mirrors the on-page band order (critical path → governance →
-  // detail → history). Static ids, so the scroll-spy effect stays stable.
-  const railGroups = useMemo<RailGroup[]>(
-    () => [
-      {
-        label: "Critical path",
-        links: [
-          { id: "blockers", label: "Blockers" },
-          { id: "conflicts", label: "Conflicts" },
-          { id: "incidents", label: "Incidents" },
-          { id: "section-readiness", label: "Readiness" },
-        ],
-      },
-      {
-        label: "Governance",
-        links: [
-          { id: "section-signoffs", label: "Sign-offs" },
-          { id: "section-approvals", label: "Approvals" },
-          { id: "section-environments", label: "Environments" },
-        ],
-      },
-      {
-        label: "Delivery detail",
-        links: [
-          { id: "dependencies", label: "Dependencies" },
-          { id: "drift", label: "Drift" },
-          { id: "risks", label: "Risk" },
-          { id: "alerts", label: "Alerts" },
-        ],
-      },
-      { label: "History", links: [{ id: "audit", label: "Audit trail" }] },
-    ],
-    []
-  );
-
   return (
     <DetailPageShell
       entityCode={release.releaseCode}
@@ -932,7 +929,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           statusTone={headerStatusTone}
           attention={decisionAttention}
           signals={decisionSignals}
-          groups={railGroups}
+          groups={RELEASE_DETAIL_RAIL_GROUPS}
         />
 
         <div className="min-w-0 space-y-6">
