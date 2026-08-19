@@ -248,11 +248,16 @@ export function BlockerFormModal({
       rejectHttpErrors: false,
     });
     setSaving(false);
-    if (!result.ok || result.status >= 300) {
+    if (!result.ok) {
+      setError(result.error || "Failed to create blocker");
+      return;
+    }
+    if (result.status >= 300) {
       const msg =
-        result.ok && result.data && typeof result.data === "object" && "error" in result.data
+        result.data && typeof result.data === "object" && "error" in result.data
           ? String((result.data as { error?: string }).error)
           : "Failed to create blocker";
+      // Pass the API body so FIELD_LOCK_DENIED titles as “This field is locked”.
       setError(msg, result.data);
       return;
     }
