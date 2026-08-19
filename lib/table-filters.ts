@@ -182,6 +182,18 @@ export const APPROVALS_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "departmentQ", param: "department" },
 ]);
 
+export const SIGNOFFS_FILTER_SCHEMA: FilterSchema = withTableSort([
+  { key: "status", param: "status" },
+  { key: "signoffType", param: "type" },
+  { key: "required", param: "required" },
+  { key: "releaseCodeQ", param: "release" },
+  { key: "releaseNameQ", param: "releaseName" },
+  { key: "signoffCodeQ", param: "signoffCode" },
+  { key: "applicationQ", param: "application" },
+  { key: "departmentQ", param: "department" },
+  { key: "ownerQ", param: "owner" },
+]);
+
 export const LEAVES_FILTER_SCHEMA: FilterSchema = withTableSort([
   { key: "leaveType", param: "type" },
   { key: "department", param: "dept" },

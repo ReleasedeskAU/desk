@@ -4,6 +4,7 @@ import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-con
 import {
   deniedReleaseEditFields,
   isReleaseFieldEditable,
+  isReleaseFullyLocked,
   resolveReleaseEditMode,
 } from "@/lib/release-lifecycle-edit-policy";
 
@@ -42,14 +43,25 @@ describe("deniedReleaseEditFields", () => {
     assert.equal(isReleaseFieldEditable("limited", "notes"), true);
   });
 
-  it("blocks all non-status edits when immutable", () => {
-    const { denied } = deniedReleaseEditFields(config, "Closed", [
+  it("blocks all edits including status when Cancelled", () => {
+    const { denied, mode } = deniedReleaseEditFields(config, "Cancelled", [
       "notes",
       "name",
       "status",
+      "decision",
     ]);
+    assert.equal(mode, "immutable");
+    assert.deepEqual(denied.sort(), ["decision", "name", "notes", "status"]);
+  });
+
+  it("still allows status (only) on Closed, which is immutable but not Cancelled", () => {
+    const { denied } = deniedReleaseEditFields(config, "Closed", ["notes", "name", "status"]);
     assert.ok(denied.includes("notes"));
     assert.ok(denied.includes("name"));
     assert.equal(denied.includes("status"), false);
+    assert.equal(isReleaseFullyLocked(config, "Closed"), false);
+    assert.equal(isReleaseFullyLocked(config, "Cancelled"), true);
+    assert.equal(isReleaseFullyLocked(config, "canceled"), true);
+    assert.equal(isReleaseFullyLocked(config, "Planning"), false);
   });
 });

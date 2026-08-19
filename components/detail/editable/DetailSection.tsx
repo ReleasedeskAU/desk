@@ -59,7 +59,7 @@ export function DetailSection({
   const [open, setOpen] = useState(defaultOpen);
 
   const shellClass = cn(
-    "rounded-[20px] bg-white p-5 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] transition-shadow duration-150 hover:shadow-[0_20px_44px_-20px_rgba(112,144,176,0.35)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)] dark:hover:shadow-[0_20px_44px_-20px_rgba(0,0,0,0.65)]",
+    "w-full self-start rounded-[20px] bg-white p-4 shadow-[0_16px_36px_-24px_rgba(112,144,176,0.25)] transition-shadow duration-150 hover:shadow-[0_20px_44px_-20px_rgba(112,144,176,0.35)] dark:bg-[var(--card)] dark:shadow-[0_16px_36px_-24px_rgba(0,0,0,0.55)] dark:hover:shadow-[0_20px_44px_-20px_rgba(0,0,0,0.65)]",
     id && "scroll-mt-24",
     className
   );

@@ -16,6 +16,7 @@ export type PageDocKey =
   | "risk-factors"
   | "drifts"
   | "approvals"
+  | "signoffs"
   | "leaves"
   | "monitoring-alerts"
   | "incidents"
@@ -257,6 +258,24 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
       "The Approval Queue centralises sign-off records from the Approvals sheet — CAB, technical, security, and business gates. Decision status drives release readiness calculations on the Releases list.",
       "Use approver filter to see your personal queue. Rejected approvals should carry comments explaining required remediation. Approved items still respect other blockers (conflicts, drift, open P1s).",
       "Approval types and decisions are filterable via URL params so you can share a pending-CAB view with stakeholders.",
+    ],
+  },
+  signoffs: {
+    pageKey: "signoffs",
+    title: "Sign-offs",
+    summary:
+      "Dev / Test / UAT / Security / Business / Ops checklist items across releases. Values live on the Release row — this queue does not create a second Sign-off table.",
+    quickReference: [
+      "One row per enabled Sign-off Lifecycle type on each release.",
+      "Filter by status, type, required vs optional, and release.",
+      "Recording a decision PATCHes the matching Release field (same path as Edit Release).",
+      "Open a row to record the next legal status from the Sign-off Lifecycle graph.",
+      "Required types feed CAB / Ready gates; optional types do not block by default.",
+    ],
+    fullDocumentation: [
+      "The Sign-offs queue is a projection of checklist fields stored on each Release (devSignoff, testSignoff, uatSignoff, securityClearance, businessSignoff, opsSignoff, plus dress rehearsal / training when enabled). There is no separate SignOff table and no second write API.",
+      "Types and legal next statuses come from Settings → Sign-off Lifecycle. Blank stored values display as Pending. Use Record on the detail page or on the release Sign-offs section — both PATCH /api/releases/[id] and enforce the same transition rules.",
+      "Approvals remain a different entity (CAB / Change Manager requests in the Approval Queue). Do not merge Test and UAT sign-off fields.",
     ],
   },
   leaves: {

@@ -6,6 +6,7 @@ import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 import {
   guardBlockerCreateWhileDeployingOrLater,
+  guardReleaseFullyLocked,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 import { isBlockerCategory } from "@/lib/blocker-categories";
@@ -127,6 +128,8 @@ export async function POST(req: Request) {
     user!.id,
     release.lifecycleConfigVersionId
   );
+  const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
   const blockerCreateGuard = guardBlockerCreateWhileDeployingOrLater(
     release.status,
     releaseConfig

@@ -78,8 +78,22 @@ export function resolveReleaseEditMode(
 }
 
 /**
+ * True when the release is Cancelled — no further edits of any kind.
+ * Matches the cancelled status key, or a Cancelled/Canceled label if the graph is missing.
+ */
+export function isReleaseFullyLocked(
+  config: ReleaseLifecycleConfig,
+  status: string
+): boolean {
+  const resolved = resolveLifecycleStatusRef(config, status);
+  if (resolved?.key === "cancelled") return true;
+  return /^cancell?ed$/i.test(String(status ?? "").trim());
+}
+
+/**
  * Decide whether a PATCH field key may change under the given edit mode.
- * `status` / override hints are always allowed through (transition engine decides).
+ * `status` / override hints are always allowed through (transition engine decides),
+ * except when the release is fully locked (Cancelled).
  *
  * @param mode - Edit mode for the current status.
  * @param field - Top-level body key being patched.
@@ -114,6 +128,9 @@ export function deniedReleaseEditFields(
   proposedKeys: string[]
 ): { mode: ReleaseEditMode; denied: string[] } {
   const mode = resolveReleaseEditMode(config, currentStatus);
+  if (isReleaseFullyLocked(config, currentStatus)) {
+    return { mode: "immutable", denied: [...proposedKeys] };
+  }
   const denied = proposedKeys.filter((key) => !isReleaseFieldEditable(mode, key));
   return { mode, denied };
 }

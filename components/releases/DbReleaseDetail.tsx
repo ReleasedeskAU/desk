@@ -7,7 +7,6 @@ import {
   ConfirmDeleteDialog,
   DetailSection,
   EmptyHint,
-  SignoffChip,
   StatusChip,
   TintedCallout,
   type ChipTone,
@@ -24,6 +23,7 @@ import { DbReleaseRiskList } from "@/components/releases/DbReleaseRiskList";
 import { DbReleaseIncidentList } from "@/components/releases/DbReleaseIncidentList";
 import { DbReleaseAlertList } from "@/components/releases/DbReleaseAlertList";
 import { DbReleaseApprovalList } from "@/components/releases/DbReleaseApprovalList";
+import { DbReleaseSignoffList } from "@/components/releases/DbReleaseSignoffList";
 import { DbReleaseConflictList } from "@/components/releases/DbReleaseConflictList";
 import { DbReleaseDriftList } from "@/components/releases/DbReleaseDriftList";
 import { DbAIRiskPanel } from "@/components/releases/DbAIRiskPanel";
@@ -116,6 +116,7 @@ type ReleaseDetail = {
   hypercarePlan?: string | null;
   commsPlan?: string | null;
   trainingStatus?: string | null;
+  supportBriefed?: string | null;
   releaseOwnerId?: string | null;
   releaseOwner?: { id: string; userId: string; name: string; email: string; role: string } | null;
   stakeholders?: { user: { id: string; userId: string; name: string; email: string; role: string } }[];
@@ -141,10 +142,15 @@ const LOW_READINESS_PERCENT = 50;
 /** Slip probability at or above this warrants a review before go-live. */
 const HIGH_SLIP_RISK_PERCENT = 40;
 
-/** Pair of supporting cards; stacks on small screens. */
-function SupportingTwoCol({ children }: { children: ReactNode }) {
+/** One flowing column — cards hug their content (no stretched empty wells). */
+function DetailColumn({ children }: { children: ReactNode }) {
+  return <div className="flex min-w-0 flex-col gap-3">{children}</div>;
+}
+
+/** Two independent columns so a short card never stretches to match its neighbor. */
+function DetailTwoCol({ children }: { children: ReactNode }) {
   return (
-    <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 [&>*]:min-w-0">
+    <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 lg:auto-rows-min [&>*]:min-w-0 [&>*]:self-start">
       {children}
     </div>
   );
@@ -320,6 +326,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
     enabled: boolean;
     dependencyGraphFrozen: boolean;
     blockerCreateLocked: boolean;
+    editsLocked: boolean;
   } | null>(null);
   const [signoffConfig, setSignoffConfig] =
     useState<SignoffLifecycleConfig | null>(null);
@@ -350,6 +357,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
       currentEnabled: boolean;
       dependencyGraphFrozen?: boolean;
       blockerCreateLocked?: boolean;
+      editsLocked?: boolean;
     }>(
       `/api/releases/${release.id}/lifecycle`,
       (payload) =>
@@ -359,6 +367,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           enabled: payload.currentEnabled,
           dependencyGraphFrozen: Boolean(payload.dependencyGraphFrozen),
           blockerCreateLocked: Boolean(payload.blockerCreateLocked),
+          editsLocked: Boolean(payload.editsLocked),
         }),
       { label: "release-detail-lifecycle-status" }
     );
@@ -428,7 +437,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
     };
   }, []);
 
-  const canEdit = sessionCanEdit(user);
+  const editsLocked =
+    Boolean(lifecycleStatus?.editsLocked) || /^cancell?ed$/i.test(release?.status ?? "");
+  const canEdit = sessionCanEdit(user) && !editsLocked;
   const refreshCommandCenter = useCallback(() => {
     setCommandRefreshKey((key) => key + 1);
   }, []);
@@ -724,6 +735,12 @@ export function DbReleaseDetail({ id }: { id: string }) {
       }
     >
       {/* 1. Verdict — can I ship, or what's stuck? */}
+      {editsLocked ? (
+        <TintedCallout tone="rose">
+          This release is {lifecycleStatus?.label ?? release.status}. It is locked — nothing
+          can be edited.
+        </TintedCallout>
+      ) : null}
       <DetailDecisionHeader
         identity={[
           { label: "Owner", value: ownerDisplay },
@@ -747,6 +764,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
         scope={decisionScope}
       />
 
+      <DbAIRiskPanel releaseId={id} compact />
+
       {/* 2–5. Critical workspace in RM order: clear blockers → prove readiness →
           clear gates → confirm environments. No dashboard tiles — they repeated
           the header scores. */}
@@ -755,7 +774,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
           Critical path
         </p>
 
-        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+        <DetailTwoCol>
+          <DetailColumn>
           <DetailSection
           id="blockers"
           icon={AlertTriangle}
@@ -784,7 +804,9 @@ export function DbReleaseDetail({ id }: { id: string }) {
             }
           />
         </DetailSection>
+          </DetailColumn>
 
+          <DetailColumn>
         <DetailSection
           id="conflicts"
           icon={AlertTriangle}
@@ -852,7 +874,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </div>
         </DetailSection>
-        </div>
+          </DetailColumn>
+        </DetailTwoCol>
 
         <DetailSection
           id="section-readiness"
@@ -878,75 +901,43 @@ export function DbReleaseDetail({ id }: { id: string }) {
           )}
         </DetailSection>
 
+        <DetailTwoCol>
+          <DetailColumn>
         <DetailSection
           id="section-signoffs"
           icon={Calendar}
           tone="emerald"
           title="Sign-offs"
-          description={`${signoffsDone} of ${signoffTypes.length} complete — record via Edit Release`}
-          detail="Checklist sign-offs for this release. Values are recorded via Edit Release — this section does not create a second edit path."
+          description={`${signoffsDone} of ${signoffTypes.length} complete`}
+          detail="Checklist types from Sign-off Lifecycle. Recording here updates the same Release fields as Edit Release — there is no separate Sign-off table."
           collapsible
           defaultOpen
         >
-          <div className="space-y-5">
-            <DetailFieldGrid cols={2}>
-              <DetailField
-                label="Start Date"
-                hint="When work on this release officially started (or is planned to start)."
-                value={
-                  <span>
-                    {release.startDate ? formatDate(release.startDate) : "—"}
-                    <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-white/55">
-                      {relativeLabel(release.startDate)}
-                    </span>
-                  </span>
-                }
-              />
-              <DetailField
-                label="Duration"
-                hint="Calendar span from start to planned go-live."
-                value={durationLabel(release.startDate, release.releaseDate)}
-              />
-              <DetailField
-                label="Rollback Plan"
-                hint="Whether a plan exists to undo the deployment if go-live fails."
-                value={
-                  <StatusChip
-                    label={String(dash(release.rollbackPlan))}
-                    tone={fieldStatusTone(release.rollbackPlan)}
-                  />
-                }
-              />
-            </DetailFieldGrid>
-            {signoffTypes.length === 0 ? (
-              <EmptyHint>No sign-off types are enabled.</EmptyHint>
-            ) : (
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                {signoffTypes.map((type) => (
-                  <SignoffChip
-                    key={type.key}
-                    label={type.label}
-                    done={
-                      type.releaseField
-                        ? signoffComplete(
-                            releaseSignoffValue(release, type.releaseField),
-                            signoffConfig
-                          )
-                        : false
-                    }
-                    hint={
-                      type.releaseField
-                        ? `${type.label} sign-off stored on ${type.releaseField}.`
-                        : `${type.label} has no release field yet.`
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          <DbReleaseSignoffList
+            releaseId={release.id}
+            releaseCode={release.releaseCode}
+            values={{
+              devSignoff: release.devSignoff,
+              testSignoff: release.testSignoff,
+              uatSignoff: release.uatSignoff,
+              securityClearance: release.securityClearance,
+              businessSignoff: release.businessSignoff,
+              opsSignoff: release.opsSignoff,
+              dressRehearsal: release.dressRehearsal,
+              trainingStatus: release.trainingStatus,
+              supportBriefed: release.supportBriefed,
+            }}
+            signoffConfig={signoffConfig}
+            canEdit={canEdit}
+            onChanged={() => {
+              load();
+              refreshCommandCenter();
+            }}
+          />
         </DetailSection>
+          </DetailColumn>
 
-        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+          <DetailColumn>
         <DetailSection
           id="section-approvals"
           icon={Stamp}
@@ -1012,7 +1003,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
             <EmptyHint>No environment bookings are linked to this release.</EmptyHint>
           )}
         </DetailSection>
-        </div>
+          </DetailColumn>
+        </DetailTwoCol>
       </div>
 
       <ReleaseActionStrip
@@ -1028,15 +1020,14 @@ export function DbReleaseDetail({ id }: { id: string }) {
         onRecordDecision={recordDecision}
       />
 
-      <DbAIRiskPanel releaseId={id} compact />
-
-      {/* Supporting detail — open by default; collapse any section you do not need. */}
+      {/* Supporting detail — two independent columns so empty cards stay short. */}
       <div className="space-y-3">
         <p className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/45">
-          More detail · open by default · collapse any section you do not need
+          More detail · collapse any section you do not need
         </p>
 
-        <SupportingTwoCol>
+        <DetailTwoCol>
+          <DetailColumn>
         <DetailSection
           icon={Package}
           tone="indigo"
@@ -1067,9 +1058,113 @@ export function DbReleaseDetail({ id }: { id: string }) {
               hint="Overall health signal (e.g. Go / No-Go / Caution) summarizing readiness and risk."
               value={dash(release.releaseHealth)}
             />
+            <DetailField
+              label="Start Date"
+              hint="When work on this release officially started (or is planned to start)."
+              value={
+                <span>
+                  {release.startDate ? formatDate(release.startDate) : "—"}
+                  <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-white/55">
+                    {relativeLabel(release.startDate)}
+                  </span>
+                </span>
+              }
+            />
+            <DetailField
+              label="Duration"
+              hint="Calendar span from start to planned go-live."
+              value={durationLabel(release.startDate, release.releaseDate)}
+            />
+            <DetailField
+              label="Rollback Plan"
+              hint="Whether a plan exists to undo the deployment if go-live fails."
+              value={
+                <StatusChip
+                  label={String(dash(release.rollbackPlan))}
+                  tone={fieldStatusTone(release.rollbackPlan)}
+                />
+              }
+            />
           </DetailFieldGrid>
         </DetailSection>
 
+        <DbReleaseServicesInvolved releaseId={id} />
+
+        <DetailSection
+          id="dependencies"
+          icon={GitBranch}
+          tone="indigo"
+          title="Dependencies"
+          description="Depends-on and depended-by links"
+          detail="Full Dependency register rows where this release is either side of the link. Adding one here creates the same DEP record as the Dependencies page. VR-36 freezes adds once the release is Ready or later."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseDependencyList
+            releaseId={release.id}
+            releaseCode={release.releaseCode}
+            canEdit={canEdit}
+            addDisabledReason={
+              lifecycleStatus?.dependencyGraphFrozen
+                ? "Dependencies can’t be changed now. This release is Ready to deploy or further along."
+                : null
+            }
+          />
+        </DetailSection>
+
+        <DetailSection
+          id="risks"
+          icon={ShieldAlert}
+          tone="rose"
+          title="Risk"
+          description="Risk register rows for this release"
+          detail="Risks with releaseId set to this release. Adding one here creates the same Risk row as the Risk register."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseRiskList
+            releaseId={release.id}
+            departmentId={release.departmentId}
+            applicationId={release.applications[0]?.application.id ?? ""}
+            canEdit={canEdit}
+          />
+        </DetailSection>
+
+        <DetailSection
+          id="alerts"
+          icon={Bell}
+          tone="amber"
+          title="Alerts"
+          description="Monitoring alerts for this release’s applications"
+          detail="Alerts are application-scoped. This list shows alerts for the applications on this release. Manual create sets autoGenerated false and alertSource Manual — the same MonitoringAlert row as /monitoring-alerts."
+          collapsible
+          defaultOpen
+        >
+          <DbReleaseAlertList
+            applications={release.applications.map((link) => link.application)}
+            departmentId={release.departmentId}
+            canEdit={canEdit}
+          />
+        </DetailSection>
+
+        <DetailSection
+          icon={FileText}
+          tone="amber"
+          title="Release Notes"
+          description={release.notes ? "Notes on file" : "No additional release notes recorded"}
+          detail="Free-text notes from the release owner — context, decisions, or caveats about this release that don't fit into a structured field elsewhere on this page."
+          collapsible
+          defaultOpen
+        >
+          {release.notes ? (
+            <TintedCallout tone="amber">{release.notes}</TintedCallout>
+          ) : (
+            <EmptyHint>No additional release notes have been recorded.</EmptyHint>
+          )}
+        </DetailSection>
+          </DetailColumn>
+
+          <DetailColumn>
         <DetailSection
           icon={Megaphone}
           tone="amber"
@@ -1097,10 +1192,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
-        </SupportingTwoCol>
-
-        <SupportingTwoCol>
-        <DbReleaseServicesInvolved releaseId={id} />
 
         <DetailSection
           icon={Link2}
@@ -1111,31 +1202,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
           collapsible
           defaultOpen
         >
-          <DbLinkedWorkItems releaseId={id} />
-        </DetailSection>
-        </SupportingTwoCol>
-
-        <SupportingTwoCol>
-        <DetailSection
-          id="dependencies"
-          icon={GitBranch}
-          tone="indigo"
-          title="Dependencies"
-          description="Depends-on and depended-by links"
-          detail="Full Dependency register rows where this release is either side of the link. Adding one here creates the same DEP record as the Dependencies page. VR-36 freezes adds once the release is Ready or later."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseDependencyList
-            releaseId={release.id}
-            releaseCode={release.releaseCode}
-            canEdit={canEdit}
-            addDisabledReason={
-              lifecycleStatus?.dependencyGraphFrozen
-                ? "Dependencies can’t be changed now. This release is Ready to deploy or further along."
-                : null
-            }
-          />
+          <DbLinkedWorkItems releaseId={id} embedded />
         </DetailSection>
 
         <DetailSection
@@ -1149,26 +1216,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
           defaultOpen
         >
           <DbReleaseDriftList releaseId={id} embedded />
-        </DetailSection>
-        </SupportingTwoCol>
-
-        <SupportingTwoCol>
-        <DetailSection
-          id="risks"
-          icon={ShieldAlert}
-          tone="rose"
-          title="Risk"
-          description="Risk register rows for this release"
-          detail="Risks with releaseId set to this release. Adding one here creates the same Risk row as the Risk register."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseRiskList
-            releaseId={release.id}
-            departmentId={release.departmentId}
-            applicationId={release.applications[0]?.application.id ?? ""}
-            canEdit={canEdit}
-          />
         </DetailSection>
 
         <DetailSection
@@ -1184,25 +1231,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
           <DbReleaseIncidentList
             releaseCode={release.releaseCode}
             preferredApplicationId={release.applications[0]?.application.id}
-            canEdit={canEdit}
-          />
-        </DetailSection>
-        </SupportingTwoCol>
-
-        <SupportingTwoCol>
-        <DetailSection
-          id="alerts"
-          icon={Bell}
-          tone="amber"
-          title="Alerts"
-          description="Monitoring alerts for this release’s applications"
-          detail="Alerts are application-scoped. This list shows alerts for the applications on this release. Manual create sets autoGenerated false and alertSource Manual — the same MonitoringAlert row as /monitoring-alerts."
-          collapsible
-          defaultOpen
-        >
-          <DbReleaseAlertList
-            applications={release.applications.map((link) => link.application)}
-            departmentId={release.departmentId}
             canEdit={canEdit}
           />
         </DetailSection>
@@ -1229,24 +1257,6 @@ export function DbReleaseDetail({ id }: { id: string }) {
             />
           </DetailFieldGrid>
         </DetailSection>
-        </SupportingTwoCol>
-
-        <SupportingTwoCol>
-        <DetailSection
-          icon={FileText}
-          tone="amber"
-          title="Release Notes"
-          description={release.notes ? "Notes on file" : "No additional release notes recorded"}
-          detail="Free-text notes from the release owner — context, decisions, or caveats about this release that don't fit into a structured field elsewhere on this page."
-          collapsible
-          defaultOpen
-        >
-          {release.notes ? (
-            <TintedCallout tone="amber">{release.notes}</TintedCallout>
-          ) : (
-            <EmptyHint>No additional release notes have been recorded.</EmptyHint>
-          )}
-        </DetailSection>
 
         <DetailSection
           icon={Megaphone}
@@ -1257,9 +1267,10 @@ export function DbReleaseDetail({ id }: { id: string }) {
           collapsible
           defaultOpen
         >
-          <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} />
+          <StakeholderCommsPanel releaseId={id} releaseCode={release.releaseCode} embedded />
         </DetailSection>
-        </SupportingTwoCol>
+          </DetailColumn>
+        </DetailTwoCol>
 
         <DetailSection
           icon={History}

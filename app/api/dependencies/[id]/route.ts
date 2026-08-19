@@ -11,6 +11,7 @@ import {
 } from "@/lib/dependency-lifecycle-transition";
 import {
   guardDependencyGraphMutation,
+  guardReleaseFullyLocked,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
@@ -86,6 +87,13 @@ export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
   const existing = await findDependency(id);
   if (!existing) return NextResponse.json({ error: "Dependency not found" }, { status: 404 });
+
+  const parentConfig = await loadGuardReleaseConfig(
+    user!.id,
+    existing.release.lifecycleConfigVersionId
+  );
+  const cancelledLock = guardReleaseFullyLocked(existing.release.status, parentConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
 
   const parsed = patchDependencySchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
@@ -186,6 +194,8 @@ export async function PATCH(req: Request, { params }: Params) {
           user!.id,
           nextParent.lifecycleConfigVersionId
         );
+        const nextCancelled = guardReleaseFullyLocked(nextParent.status, nextConfig);
+        if (!nextCancelled.ok) return nextCancelled.response;
         const nextFrozen = guardDependencyGraphMutation(
           nextParent.status,
           nextConfig
@@ -276,6 +286,8 @@ export async function DELETE(_req: Request, { params }: Params) {
     user!.id,
     existing.release.lifecycleConfigVersionId
   );
+  const cancelledLock = guardReleaseFullyLocked(existing.release.status, parentConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
   const frozen = guardDependencyGraphMutation(
     existing.release.status,
     parentConfig

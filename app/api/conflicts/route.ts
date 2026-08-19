@@ -9,6 +9,10 @@ import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createConflictSchema } from "@/lib/validation/conflict";
+import {
+  guardReleaseFullyLocked,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 async function nextConflictCode(): Promise<string> {
   const rows = await prisma.environmentConflict.findMany({ select: { conflictCode: true } });
@@ -122,11 +126,11 @@ export async function POST(req: Request) {
   const [release1, release2, maxOrder, releases] = await Promise.all([
     prisma.release.findUnique({
       where: { releaseCode: body.release1Code },
-      select: { id: true, releaseCode: true },
+      select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
     }),
     prisma.release.findUnique({
       where: { releaseCode: body.release2Code },
-      select: { id: true, releaseCode: true },
+      select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
     }),
     prisma.environmentConflict.aggregate({ _max: { sourceOrder: true } }),
     prisma.release.findMany({ select: { id: true, releaseCode: true } }),
@@ -136,6 +140,14 @@ export async function POST(req: Request) {
   }
   if (!release2) {
     return NextResponse.json({ error: "Release 2 not found" }, { status: 400 });
+  }
+  for (const linked of [release1, release2]) {
+    const linkedConfig = await loadGuardReleaseConfig(
+      user!.id,
+      linked.lifecycleConfigVersionId
+    );
+    const cancelledLock = guardReleaseFullyLocked(linked.status, linkedConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
   }
 
   const row = await prisma.environmentConflict.create({

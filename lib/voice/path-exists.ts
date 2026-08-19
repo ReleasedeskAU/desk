@@ -49,6 +49,10 @@ const DETAIL_CHECKERS: readonly DetailChecker[] = [
     apiPath: (id) => `/api/approvals/${encodeURIComponent(id)}`,
   },
   {
+    re: /^\/signoffs\/([^/]+)$/,
+    apiPath: (id) => `/api/signoffs/${encodeURIComponent(id)}`,
+  },
+  {
     re: /^\/leaves\/([^/]+)$/,
     apiPath: (id) => `/api/leaves/${encodeURIComponent(id)}`,
   },

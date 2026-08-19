@@ -34,6 +34,7 @@ import {
   HeartPulse,
   CalendarClock,
   Mic,
+  Stamp,
 } from "lucide-react";
 import { NAV_DATA_SECTIONS, type NavDataItem } from "@/lib/nav-data";
 
@@ -65,6 +66,7 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/risks": AlertTriangle,
   "/drifts": GitCompareArrows,
   "/approvals": ClipboardCheck,
+  "/signoffs": Stamp,
   "/leaves": CalendarOff,
   "/monitoring-alerts": Bell,
   "/incidents": AlertOctagon,

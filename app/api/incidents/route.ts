@@ -6,6 +6,10 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { createIncidentSchema } from "@/lib/validation/incident";
 import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
+import {
+  guardReleaseFullyLocked,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 const incidentInclude = {
   application: { select: { id: true, name: true } },
@@ -91,7 +95,7 @@ export async function POST(req: Request) {
     body.relatedReleaseCode
       ? prisma.release.findUnique({
           where: { releaseCode: body.relatedReleaseCode },
-          select: { id: true, releaseCode: true },
+          select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
         })
       : Promise.resolve(null),
     prisma.incident.aggregate({ _max: { sourceOrder: true } }),
@@ -99,6 +103,14 @@ export async function POST(req: Request) {
   if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
   if (body.relatedReleaseCode && !release) {
     return NextResponse.json({ error: "Release not found" }, { status: 400 });
+  }
+  if (release) {
+    const releaseConfig = await loadGuardReleaseConfig(
+      user!.id,
+      release.lifecycleConfigVersionId
+    );
+    const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
   }
 
   let status = String(body.status ?? "").trim();

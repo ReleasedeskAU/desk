@@ -4,6 +4,7 @@
  * - VR-36: freeze dependency graph add/remove once Release ≥ Ready
  * - §3-06: lock environment booking mutations while Release is Deploying
  * - CASC-13: withdraw open Approvals when Release becomes Cancelled
+ * - Cancelled: full lock — no edits on the release or related creates
  * - Approval rejection: revert the linked release to the approvalRejectLanding status
  *
  * These are separate from per-entity lifecycle terminal locks and from Agent 1
@@ -26,6 +27,7 @@ import {
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
+import { isReleaseFullyLocked } from "@/lib/release-lifecycle-edit-policy";
 
 /**
  * Live or pinned release graph for VR-35 / VR-36 / §3-06.
@@ -148,6 +150,31 @@ export function isReleaseCancelled(
   const resolved = resolveLifecycleStatusRef(config, status);
   if (resolved) return resolved.enabled && resolved.withdrawApprovalsOnEnter;
   return /^cancell?ed$/i.test(status.trim());
+}
+
+export const RELEASE_CANCELLED_LOCKED_CODE = "RELEASE_CANCELLED_LOCKED";
+
+/**
+ * Deny mutations when the parent release is Cancelled (full lock).
+ * @param releaseStatus - Parent release status label or key
+ * @param config - Live or pinned release lifecycle config
+ */
+export function guardReleaseFullyLocked(
+  releaseStatus: string,
+  config: ReleaseLifecycleConfig = createDefaultReleaseLifecycleConfig()
+): RelatedEntityGuardOk | RelatedEntityGuardDenial {
+  if (!isReleaseFullyLocked(config, releaseStatus)) return { ok: true };
+  const label = resolveLifecycleStatusRef(config, releaseStatus)?.label ?? releaseStatus.trim() ?? "Cancelled";
+  return {
+    ok: false,
+    response: NextResponse.json(
+      {
+        error: `This release is ${label}. It is locked — nothing can be edited.`,
+        code: RELEASE_CANCELLED_LOCKED_CODE,
+      },
+      { status: 409 }
+    ),
+  };
 }
 
 /**

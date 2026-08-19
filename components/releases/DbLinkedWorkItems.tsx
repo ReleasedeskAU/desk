@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Ticket } from "lucide-react";
 import { AdvancedCard } from "@/components/ui/advanced-card";
+import { EmptyHint } from "@/components/detail/editable";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { formatDateTime } from "@/lib/utils";
 import type { WorkItemSummary } from "@/lib/dependency-impact";
@@ -19,7 +20,13 @@ type WorkItem = {
   blockedBy: string | null;
 };
 
-export function DbLinkedWorkItems({ releaseId }: { releaseId: string }) {
+type Props = {
+  releaseId: string;
+  /** Skip outer card when already inside a DetailSection. */
+  embedded?: boolean;
+};
+
+export function DbLinkedWorkItems({ releaseId, embedded = false }: Props) {
   const [items, setItems] = useState<WorkItem[]>([]);
   const [summary, setSummary] = useState<WorkItemSummary | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
@@ -36,19 +43,15 @@ export function DbLinkedWorkItems({ releaseId }: { releaseId: string }) {
     );
   }, [releaseId]);
 
-  return (
-    <AdvancedCard
-      title="Linked work items"
-      subtitle={
-        lastSynced
-          ? `Read-only from Jira · synced ${formatDateTime(lastSynced)}`
-          : "Read-only from Jira"
-      }
-      icon={Ticket}
-      variant="glass"
-    >
+  const body = (
+    <>
+      {embedded && lastSynced ? (
+        <p className="mb-2 text-[11px] text-gray-500 dark:text-white/50">
+          Read-only from Jira · synced {formatDateTime(lastSynced)}
+        </p>
+      ) : null}
       {summary && summary.total > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="mb-3 flex flex-wrap gap-2">
           <Stat label="Total" value={summary.total} />
           <Stat label="Open" value={summary.open} />
           <Stat label="Done" value={summary.done} />
@@ -57,25 +60,25 @@ export function DbLinkedWorkItems({ releaseId }: { releaseId: string }) {
       )}
 
       {items.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-white/55">No linked Jira work items for this release code.</p>
+        <EmptyHint>No linked Jira work items for this release code.</EmptyHint>
       ) : (
         <div className="space-y-2">
           {items.map((t) => (
             <div
               key={t.externalId}
-              className="flex items-center justify-between gap-3 py-2 border-b border-gray-100 dark:border-[var(--border)] last:border-0"
+              className="flex items-center justify-between gap-3 border-b border-gray-100 py-2 last:border-0 dark:border-[var(--border)]"
             >
               <div className="min-w-0">
                 <a
                   href={`https://jira.example.com/browse/${t.externalId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-mono text-brand-600 dark:text-brand-400 hover:underline"
+                  className="inline-flex items-center gap-1 font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
                 >
                   {t.externalId}
                   <ExternalLink className="h-3 w-3" />
                 </a>
-                <p className="text-sm text-gray-700 dark:text-white/80 truncate">{t.title}</p>
+                <p className="truncate text-sm text-gray-700 dark:text-white/80">{t.title}</p>
                 <span className="text-[10px] text-gray-400 dark:text-white/45">
                   {t.itemType}
                   {t.priority ? ` · ${t.priority}` : ""}
@@ -88,6 +91,23 @@ export function DbLinkedWorkItems({ releaseId }: { releaseId: string }) {
           ))}
         </div>
       )}
+    </>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <AdvancedCard
+      title="Linked work items"
+      subtitle={
+        lastSynced
+          ? `Read-only from Jira · synced ${formatDateTime(lastSynced)}`
+          : "Read-only from Jira"
+      }
+      icon={Ticket}
+      variant="glass"
+    >
+      {body}
     </AdvancedCard>
   );
 }

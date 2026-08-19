@@ -12,6 +12,7 @@ import { bookingWhere, mapDbEnvBookingRow, sp } from "@/lib/list-api-filters";
 import { jsonError } from "@/lib/api-errors";
 import {
   guardEnvBookingMutationWhileDeploying,
+  guardReleaseFullyLocked,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 
@@ -114,6 +115,8 @@ export async function PUT(req: Request) {
       user!.id,
       release.lifecycleConfigVersionId
     );
+    const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
     const bookingLocked = guardEnvBookingMutationWhileDeploying(
       release.status,
       releaseConfig

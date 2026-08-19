@@ -17,7 +17,9 @@ import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
 import {
   cascadeWithdrawApprovalsOnReleaseCancelled,
   guardDependencyGraphMutation,
+  guardReleaseFullyLocked,
   isReleaseCancelled,
+  loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 import {
@@ -140,6 +142,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
     pinnedReleaseConfig = resolved.config;
     const { config } = resolved;
+    const fullyLocked = guardReleaseFullyLocked(existing.status, config);
+    if (!fullyLocked.ok) return fullyLocked.response;
     const { mode, denied } = deniedReleaseEditFields(
       config,
       existing.status,
@@ -760,8 +764,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error } = await requireRole("editor");
+  const { user, error } = await requireRole("editor");
   if (error) return error;
-  await prisma.release.delete({ where: { id: (await prisma.release.findFirst({ where: { OR: [{ id }, { releaseCode: id }] } }))?.id ?? id } });
+
+  const existing = await prisma.release.findFirst({
+    where: { OR: [{ id }, { releaseCode: id }] },
+    select: { id: true, status: true, lifecycleConfigVersionId: true },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const releaseConfig = await loadGuardReleaseConfig(
+    user!.id,
+    existing.lifecycleConfigVersionId
+  );
+  const locked = guardReleaseFullyLocked(existing.status, releaseConfig);
+  if (!locked.ok) return locked.response;
+
+  await prisma.release.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });
 }

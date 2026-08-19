@@ -47,6 +47,7 @@ export const NAV_DATA_SECTIONS: readonly NavDataSection[] = [
       { href: "/risks", label: "Risk" },
       { href: "/drifts", label: "Drift Dashboard" },
       { href: "/approvals", label: "Approval Queue" },
+      { href: "/signoffs", label: "Sign-offs" },
       { href: "/leaves", label: "Leave Calendar" },
     ],
   },

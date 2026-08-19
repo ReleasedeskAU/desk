@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { isReleaseFullyLocked } from "@/lib/release-lifecycle-edit-policy";
 import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
 import {
   loadPreviousReleaseStatus,
@@ -134,6 +135,8 @@ export async function GET(
       dependencyGraphFrozen: isReleaseAtOrBeyondReady(release.status, resolved.config),
       /** VR-35 — new blockers locked once Deploying or later. */
       blockerCreateLocked: isReleaseAtOrBeyondDeploying(release.status, resolved.config),
+      /** Cancelled — no field, status, related, or audit edits. Closed stays editable for status. */
+      editsLocked: isReleaseFullyLocked(resolved.config, release.status),
       unknownStatus: current == null,
       configPin: resolved.configPin,
       versionId: resolved.versionId,

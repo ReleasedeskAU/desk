@@ -6,6 +6,10 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { createRiskRow } from "@/lib/org-compat";
 import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
+import {
+  guardReleaseFullyLocked,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 async function nextRiskCode(): Promise<string> {
   const rows = await prisma.risk.findMany({ select: { riskCode: true } });
@@ -70,6 +74,8 @@ export async function POST(req: Request) {
       where: { id: body.releaseId },
       select: {
         id: true,
+        status: true,
+        lifecycleConfigVersionId: true,
         department: { select: { id: true, name: true } },
         applications: { where: { applicationId: body.applicationId }, select: { applicationId: true } },
       },
@@ -84,6 +90,12 @@ export async function POST(req: Request) {
     prisma.risk.aggregate({ _max: { sourceOrder: true } }),
   ]);
   if (!release) return NextResponse.json({ error: "Release not found" }, { status: 400 });
+  const releaseConfig = await loadGuardReleaseConfig(
+    user!.id,
+    release.lifecycleConfigVersionId
+  );
+  const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
   if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
   if (!release.applications.length) {
     return NextResponse.json({ error: "Application is not linked to the selected release" }, { status: 400 });

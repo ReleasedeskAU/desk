@@ -6,6 +6,7 @@ import { patchBookingSchema } from "@/lib/validation/booking";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
 import {
   guardEnvBookingMutationWhileDeploying,
+  guardReleaseFullyLocked,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 
@@ -91,6 +92,8 @@ export async function PATCH(req: Request, { params }: Params) {
       user!.id,
       existing.release.lifecycleConfigVersionId
     );
+    const cancelledLock = guardReleaseFullyLocked(existing.release.status, releaseConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
     const locked = guardEnvBookingMutationWhileDeploying(
       existing.release.status,
       releaseConfig
@@ -158,6 +161,8 @@ export async function PATCH(req: Request, { params }: Params) {
       user!.id,
       release.lifecycleConfigVersionId
     );
+    const targetCancelled = guardReleaseFullyLocked(release.status, targetConfig);
+    if (!targetCancelled.ok) return targetCancelled.response;
     const targetLocked = guardEnvBookingMutationWhileDeploying(
       release.status,
       targetConfig
@@ -219,6 +224,8 @@ export async function DELETE(_req: Request, { params }: Params) {
       user!.id,
       existing.release.lifecycleConfigVersionId
     );
+    const cancelledLock = guardReleaseFullyLocked(existing.release.status, releaseConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
     const locked = guardEnvBookingMutationWhileDeploying(
       existing.release.status,
       releaseConfig

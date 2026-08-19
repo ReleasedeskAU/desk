@@ -43,6 +43,10 @@ import {
   APPROVAL_DEFAULT_HIDDEN_COLUMN_KEYS,
   APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS,
   APPROVALS_FILTER_FIELDS,
+  SIGNOFF_COLUMNS,
+  SIGNOFF_DEFAULT_HIDDEN_COLUMN_KEYS,
+  SIGNOFFS_DEFAULT_HIDDEN_FILTER_KEYS,
+  SIGNOFFS_FILTER_FIELDS,
 } from "@/lib/table-page-columns";
 import type { ColumnDef, FilterFieldDef } from "@/lib/table-column-types";
 import {
@@ -56,6 +60,7 @@ import {
   RELEASE_TABLE_SORT_PRESETS,
   RISK_SORT_PRESETS,
   APPROVAL_SORT_PRESETS,
+  SIGNOFF_SORT_PRESETS,
   type TableSortPreset,
 } from "@/lib/table-sort-presets";
 import { normalizeVoicePath } from "@/lib/voice/route-allowlist";
@@ -161,6 +166,17 @@ const PAGES: readonly VoiceTableViewPage[] = [
     defaultHiddenColumns: APPROVAL_DEFAULT_HIDDEN_COLUMN_KEYS,
     defaultHiddenFilters: APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS,
     sortPresets: APPROVAL_SORT_PRESETS,
+  },
+  {
+    path: "/signoffs",
+    pageKey: "signoffs",
+    label: "Sign-offs",
+    columns: SIGNOFF_COLUMNS,
+    filterFields: SIGNOFFS_FILTER_FIELDS,
+    lockedColumnKeys: ["signoffCode"],
+    defaultHiddenColumns: SIGNOFF_DEFAULT_HIDDEN_COLUMN_KEYS,
+    defaultHiddenFilters: SIGNOFFS_DEFAULT_HIDDEN_FILTER_KEYS,
+    sortPresets: SIGNOFF_SORT_PRESETS,
   },
   {
     path: "/incidents",
