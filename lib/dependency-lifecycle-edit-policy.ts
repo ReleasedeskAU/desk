@@ -7,8 +7,8 @@ import type {
 } from "@/lib/dependency-lifecycle-config";
 import { resolveDependencyLifecycleStatusRef } from "@/lib/dependency-lifecycle-transition";
 
-const LIMITED_ALLOWED = new Set(["status", "overrideReason", "notes"]);
-const READ_ONLY_ALLOWED = new Set(["status", "overrideReason", "notes"]);
+const LIMITED_ALLOWED = new Set(["status", "overrideReason", "notes", "acknowledgeSide"]);
+const READ_ONLY_ALLOWED = new Set(["status", "overrideReason", "notes", "acknowledgeSide"]);
 
 /**
  * Resolve edit mode for the current dependency status.

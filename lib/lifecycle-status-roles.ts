@@ -36,6 +36,9 @@ export const STATUS_ROLE_IDS = [
   "requiresConditions",
   "revertsLinkedReleaseOnEnter",
   "approvalRejectLanding",
+  "autoResolvedOnDeploy",
+  "rollbackReopensAtRisk",
+  "atRiskWarning",
 ] as const;
 export type StatusRoleId = (typeof STATUS_ROLE_IDS)[number];
 
@@ -129,7 +132,7 @@ export const STATUS_ROLE_FIELDS: Record<StatusRoleId, StatusRoleFieldDef> = {
     id: "deployedMilestone",
     label: "Deployed milestone",
     description:
-      "Entering this status marks matching dependencies as Met (AV-04).",
+      "Entering this status marks matching dependencies as Resolved (AV-04).",
     uniqueness: "one",
     valueKind: "boolean",
   },
@@ -197,6 +200,30 @@ export const STATUS_ROLE_FIELDS: Record<StatusRoleId, StatusRoleFieldDef> = {
     uniqueness: "one",
     valueKind: "boolean",
   },
+  autoResolvedOnDeploy: {
+    id: "autoResolvedOnDeploy",
+    label: "Auto-update here when the upstream release deploys",
+    description:
+      "When the depended-on release reaches Deployed, open dependencies move to this status (AV-04). Counts as handled for hard-dependency checks.",
+    uniqueness: "one",
+    valueKind: "boolean",
+  },
+  rollbackReopensAtRisk: {
+    id: "rollbackReopensAtRisk",
+    label: "Upstream rollback moves this status to At Risk",
+    description:
+      "If the depended-on release rolls back, dependencies in this status are flagged At Risk (AV-26). System-only — users cannot make this move.",
+    uniqueness: "one",
+    valueKind: "boolean",
+  },
+  atRiskWarning: {
+    id: "atRiskWarning",
+    label: "At-risk warning status",
+    description:
+      "This is the warning status. AV-26 lands here when an upstream release rolls back.",
+    uniqueness: "one",
+    valueKind: "boolean",
+  },
 };
 
 /** Roles editable on Release statuses. */
@@ -230,6 +257,9 @@ export const INCIDENT_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
 export const DEPENDENCY_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
   "isIntake",
   "satisfiesHardGate",
+  "autoResolvedOnDeploy",
+  "rollbackReopensAtRisk",
+  "atRiskWarning",
 ];
 
 /** Roles editable on Risk statuses. */
@@ -468,7 +498,7 @@ export function exclusiveRoleIssues(
 
 /**
  * Roles that automation needs on at least one enabled status (dest, not exclusive).
- * AV-04 cannot mark dependencies Met if none count as a met hard dependency.
+ * AV-04 cannot mark dependencies Resolved if none count as a met hard dependency.
  */
 export const AT_LEAST_ONE_STATUS_ROLE_IDS: readonly StatusRoleId[] = [
   "satisfiesHardGate",

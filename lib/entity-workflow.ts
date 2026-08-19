@@ -262,13 +262,27 @@ export function dependencyWorkflow(
     resolveDependencyLifecycleStatusRef(config, status),
     config,
     {
-      primaryByFrom: { pending: "at_risk", at_risk: "met" },
+      primaryByFrom: {
+        identified: "pending",
+        pending: "confirmed",
+        confirmed: "in_progress",
+        in_progress: "resolved",
+        at_risk: "in_progress",
+        blocked: "in_progress",
+        escalated: "resolved",
+        resolved: "closed",
+        removed: "closed",
+      },
       stepCopy: {
+        pending: "Mark pending",
+        confirmed: "Mark confirmed",
+        in_progress: "Start work",
         at_risk: "Mark at risk",
-        met: "Mark met",
-        waived: "Waive dependency",
+        blocked: "Mark blocked",
+        escalated: "Escalate",
+        resolved: "Mark resolved",
         removed: "Remove dependency",
-        pending: "Return to pending",
+        closed: "Close dependency",
       },
     }
   );
@@ -344,12 +358,22 @@ export function alertWorkflow(
   config: AlertLifecycleConfig = createDefaultAlertLifecycleConfig()
 ): WorkflowOptions {
   return graphWorkflow(resolveAlertLifecycleStatusRef(config, status), config, {
-    primaryByFrom: { pending: "acknowledged", acknowledged: "actioned" },
+    primaryByFrom: {
+      active: "acknowledged",
+      acknowledged: "investigating",
+      investigating: "resolved",
+      escalated: "resolved",
+      resolved: "closed",
+      suppressed: "active",
+    },
     stepCopy: {
       acknowledged: "Acknowledge",
-      actioned: "Mark actioned",
-      dismissed: "Dismiss",
-      expired: "Mark expired",
+      investigating: "Start investigating",
+      resolved: "Mark resolved",
+      escalated: "Escalate",
+      suppressed: "Suppress",
+      closed: "Close alert",
+      active: "Return to active",
     },
   });
 }

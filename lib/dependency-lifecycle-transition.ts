@@ -1,24 +1,38 @@
 /**
  * Pure dependency status transition validation against a lifecycle config.
- * Flexible unmet soft-gates require overrideReason (warn + override).
+ * Flexible unmet catalog checks require overrideReason (warn + override).
  */
 import type {
   DependencyLifecycleConfig,
   DependencyLifecycleStatusConfig,
 } from "@/lib/dependency-lifecycle-config";
+import type {
+  DependencyLifecycleGateAttachment,
+  DependencyLifecycleGateType,
+} from "@/lib/dependency-lifecycle-gates";
+import { DEPENDENCY_LIFECYCLE_GATE_CATALOG } from "@/lib/dependency-lifecycle-gates";
+import { bothDependencyPartiesAcknowledged } from "@/lib/dependency-ack";
 
 export const MIN_DEPENDENCY_OVERRIDE_REASON_LENGTH = 3;
 
-/** Legacy seed / UI labels that map onto canonical lifecycle statuses. */
+/**
+ * Legacy labels/keys that map onto canonical lifecycle statuses.
+ * Do not alias real sheet keys (`resolved`, `blocked`) — they are first-class.
+ */
 const DEPENDENCY_STATUS_ALIASES: Readonly<Record<string, string>> = {
-  clear: "met",
-  resolved: "met",
-  blocked: "at_risk",
+  clear: "resolved",
+  met: "resolved",
+  waived: "removed",
   "at risk": "at_risk",
+  "in progress": "in_progress",
 };
 
 export type DependencyGateFacts = {
   notes: string | null | undefined;
+  sourceAcknowledgedAt?: Date | string | null;
+  sourceAcknowledgedByUserId?: string | null;
+  targetAcknowledgedAt?: Date | string | null;
+  targetAcknowledgedByUserId?: string | null;
 };
 
 /**
@@ -69,26 +83,53 @@ export type DependencyTransitionResult =
       unmetReasons?: string[];
     };
 
+function failMessage(gateType: DependencyLifecycleGateType): string {
+  return DEPENDENCY_LIFECYCLE_GATE_CATALOG[gateType].description;
+}
+
 /**
- * Soft gates for the enterprise dependencies table (Waived needs documentation).
+ * Evaluate one attached catalog check. Returns a user-facing reason when unmet.
+ */
+export function evaluateDependencyGate(
+  gate: DependencyLifecycleGateAttachment,
+  facts: DependencyGateFacts
+): string | null {
+  if (!gate.enabled) return null;
+  switch (gate.gateType) {
+    case "notes_documented":
+      return facts.notes && String(facts.notes).trim()
+        ? null
+        : failMessage(gate.gateType);
+    case "both_parties_acknowledged":
+      return bothDependencyPartiesAcknowledged(facts)
+        ? null
+        : failMessage(gate.gateType);
+    default:
+      return `Unhandled dependency check: ${String((gate as { gateType: string }).gateType)}`;
+  }
+}
+
+/**
+ * Soft gates for the attached catalog on this edge.
  */
 export function evaluateDependencySoftGates(args: {
   fromKey: string;
   toKey: string;
   facts: DependencyGateFacts;
+  gates: DependencyLifecycleGateAttachment[] | undefined;
 }): string[] {
   const unmet: string[] = [];
-  if (args.toKey === "waived") {
-    if (!args.facts.notes || !String(args.facts.notes).trim()) {
-      unmet.push("Waiving a dependency requires documented approval (notes)");
-    }
+  for (const gate of args.gates ?? []) {
+    const reason = evaluateDependencyGate(gate, args.facts);
+    if (reason) unmet.push(reason);
   }
   return unmet;
 }
 
 /**
  * Whether a status satisfies the Hard-dependency Deploying gate (VR-18).
- * Includes legacy Clear/Resolved via aliases.
+ * Resolved / Removed / Closed count as handled; Closed is archive, not a reopen.
+ * Legacy Clear / Met / Waived still resolve via aliases.
  */
 export function dependencyStatusSatisfiesHardGate(
   config: DependencyLifecycleConfig,
@@ -96,30 +137,37 @@ export function dependencyStatusSatisfiesHardGate(
 ): boolean {
   const resolved = resolveDependencyLifecycleStatusRef(config, status);
   if (resolved) return resolved.enabled && resolved.satisfiesHardGate;
-  // Fail closed for unknown open-like statuses.
   const s = (status ?? "").toLowerCase();
-  return ["met", "waived", "removed", "clear", "resolved"].includes(s);
+  return ["met", "waived", "removed", "clear", "resolved", "closed"].includes(s);
 }
 
-/**
- * Validate a dependency status change against the config graph + soft gates.
- *
- * AV-26 system exception: Met → At Risk is allowed only when
- * `isSystemTransition: true`. User PATCH must never set that flag — Met stays
- * terminal/immutable for normal edits.
- */
-export function validateDependencyTransition(args: {
+function isAv26SystemRollback(
+  config: DependencyLifecycleConfig,
+  from: DependencyLifecycleStatusConfig,
+  to: DependencyLifecycleStatusConfig
+): boolean {
+  return Boolean(from.rollbackReopensAtRisk && to.atRiskWarning);
+}
+
+export type DependencyTransitionArgs = {
   config: DependencyLifecycleConfig;
   fromStatus: string;
   toStatus: string;
   overrideReason?: string | null;
   facts: DependencyGateFacts;
   /**
-   * System automation marker (AV-26). When true, allows the Met → At Risk
-   * exception despite Met being terminal. Never accept this from client input.
+   * System automation marker (AV-26). When true, allows Resolved → At Risk
+   * despite that edge not being on the user graph. Never accept from client input.
    */
   isSystemTransition?: boolean;
-}): DependencyTransitionResult {
+};
+
+/**
+ * Validate a dependency status change against the config graph + catalog checks.
+ */
+export function validateDependencyTransition(
+  args: DependencyTransitionArgs
+): DependencyTransitionResult {
   const from = resolveDependencyLifecycleStatusRef(args.config, args.fromStatus);
   const to = resolveDependencyLifecycleStatusRef(args.config, args.toStatus);
   if (!from || !to) {
@@ -139,12 +187,10 @@ export function validateDependencyTransition(args: {
     };
   }
 
-  // AV-26: system-only Met → At Risk (not in the user-facing graph).
-  const isAv26SystemMetToAtRisk =
+  if (
     Boolean(args.isSystemTransition) &&
-    from.key === "met" &&
-    to.key === "at_risk";
-  if (isAv26SystemMetToAtRisk) {
+    isAv26SystemRollback(args.config, from, to)
+  ) {
     if (!to.enabled) {
       return {
         allowed: false,
@@ -199,6 +245,7 @@ export function validateDependencyTransition(args: {
     fromKey: from.key,
     toKey: to.key,
     facts: args.facts,
+    gates: transition.gates,
   });
 
   if (unmet.length > 0) {

@@ -258,6 +258,12 @@ model ReleaseDependency {
   impactIfBlocked    String?
   notes              String?
   sourceOrder        Int?
+  /** Confirmed: waiting-release owner acknowledgment (directory User id). */
+  sourceAcknowledgedAt         DateTime?
+  sourceAcknowledgedByUserId   String?
+  /** Confirmed: upstream-release owner acknowledgment (directory User id). */
+  targetAcknowledgedAt         DateTime?
+  targetAcknowledgedByUserId   String?
 
   @@unique([releaseId, dependsOnReleaseId])
 }

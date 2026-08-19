@@ -9,6 +9,7 @@ import {
   validateAlertLifecycleConfig,
   type AlertLifecycleConfig,
 } from "@/lib/alert-lifecycle-config";
+import { reconcileAlertLifecycleSpec } from "@/lib/alert-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -65,7 +66,9 @@ export async function loadAlertLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeAlertLifecycleConfig(latest.snapshot),
+      config: reconcileAlertLifecycleSpec(
+        normalizeAlertLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };
@@ -91,7 +94,10 @@ export async function saveAlertLifecycleConfig(
   clerkUserId: string,
   config: AlertLifecycleConfig
 ): Promise<AlertLifecycleConfig> {
-  const validationError = validateAlertLifecycleConfig(config);
+  const reconciled = reconcileAlertLifecycleSpec(
+    normalizeAlertLifecycleConfig(config)
+  );
+  const validationError = validateAlertLifecycleConfig(reconciled);
   if (validationError) throw new Error(validationError);
   await ensureAlertLifecycleTables();
 
@@ -104,7 +110,7 @@ export async function saveAlertLifecycleConfig(
     id,
     clerkUserId,
     nextVersion,
-    JSON.stringify(config)
+    JSON.stringify(reconciled)
   );
-  return config;
+  return reconciled;
 }

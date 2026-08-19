@@ -2,7 +2,7 @@
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, GitBranch, List, Package } from "lucide-react";
+import { CheckCircle2, FileText, GitBranch, List, Package } from "lucide-react";
 import {
   EditableDetailShell,
   DetailSection,
@@ -23,6 +23,7 @@ import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnSecondary } from "@/lib/styles";
+import { cn } from "@/lib/utils";
 import {
   DEPENDENCY_IMPACTS,
   DEPENDENCY_TYPES,
@@ -37,6 +38,22 @@ import { dependencyWorkflow, type WorkflowStep } from "@/lib/entity-workflow";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
 import type { DependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
+import {
+  bothDependencyPartiesAcknowledged,
+  isDependencySideAcknowledged,
+  type DependencyAckSide,
+} from "@/lib/dependency-ack";
+
+type ReleaseOwner = { id: string; name: string; email: string };
+
+type ReleaseRef = {
+  id: string;
+  releaseCode: string;
+  name: string;
+  status: string;
+  releaseOwnerId?: string | null;
+  releaseOwner?: ReleaseOwner | null;
+};
 
 type DependencyDetail = {
   id: string;
@@ -45,8 +62,12 @@ type DependencyDetail = {
   status: string;
   impactIfBlocked: string;
   notes: string | null;
-  release: { id: string; releaseCode: string; name: string; status: string };
-  dependsOnRelease: { id: string; releaseCode: string; name: string; status: string };
+  sourceAcknowledgedAt: string | Date | null;
+  sourceAcknowledgedByUserId: string | null;
+  targetAcknowledgedAt: string | Date | null;
+  targetAcknowledgedByUserId: string | null;
+  release: ReleaseRef;
+  dependsOnRelease: ReleaseRef;
 };
 
 type DependencyOption = { id: string; depCode: string };
@@ -75,14 +96,22 @@ const IMPACT_OPTIONS = DEPENDENCY_IMPACTS.map((v) => ({ value: v, label: v }));
 
 function statusTone(status: string): ChipTone {
   const s = status.toLowerCase();
-  if (s.includes("block") || s === "pending") return "bad";
-  if (s.includes("risk")) return "warn";
+  if (s.includes("block") || s === "escalated") return "bad";
   if (
-    s.includes("met") ||
-    s.includes("waiv") ||
+    s.includes("risk") ||
+    s === "pending" ||
+    s === "identified" ||
+    s === "confirmed"
+  ) {
+    return "warn";
+  }
+  if (
+    s.includes("resolv") ||
     s.includes("remov") ||
+    s.includes("closed") ||
     s.includes("clear") ||
-    s.includes("resolv")
+    s.includes("met") ||
+    s.includes("waiv")
   ) {
     return "good";
   }
@@ -105,6 +134,13 @@ function withCurrentOption(
   return [{ value: current, label: current }, ...options];
 }
 
+function formatAckAt(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleString();
+}
+
 function toDraft(row: DependencyDetail): DependencyDraft {
   return {
     releaseId: row.release.id,
@@ -114,6 +150,43 @@ function toDraft(row: DependencyDetail): DependencyDraft {
     impactIfBlocked: row.impactIfBlocked,
     notes: row.notes ?? "",
   };
+}
+
+function AckSideCard(props: {
+  title: string;
+  releaseCode: string;
+  ownerName: string | null;
+  acknowledged: boolean;
+  acknowledgedAt: string;
+  busy: boolean;
+  disabled: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[var(--border)] dark:bg-[var(--card)]">
+      <p className="text-[13px] font-semibold text-slate-900 dark:text-white">
+        {props.title}
+      </p>
+      <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
+        {props.releaseCode}
+        {props.ownerName ? ` · ${props.ownerName}` : " · no owner assigned"}
+      </p>
+      {props.acknowledged ? (
+        <p className="mt-3 text-[13px] text-emerald-700 dark:text-emerald-300">
+          Confirmed{props.acknowledgedAt ? ` · ${props.acknowledgedAt}` : ""}
+        </p>
+      ) : (
+        <button
+          type="button"
+          className={cn(taBtnSecondary, "mt-3 text-sm !py-2")}
+          disabled={props.disabled}
+          onClick={props.onConfirm}
+        >
+          {props.busy ? "Recording…" : "Record confirmation"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function DependencyDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -128,6 +201,8 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
   /** Id of the workflow step currently being written, so its button can spin. */
   const [pendingStep, setPendingStep] = useState<string | null>(null);
+  const [ackBusy, setAckBusy] = useState<DependencyAckSide | null>(null);
+  const [ackError, setAckError] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const [detail, list, releaseList, me] = await Promise.all([
@@ -294,6 +369,37 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     setPendingStep(null);
   };
 
+  /**
+   * Record one side of Confirmed dual-acknowledgment. The API checks the
+   * caller is that release's directory owner — never trust the client.
+   */
+  const recordAcknowledgment = async (side: DependencyAckSide) => {
+    if (!row) return;
+    setAckBusy(side);
+    setAckError(null);
+    const res = await safeFetchJson(`/api/dependencies/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acknowledgeSide: side }),
+      label: "dependency-acknowledge",
+      rejectHttpErrors: false,
+    });
+    setAckBusy(null);
+    if (!res.ok || (res.status ?? 0) >= 300) {
+      const data =
+        res.ok && res.data && typeof res.data === "object"
+          ? (res.data as { error?: string })
+          : null;
+      setAckError(
+        typeof data?.error === "string"
+          ? data.error
+          : "Couldn’t record that confirmation. Try again."
+      );
+      return;
+    }
+    await load();
+  };
+
   const remove = async () => {
     if (!row) return;
     edit.setDeleting(true);
@@ -327,6 +433,11 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
     v.status,
     (lifecycle.config as DependencyLifecycleConfig | null) ?? undefined
   );
+  const bothAcked = bothDependencyPartiesAcknowledged(row);
+  const sourceAcked = isDependencySideAcknowledged(row, "source");
+  const targetAcked = isDependencySideAcknowledged(row, "target");
+  const showAckSection =
+    /confirmed/i.test(v.status) || sourceAcked || targetAcked;
 
   const toAction = (step: WorkflowStep): DetailAction => ({
     id: step.id,
@@ -338,6 +449,13 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   });
 
   const attention = collectAttention([
+    {
+      id: "need-acks",
+      when: /confirmed/i.test(v.status) && !bothAcked,
+      tone: "warning",
+      label: "Both release managers must confirm",
+      detail: "Each owner records their own acknowledgment before work can start.",
+    },
     {
       id: "blocked",
       when: /block/i.test(v.status),
@@ -589,6 +707,48 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
           caption={`${sourceRelease?.name ?? "Source"} depends on ${upstreamRelease?.name ?? "upstream"} · ${v.dependencyType} dependency`}
         />
       </DetailSection>
+
+      {showAckSection ? (
+        <DetailSection
+          icon={CheckCircle2}
+          tone="sky"
+          title="Manager confirmations"
+          description="Confirmed → In Progress needs both release managers. Each side is recorded separately."
+        >
+          {ackError ? (
+            <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+              {ackError}
+            </p>
+          ) : null}
+          {bothAcked ? (
+            <TintedCallout tone="emerald">
+              Both managers have confirmed. This dependency can move to In Progress.
+            </TintedCallout>
+          ) : null}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <AckSideCard
+              title="This release"
+              releaseCode={row.release.releaseCode}
+              ownerName={row.release.releaseOwner?.name ?? null}
+              acknowledged={sourceAcked}
+              acknowledgedAt={formatAckAt(row.sourceAcknowledgedAt)}
+              busy={ackBusy === "source"}
+              disabled={!canEdit || ackBusy !== null || sourceAcked}
+              onConfirm={() => void recordAcknowledgment("source")}
+            />
+            <AckSideCard
+              title="Upstream release"
+              releaseCode={row.dependsOnRelease.releaseCode}
+              ownerName={row.dependsOnRelease.releaseOwner?.name ?? null}
+              acknowledged={targetAcked}
+              acknowledgedAt={formatAckAt(row.targetAcknowledgedAt)}
+              busy={ackBusy === "target"}
+              disabled={!canEdit || ackBusy !== null || targetAcked}
+              onConfirm={() => void recordAcknowledgment("target")}
+            />
+          </div>
+        </DetailSection>
+      ) : null}
 
       <DetailSection
         icon={FileText}

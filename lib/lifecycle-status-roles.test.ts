@@ -174,8 +174,24 @@ describe("lifecycle status roles", () => {
     );
 
     const deps = createDefaultDependencyLifecycleConfig();
-    assert.equal(deps.statuses.find((s) => s.key === "pending")?.isIntake, true);
-    assert.equal(deps.statuses.find((s) => s.key === "met")?.satisfiesHardGate, true);
+    assert.equal(deps.statuses.find((s) => s.key === "identified")?.isIntake, true);
+    assert.equal(
+      deps.statuses.find((s) => s.key === "resolved")?.satisfiesHardGate,
+      true
+    );
+    assert.equal(
+      deps.statuses.find((s) => s.key === "removed")?.satisfiesHardGate,
+      true
+    );
+    assert.equal(
+      deps.statuses.find((s) => s.key === "closed")?.satisfiesHardGate,
+      true
+    );
+    assert.equal(
+      deps.statuses.find((s) => s.key === "resolved")?.autoResolvedOnDeploy,
+      true
+    );
+    assert.equal(deps.statuses.find((s) => s.key === "met"), undefined);
 
     const approvals = createDefaultApprovalLifecycleConfig();
     assert.equal(approvals.statuses.find((s) => s.key === "pending")?.isIntake, true);

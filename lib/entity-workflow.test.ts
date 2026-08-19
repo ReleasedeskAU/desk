@@ -92,22 +92,41 @@ describe("driftWorkflow", () => {
 });
 
 describe("dependencyWorkflow", () => {
-  it("offers At Risk first from Pending, then Met/Waived/Removed", () => {
-    const { primary, secondary } = dependencyWorkflow("Pending");
-    assert.equal(primary?.status, "At Risk");
+  it("offers Pending first from Identified", () => {
+    const { primary, secondary } = dependencyWorkflow("Identified");
+    assert.equal(primary?.status, "Pending");
     assert.deepEqual(
-      secondary.map((s) => s.status).sort(),
-      ["Met", "Removed", "Waived"]
+      secondary.map((s) => s.status),
+      ["Confirmed"]
     );
   });
 
-  it("moves At Risk toward Met", () => {
-    const { primary } = dependencyWorkflow("At Risk");
-    assert.equal(primary?.status, "Met");
+  it("offers Confirmed first from Pending, then Removed", () => {
+    const { primary, secondary } = dependencyWorkflow("Pending");
+    assert.equal(primary?.status, "Confirmed");
+    assert.deepEqual(
+      secondary.map((s) => s.status),
+      ["Removed"]
+    );
   });
 
-  it("leaves Met with no one-click (terminal / no outgoing)", () => {
-    const { primary, secondary } = dependencyWorkflow("Met");
+  it("moves At Risk back to In Progress", () => {
+    const { primary } = dependencyWorkflow("At Risk");
+    assert.equal(primary?.status, "In Progress");
+  });
+
+  it("archives Resolved to Closed", () => {
+    const { primary } = dependencyWorkflow("Resolved");
+    assert.equal(primary?.status, "Closed");
+  });
+
+  it("treats legacy Met as Resolved (archive to Closed)", () => {
+    const { primary } = dependencyWorkflow("Met");
+    assert.equal(primary?.status, "Closed");
+  });
+
+  it("leaves Closed with no one-click (sole terminal)", () => {
+    const { primary, secondary } = dependencyWorkflow("Closed");
     assert.equal(primary, null);
     assert.deepEqual(secondary, []);
   });

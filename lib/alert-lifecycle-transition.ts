@@ -1,7 +1,7 @@
 /**
  * Pure alert status transition validation against a lifecycle config.
- * Flexible unmet soft-gates require overrideReason (warn + override).
- * Dismissed requires a reason (overrideReason) — no separate notes field on alerts.
+ * Flexible unmet checks require overrideReason (warn + override).
+ * No Dismissed/Expired statuses — those labels alias to Closed.
  */
 import type {
   AlertLifecycleConfig,
@@ -10,17 +10,20 @@ import type {
 
 export const MIN_ALERT_OVERRIDE_REASON_LENGTH = 3;
 
-/** Legacy seed / UI labels that map onto canonical lifecycle statuses. */
+/**
+ * Retired labels/keys that map onto canonical sheet statuses.
+ * Do not alias first-class sheet keys (active, investigating, resolved, closed).
+ */
 const ALERT_STATUS_ALIASES: Readonly<Record<string, string>> = {
-  active: "pending",
-  open: "pending",
-  investigating: "acknowledged",
-  resolved: "actioned",
-  closed: "actioned",
+  pending: "active",
+  actioned: "resolved",
+  dismissed: "closed",
+  expired: "closed",
+  open: "active",
 };
 
 export type AlertGateFacts = {
-  /** Dismissal / override justification text. */
+  /** Override / justification text (Flexible unmet checks). */
   reason: string | null | undefined;
 };
 
@@ -73,23 +76,15 @@ export type AlertTransitionResult =
     };
 
 /**
- * Soft gates for the enterprise alerts table (Dismissed needs a reason).
+ * Soft checks for an alert move. Sheet edges are ungated today; keep the hook
+ * so a later catalog can attach without a hardcoded status-key check.
  */
-export function evaluateAlertSoftGates(args: {
+export function evaluateAlertSoftGates(_args: {
   fromKey: string;
   toKey: string;
   facts: AlertGateFacts;
 }): string[] {
-  const unmet: string[] = [];
-  if (args.toKey === "dismissed") {
-    const reason = (args.facts.reason ?? "").trim();
-    if (reason.length < MIN_ALERT_OVERRIDE_REASON_LENGTH) {
-      unmet.push(
-        "Add a short reason before dismissing this alert."
-      );
-    }
-  }
-  return unmet;
+  return [];
 }
 
 /**
@@ -152,7 +147,6 @@ export function validateAlertTransition(args: {
     };
   }
 
-  // Prefer explicit facts.reason; fall back to overrideReason for dismiss justification.
   const facts: AlertGateFacts = {
     reason: args.facts?.reason ?? args.overrideReason ?? null,
   };

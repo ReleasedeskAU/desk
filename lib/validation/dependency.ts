@@ -7,11 +7,16 @@ export const DEPENDENCY_TYPES = ["Hard", "Soft", "Technical", "Data", "Integrati
  * Blocked still resolve via aliases at enforce time.
  */
 export const DEPENDENCY_STATUSES = [
+  "Identified",
   "Pending",
+  "Confirmed",
+  "In Progress",
   "At Risk",
-  "Met",
-  "Waived",
+  "Blocked",
+  "Escalated",
+  "Resolved",
   "Removed",
+  "Closed",
 ] as const;
 export const DEPENDENCY_IMPACTS = [
   "Release Delay",
@@ -52,8 +57,10 @@ export const patchDependencySchema = z
     status: z.string().trim().min(1).max(80).optional(),
     impactIfBlocked: z.enum(DEPENDENCY_IMPACTS).optional(),
     notes: z.string().trim().max(4000).nullable().optional(),
-    /** Required when Flexible soft-gates are unmet (e.g. Waive without notes). */
+    /** Required when Flexible soft-gates are unmet (e.g. Removed without notes). */
     overrideReason: z.string().trim().min(1).max(2000).optional(),
+    /** Record one side of Confirmed dual-acknowledgment. */
+    acknowledgeSide: z.enum(["source", "target"]).optional(),
   })
   .strict()
   .refine(

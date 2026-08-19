@@ -15,11 +15,13 @@ import { manualAlertCreateFields } from "@/lib/alert-source";
 const ALERT_SEVERITIES = ["Critical", "Warning"] as const;
 /** Fallback status labels before alert lifecycle config loads. */
 const ALERT_STATUSES = [
-  "Pending",
+  "Active",
   "Acknowledged",
-  "Actioned",
-  "Dismissed",
-  "Expired",
+  "Investigating",
+  "Escalated",
+  "Resolved",
+  "Suppressed",
+  "Closed",
 ] as const;
 
 type Department = { id: string; name: string };
@@ -62,7 +64,7 @@ const nowLocalDatetime = () => {
   return date.toISOString().slice(0, 16);
 };
 
-const emptyForm = (defaultStatus = "Pending"): FormValues => ({
+const emptyForm = (defaultStatus = "Active"): FormValues => ({
   departmentId: "",
   applicationId: "",
   environmentName: "",
@@ -96,7 +98,7 @@ export function MonitoringAlertFormModal({
   onCreated,
   alertTypeOptions = [],
   statusOptions: statusOptionsProp = [],
-  defaultStatus = "Pending",
+  defaultStatus = "Active",
   lockTo = null,
 }: Props) {
   const statusOptions = useMemo(
@@ -116,7 +118,7 @@ export function MonitoringAlertFormModal({
   useEffect(() => {
     if (!open) return;
     setForm({
-      ...emptyForm(defaultStatus || "Pending"),
+      ...emptyForm(defaultStatus || "Active"),
       departmentId: lockTo?.departmentId ?? "",
       applicationId: lockTo?.applicationId ?? "",
     });
@@ -235,7 +237,7 @@ export function MonitoringAlertFormModal({
         onCreateAnother={() => {
           setCreated(null);
           setForm({
-            ...emptyForm(defaultStatus || "Pending"),
+            ...emptyForm(defaultStatus || "Active"),
             departmentId: lockTo?.departmentId ?? "",
             applicationId: lockTo?.applicationId ?? "",
           });

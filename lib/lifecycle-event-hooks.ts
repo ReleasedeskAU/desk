@@ -7,6 +7,8 @@ import { systemAlertCreateFields } from "@/lib/alert-source";
 import { loadBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config-db";
 import { loadIncidentLifecycleConfig } from "@/lib/incident-lifecycle-config-db";
 import { loadConflictLifecycleConfig } from "@/lib/conflict-lifecycle-config-db";
+import { persistResolvedStatus } from "@/lib/lifecycle-status-persist";
+import { alertIntakeStatus } from "@/lib/alert-lifecycle-config";
 import { createDefaultDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
 import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
 import { validateDependencyTransition } from "@/lib/dependency-lifecycle-transition";
@@ -58,28 +60,23 @@ export async function cascadeDependenciesMetOnDeploy(
   clerkUserId: string
 ): Promise<CascadeHookResult> {
   const { config } = await loadDependencyLifecycleConfig(clerkUserId);
-  const metStatuses = config.statuses
-    .filter((s) => s.enabled && s.satisfiesHardGate)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-  if (metStatuses.length === 0) {
-    const resolved = resolveExclusiveRole(
-      config.statuses,
-      (s) => s.satisfiesHardGate,
-      "satisfiesHardGate",
-      "AV-04"
-    );
-    const fault = resolved.ok
-      ? undefined
-      : resolved.fault;
-    if (fault) reportLifecycleRoleFault(fault);
-    return { count: 0, roleFault: fault };
+  const landing = resolveExclusiveRole(
+    config.statuses,
+    (s) => s.autoResolvedOnDeploy,
+    "autoResolvedOnDeploy",
+    "AV-04"
+  );
+  if (!landing.ok) {
+    reportLifecycleRoleFault(landing.fault);
+    return { count: 0, roleFault: landing.fault };
   }
+  const dest = landing.status;
   const openValues = enabledStatusMatchValues(
     config.statuses,
     (s) => !s.satisfiesHardGate
   );
   const intake = config.statuses.find((s) => s.enabled && s.isIntake);
-  const fallbackFrom = intake?.label ?? "Pending";
+  const fallbackFrom = intake?.label ?? "Identified";
 
   const deps = await prisma.releaseDependency.findMany({
     where: {
@@ -96,15 +93,6 @@ export async function cascadeDependenciesMetOnDeploy(
   let updated = 0;
   for (const dep of deps) {
     const fromStatus = dep.status?.trim() || fallbackFrom;
-    const dest = metStatuses.find((to) =>
-      validateDependencyTransition({
-        config,
-        fromStatus,
-        toStatus: to.label,
-        facts: { notes: dep.notes },
-      }).allowed
-    );
-    if (!dest) continue;
     const transition = validateDependencyTransition({
       config,
       fromStatus,
@@ -114,12 +102,15 @@ export async function cascadeDependenciesMetOnDeploy(
     if (!transition.allowed) continue;
     await prisma.releaseDependency.update({
       where: { id: dep.id },
-      data: { status: transition.canonicalStatus },
+      data: persistResolvedStatus({
+        key: dest.key,
+        label: transition.canonicalStatus,
+      }),
     });
     updated += 1;
   }
   if (updated > 0) {
-    console.warn("[lifecycle-hook] AV-04 dependencies marked Met", {
+    console.warn("[lifecycle-hook] AV-04 dependencies marked Resolved", {
       deployedReleaseId,
       updated,
     });
@@ -128,7 +119,7 @@ export async function cascadeDependenciesMetOnDeploy(
 }
 
 /**
- * AV-26 — when a release rolls back, flip Met deps that depend on it to At Risk (system-only).
+ * AV-26 — when a release rolls back, flip Resolved deps that depend on it to At Risk (system-only).
  * Creates a MonitoringAlert per affected downstream release application when possible.
  * @param rolledBackReleaseId - Predecessor that rolled back
  */
@@ -136,15 +127,39 @@ export async function cascadeDependenciesAtRiskOnRollback(
   rolledBackReleaseId: string
 ): Promise<number> {
   const config = createDefaultDependencyLifecycleConfig();
-  const metLabel =
-    config.statuses.find((s) => s.key === "met")?.label ?? "Met";
-  const atRiskLabel =
-    config.statuses.find((s) => s.key === "at_risk")?.label ?? "At Risk";
+  const sourceRole = resolveExclusiveRole(
+    config.statuses,
+    (s) => s.rollbackReopensAtRisk,
+    "rollbackReopensAtRisk",
+    "AV-26"
+  );
+  const destRole = resolveExclusiveRole(
+    config.statuses,
+    (s) => s.atRiskWarning,
+    "atRiskWarning",
+    "AV-26"
+  );
+  if (!sourceRole.ok) {
+    reportLifecycleRoleFault(sourceRole.fault);
+    return 0;
+  }
+  if (!destRole.ok) {
+    reportLifecycleRoleFault(destRole.fault);
+    return 0;
+  }
+  const sourceValues = enabledStatusMatchValues(
+    config.statuses,
+    (s) => s.rollbackReopensAtRisk
+  );
+  const dest = destRole.status;
 
   const deps = await prisma.releaseDependency.findMany({
     where: {
       dependsOnReleaseId: rolledBackReleaseId,
-      status: metLabel,
+      OR: [
+        { status: statusInOrNone(sourceValues) },
+        { statusKey: sourceRole.status.key },
+      ],
     },
     select: {
       id: true,
@@ -169,11 +184,11 @@ export async function cascadeDependenciesAtRiskOnRollback(
   let updated = 0;
   const now = new Date();
   for (const dep of deps) {
-    // Security: Met→At Risk is system-only — never expose via user PATCH without this flag.
+    // Security: Resolved→At Risk is system-only — never expose via user PATCH without this flag.
     const transition = validateDependencyTransition({
       config,
-      fromStatus: dep.status ?? metLabel,
-      toStatus: atRiskLabel,
+      fromStatus: dep.status ?? sourceRole.status.label,
+      toStatus: dest.label,
       facts: { notes: dep.notes },
       isSystemTransition: true,
     });
@@ -182,7 +197,10 @@ export async function cascadeDependenciesAtRiskOnRollback(
     await prisma.releaseDependency.update({
       where: { id: dep.id },
       data: {
-        status: transition.canonicalStatus,
+        ...persistResolvedStatus({
+          key: dest.key,
+          label: transition.canonicalStatus,
+        }),
         notes: dep.notes?.trim()
           ? dep.notes
           : `AV-26: predecessor ${dep.dependsOnRelease.releaseCode} rolled back`,
@@ -209,9 +227,9 @@ export async function cascadeDependenciesAtRiskOnRollback(
             alertType: "Escalation",
             severity: "High",
             metric: "dependency_rollback",
-            threshold: "Met",
-            currentValue: "At Risk",
-            status: "Pending",
+            threshold: sourceRole.status.label,
+            currentValue: dest.label,
+            ...persistResolvedStatus(alertIntakeStatus()),
             environmentName: "n/a",
             assignedTo: dep.release.owner || null,
             ...systemAlertCreateFields(),
@@ -420,7 +438,7 @@ export async function createMonitoringAlertOnDriftEscalated(args: {
       metric: "config_drift_escalated",
       threshold: "Escalated",
       currentValue: "Escalated",
-      status: "Pending",
+      ...persistResolvedStatus(alertIntakeStatus()),
       environmentName: args.environmentName,
       ...systemAlertCreateFields(),
       sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,

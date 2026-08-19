@@ -25,6 +25,9 @@ This file is the contract. Settings labels are in `lib/lifecycle-status-roles.ts
 | `blocksReleaseReady` | Blocks the release from going Ready | many | Blockers |
 | `blocksLinkedRelease` | Blocks the linked release from deploying | many | Incidents |
 | `satisfiesHardGate` | Counts as a met hard dependency | many | Dependencies |
+| `autoResolvedOnDeploy` | Auto-update here when the upstream release deploys | one | Dependencies |
+| `rollbackReopensAtRisk` | Upstream rollback moves this status to At Risk | one | Dependencies |
+| `atRiskWarning` | At-risk warning status | one | Dependencies |
 | `escalateTarget` | Auto-escalate lands here | one | Risks, Drifts |
 | `unblocksParent` | Unblocks the release when entered | one | Blockers |
 | `withdrawApprovalsOnEnter` | Withdraw open approvals when entered | one | Releases |

@@ -9,6 +9,7 @@ import {
   validateDependencyLifecycleConfig,
   type DependencyLifecycleConfig,
 } from "@/lib/dependency-lifecycle-config";
+import { reconcileDependencyLifecycleSpec } from "@/lib/dependency-lifecycle-spec-reconcile";
 
 let tablesReady: Promise<void> | null = null;
 
@@ -65,7 +66,9 @@ export async function loadDependencyLifecycleConfig(
   const latest = rows[0];
   if (latest) {
     return {
-      config: normalizeDependencyLifecycleConfig(latest.snapshot),
+      config: reconcileDependencyLifecycleSpec(
+        normalizeDependencyLifecycleConfig(latest.snapshot)
+      ),
       version: latest.version,
       versionId: latest.id,
     };
@@ -91,7 +94,10 @@ export async function saveDependencyLifecycleConfig(
   clerkUserId: string,
   config: DependencyLifecycleConfig
 ): Promise<DependencyLifecycleConfig> {
-  const validationError = validateDependencyLifecycleConfig(config);
+  const reconciled = reconcileDependencyLifecycleSpec(
+    normalizeDependencyLifecycleConfig(config)
+  );
+  const validationError = validateDependencyLifecycleConfig(reconciled);
   if (validationError) throw new Error(validationError);
   await ensureDependencyLifecycleTables();
 
@@ -104,7 +110,7 @@ export async function saveDependencyLifecycleConfig(
     id,
     clerkUserId,
     nextVersion,
-    JSON.stringify(config)
+    JSON.stringify(reconciled)
   );
-  return config;
+  return reconciled;
 }

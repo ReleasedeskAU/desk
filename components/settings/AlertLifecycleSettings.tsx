@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Bell, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultAlertLifecycleConfig,
+  ALERT_STATUS_OWNER_HINT,
   type AlertLifecycleConfig,
 } from "@/lib/alert-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
@@ -115,8 +116,8 @@ export function AlertLifecycleSettings() {
               Alert Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure alert statuses, allowed moves, and types (Reminder, Warning, Escalation,
-              Notification). Actioned, Dismissed, and Expired are terminal.
+              Configure alert statuses, allowed moves, and types (Reminder, Warning,
+              Escalation, Notification). Closed is the only terminal. No auto-expiry.
             </p>
           </div>
         </div>
@@ -171,11 +172,10 @@ export function AlertLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Alerts</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Pending → Acknowledged / Dismissed / Expired (Flexible).</li>
-          <li>Acknowledged → Actioned / Dismissed (Limited edits).</li>
-          <li>Actioned, Dismissed, and Expired are terminal and immutable.</li>
-          <li>Dismissing requires an exception reason (min 3 characters).</li>
-          <li>Legacy Active / Open / Resolved / Closed map into the new vocabulary.</li>
+          <li>Active → Acknowledged / Suppressed. Acknowledged → Investigating / Resolved.</li>
+          <li>Resolved and Suppressed archive to Closed. Closed is the only lock.</li>
+          <li>Acknowledged and Resolved are limited edits. Closed is immutable.</li>
+          <li>Legacy Pending / Actioned map to Active / Resolved; Dismissed / Expired map to Closed.</li>
         </ul>
       </div>
 
@@ -230,6 +230,9 @@ export function AlertLifecycleSettings() {
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {lifecycleEditModeLabel(status.editMode)}
+                  {ALERT_STATUS_OWNER_HINT[status.key]
+                    ? ` · accountable (display): ${ALERT_STATUS_OWNER_HINT[status.key]}`
+                    : ""}
                 </p>
                 <StatusMeaningControls
                   roleIds={INTAKE_ONLY_ROLE_IDS}
