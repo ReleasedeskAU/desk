@@ -10,6 +10,21 @@ import {
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 import { isBlockerCategory } from "@/lib/blocker-categories";
+import { validateBlockerFieldUpdate } from "@/lib/entity-field-lock-engine";
+
+/** Identity/audit keys the server sets on create — skip so intake is not false-denied. */
+const BLOCKER_CREATE_LOCK_SKIP_KEYS = new Set([
+  "blockerCode",
+  "releaseCode",
+  "releaseId",
+  "id",
+  "createdAt",
+  "raisedDate",
+  "status",
+  "statusKey",
+  "overrideReason",
+  "sourceOrder",
+]);
 
 const dateOnly = (value: Date | null) => value?.toISOString().slice(0, 10) ?? null;
 
@@ -184,6 +199,35 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "Blocker lifecycle configuration is temporarily unavailable" },
       { status: 503 }
+    );
+  }
+
+  // Field locks at intake status. Skip identity/audit keys set by the server.
+  const createLockKeys = Object.keys(body).filter(
+    (key) => body[key] !== undefined && !BLOCKER_CREATE_LOCK_SKIP_KEYS.has(key)
+  );
+  const createLock = await validateBlockerFieldUpdate(
+    user!.id,
+    status,
+    createLockKeys
+  );
+  if (!createLock.allowed) {
+    return NextResponse.json(
+      {
+        error: (() => {
+          const labels = createLock.rejected.map((r) => {
+            const match = r.reason.match(/^[“"]([^”"]+)[”"]/);
+            return match?.[1] ?? r.field;
+          });
+          const list = labels.join(", ");
+          const verb = labels.length === 1 ? "is" : "are";
+          const pronoun = labels.length === 1 ? "it" : "them";
+          return `Can’t create with these fields set for this status. ${list} ${verb} locked until the blocker moves to a status that allows ${pronoun}.`;
+        })(),
+        code: "FIELD_LOCK_DENIED",
+        rejected: createLock.rejected,
+      },
+      { status: 400 }
     );
   }
 

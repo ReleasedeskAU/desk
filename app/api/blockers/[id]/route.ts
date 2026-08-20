@@ -10,6 +10,7 @@ import {
   validateBlockerTransition,
 } from "@/lib/blocker-lifecycle-transition";
 import { keysWithActualBlockerPatchChanges } from "@/lib/blocker-patch-changed-keys";
+import { validateBlockerFieldUpdate } from "@/lib/entity-field-lock-engine";
 import { cascadeUnblockReleaseOnBlockerResolved } from "@/lib/lifecycle-event-hooks";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 import {
@@ -103,14 +104,15 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  const proposedKeys = keysWithActualBlockerPatchChanges({
+    existing: existing as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
+  });
+
   let nextStatusKey: string | undefined;
   // Lifecycle: edit policy + status transitions (config-driven).
   try {
     const { config } = await loadBlockerLifecycleConfig(user!.id);
-    const proposedKeys = keysWithActualBlockerPatchChanges({
-      existing: existing as unknown as Record<string, unknown>,
-      body: body as unknown as Record<string, unknown>,
-    });
     const { mode, denied } = deniedBlockerEditFields(
       config,
       existing.status,
@@ -175,6 +177,26 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json(
       { error: "Blocker lifecycle validation is temporarily unavailable" },
       { status: 500 }
+    );
+  }
+
+  // Configurable field-lock matrix — rejects locked writes. Status stays on the lifecycle engine.
+  const fieldLock = await validateBlockerFieldUpdate(
+    user!.id,
+    existing.status,
+    proposedKeys
+  );
+  if (!fieldLock.allowed) {
+    const lockedLabels = fieldLock.rejected.map((r) => r.reason).join(" ");
+    return NextResponse.json(
+      {
+        error:
+          lockedLabels ||
+          "One or more fields are locked for this blocker’s current status. Change the status first, or ask an admin to open the field under Blocker Lifecycle → Field Locks.",
+        code: "FIELD_LOCK_DENIED",
+        rejected: fieldLock.rejected,
+      },
+      { status: 400 }
     );
   }
 

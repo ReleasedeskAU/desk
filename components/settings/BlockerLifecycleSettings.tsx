@@ -3,7 +3,7 @@
 /**
  * Lifecycle → Blockers — configure statuses, transitions, cascade notes.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Ban, Pencil, Save, X } from "lucide-react";
 import {
   BLOCKER_STATUS_OWNER_HINT,
@@ -16,6 +16,12 @@ import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle
 import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
 import { EntityTransitionsList } from "@/components/settings/lifecycle/EntityTransitionsList";
 import { BlockerGatesPanel } from "@/components/settings/lifecycle/BlockerGatesPanel";
+import {
+  FieldLocksPanel,
+  type FieldLockMatrixRow,
+  type FieldLockStatusCol,
+} from "@/components/settings/lifecycle/FieldLocksPanel";
+import type { FieldLockState } from "@/lib/release-field-lock-catalog";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningEditor } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import {
@@ -37,8 +43,38 @@ function cloneConfig(config: BlockerLifecycleConfig): BlockerLifecycleConfig {
   };
 }
 
+/** Deep-clone matrix rows so Cancel can restore the last saved grid. */
+function cloneLockRows(rows: FieldLockMatrixRow[]): FieldLockMatrixRow[] {
+  return rows.map((r) => ({ ...r, statusRules: { ...r.statusRules } }));
+}
+
+type FieldLockPayload = {
+  rows: Array<{
+    fieldKey: string;
+    label?: string;
+    category: string;
+    lockRuleRef: string | null;
+    isConfigurable: boolean;
+    infoOnly?: boolean;
+    statusRules: Record<string, FieldLockState>;
+  }>;
+  gapRows: Array<{
+    fieldKey: string;
+    label: string;
+    category: string;
+    lockRuleRef: string | null;
+  }>;
+  statuses: FieldLockStatusCol[];
+  orphanStatusKeys: string[];
+  catalog?: Array<{
+    fieldKey: string;
+    label: string;
+    infoOnly?: boolean;
+  }>;
+};
+
 /**
- * Blocker lifecycle settings panel (statuses + transitions).
+ * Blocker lifecycle settings panel (statuses + transitions + checks + field locks).
  */
 export function BlockerLifecycleSettings() {
   const [baseline, setBaseline] = useState(createDefaultBlockerLifecycleConfig);
@@ -47,20 +83,73 @@ export function BlockerLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">("statuses");
+  const [panel, setPanel] = useState<
+    "statuses" | "transitions" | "gates" | "fieldLocks"
+  >("statuses");
+  const [fieldLockStatuses, setFieldLockStatuses] = useState<FieldLockStatusCol[]>(
+    []
+  );
+  const [fieldLockRows, setFieldLockRows] = useState<FieldLockMatrixRow[]>([]);
+  const [fieldLockBaseline, setFieldLockBaseline] = useState<FieldLockMatrixRow[]>(
+    []
+  );
+  const [fieldLockGapRows, setFieldLockGapRows] = useState<FieldLockMatrixRow[]>([]);
+  const [fieldLockOrphans, setFieldLockOrphans] = useState<string[]>([]);
+  const fieldLockRowsRef = useRef(fieldLockRows);
+  fieldLockRowsRef.current = fieldLockRows;
+
+  const applyFieldLockPayload = (payload: FieldLockPayload) => {
+    const catalogByKey = new Map(
+      (payload.catalog ?? []).map((c) => [c.fieldKey, c])
+    );
+    const matrixRows: FieldLockMatrixRow[] = payload.rows.map((row) => {
+      const meta = catalogByKey.get(row.fieldKey);
+      return {
+        fieldKey: row.fieldKey,
+        label: row.label ?? meta?.label ?? row.fieldKey,
+        category: row.category,
+        lockRuleRef: row.lockRuleRef,
+        isConfigurable: row.isConfigurable,
+        infoOnly: Boolean(row.infoOnly ?? meta?.infoOnly),
+        unavailable: false,
+        statusRules: row.statusRules,
+      };
+    });
+    const gaps: FieldLockMatrixRow[] = payload.gapRows.map((g) => ({
+      fieldKey: g.fieldKey,
+      label: g.label,
+      category: g.category,
+      lockRuleRef: g.lockRuleRef,
+      isConfigurable: false,
+      infoOnly: false,
+      unavailable: true,
+      statusRules: {},
+    }));
+    setFieldLockStatuses(payload.statuses);
+    setFieldLockRows(matrixRows);
+    setFieldLockBaseline(cloneLockRows(matrixRows));
+    setFieldLockGapRows(gaps);
+    setFieldLockOrphans(payload.orphanStatusKeys);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/blocker-lifecycle-config", {
-        credentials: "same-origin",
-      });
+      const [res, lockRes] = await Promise.all([
+        fetch("/api/blocker-lifecycle-config", { credentials: "same-origin" }),
+        fetch("/api/entity-field-lock-config?entityType=blocker", {
+          credentials: "same-origin",
+        }),
+      ]);
       if (!res.ok) throw new Error("Failed to load");
       const data = (await res.json()) as { config: BlockerLifecycleConfig };
       const config = data.config ?? createDefaultBlockerLifecycleConfig();
       setBaseline(cloneConfig(config));
       setDraft(cloneConfig(config));
+      if (lockRes.ok) {
+        applyFieldLockPayload((await lockRes.json()) as FieldLockPayload);
+      }
     } catch {
       setError("Could not load blocker lifecycle configuration.");
     } finally {
@@ -90,6 +179,36 @@ export function BlockerLifecycleSettings() {
       const config = data.config ?? draft;
       setBaseline(cloneConfig(config));
       setDraft(cloneConfig(config));
+
+      const lockRes = await fetch(
+        "/api/entity-field-lock-config?entityType=blocker",
+        {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rows: fieldLockRowsRef.current
+              .filter((r) => r.isConfigurable && !r.infoOnly && !r.unavailable)
+              .map((r) => ({
+                fieldKey: r.fieldKey,
+                statusRules: r.statusRules,
+              })),
+          }),
+        }
+      );
+      const lockBody = (await lockRes.json()) as { error?: string };
+      if (!lockRes.ok) {
+        setError(lockBody.error ?? "Field lock save failed");
+        return;
+      }
+      const flReload = await fetch(
+        "/api/entity-field-lock-config?entityType=blocker",
+        { credentials: "same-origin" }
+      );
+      if (flReload.ok) {
+        applyFieldLockPayload((await flReload.json()) as FieldLockPayload);
+      }
+
       setEditing(false);
     } catch {
       setError("Save failed — try again.");
@@ -142,9 +261,9 @@ export function BlockerLifecycleSettings() {
               Blocker Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure blocker statuses, allowed moves, homework checks, cascade
-              effects on releases, and edit rules. Owner labels are informational
-              only — they are not permission checks.
+              Configure blocker statuses, allowed moves, homework checks, field
+              locks, cascade effects on releases, and edit rules. Owner labels are
+              informational only — they are not permission checks.
             </p>
           </div>
         </div>
@@ -153,7 +272,10 @@ export function BlockerLifecycleSettings() {
             <button
               type="button"
               className={cn(taBtnPrimary, "gap-1.5")}
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setFieldLockRows(cloneLockRows(fieldLockBaseline));
+                setEditing(true);
+              }}
             >
               <Pencil className="h-4 w-4" />
               Edit
@@ -166,6 +288,7 @@ export function BlockerLifecycleSettings() {
                 disabled={saving}
                 onClick={() => {
                   setDraft(cloneConfig(baseline));
+                  setFieldLockRows(cloneLockRows(fieldLockBaseline));
                   setEditing(false);
                   setError(null);
                 }}
@@ -211,6 +334,11 @@ export function BlockerLifecycleSettings() {
             Accountable owner (Release Manager / Blocker Owner / Manager) is display-only
             for now — not enforced against Clerk roles.
           </li>
+          <li>
+            Field Locks: Locked vs Can edit, per live status. Status itself stays
+            on Transitions. Origin and Owner ID are listed as coming later (not in
+            the app yet).
+          </li>
         </ul>
       </div>
 
@@ -220,6 +348,7 @@ export function BlockerLifecycleSettings() {
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
             ["gates", "Checks"],
+            ["fieldLocks", "Field Locks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -233,6 +362,7 @@ export function BlockerLifecycleSettings() {
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/10 dark:text-white/70"
             )}
             onClick={() => setPanel(id)}
+            data-testid={`lifecycle-panel-tab-${id}`}
           >
             {label}
           </button>
@@ -318,6 +448,28 @@ export function BlockerLifecycleSettings() {
           ))}
         </ul>
         </div>
+      ) : panel === "fieldLocks" ? (
+        <FieldLocksPanel
+          entityLabel="blocker"
+          includeSideEffect={false}
+          statuses={fieldLockStatuses}
+          rows={fieldLockRows}
+          gapRows={fieldLockGapRows}
+          orphanStatusKeys={fieldLockOrphans}
+          editing={editing}
+          onCellChange={(fieldKey, statusKey, state) => {
+            setFieldLockRows((prev) =>
+              prev.map((row) =>
+                row.fieldKey === fieldKey
+                  ? {
+                      ...row,
+                      statusRules: { ...row.statusRules, [statusKey]: state },
+                    }
+                  : row
+              )
+            );
+          }}
+        />
       ) : (
         <EntityTransitionsList
           statuses={draft.statuses}
