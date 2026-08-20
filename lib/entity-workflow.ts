@@ -216,19 +216,10 @@ export function conflictWorkflow(
   config: ConflictLifecycleConfig = createDefaultConflictLifecycleConfig()
 ): WorkflowOptions {
   return graphWorkflow(resolveConflictLifecycleStatusRef(config, status), config, {
-    primaryByFrom: {
-      detected: "under_review",
-      under_review: "pending_review",
-      pending_review: "resolved",
-      escalated: "under_review",
-      resolved: "closed",
-    },
+    primaryByFrom: { detected: "under_review", under_review: "resolved" },
     stepCopy: {
-      under_review: "Start work",
-      pending_review: "Send for review",
-      escalated: "Escalate",
+      under_review: "Start review",
       resolved: "Mark resolved",
-      closed: "Close conflict",
       dismissed: "Dismiss conflict",
     },
   });
@@ -247,15 +238,11 @@ export function driftWorkflow(
     primaryByFrom: {
       detected: "investigating",
       investigating: "approved",
-      scheduled: "investigating",
       escalated: "investigating",
-      approved: "closed",
     },
     stepCopy: {
-      investigating: "Start work",
-      scheduled: "Schedule remediation",
-      approved: "Mark resolved",
-      closed: "Close",
+      investigating: "Start investigation",
+      approved: "Approve drift",
       reverted: "Mark reverted",
       escalated: "Escalate drift",
     },
@@ -277,21 +264,25 @@ export function dependencyWorkflow(
     {
       primaryByFrom: {
         identified: "pending",
-        pending: "in_progress",
-        in_progress: "at_risk",
-        at_risk: "met",
+        pending: "confirmed",
+        confirmed: "in_progress",
+        in_progress: "resolved",
+        at_risk: "in_progress",
         blocked: "in_progress",
-        escalated: "blocked",
+        escalated: "resolved",
+        resolved: "closed",
+        removed: "closed",
       },
       stepCopy: {
-        pending: "Move to pending",
+        pending: "Mark pending",
+        confirmed: "Mark confirmed",
         in_progress: "Start work",
         at_risk: "Mark at risk",
         blocked: "Mark blocked",
         escalated: "Escalate",
-        met: "Mark met",
-        waived: "Waive dependency",
+        resolved: "Mark resolved",
         removed: "Remove dependency",
+        closed: "Close dependency",
       },
     }
   );
@@ -310,8 +301,7 @@ export function incidentWorkflow(
     primaryByFrom: {
       open: "acknowledged",
       acknowledged: "investigating",
-      // Sheet: Investigating → Resolved, Escalated (Resolving defaults Off)
-      investigating: "resolved",
+      investigating: "resolving",
       escalated: "investigating",
       resolving: "resolved",
       resolved: "closed",
@@ -369,19 +359,21 @@ export function alertWorkflow(
 ): WorkflowOptions {
   return graphWorkflow(resolveAlertLifecycleStatusRef(config, status), config, {
     primaryByFrom: {
-      pending: "acknowledged",
+      active: "acknowledged",
       acknowledged: "investigating",
-      investigating: "actioned",
-      escalated: "actioned",
-      actioned: "closed",
+      investigating: "resolved",
+      escalated: "resolved",
+      resolved: "closed",
+      suppressed: "active",
     },
     stepCopy: {
       acknowledged: "Acknowledge",
       investigating: "Start investigating",
+      resolved: "Mark resolved",
       escalated: "Escalate",
-      actioned: "Mark resolved",
-      closed: "Close",
-      dismissed: "Dismiss",
+      suppressed: "Suppress",
+      closed: "Close alert",
+      active: "Return to active",
     },
   });
 }
@@ -433,8 +425,8 @@ export function riskWorkflow(
       assessing: "mitigating",
       mitigating: "mitigated",
       mitigated: "closed",
-      accepted: "mitigated",
-      escalated: "assessing",
+      accepted: "closed",
+      escalated: "mitigating",
     },
     stepCopy: {
       assessing: "Start assessing",

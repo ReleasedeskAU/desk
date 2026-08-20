@@ -1,20 +1,19 @@
 "use client";
 
 /**
- * Lifecycle → Alerts — configure statuses, transitions, types, and checks.
+ * Lifecycle → Alerts — configure statuses, transitions, and alert types.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Bell, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultAlertLifecycleConfig,
+  ALERT_STATUS_OWNER_HINT,
   type AlertLifecycleConfig,
-  type AlertLifecycleEnforcement,
 } from "@/lib/alert-lifecycle-config";
-import { alertGate, type AlertLifecycleGateType } from "@/lib/alert-lifecycle-gates";
-import { AlertGatesPanel } from "@/components/settings/lifecycle/AlertGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
+import { EntityTransitionsList } from "@/components/settings/lifecycle/EntityTransitionsList";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { ALERT_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
@@ -24,16 +23,13 @@ import { cn } from "@/lib/utils";
 function cloneConfig(config: AlertLifecycleConfig): AlertLifecycleConfig {
   return {
     statuses: config.statuses.map((s) => ({ ...s })),
-    transitions: config.transitions.map((t) => ({
-      ...t,
-      gates: (t.gates ?? []).map((gate) => ({ ...gate })),
-    })),
+    transitions: config.transitions.map((t) => ({ ...t })),
     types: config.types.map((t) => ({ ...t })),
   };
 }
 
 /**
- * Alert lifecycle settings panel (statuses + transitions + types + checks).
+ * Alert lifecycle settings panel (statuses + transitions + types).
  */
 export function AlertLifecycleSettings() {
   const [baseline, setBaseline] = useState(createDefaultAlertLifecycleConfig);
@@ -42,9 +38,9 @@ export function AlertLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<
-    "statuses" | "transitions" | "types" | "gates"
-  >("statuses");
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "types">(
+    "statuses"
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,30 +64,6 @@ export function AlertLifecycleSettings() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const toggleGate = (
-    fromKey: string,
-    toKey: string,
-    gateType: AlertLifecycleGateType,
-    enabled: boolean
-  ) => {
-    setDraft((previous) => ({
-      ...previous,
-      transitions: previous.transitions.map((transition) => {
-        if (transition.fromKey !== fromKey || transition.toKey !== toKey) {
-          return transition;
-        }
-        const gates = [...(transition.gates ?? [])];
-        const index = gates.findIndex((gate) => gate.gateType === gateType);
-        if (index >= 0) {
-          gates[index] = { ...gates[index]!, enabled };
-        } else {
-          gates.push(alertGate(gateType, (gates.length + 1) * 10));
-        }
-        return { ...transition, gates };
-      }),
-    }));
-  };
 
   const save = async () => {
     setSaving(true);
@@ -145,9 +117,8 @@ export function AlertLifecycleSettings() {
               Alert Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure alert statuses, allowed moves, types, and checks.
-              Resolved stays editable until Closed. Dismissed and Expired are
-              live-only finals. Closed is the real immutable end state.
+              Configure alert statuses, allowed moves, and types (Reminder, Warning,
+              Escalation, Notification). Closed is the only terminal. No auto-expiry.
             </p>
           </div>
         </div>
@@ -202,12 +173,10 @@ export function AlertLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Alerts</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Active → Acknowledged or Dismissed. Expired is cron-only (Required).</li>
-          <li>Acknowledged → Investigating, Resolved, or Dismissed.</li>
-          <li>Investigating ↔ Escalated; both can move to Resolved.</li>
-          <li>Resolved is working, not final — Close when the record should freeze.</li>
-          <li>Dismissed needs a justification in Notes. An exception reason can still override (Flexible).</li>
-          <li>Statuses marked “Stops repeat alerts” block a duplicate auto-create for the same application, metric, and environment.</li>
+          <li>Active → Acknowledged / Suppressed. Acknowledged → Investigating / Resolved.</li>
+          <li>Resolved and Suppressed archive to Closed. Closed is the only lock.</li>
+          <li>Acknowledged and Resolved are limited edits. Closed is immutable.</li>
+          <li>Legacy Pending / Actioned map to Active / Resolved; Dismissed / Expired map to Closed.</li>
         </ul>
       </div>
 
@@ -217,7 +186,6 @@ export function AlertLifecycleSettings() {
             ["statuses", "Statuses"],
             ["transitions", "Transitions"],
             ["types", "Types"],
-            ["gates", "Checks"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -239,154 +207,89 @@ export function AlertLifecycleSettings() {
 
       {panel === "statuses" ? (
         <div className="space-y-3">
-          <ExclusiveRoleWarning
-            statuses={draft.statuses}
-            roleIds={ALERT_STATUS_ROLE_IDS}
-          />
-          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
-            {sortedStatuses.map((status) => (
-              <li
-                key={status.key}
-                className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
-                    {status.label}
-                    {status.terminal ? (
-                      <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-white/10">
-                        Terminal
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
-                    {status.cascadeEffect}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-400">
-                    {lifecycleEditModeLabel(status.editMode)}
-                    {status.expiryDays != null
-                      ? ` · expiry ${status.expiryDays}d`
-                      : ""}
-                  </p>
-                  {editing ? (
-                    <label className="mt-2 flex items-center gap-2 text-[12px] text-slate-500 dark:text-white/55">
-                      Expire after (days)
-                      <input
-                        type="number"
-                        min={0}
-                        className="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-800 dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white"
-                        value={status.expiryDays ?? ""}
-                        onChange={(event) => {
-                          const raw = event.target.value;
-                          const expiryDays =
-                            raw === ""
-                              ? null
-                              : Math.max(0, Math.floor(Number(raw)) || 0);
-                          setDraft((prev) => ({
-                            ...prev,
-                            statuses: prev.statuses.map((item) =>
-                              item.key === status.key
-                                ? { ...item, expiryDays }
-                                : item
-                            ),
-                          }));
-                        }}
-                      />
-                    </label>
+        <ExclusiveRoleWarning
+          statuses={draft.statuses}
+          roleIds={ALERT_STATUS_ROLE_IDS}
+        />
+        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
+          {sortedStatuses.map((status) => (
+            <li
+              key={status.key}
+              className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
+                  {status.label}
+                  {status.terminal ? (
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-white/10">
+                      Terminal
+                    </span>
                   ) : null}
-                  <StatusMeaningControls
-                    roleIds={ALERT_STATUS_ROLE_IDS}
-                    statuses={draft.statuses}
-                    statusKey={status.key}
-                    editing={editing}
-                    onStatusesChange={(statuses) =>
-                      setDraft((prev) => ({ ...prev, statuses }))
-                    }
-                  />
-                </div>
-                <StatusAvailabilityToggle
-                  checked={status.enabled}
-                  disabled={!editing}
-                  statusLabel={status.label}
-                  onCheckedChange={(enabled) => {
-                    setDraft((prev) => ({
-                      ...prev,
-                      statuses: prev.statuses.map((s) =>
-                        s.key === status.key ? { ...s, enabled } : s
-                      ),
-                    }));
-                  }}
+                </p>
+                <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
+                  {status.cascadeEffect}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {lifecycleEditModeLabel(status.editMode)}
+                  {ALERT_STATUS_OWNER_HINT[status.key]
+                    ? ` · accountable (display): ${ALERT_STATUS_OWNER_HINT[status.key]}`
+                    : ""}
+                </p>
+                <StatusMeaningControls
+                  roleIds={ALERT_STATUS_ROLE_IDS}
+                  statuses={draft.statuses}
+                  statusKey={status.key}
+                  editing={editing}
+                  onStatusesChange={(statuses) =>
+                    setDraft((prev) => ({ ...prev, statuses }))
+                  }
                 />
-              </li>
-            ))}
-          </ul>
+              </div>
+              <StatusAvailabilityToggle
+                checked={status.enabled}
+                disabled={!editing}
+                statusLabel={status.label}
+                onCheckedChange={(enabled) => {
+                  setDraft((prev) => ({
+                    ...prev,
+                    statuses: prev.statuses.map((s) =>
+                      s.key === status.key ? { ...s, enabled } : s
+                    ),
+                  }));
+                }}
+              />
+            </li>
+          ))}
+        </ul>
         </div>
       ) : null}
 
       {panel === "transitions" ? (
-        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
-          {draft.transitions
-            .slice()
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((transition) => {
-              const from =
-                draft.statuses.find((s) => s.key === transition.fromKey)?.label ??
-                transition.fromKey;
-              const to =
-                draft.statuses.find((s) => s.key === transition.toKey)?.label ??
-                transition.toKey;
-              return (
-                <li
-                  key={`${transition.fromKey}:${transition.toKey}`}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                >
-                  <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
-                    {from} → {to}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <LifecycleToggle
-                      checked={transition.enabled}
-                      disabled={!editing}
-                      label={transition.enabled ? "On" : "Off"}
-                      onCheckedChange={(enabled) => {
-                        setDraft((prev) => ({
-                          ...prev,
-                          transitions: prev.transitions.map((t) =>
-                            t.fromKey === transition.fromKey &&
-                            t.toKey === transition.toKey
-                              ? { ...t, enabled }
-                              : t
-                          ),
-                        }));
-                      }}
-                    />
-                    <LifecycleToggle
-                      checked={transition.enforcement === "required"}
-                      disabled={!editing}
-                      label={
-                        transition.enforcement === "required"
-                          ? "Required"
-                          : "Flexible"
-                      }
-                      onCheckedChange={(required) => {
-                        const enforcement: AlertLifecycleEnforcement = required
-                          ? "required"
-                          : "flexible";
-                        setDraft((prev) => ({
-                          ...prev,
-                          transitions: prev.transitions.map((t) =>
-                            t.fromKey === transition.fromKey &&
-                            t.toKey === transition.toKey
-                              ? { ...t, enforcement }
-                              : t
-                          ),
-                        }));
-                      }}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-        </ul>
+        <EntityTransitionsList
+          statuses={draft.statuses}
+          transitions={draft.transitions}
+          editing={editing}
+          onToggleEnabled={(fromKey, toKey, enabled) => {
+            setDraft((prev) => ({
+              ...prev,
+              transitions: prev.transitions.map((t) =>
+                t.fromKey === fromKey && t.toKey === toKey
+                  ? { ...t, enabled }
+                  : t
+              ),
+            }));
+          }}
+          onToggleEnforcement={(fromKey, toKey, required) => {
+            setDraft((prev) => ({
+              ...prev,
+              transitions: prev.transitions.map((t) =>
+                t.fromKey === fromKey && t.toKey === toKey
+                  ? { ...t, enforcement: required ? "required" : "flexible" }
+                  : t
+              ),
+            }));
+          }}
+        />
       ) : null}
 
       {panel === "types" ? (
@@ -421,14 +324,6 @@ export function AlertLifecycleSettings() {
             </li>
           ))}
         </ul>
-      ) : null}
-
-      {panel === "gates" ? (
-        <AlertGatesPanel
-          config={draft}
-          editing={editing}
-          onToggleGate={toggleGate}
-        />
       ) : null}
     </div>
   );

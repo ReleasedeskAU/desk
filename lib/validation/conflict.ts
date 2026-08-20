@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isConflictType } from "@/lib/conflict-types";
+import { CONFLICT_TYPES, isConflictType } from "@/lib/conflict-types";
 
 const optionalNullableString = z.union([z.string().trim().max(2000), z.null()]).optional();
 
@@ -18,7 +18,7 @@ export const CONFLICT_STATUSES = [
   "Dismissed",
 ] as const;
 
-export { CONFLICT_TYPES } from "@/lib/conflict-types";
+export { CONFLICT_TYPES };
 
 const conflictTypeSchema = z
   .string()
@@ -28,6 +28,14 @@ const conflictTypeSchema = z
   .refine(isConflictType, {
     message: "Conflict type is not in the allowed list",
   });
+
+/**
+ * Lifecycle defaults plus any extra labels (seed types on the Release page).
+ * Empty / whitespace extras are dropped; order keeps defaults first.
+ */
+export function mergeConflictTypes(extra: string[] = []): string[] {
+  return [...new Set([...CONFLICT_TYPES, ...extra.map((item) => item.trim()).filter(Boolean)])];
+}
 
 /**
  * POST /api/conflicts body. Rejects unknown fields and never accepts a client-provided Conflict ID.

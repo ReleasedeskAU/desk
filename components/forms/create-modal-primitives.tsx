@@ -19,15 +19,18 @@ export function ModalFrame({
   wide?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/40 p-4 sm:items-center"
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
         onClick={(event) => event.stopPropagation()}
         className={cn(
-          "max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]",
-          wide ? "max-w-2xl" : "max-w-lg"
+          "max-h-[min(90dvh,52rem)] w-full min-w-0 overflow-x-hidden overflow-y-auto rounded-2xl bg-white p-5 shadow-theme-lg sm:p-6 dark:bg-[var(--card)]",
+          wide ? "max-w-[min(42rem,calc(100vw-2rem))]" : "max-w-lg"
         )}
       >
         {children}
@@ -78,7 +81,7 @@ export function SelectField({
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
   return (
-    <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
       {label}
       {required ? (
         <>
@@ -86,7 +89,7 @@ export function SelectField({
           <RequiredMark />
         </>
       ) : null}
-      <select {...props} className={cn(taInput, "mt-1", error && "border-rose-400")}>
+      <select {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
         {children}
       </select>
       <FieldError message={error} />
@@ -101,7 +104,7 @@ export function TextField({
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
   return (
-    <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
       {label}
       {required ? (
         <>
@@ -109,7 +112,7 @@ export function TextField({
           <RequiredMark />
         </>
       ) : null}
-      <input {...props} className={cn(taInput, "mt-1", error && "border-rose-400")} />
+      <input {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
       <FieldError message={error} />
     </label>
   );
@@ -122,7 +125,7 @@ export function TextareaField({
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
   return (
-    <label className="block text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2">
       {label}
       {required ? (
         <>

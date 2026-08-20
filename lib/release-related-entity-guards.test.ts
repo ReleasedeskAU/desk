@@ -17,6 +17,8 @@ import {
   isReleaseAtOrBeyondReady,
   isReleaseCancelled,
   isReleaseDeploying,
+  guardReleaseFullyLocked,
+  RELEASE_CANCELLED_LOCKED_CODE,
 } from "@/lib/release-related-entity-guards";
 import { createDefaultApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config";
 
@@ -126,6 +128,23 @@ describe("isReleaseDeploying / isReleaseCancelled", () => {
     }));
     assert.equal(isReleaseCancelled("Rejected", config), true);
     assert.equal(isReleaseCancelled("Cancelled", config), false);
+  });
+});
+
+describe("guardReleaseFullyLocked", () => {
+  it("allows mutations before Cancelled", () => {
+    assert.equal(guardReleaseFullyLocked("Planning").ok, true);
+    assert.equal(guardReleaseFullyLocked("Closed").ok, true);
+  });
+
+  it("denies mutations when Cancelled", async () => {
+    const denied = guardReleaseFullyLocked("Cancelled");
+    assert.equal(denied.ok, false);
+    if (denied.ok) return;
+    assert.equal(denied.response.status, 409);
+    const body = (await denied.response.json()) as { code?: string; error?: string };
+    assert.equal(body.code, RELEASE_CANCELLED_LOCKED_CODE);
+    assert.match(body.error ?? "", /locked/i);
   });
 });
 

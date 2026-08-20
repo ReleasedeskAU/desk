@@ -42,6 +42,8 @@ type Props = {
   embedded?: boolean;
   /** Reports open blocker count for dashboard tile KPIs. */
   onCountChange?: (count: number, topSeverity: string | null) => void;
+  /** VR-35: disable add when parent is Deploying or later. */
+  addDisabledReason?: string | null;
 };
 
 export function DbBlockerList({
@@ -54,6 +56,7 @@ export function DbBlockerList({
   onChanged,
   embedded = false,
   onCountChange,
+  addDisabledReason = null,
 }: Props) {
   const [blockers, setBlockers] = useState<LiveBlocker[] | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -89,6 +92,8 @@ export function DbBlockerList({
       type="button"
       className={taBtnSecondary + " text-xs !py-1.5"}
       onClick={() => setModalOpen(true)}
+      disabled={Boolean(addDisabledReason)}
+      title={addDisabledReason ?? undefined}
     >
       <Plus className="h-3.5 w-3.5 inline mr-1" />
       Add Blocker
@@ -147,6 +152,9 @@ export function DbBlockerList({
             </p>
             {addButton}
           </div>
+          {addDisabledReason ? (
+            <p className="text-xs text-amber-700 dark:text-amber-300">{addDisabledReason}</p>
+          ) : null}
           {body}
         </div>
       ) : (

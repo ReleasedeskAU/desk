@@ -592,6 +592,7 @@ export function normalizeReleaseLifecycleConfigResult(
     };
   }
   const graph = raw as ReleaseLifecycleConfig;
+  const droppedGateTypes = new Set<string>();
   const candidate: ReleaseLifecycleConfig = {
     statuses: graph.statuses.map((status) =>
       withReleaseStatusRoles({
@@ -603,12 +604,27 @@ export function normalizeReleaseLifecycleConfigResult(
     ),
     transitions: graph.transitions.map((item) => ({
       ...item,
-      gates: item.gates.map((itemGate) => ({
-        ...itemGate,
-        params: itemGate.params ? { ...itemGate.params } : undefined,
-      })),
+      gates: item.gates
+        .filter((itemGate) => {
+          if (isReleaseLifecycleGateType(itemGate.gateType)) return true;
+          droppedGateTypes.add(String(itemGate.gateType));
+          return false;
+        })
+        .map((itemGate) => ({
+          ...itemGate,
+          params: itemGate.params ? { ...itemGate.params } : undefined,
+        })),
     })),
   };
+  if (droppedGateTypes.size > 0) {
+    console.warn(
+      "[release-lifecycle-config] dropped unknown stored gates (graph otherwise kept)",
+      {
+        clerkUserId: context?.clerkUserId ?? null,
+        droppedGateTypes: [...droppedGateTypes],
+      }
+    );
+  }
   const validationError = validateReleaseLifecycleConfig(candidate);
   if (!validationError) {
     return {

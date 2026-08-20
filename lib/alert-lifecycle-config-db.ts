@@ -94,7 +94,10 @@ export async function saveAlertLifecycleConfig(
   clerkUserId: string,
   config: AlertLifecycleConfig
 ): Promise<AlertLifecycleConfig> {
-  const validationError = validateAlertLifecycleConfig(config);
+  const reconciled = reconcileAlertLifecycleSpec(
+    normalizeAlertLifecycleConfig(config)
+  );
+  const validationError = validateAlertLifecycleConfig(reconciled);
   if (validationError) throw new Error(validationError);
   await ensureAlertLifecycleTables();
 
@@ -107,7 +110,7 @@ export async function saveAlertLifecycleConfig(
     id,
     clerkUserId,
     nextVersion,
-    JSON.stringify(config)
+    JSON.stringify(reconciled)
   );
-  return config;
+  return reconciled;
 }

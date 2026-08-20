@@ -10,6 +10,10 @@ import { sp, str } from "@/lib/list-api-filters";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { createConflictSchema } from "@/lib/validation/conflict";
 import { nextConflictCode } from "@/lib/conflict-record";
+import {
+  guardReleaseFullyLocked,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 function mapConflictRow(
   row: {
@@ -76,6 +80,7 @@ export async function GET(req: Request) {
     conflictCodeQ: str(params, "conflictId") ?? str(params, "conflictCode"),
     release1CodeQ: str(params, "release1"),
     release2CodeQ: str(params, "release2"),
+    eitherReleaseQ: str(params, "release"),
     conflictingEnvironmentQ: str(params, "conflictEnv"),
     environmentConflictType: str(params, "conflictType"),
     notesQ: str(params, "notes"),
@@ -113,11 +118,11 @@ export async function POST(req: Request) {
   const [release1, release2, maxOrder, releases] = await Promise.all([
     prisma.release.findUnique({
       where: { releaseCode: body.release1Code },
-      select: { id: true, releaseCode: true },
+      select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
     }),
     prisma.release.findUnique({
       where: { releaseCode: body.release2Code },
-      select: { id: true, releaseCode: true },
+      select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
     }),
     prisma.environmentConflict.aggregate({ _max: { sourceOrder: true } }),
     prisma.release.findMany({ select: { id: true, releaseCode: true } }),
@@ -127,6 +132,14 @@ export async function POST(req: Request) {
   }
   if (!release2) {
     return NextResponse.json({ error: "Release 2 not found" }, { status: 400 });
+  }
+  for (const linked of [release1, release2]) {
+    const linkedConfig = await loadGuardReleaseConfig(
+      user!.id,
+      linked.lifecycleConfigVersionId
+    );
+    const cancelledLock = guardReleaseFullyLocked(linked.status, linkedConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
   }
 
   const row = await prisma.environmentConflict.create({

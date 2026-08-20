@@ -19,8 +19,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         editMode: "full",
         cascadeEffect: "intake",
         isIntake: true,
-        suppressesRepeatAlerts: false,
-        expiryDays: null,
       },
       {
         key: "acknowledged",
@@ -32,8 +30,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         editMode: "limited",
         cascadeEffect: "seen",
         isIntake: false,
-        suppressesRepeatAlerts: true,
-        expiryDays: null,
       },
       {
         key: "actioned",
@@ -45,8 +41,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         editMode: "immutable",
         cascadeEffect: "final",
         isIntake: false,
-        suppressesRepeatAlerts: false,
-        expiryDays: null,
       },
       {
         key: "dismissed",
@@ -58,8 +52,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         editMode: "immutable",
         cascadeEffect: "final",
         isIntake: false,
-        suppressesRepeatAlerts: false,
-        expiryDays: null,
       },
       {
         key: "expired",
@@ -71,8 +63,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         editMode: "immutable",
         cascadeEffect: "final",
         isIntake: false,
-        suppressesRepeatAlerts: false,
-        expiryDays: null,
       },
     ],
     transitions: [
@@ -83,7 +73,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         enforcement: "flexible",
         isSystem: true,
         sortOrder: 10,
-        gates: [],
       },
       {
         fromKey: "pending",
@@ -92,7 +81,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         enforcement: "flexible",
         isSystem: true,
         sortOrder: 20,
-        gates: [],
       },
       {
         fromKey: "acknowledged",
@@ -101,7 +89,6 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
         enforcement: "flexible",
         isSystem: true,
         sortOrder: 10,
-        gates: [],
       },
     ],
     types: [
@@ -118,65 +105,44 @@ function legacyFiveStatusGraph(): AlertLifecycleConfig {
 }
 
 describe("reconcileAlertLifecycleSpec", () => {
-  it("relabels Pending / Actioned and expands the 5-status graph", () => {
+  it("remaps Pending/Actioned/Dismissed/Expired onto the 7-status sheet", () => {
     const reconciled = reconcileAlertLifecycleSpec(legacyFiveStatusGraph());
 
+    assert.equal(reconciled.statuses.length, 7);
     assert.equal(
-      reconciled.statuses.find((status) => status.key === "pending")?.label,
+      reconciled.statuses.find((status) => status.key === "active")?.label,
       "Active"
     );
-    const actioned = reconciled.statuses.find((status) => status.key === "actioned");
-    assert.equal(actioned?.label, "Resolved");
-    assert.equal(actioned?.terminal, false);
-    assert.equal(actioned?.editMode, "limited");
+    assert.equal(
+      reconciled.statuses.find((status) => status.key === "resolved")?.label,
+      "Resolved"
+    );
+    assert.ok(!reconciled.statuses.some((status) => status.key === "pending"));
+    assert.ok(!reconciled.statuses.some((status) => status.key === "actioned"));
+    assert.ok(!reconciled.statuses.some((status) => status.key === "dismissed"));
+    assert.ok(!reconciled.statuses.some((status) => status.key === "expired"));
     assert.ok(reconciled.statuses.some((status) => status.key === "investigating"));
     assert.ok(reconciled.statuses.some((status) => status.key === "escalated"));
     assert.ok(reconciled.statuses.some((status) => status.key === "closed"));
     assert.ok(
       reconciled.transitions.some(
         (transition) =>
-          transition.fromKey === "actioned" && transition.toKey === "closed"
+          transition.fromKey === "active" && transition.toKey === "acknowledged"
       )
     );
-    const expire = reconciled.transitions.find(
-      (transition) =>
-        transition.fromKey === "pending" && transition.toKey === "expired"
-    );
-    assert.equal(expire?.enforcement, "required");
-    const dismiss = reconciled.transitions.find(
-      (transition) =>
-        transition.fromKey === "pending" && transition.toKey === "dismissed"
-    );
-    assert.ok(
-      dismiss?.gates.some((gate) => gate.gateType === "dismissal_justification_set")
-    );
-    assert.ok(reconciled.types.some((type) => type.key === "reminder"));
+    assert.ok(reconciled.types.some((type) => type.key === "warning"));
+    assert.ok(!reconciled.types.some((type) => type.key === "reminder"));
   });
 
-  it("preserves a user-renamed display label and extra edge", () => {
+  it("preserves a user-renamed Active label", () => {
     const custom = createDefaultAlertLifecycleConfig();
-    custom.statuses.find((status) => status.key === "pending")!.label = "Raised";
-    custom.transitions.push({
-      fromKey: "pending",
-      toKey: "actioned",
-      enabled: true,
-      enforcement: "flexible",
-      isSystem: false,
-      sortOrder: 99,
-      gates: [],
-    });
+    custom.statuses.find((status) => status.key === "active")!.label = "Raised";
 
     const reconciled = reconcileAlertLifecycleSpec(custom);
 
     assert.equal(
-      reconciled.statuses.find((status) => status.key === "pending")?.label,
+      reconciled.statuses.find((status) => status.key === "active")?.label,
       "Raised"
-    );
-    assert.ok(
-      reconciled.transitions.some(
-        (transition) =>
-          transition.fromKey === "pending" && transition.toKey === "actioned"
-      )
     );
   });
 });

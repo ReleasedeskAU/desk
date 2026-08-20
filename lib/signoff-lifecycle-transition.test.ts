@@ -9,6 +9,7 @@ import {
 import {
   mandatorySignoffsComplete,
   resolveSignoffLifecycleStatusRef,
+  signoffNextStatusLabels,
   signoffStatusCountsAsComplete,
   validateSignoffTransition,
   legalNextSignoffStatuses,
@@ -369,5 +370,24 @@ describe("Edit Release form wiring", () => {
       assert.match(src, new RegExp(field));
     }
     assert.match(src, /signoffDecisionTypesForForm/);
+  });
+});
+
+describe("signoffNextStatusLabels", () => {
+  it("lists enabled exits from Pending", () => {
+    const labels = signoffNextStatusLabels(config, "Pending");
+    assert.ok(labels.includes("Approved"));
+    assert.ok(labels.includes("Rejected"));
+  });
+
+  it("returns no exits from a terminal Approved decision", () => {
+    assert.deepEqual(signoffNextStatusLabels(config, "Approved"), []);
+  });
+
+  it("treats a blank stored value as Pending", () => {
+    const fromBlank = signoffNextStatusLabels(config, null);
+    const fromPending = signoffNextStatusLabels(config, "Pending");
+    assert.deepEqual(fromBlank, fromPending);
+    assert.ok(fromBlank.includes("Approved"));
   });
 });

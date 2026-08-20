@@ -7,6 +7,7 @@ import {
   APPLICATIONS_FILTER_SCHEMA,
   APPLICATION_STATUS_FILTER_SCHEMA,
   APPROVALS_FILTER_SCHEMA,
+  SIGNOFFS_FILTER_SCHEMA,
   BLOCKERS_FILTER_SCHEMA,
   BOOKING_FILTER_SCHEMA,
   CONFLICTS_FILTER_SCHEMA,
@@ -105,6 +106,12 @@ export const VOICE_LIST_FILTER_PAGES: readonly VoiceListFilterPage[] = [
     label: "Approval Queue",
     schema: APPROVALS_FILTER_SCHEMA,
     commonKeys: ["decision", "type", "approver", "release"],
+  },
+  {
+    path: "/signoffs",
+    label: "Sign-offs",
+    schema: SIGNOFFS_FILTER_SCHEMA,
+    commonKeys: ["status", "type", "required", "release"],
   },
   {
     path: "/leaves",

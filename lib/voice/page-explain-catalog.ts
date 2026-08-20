@@ -129,6 +129,18 @@ const PAGES: readonly VoicePageExplain[] = [
     nextSteps: ["Releases"],
   },
   {
+    path: "/signoffs",
+    title: "Sign-offs",
+    purpose:
+      "Release checklist sign-offs (Dev, Test, UAT, Security, and the rest) — not CAB Approval Queue rows.",
+    canDo: [
+      "Filter by status, type, or required vs optional",
+      "Open a checklist item and record the next legal decision",
+      "Jump to the parent release Sign-offs section",
+    ],
+    nextSteps: ["Releases", "Approval Queue", "Lifecycle Settings"],
+  },
+  {
     path: "/drifts",
     title: "Drift Dashboard",
     purpose: "Config/version drift that can break promotions or UAT fidelity.",

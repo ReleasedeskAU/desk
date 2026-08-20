@@ -72,10 +72,7 @@ export function DbReleaseServicesInvolved({ releaseId }: Props) {
       ) : services === null ? (
         <p className="text-sm text-slate-500 dark:text-white/50">Loading services…</p>
       ) : services.length === 0 ? (
-        <EmptyHint>
-          No Copilot services are linked to this release yet. Link a Service to one of
-          this release&apos;s applications (optional applicationId) to see it here.
-        </EmptyHint>
+        <EmptyHint>No Copilot services are linked to this release yet.</EmptyHint>
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-white/10">
           {services.map((s) => (

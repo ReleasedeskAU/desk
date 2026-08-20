@@ -1,14 +1,13 @@
 /**
  * Fixed catalog of Dependency lifecycle checks (gates).
  *
- * Users attach known checks to transitions; runtime evaluation stays in
- * dependency-lifecycle-transition.ts and never executes user-supplied expressions.
+ * Users attach these known types to transitions. Runtime evaluators live in
+ * dependency-lifecycle-transition.ts. No client-supplied expressions.
  */
 
 export const DEPENDENCY_LIFECYCLE_GATE_TYPES = [
-  "documented_approval",
-  "escalation_noted",
-  "management_resolution",
+  "both_parties_acknowledged",
+  "notes_documented",
 ] as const;
 
 export type DependencyLifecycleGateType =
@@ -35,34 +34,27 @@ export type DependencyLifecycleGateDefinition = {
   ruleIds: readonly string[];
 };
 
-/** Catalog metadata only; runtime facts determine pass/fail. */
+/**
+ * Catalog metadata only — never evaluates user-supplied code.
+ */
 export const DEPENDENCY_LIFECYCLE_GATE_CATALOG: Readonly<
   Record<DependencyLifecycleGateType, DependencyLifecycleGateDefinition>
 > = {
-  documented_approval: {
-    label: "Documented approval",
+  both_parties_acknowledged: {
+    label: "Both release managers have confirmed",
     description:
-      "Notes must record the approval or justification before waiving or removing this dependency.",
-    ruleIds: ["VR-36", "sheet-removed-approval"],
+      "The owner of this release and the owner of the upstream release must each record an acknowledgment before this move (sheet: Confirmed → In Progress).",
+    ruleIds: ["Confirmed"],
   },
-  escalation_noted: {
-    label: "Escalation reason",
+  notes_documented: {
+    label: "Documented approval in notes",
     description:
-      "Notes must explain why this dependency is being escalated to management.",
-    ruleIds: ["sheet-escalated"],
-  },
-  management_resolution: {
-    label: "Management resolution",
-    description:
-      "Notes must record the management decision before leaving Escalated for a terminal outcome.",
-    ruleIds: ["sheet-escalated"],
+      "Notes must record why this dependency does not need to happen (sheet: Removed requires documented approval).",
+    ruleIds: ["Removed"],
   },
 };
 
-/**
- * True when value is a known Dependency gate type.
- * @param value - Unknown candidate from stored JSON.
- */
+/** True when value is a known Dependency gate type. */
 export function isDependencyLifecycleGateType(
   value: unknown
 ): value is DependencyLifecycleGateType {
@@ -73,9 +65,9 @@ export function isDependencyLifecycleGateType(
 }
 
 /**
- * Build a default attachment for one catalog check.
- * @param gateType - Catalog type.
- * @param sortOrder - Order among checks on the transition.
+ * Default attachment for a catalog gate.
+ * @param gateType - Catalog type
+ * @param sortOrder - Order among attachments on that edge
  */
 export function dependencyGate(
   gateType: DependencyLifecycleGateType,

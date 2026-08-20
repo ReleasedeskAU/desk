@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
-import { ProgressLink } from "@/components/layout/NavigationProgress";
+import {
+  CreateConfirmation,
+  CreateModalShell,
+  RequiredMark,
+  SummaryRow,
+} from "@/components/create-flow/CreateFlowUi";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
@@ -77,6 +81,8 @@ type Props = {
   statusOptions?: string[];
   /** Enabled default status from risk lifecycle config. */
   defaultStatus?: string;
+  /** When set, department / application / release are fixed to this release. */
+  lockTo?: { releaseId: string; departmentId: string; applicationId: string } | null;
 };
 
 /** Creates a validated risk and keeps its generated-ID confirmation visible after list refresh. */
@@ -87,6 +93,7 @@ export function RiskFormModal({
   categoryOptions,
   statusOptions: statusOptionsProp,
   defaultStatus: defaultStatusProp,
+  lockTo = null,
 }: Props) {
   const { config: riskConfig } = useRiskEngineConfig();
   const likelihoodOptions = scaleAxisValues(riskConfig.likelihoodMax);
@@ -119,7 +126,14 @@ export function RiskFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm({ ...EMPTY_FORM, status: defaultStatus });
+    setForm({
+      ...EMPTY_FORM,
+      status: defaultStatus,
+      category: categoryOptions[0] ?? "",
+      releaseId: lockTo?.releaseId ?? "",
+      departmentId: lockTo?.departmentId ?? "",
+      applicationId: lockTo?.applicationId ?? "",
+    });
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -144,7 +158,7 @@ export function RiskFormModal({
       setUsers(userResult.data);
     })();
     return () => ac.abort();
-  }, [open, defaultStatus]);
+  }, [open, defaultStatus, lockTo?.releaseId, lockTo?.departmentId, lockTo?.applicationId]);
 
   const filteredApplications = useMemo(
     () => applications.filter((application) => application.departmentId === form.departmentId),
@@ -230,106 +244,237 @@ export function RiskFormModal({
     setCreated(result.data);
   };
 
+  const lockedRelease = releases.find((item) => item.id === form.releaseId);
+  const lockedDepartment = departments.find((item) => item.id === form.departmentId);
+  const lockedApplication = applications.find((item) => item.id === form.applicationId);
+  const scoped = Boolean(lockTo);
+
   if (created) {
     return (
-      <ModalFrame onClose={onClose} labelledBy="risk-created-title">
-        <div className="mb-4 flex items-start gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-            <CheckCircle2 className="h-5 w-5" aria-hidden />
-          </span>
-          <div>
-            <h2 id="risk-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">Risk created</h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-white/60">The risk register has been refreshed.</p>
-          </div>
-        </div>
-        <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
-          <SummaryRow label="Risk ID" value={created.riskCode} mono />
-          <SummaryRow label="Description" value={created.description} />
-          <SummaryRow label="Release" value={created.release.releaseCode} mono />
-          <SummaryRow label="Application" value={created.applicationName ?? "—"} />
-          <SummaryRow label="Category" value={created.category} />
-          <SummaryRow label="Risk score" value={`${created.riskScore} (${created.likelihood} × ${created.impact})`} />
-          <SummaryRow label="Status" value={created.status} />
-        </dl>
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={() => { setCreated(null); setForm({ ...EMPTY_FORM, status: defaultStatus }); }}>
-            Create another
-          </button>
-          <ProgressLink href={`/risks/${created.id}`} className={cn(taBtnSecondary, "inline-flex items-center")}>
-            View Risk
-          </ProgressLink>
-          <button type="button" className={taBtnPrimary} onClick={onClose}>Close</button>
-        </div>
-      </ModalFrame>
+      <CreateConfirmation
+        entity="Risk"
+        viewHref={`/risks/${created.id}`}
+        onClose={onClose}
+        onCreateAnother={() => {
+          setCreated(null);
+          setForm({
+            ...EMPTY_FORM,
+            status: defaultStatus,
+            releaseId: lockTo?.releaseId ?? "",
+            departmentId: lockTo?.departmentId ?? "",
+            applicationId: lockTo?.applicationId ?? "",
+            category: categoryOptions[0] ?? "",
+          });
+        }}
+      >
+        <SummaryRow label="Risk ID" value={created.riskCode} mono />
+        <SummaryRow label="Description" value={created.description} />
+        <SummaryRow label="Release" value={created.release.releaseCode} mono />
+        <SummaryRow label="Application" value={created.applicationName ?? "—"} />
+        <SummaryRow label="Category" value={created.category} />
+        <SummaryRow label="Risk score" value={`${created.riskScore} (${created.likelihood} × ${created.impact})`} />
+        <SummaryRow label="Status" value={created.status} />
+      </CreateConfirmation>
     );
   }
 
   return (
-    <ModalFrame onClose={onClose} labelledBy="new-risk-title" wide>
-      <h2 id="new-risk-title" className="text-lg font-semibold text-gray-900 dark:text-white">New Risk</h2>
-      <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
-        Fields marked <RequiredMark /> are required. Risk ID and score are generated by the server.
-      </p>
-      {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
-      <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SelectField label="Department" required value={form.departmentId} error={fieldErrors.departmentId}
-          disabled={loadingLookups} onChange={(event) => setForm((current) => ({ ...current, departmentId: event.target.value, applicationId: "", releaseId: "", riskOwnerId: "" }))}>
-          <option value="">{loadingLookups ? "Loading…" : "Select department…"}</option>
-          {departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </SelectField>
-        <SelectField label="Application" required value={form.applicationId} error={fieldErrors.applicationId}
-          disabled={!form.departmentId} onChange={(event) => setForm((current) => ({ ...current, applicationId: event.target.value, releaseId: "" }))}>
-          <option value="">{form.departmentId ? "Select application…" : "Select department first…"}</option>
-          {filteredApplications.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </SelectField>
-        <SelectField label="Release" required value={form.releaseId} error={fieldErrors.releaseId}
-          disabled={!form.applicationId} onChange={(event) => set("releaseId", event.target.value)}>
-          <option value="">{form.applicationId ? "Select linked release…" : "Select application first…"}</option>
-          {filteredReleases.map((item) => <option key={item.id} value={item.id}>{item.releaseCode} — {item.name}</option>)}
-        </SelectField>
-        <SelectField label="Risk owner" value={form.riskOwnerId} disabled={!form.departmentId} onChange={(event) => set("riskOwnerId", event.target.value)}>
-          <option value="">Unassigned</option>
-          {filteredUsers.map((item) => <option key={item.id} value={item.id}>{item.userId} — {item.name}</option>)}
-        </SelectField>
-        <TextField label="Category" required value={form.category} error={fieldErrors.category}
-          onChange={(event) => set("category", event.target.value)} list="risk-category-options" maxLength={120} />
-        <datalist id="risk-category-options">{categoryOptions.map((category) => <option key={category} value={category} />)}</datalist>
-        <TextField label="Affected area" value={form.affectedArea} onChange={(event) => set("affectedArea", event.target.value)} maxLength={500} />
-        <SelectField label="Likelihood" required value={form.likelihood} error={fieldErrors.likelihood} onChange={(event) => set("likelihood", event.target.value)}>
-          {likelihoodOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-        </SelectField>
-        <SelectField label="Impact" required value={form.impact} error={fieldErrors.impact} onChange={(event) => set("impact", event.target.value)}>
-          {impactOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-        </SelectField>
-        <SelectField label="Status" required value={form.status} error={fieldErrors.status} onChange={(event) => set("status", event.target.value)}>
-          {statusOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-        </SelectField>
-        <div className="hidden sm:block" />
-        <TextareaField label="Description" required value={form.description} error={fieldErrors.description}
-          onChange={(event) => set("description", event.target.value)} />
-        <TextareaField label="Mitigation strategy" value={form.mitigationStrategy} onChange={(event) => set("mitigationStrategy", event.target.value)} />
-        <TextareaField label="Notes" value={form.notes} onChange={(event) => set("notes", event.target.value)} />
-        <div className="sm:col-span-2 mt-2 flex justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" className={taBtnPrimary} disabled={saving || loadingLookups}>
-            {saving ? "Creating…" : "Create Risk"}
-          </button>
-        </div>
-      </form>
-    </ModalFrame>
+    <>
+      <CreateModalShell
+        title="New Risk"
+        description={
+          scoped
+            ? "This risk is for the open release. Risk ID and score are assigned automatically."
+            : "Fields marked * are required. Risk ID and score are generated by the server."
+        }
+        onClose={onClose}
+        footer={
+          <>
+            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="risk-create-form"
+              className={taBtnPrimary}
+              disabled={saving || loadingLookups}
+            >
+              {saving ? "Creating…" : "Create Risk"}
+            </button>
+          </>
+        }
+      >
+        {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
+        <form id="risk-create-form" onSubmit={submit} className="min-w-0 space-y-4">
+          {scoped ? (
+            <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600 dark:bg-white/5 dark:text-white/70">
+              <p className="font-medium text-slate-800 dark:text-white">
+                {lockedRelease
+                  ? `${lockedRelease.releaseCode} — ${lockedRelease.name}`
+                  : "Loading release…"}
+              </p>
+              <p className="mt-0.5">
+                {[lockedDepartment?.name, lockedApplication?.name].filter(Boolean).join(" · ") || "Loading…"}
+              </p>
+            </div>
+          ) : (
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <SelectField
+                label="Department"
+                required
+                value={form.departmentId}
+                error={fieldErrors.departmentId}
+                disabled={loadingLookups}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    departmentId: event.target.value,
+                    applicationId: "",
+                    releaseId: "",
+                    riskOwnerId: "",
+                  }))
+                }
+              >
+                <option value="">{loadingLookups ? "Loading…" : "Select department…"}</option>
+                {departments.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Application"
+                required
+                value={form.applicationId}
+                error={fieldErrors.applicationId}
+                disabled={!form.departmentId}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, applicationId: event.target.value, releaseId: "" }))
+                }
+              >
+                <option value="">{form.departmentId ? "Select application…" : "Select department first…"}</option>
+                {filteredApplications.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Release"
+                required
+                value={form.releaseId}
+                error={fieldErrors.releaseId}
+                disabled={!form.applicationId}
+                onChange={(event) => set("releaseId", event.target.value)}
+              >
+                <option value="">{form.applicationId ? "Select linked release…" : "Select application first…"}</option>
+                {filteredReleases.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.releaseCode} — {item.name}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
+
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <SelectField
+              label="Category"
+              required
+              value={form.category}
+              error={fieldErrors.category}
+              onChange={(event) => set("category", event.target.value)}
+            >
+              <option value="">Select category…</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </SelectField>
+            <TextField
+              label="Affected area"
+              value={form.affectedArea}
+              onChange={(event) => set("affectedArea", event.target.value)}
+              maxLength={500}
+            />
+            <SelectField
+              label="Likelihood"
+              required
+              value={form.likelihood}
+              error={fieldErrors.likelihood}
+              onChange={(event) => set("likelihood", event.target.value)}
+            >
+              {likelihoodOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Impact"
+              required
+              value={form.impact}
+              error={fieldErrors.impact}
+              onChange={(event) => set("impact", event.target.value)}
+            >
+              {impactOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Status"
+              required
+              value={form.status}
+              error={fieldErrors.status}
+              onChange={(event) => set("status", event.target.value)}
+            >
+              {statusOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Risk owner"
+              value={form.riskOwnerId}
+              disabled={!form.departmentId}
+              onChange={(event) => set("riskOwnerId", event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {filteredUsers.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.userId} — {item.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+
+          <TextareaField
+            label="Description"
+            required
+            value={form.description}
+            error={fieldErrors.description}
+            onChange={(event) => set("description", event.target.value)}
+          />
+          <TextareaField
+            label="Mitigation strategy"
+            value={form.mitigationStrategy}
+            onChange={(event) => set("mitigationStrategy", event.target.value)}
+          />
+          <TextareaField
+            label="Notes"
+            value={form.notes}
+            onChange={(event) => set("notes", event.target.value)}
+          />
+        </form>
+      </CreateModalShell>
+    </>
   );
 }
 
-function ModalFrame({ children, onClose, labelledBy, wide = false }: { children: React.ReactNode; onClose: () => void; labelledBy: string; wide?: boolean }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-    <div role="dialog" aria-modal="true" aria-labelledby={labelledBy} onClick={(event) => event.stopPropagation()}
-      className={cn("max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]", wide ? "max-w-2xl" : "max-w-lg")}>
-      {children}
-    </div>
-  </div>;
-}
-
-function RequiredMark() { return <span className="text-rose-500">*</span>; }
 function FormError({
   message,
   onDismiss,
@@ -348,22 +493,38 @@ function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">{message}</p> : null;
 }
 function SelectField({ label, required, error, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
-  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70">{label}{required ? <> <RequiredMark /></> : null}
-    <select {...props} className={cn(taInput, "mt-1", error && "border-rose-400")}>{children}</select><FieldError message={error} />
-  </label>;
+  return (
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+      {label}
+      {required ? <RequiredMark /> : null}
+      <select {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
+        {children}
+      </select>
+      <FieldError message={error} />
+    </label>
+  );
 }
 function TextField({ label, required, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
-  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70">{label}{required ? <> <RequiredMark /></> : null}
-    <input {...props} className={cn(taInput, "mt-1", error && "border-rose-400")} /><FieldError message={error} />
-  </label>;
+  return (
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+      {label}
+      {required ? <RequiredMark /> : null}
+      <input {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
+      <FieldError message={error} />
+    </label>
+  );
 }
 function TextareaField({ label, required, error, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
-  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2">{label}{required ? <> <RequiredMark /></> : null}
-    <textarea {...props} maxLength={4000} className={cn(taInput, "mt-1 min-h-[76px]", error && "border-rose-400")} /><FieldError message={error} />
-  </label>;
-}
-function SummaryRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return <div className="flex justify-between gap-3"><dt className="text-gray-500 dark:text-white/55">{label}</dt>
-    <dd className={cn("max-w-[70%] text-right font-medium text-gray-900 dark:text-white", mono && "font-mono text-xs")}>{value}</dd>
-  </div>;
+  return (
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+      {label}
+      {required ? <RequiredMark /> : null}
+      <textarea
+        {...props}
+        maxLength={4000}
+        className={cn(taInput, "mt-1 min-h-[56px] min-w-0 max-w-full", error && "border-rose-400")}
+      />
+      <FieldError message={error} />
+    </label>
+  );
 }

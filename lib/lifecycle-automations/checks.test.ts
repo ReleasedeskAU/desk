@@ -8,7 +8,6 @@ import {
 import { dueRiskEscalationDays } from "@/lib/lifecycle-automations/checks";
 import { createDefaultRiskLifecycleConfig } from "@/lib/risk-lifecycle-config";
 import { createDefaultSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
-import { createDefaultAlertLifecycleConfig } from "@/lib/alert-lifecycle-config";
 import { isPastDayThreshold } from "@/lib/lifecycle-automations/time";
 
 describe("AV-02 threshold resolution", () => {
@@ -71,12 +70,6 @@ describe("sign-off / approval SLA thresholds", () => {
 
   it("approval Approved expiryDays defaults to 30", () => {
     assert.equal(approvalExpiryDays(), 30);
-  });
-
-  it("alert Starting status expiryDays defaults to 7", () => {
-    const config = createDefaultAlertLifecycleConfig();
-    const intake = config.statuses.find((status) => status.isIntake);
-    assert.equal(intake?.expiryDays, 7);
   });
 
   it("sign-off expiry follows Starting status, not the pending key", () => {

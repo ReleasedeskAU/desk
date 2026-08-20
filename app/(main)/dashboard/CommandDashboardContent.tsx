@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import {
   AreaChart,
@@ -97,7 +96,6 @@ export default function CommandDashboardContent({
   initialError = null,
 }: CommandDashboardContentProps) {
   const router = useRouter();
-  const { isLoaded, userId } = useAuth();
   const chartTheme = useChartTheme();
   const [period, setPeriod] = useState<DashboardPeriod>(initialPeriod);
   const [data, setData] = useState<DashboardPayload | null>(initialData);
@@ -112,20 +110,11 @@ export default function CommandDashboardContent({
     if (
       refreshKey === 0 &&
       period === initialPeriod &&
-      initialData &&
-      !initialError
+      (initialData || initialError)
     ) {
       setData(initialData);
-      setError(null);
+      setError(initialError);
       setLoading(false);
-      return;
-    }
-
-    // Wait for Clerk — early 401s leave the UI stuck on error.
-    if (!isLoaded) return;
-    if (!userId) {
-      setLoading(false);
-      setError("Sign in required");
       return;
     }
 
@@ -141,10 +130,14 @@ export default function CommandDashboardContent({
           cache: "no-store",
         });
         if (!r.ok) {
+          // Cookie session can lag one tick after navigation; retry once, then fail closed.
           if (r.status === 401 && attempt < 1) {
             await new Promise((resolve) => window.setTimeout(resolve, 600));
             if (!cancelled) return load(attempt + 1);
             return;
+          }
+          if (r.status === 401) {
+            throw new Error("Sign in required");
           }
           const body = (await r.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `Failed to load dashboard (${r.status})`);
@@ -166,7 +159,7 @@ export default function CommandDashboardContent({
     return () => {
       cancelled = true;
     };
-  }, [refreshKey, period, isLoaded, userId, initialPeriod, initialData, initialError]);
+  }, [refreshKey, period, initialPeriod, initialData, initialError]);
 
   const incidentTrendChart = useMemo(
     () => (data?.incidentTrend ?? []).map((d) => ({ d: d.date, v: d.count })),

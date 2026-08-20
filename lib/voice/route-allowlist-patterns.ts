@@ -15,6 +15,7 @@ export const VOICE_DYNAMIC_ROUTE_PATTERNS: readonly string[] = [
   "/risks/:id",
   "/drifts/:id",
   "/approvals/:id",
+  "/signoffs/:id",
   "/leaves/:id",
   "/monitoring-alerts/:id",
   "/incidents/:id",

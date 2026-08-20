@@ -50,6 +50,24 @@ export function mapSeedDependencyRow(
   };
 }
 
+/**
+ * True when this release is the depender or the dependee.
+ * Exact code or database id — avoids REL-0001 matching REL-00010.
+ */
+export function dependencyTouchesRelease(
+  row: Pick<
+    DependencyViewRow,
+    "releaseCode" | "dependsOnCode" | "releaseDbId" | "dependsOnDbId"
+  >,
+  linked: string
+): boolean {
+  const exact = linked.trim();
+  if (!exact) return true;
+  if (row.releaseDbId === exact || row.dependsOnDbId === exact) return true;
+  const lower = exact.toLowerCase();
+  return row.releaseCode.toLowerCase() === lower || row.dependsOnCode.toLowerCase() === lower;
+}
+
 function contains(hay: string | null | undefined, needle: string | undefined) {
   if (!needle) return true;
   return (hay ?? "").toLowerCase().includes(needle.trim().toLowerCase());
@@ -65,6 +83,8 @@ export type DependencySeedFilters = {
   releaseNameQ?: string;
   dependsOnNameQ?: string;
   notesQ?: string;
+  /** Match either side of the link (exact code or db id). */
+  linkedReleaseQ?: string;
 };
 
 export function filterSeedDependencies(
@@ -75,8 +95,12 @@ export function filterSeedDependencies(
     if (filters.status && row.status !== filters.status) return false;
     if (filters.dependencyType && row.dependencyType !== filters.dependencyType) return false;
     if (filters.impact && row.impactIfBlocked !== filters.impact) return false;
-    if (!contains(row.releaseCode, filters.releaseCodeQ)) return false;
-    if (!contains(row.dependsOnCode, filters.dependsOnCodeQ)) return false;
+    if (filters.linkedReleaseQ) {
+      if (!dependencyTouchesRelease(row, filters.linkedReleaseQ)) return false;
+    } else {
+      if (!contains(row.releaseCode, filters.releaseCodeQ)) return false;
+      if (!contains(row.dependsOnCode, filters.dependsOnCodeQ)) return false;
+    }
     if (!contains(row.depCode, filters.depCodeQ)) return false;
     if (!contains(row.releaseName, filters.releaseNameQ)) return false;
     if (!contains(row.dependsOnName, filters.dependsOnNameQ)) return false;

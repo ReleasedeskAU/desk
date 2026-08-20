@@ -402,6 +402,25 @@ export function signoffReleaseFieldsFromConfig(
 }
 
 /**
+ * Legal next status labels for a stored sign-off value (enabled edges only).
+ * Terminal statuses and unknown configs return an empty list.
+ */
+export function signoffNextStatusLabels(
+  config: SignoffLifecycleConfig,
+  current: string | null | undefined
+): string[] {
+  const from = resolveSignoffLifecycleStatusRef(config, current);
+  if (!from || from.terminal) return [];
+  const toKeys = new Set(
+    config.transitions.filter((item) => item.enabled && item.fromKey === from.key).map((item) => item.toKey)
+  );
+  return config.statuses
+    .filter((status) => status.enabled && toKeys.has(status.key))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((status) => status.label);
+}
+
+/**
  * Type guard for release sign-off field names.
  */
 export function isSignoffReleaseField(key: string): key is SignoffReleaseField {

@@ -7,17 +7,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Link2, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultDependencyLifecycleConfig,
+  DEPENDENCY_STATUS_OWNER_HINT,
   type DependencyLifecycleConfig,
-  type DependencyLifecycleEnforcement,
 } from "@/lib/dependency-lifecycle-config";
-import {
-  dependencyGate,
-  type DependencyLifecycleGateType,
-} from "@/lib/dependency-lifecycle-gates";
+import { dependencyGate, type DependencyLifecycleGateType } from "@/lib/dependency-lifecycle-gates";
 import { DependencyGatesPanel } from "@/components/settings/lifecycle/DependencyGatesPanel";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
-import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
+import { EntityTransitionsList } from "@/components/settings/lifecycle/EntityTransitionsList";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { DEPENDENCY_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
@@ -29,7 +26,7 @@ function cloneConfig(config: DependencyLifecycleConfig): DependencyLifecycleConf
     statuses: config.statuses.map((s) => ({ ...s })),
     transitions: config.transitions.map((t) => ({
       ...t,
-      gates: (t.gates ?? []).map((gate) => ({ ...gate })),
+      gates: (t.gates ?? []).map((g) => ({ ...g })),
     })),
   };
 }
@@ -44,9 +41,7 @@ export function DependencyLifecycleSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">(
-    "statuses"
-  );
+  const [panel, setPanel] = useState<"statuses" | "transitions" | "gates">("statuses");
 
   const toggleGate = (
     fromKey: string,
@@ -54,20 +49,18 @@ export function DependencyLifecycleSettings() {
     gateType: DependencyLifecycleGateType,
     enabled: boolean
   ) => {
-    setDraft((previous) => ({
-      ...previous,
-      transitions: previous.transitions.map((transition) => {
-        if (transition.fromKey !== fromKey || transition.toKey !== toKey) {
-          return transition;
-        }
-        const gates = [...(transition.gates ?? [])];
-        const index = gates.findIndex((gate) => gate.gateType === gateType);
-        if (index >= 0) {
-          gates[index] = { ...gates[index]!, enabled };
+    setDraft((prev) => ({
+      ...prev,
+      transitions: prev.transitions.map((t) => {
+        if (t.fromKey !== fromKey || t.toKey !== toKey) return t;
+        const gates = [...(t.gates ?? [])];
+        const idx = gates.findIndex((g) => g.gateType === gateType);
+        if (idx >= 0) {
+          gates[idx] = { ...gates[idx]!, enabled };
         } else {
           gates.push(dependencyGate(gateType, (gates.length + 1) * 10));
         }
-        return { ...transition, gates };
+        return { ...t, gates };
       }),
     }));
   };
@@ -146,9 +139,9 @@ export function DependencyLifecycleSettings() {
               Dependency Lifecycle
             </h2>
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 dark:text-white/50">
-              Configure dependency statuses, allowed moves, and checks. Met / Waived /
-              Removed stay terminal; Hard deps must satisfy the hard-gate flag before
-              Deploying.
+              Configure dependency statuses and allowed moves. Closed is the only
+              terminal. Hard deps must be Resolved, Removed, or Closed before Deploying
+              (VR-18). Confirmed → In Progress needs both release managers to acknowledge.
             </p>
           </div>
         </div>
@@ -203,10 +196,10 @@ export function DependencyLifecycleSettings() {
       >
         <p className="font-semibold">Quick help · Dependencies</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Identified is the starting status; Confirmed (dual-ack) is deferred.</li>
-          <li>Met, Waived, and Removed are terminal — no silent revert for users (AV-26 is system-only).</li>
-          <li>Waiving or removing requires documented approval in notes (or an exception reason).</li>
-          <li>Legacy Clear / Resolved still map to Met. Blocked is now a real status.</li>
+          <li>Identified → Pending / Confirmed. Confirmed → In Progress needs both owners.</li>
+          <li>Resolved and Removed are limited (not terminal); both archive to Closed.</li>
+          <li>VR-18 counts Resolved, Removed, and Closed as handled. Closed is the only lock.</li>
+          <li>Legacy Clear / Met map to Resolved; Waived maps to Removed.</li>
         </ul>
       </div>
 
@@ -235,13 +228,7 @@ export function DependencyLifecycleSettings() {
         ))}
       </div>
 
-      {panel === "gates" ? (
-        <DependencyGatesPanel
-          config={draft}
-          editing={editing}
-          onToggleGate={toggleGate}
-        />
-      ) : panel === "statuses" ? (
+      {panel === "statuses" ? (
         <div className="space-y-3">
         <ExclusiveRoleWarning
           statuses={draft.statuses}
@@ -267,6 +254,9 @@ export function DependencyLifecycleSettings() {
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {lifecycleEditModeLabel(status.editMode)}
+                  {DEPENDENCY_STATUS_OWNER_HINT[status.key]
+                    ? ` · accountable (display): ${DEPENDENCY_STATUS_OWNER_HINT[status.key]}`
+                    : ""}
                 </p>
                 <StatusMeaningControls
                   roleIds={DEPENDENCY_STATUS_ROLE_IDS}
@@ -295,69 +285,38 @@ export function DependencyLifecycleSettings() {
           ))}
         </ul>
         </div>
+      ) : panel === "gates" ? (
+        <DependencyGatesPanel
+          config={draft}
+          editing={editing}
+          onToggleGate={toggleGate}
+        />
       ) : (
-        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
-          {draft.transitions
-            .slice()
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((transition) => {
-              const from =
-                draft.statuses.find((s) => s.key === transition.fromKey)?.label ??
-                transition.fromKey;
-              const to =
-                draft.statuses.find((s) => s.key === transition.toKey)?.label ??
-                transition.toKey;
-              return (
-                <li
-                  key={`${transition.fromKey}:${transition.toKey}`}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                >
-                  <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
-                    {from} → {to}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <LifecycleToggle
-                      checked={transition.enabled}
-                      disabled={!editing}
-                      label={transition.enabled ? "On" : "Off"}
-                      onCheckedChange={(enabled) => {
-                        setDraft((prev) => ({
-                          ...prev,
-                          transitions: prev.transitions.map((t) =>
-                            t.fromKey === transition.fromKey &&
-                            t.toKey === transition.toKey
-                              ? { ...t, enabled }
-                              : t
-                          ),
-                        }));
-                      }}
-                    />
-                    <LifecycleToggle
-                      checked={transition.enforcement === "required"}
-                      disabled={!editing}
-                      label={
-                        transition.enforcement === "required" ? "Required" : "Flexible"
-                      }
-                      onCheckedChange={(required) => {
-                        const enforcement: DependencyLifecycleEnforcement = required
-                          ? "required"
-                          : "flexible";
-                        setDraft((prev) => ({
-                          ...prev,
-                          transitions: prev.transitions.map((t) =>
-                            t.fromKey === transition.fromKey &&
-                            t.toKey === transition.toKey
-                              ? { ...t, enforcement }
-                              : t
-                          ),
-                        }));
-                      }}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-        </ul>
+        <EntityTransitionsList
+          statuses={draft.statuses}
+          transitions={draft.transitions}
+          editing={editing}
+          onToggleEnabled={(fromKey, toKey, enabled) => {
+            setDraft((prev) => ({
+              ...prev,
+              transitions: prev.transitions.map((t) =>
+                t.fromKey === fromKey && t.toKey === toKey
+                  ? { ...t, enabled }
+                  : t
+              ),
+            }));
+          }}
+          onToggleEnforcement={(fromKey, toKey, required) => {
+            setDraft((prev) => ({
+              ...prev,
+              transitions: prev.transitions.map((t) =>
+                t.fromKey === fromKey && t.toKey === toKey
+                  ? { ...t, enforcement: required ? "required" : "flexible" }
+                  : t
+              ),
+            }));
+          }}
+        />
       )}
     </div>
   );

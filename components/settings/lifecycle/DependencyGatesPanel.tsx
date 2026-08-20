@@ -38,22 +38,23 @@ function partition(attachedTypes: Set<string>): {
   return { attached, available };
 }
 
-/** List Dependency transitions and allow catalog checks to be attached. */
+/**
+ * List Active/Inactive dependency transitions; expand a row to attach checks.
+ */
 export function DependencyGatesPanel({
   config,
   editing,
   onToggleGate,
 }: DependencyGatesPanelProps) {
   const statusOrder = useMemo(
-    () => new Map(config.statuses.map((status) => [status.key, status.sortOrder])),
+    () => new Map(config.statuses.map((s) => [s.key, s.sortOrder])),
     [config.statuses]
   );
   const sorted = useMemo(
     () =>
       [...config.transitions].sort((a, b) => {
         const fromDiff =
-          (statusOrder.get(a.fromKey) ?? 0) -
-          (statusOrder.get(b.fromKey) ?? 0);
+          (statusOrder.get(a.fromKey) ?? 0) - (statusOrder.get(b.fromKey) ?? 0);
         return fromDiff !== 0 ? fromDiff : a.sortOrder - b.sortOrder;
       }),
     [config.transitions, statusOrder]
@@ -61,9 +62,7 @@ export function DependencyGatesPanel({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (sorted.length === 1) {
-      setExpandedKey(`${sorted[0]!.fromKey}:${sorted[0]!.toKey}`);
-    }
+    if (sorted.length === 1) setExpandedKey(`${sorted[0]!.fromKey}:${sorted[0]!.toKey}`);
   }, [sorted]);
 
   if (sorted.length === 0) {
@@ -80,47 +79,37 @@ export function DependencyGatesPanel({
         const rowKey = `${transition.fromKey}:${transition.toKey}`;
         const expanded = expandedKey === rowKey;
         const fromLabel =
-          config.statuses.find((status) => status.key === transition.fromKey)
-            ?.label ?? transition.fromKey;
+          config.statuses.find((s) => s.key === transition.fromKey)?.label ??
+          transition.fromKey;
         const toLabel =
-          config.statuses.find((status) => status.key === transition.toKey)
-            ?.label ?? transition.toKey;
+          config.statuses.find((s) => s.key === transition.toKey)?.label ??
+          transition.toKey;
         const enabledTypes = new Set(
           (transition.gates ?? [])
-            .filter((gate) => gate.enabled)
-            .map((gate) => gate.gateType)
+            .filter((g) => g.enabled)
+            .map((g) => g.gateType)
         );
         const { attached, available } = partition(enabledTypes);
         return (
-          <li
-            key={rowKey}
-            className={cn(expanded && "bg-slate-50/80 dark:bg-white/[0.03]")}
-          >
+          <li key={rowKey} className={cn(expanded && "bg-slate-50/80 dark:bg-white/[0.03]")}>
             <button
               type="button"
               className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.04]"
               aria-expanded={expanded}
               onClick={() =>
-                setExpandedKey((previous) =>
-                  previous === rowKey ? null : rowKey
-                )
+                setExpandedKey((prev) => (prev === rowKey ? null : rowKey))
               }
             >
               <div className="min-w-0">
                 <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
                   {fromLabel} → {toLabel}
                   {!transition.enabled ? (
-                    <span className="ml-2 text-[11px] font-semibold text-slate-400">
-                      Off
-                    </span>
+                    <span className="ml-2 text-[11px] font-semibold text-slate-400">Off</span>
                   ) : null}
                 </p>
                 <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/50">
-                  {attached.length} active check
-                  {attached.length === 1 ? "" : "s"} ·{" "}
-                  {transition.enforcement === "required"
-                    ? "Required"
-                    : "Flexible"}
+                  {attached.length} active check{attached.length === 1 ? "" : "s"} ·{" "}
+                  {transition.enforcement === "required" ? "Required" : "Flexible"}
                 </p>
               </div>
               <ChevronDown
@@ -184,7 +173,7 @@ function GateGroup(props: {
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
           {props.types.map((gateType) => {
-            const definition = DEPENDENCY_LIFECYCLE_GATE_CATALOG[gateType];
+            const def = DEPENDENCY_LIFECYCLE_GATE_CATALOG[gateType];
             return (
               <li
                 key={gateType}
@@ -192,10 +181,10 @@ function GateGroup(props: {
               >
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-slate-900 dark:text-white">
-                    {definition.label}
+                    {def.label}
                   </p>
                   <p className="mt-0.5 text-[12px] text-slate-500 dark:text-white/55">
-                    {definition.description}
+                    {def.description}
                   </p>
                 </div>
                 <LifecycleToggle
@@ -203,12 +192,7 @@ function GateGroup(props: {
                   disabled={!props.editing}
                   label={props.attached ? "On" : "Off"}
                   onCheckedChange={(enabled) =>
-                    props.onToggleGate(
-                      props.fromKey,
-                      props.toKey,
-                      gateType,
-                      enabled
-                    )
+                    props.onToggleGate(props.fromKey, props.toKey, gateType, enabled)
                   }
                 />
               </li>

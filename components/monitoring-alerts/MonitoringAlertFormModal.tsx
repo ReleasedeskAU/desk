@@ -2,17 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  CreatedConfirmation,
   FormError,
-  ModalFrame,
-  RequiredMark,
   SelectField,
   TextField,
 } from "@/components/forms/create-modal-primitives";
+import { CreateConfirmation, CreateModalShell, SummaryRow } from "@/components/create-flow/CreateFlowUi";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
-import { ALERT_SOURCES } from "@/lib/alert-sources";
+import { manualAlertCreateFields } from "@/lib/alert-source";
 
 const ALERT_SEVERITIES = ["Critical", "Warning"] as const;
 /** Fallback status labels before alert lifecycle config loads. */
@@ -22,9 +20,8 @@ const ALERT_STATUSES = [
   "Investigating",
   "Escalated",
   "Resolved",
+  "Suppressed",
   "Closed",
-  "Dismissed",
-  "Expired",
 ] as const;
 
 type Department = { id: string; name: string };
@@ -43,7 +40,6 @@ type FormValues = {
   currentValue: string;
   status: string;
   assignedTo: string;
-  alertSource: (typeof ALERT_SOURCES)[number];
 };
 
 type CreatedAlert = {
@@ -59,7 +55,6 @@ type CreatedAlert = {
   assignedTo: string | null;
   environmentName: string;
   departmentName: string | null;
-  alertSource?: string | null;
   application: { id: string; name: string };
 };
 
@@ -81,7 +76,6 @@ const emptyForm = (defaultStatus = "Active"): FormValues => ({
   currentValue: "",
   status: defaultStatus,
   assignedTo: "",
-  alertSource: "Manual",
 });
 
 type Props = {
@@ -93,6 +87,8 @@ type Props = {
   statusOptions?: string[];
   /** Enabled default status from alert lifecycle config. */
   defaultStatus?: string;
+  /** When set, department / application are fixed to this release's app. */
+  lockTo?: { departmentId: string; applicationId: string } | null;
 };
 
 /** Creates a validated monitoring alert with department/application/environment chain. */
@@ -103,6 +99,7 @@ export function MonitoringAlertFormModal({
   alertTypeOptions = [],
   statusOptions: statusOptionsProp = [],
   defaultStatus = "Active",
+  lockTo = null,
 }: Props) {
   const statusOptions = useMemo(
     () => (statusOptionsProp.length > 0 ? statusOptionsProp : [...ALERT_STATUSES]),
@@ -120,7 +117,11 @@ export function MonitoringAlertFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(defaultStatus || "Active"));
+    setForm({
+      ...emptyForm(defaultStatus || "Active"),
+      departmentId: lockTo?.departmentId ?? "",
+      applicationId: lockTo?.applicationId ?? "",
+    });
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -143,7 +144,7 @@ export function MonitoringAlertFormModal({
       setEnvironments(environmentResult.data);
     })();
     return () => ac.abort();
-  }, [open, defaultStatus]);
+  }, [open, defaultStatus, lockTo?.departmentId, lockTo?.applicationId]);
 
   const filteredApplications = useMemo(
     () => applications.filter((application) => application.departmentId === form.departmentId),
@@ -209,7 +210,7 @@ export function MonitoringAlertFormModal({
         status: form.status,
         assignedTo: form.assignedTo.trim() || null,
         environmentName: form.environmentName,
-        alertSource: form.alertSource,
+        ...manualAlertCreateFields(),
       }),
       label: "create-monitoring-alert",
       rejectHttpErrors: false,
@@ -229,43 +230,71 @@ export function MonitoringAlertFormModal({
 
   if (created) {
     return (
-      <CreatedConfirmation
-        title="Monitoring alert created"
-        subtitle="The monitoring alerts list has been refreshed."
-        labelledBy="monitoring-alert-created-title"
+      <CreateConfirmation
+        entity="Alert"
+        viewHref={`/monitoring-alerts/${created.id}`}
         onClose={onClose}
         onCreateAnother={() => {
           setCreated(null);
-          setForm(emptyForm(defaultStatus || "Active"));
+          setForm({
+            ...emptyForm(defaultStatus || "Active"),
+            departmentId: lockTo?.departmentId ?? "",
+            applicationId: lockTo?.applicationId ?? "",
+          });
         }}
-        viewHref={`/monitoring-alerts/${created.id}`}
-        viewLabel="View Alert"
-        rows={[
-          { label: "Alert ID", value: created.alertCode, mono: true },
-          { label: "Timestamp", value: formatDate(created.timestamp) },
-          { label: "Application", value: created.application.name },
-          { label: "Department", value: created.departmentName ?? "—" },
-          { label: "Environment", value: created.environmentName },
-          { label: "Alert type", value: created.alertType },
-          { label: "Source", value: created.alertSource ?? "Manual" },
-          { label: "Severity", value: created.severity },
-          { label: "Metric", value: created.metric },
-          { label: "Status", value: created.status },
-        ]}
-      />
+      >
+        <SummaryRow label="Alert ID" value={created.alertCode} mono />
+        <SummaryRow label="Timestamp" value={formatDate(created.timestamp)} />
+        <SummaryRow label="Application" value={created.application.name} />
+        <SummaryRow label="Department" value={created.departmentName ?? "—"} />
+        <SummaryRow label="Environment" value={created.environmentName} />
+        <SummaryRow label="Alert type" value={created.alertType} />
+        <SummaryRow label="Severity" value={created.severity} />
+        <SummaryRow label="Metric" value={created.metric} />
+        <SummaryRow label="Status" value={created.status} />
+      </CreateConfirmation>
     );
   }
 
+  const scoped = Boolean(lockTo);
+  const applicationName = applications.find((item) => item.id === form.applicationId)?.name ?? "";
+  const typeChoices = alertTypeOptions.length > 0 ? alertTypeOptions : ["Reminder", "Warning", "Escalation", "Notification"];
+
   return (
-    <ModalFrame onClose={onClose} labelledBy="new-monitoring-alert-title" wide>
-      <h2 id="new-monitoring-alert-title" className="text-lg font-semibold text-gray-900 dark:text-white">
-        New Monitoring Alert
-      </h2>
-      <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
-        Fields marked <RequiredMark /> are required. Alert ID is generated by the server.
-      </p>
+    <CreateModalShell
+      title="New Monitoring Alert"
+      description={
+        scoped
+          ? "This alert is for the open release’s application. Alert ID is assigned automatically."
+          : "Fields marked * are required. Alert ID is generated by the server."
+      }
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="alert-create-form"
+            className={taBtnPrimary}
+            disabled={saving || loadingLookups}
+          >
+            {saving ? "Creating…" : "Create Alert"}
+          </button>
+        </>
+      }
+    >
       {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
-      <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
+      <form id="alert-create-form" onSubmit={submit} className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+        {scoped ? (
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600 sm:col-span-2 dark:bg-white/5 dark:text-white/70">
+            <p className="font-medium text-slate-800 dark:text-white">
+              {[departmentName, applicationName].filter(Boolean).join(" · ") || "Loading…"}
+            </p>
+          </div>
+        ) : (
+          <>
         <SelectField
           label="Department"
           required
@@ -309,6 +338,8 @@ export function MonitoringAlertFormModal({
             </option>
           ))}
         </SelectField>
+          </>
+        )}
         <SelectField
           label="Environment"
           required
@@ -332,20 +363,20 @@ export function MonitoringAlertFormModal({
           error={fieldErrors.timestamp}
           onChange={(event) => set("timestamp", event.target.value)}
         />
-        <TextField
+        <SelectField
           label="Alert type"
           required
           value={form.alertType}
           error={fieldErrors.alertType}
           onChange={(event) => set("alertType", event.target.value)}
-          list="alert-type-options"
-          maxLength={120}
-        />
-        <datalist id="alert-type-options">
-          {alertTypeOptions.map((option) => (
-            <option key={option} value={option} />
+        >
+          <option value="">Select type…</option>
+          {typeChoices.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
           ))}
-        </datalist>
+        </SelectField>
         <SelectField
           label="Severity"
           required
@@ -380,20 +411,6 @@ export function MonitoringAlertFormModal({
           maxLength={4000}
         />
         <SelectField
-          label="Source"
-          required
-          value={form.alertSource}
-          onChange={(event) =>
-            set("alertSource", event.target.value as FormValues["alertSource"])
-          }
-        >
-          {ALERT_SOURCES.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
           label="Status"
           required
           value={form.status}
@@ -412,15 +429,7 @@ export function MonitoringAlertFormModal({
           onChange={(event) => set("assignedTo", event.target.value)}
           maxLength={4000}
         />
-        <div className="mt-2 flex justify-end gap-2 sm:col-span-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          <button type="submit" className={taBtnPrimary} disabled={saving || loadingLookups}>
-            {saving ? "Creating…" : "Create Alert"}
-          </button>
-        </div>
       </form>
-    </ModalFrame>
+    </CreateModalShell>
   );
 }

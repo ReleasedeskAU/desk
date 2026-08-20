@@ -3,6 +3,8 @@
  * Live reads only — never denormalize service lists onto Release.
  */
 import { prisma } from "@/lib/prisma";
+import { createDefaultDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
+import { dependencyStatusSatisfiesHardGate } from "@/lib/dependency-lifecycle-transition";
 
 export type ReleaseServiceRow = {
   id: string;
@@ -13,28 +15,15 @@ export type ReleaseServiceRow = {
 };
 
 /**
- * Statuses treated as "met" for ReleaseDependency unmet checks.
- * Anything else (including null/blank) is unmet.
- */
-const MET_DEPENDENCY_STATUSES = new Set([
-  "met",
-  "resolved",
-  "satisfied",
-  "completed",
-  "done",
-  "closed",
-]);
-
-/**
- * Whether a ReleaseDependency status counts as unmet.
+ * Whether a ReleaseDependency status still blocks progress (VR-18 inverse).
  * @param status - Raw status from DB (nullable).
- * @returns true when the dependency still blocks progress.
  */
 export function isReleaseDependencyUnmet(status: string | null | undefined): boolean {
-  if (status == null) return true;
-  const normalized = status.trim().toLowerCase();
-  if (!normalized) return true;
-  return !MET_DEPENDENCY_STATUSES.has(normalized);
+  if (status == null || !String(status).trim()) return true;
+  return !dependencyStatusSatisfiesHardGate(
+    createDefaultDependencyLifecycleConfig(),
+    status
+  );
 }
 
 /**

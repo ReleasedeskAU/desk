@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { auditActorName } from "@/lib/release-audit";
 import { prisma } from "@/lib/prisma";
+import {
+  guardReleaseFullyLocked,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 /**
  * List audit events for a release (by UUID or releaseCode).
@@ -40,9 +44,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const release = await prisma.release.findFirst({
     where: { OR: [{ id }, { releaseCode: id }] },
-    select: { id: true },
+    select: { id: true, status: true, lifecycleConfigVersionId: true },
   });
   if (!release) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const releaseConfig = await loadGuardReleaseConfig(
+    user!.id,
+    release.lifecycleConfigVersionId
+  );
+  const locked = guardReleaseFullyLocked(release.status, releaseConfig);
+  if (!locked.ok) return locked.response;
 
   const body = await req.json();
   const action = typeof body.action === "string" && body.action.trim() ? body.action.trim() : "note";

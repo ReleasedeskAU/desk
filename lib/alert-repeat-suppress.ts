@@ -26,7 +26,7 @@ export async function repeatSuppressingStatusValues(
     : createDefaultAlertLifecycleConfig();
   return enabledStatusMatchValues(
     config.statuses,
-    (status) => status.isIntake || status.suppressesRepeatAlerts
+    (status) => status.isIntake || Boolean(status.suppressesRepeatAlerts)
   );
 }
 

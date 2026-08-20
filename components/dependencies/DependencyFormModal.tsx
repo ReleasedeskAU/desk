@@ -1,25 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
-import { ProgressLink } from "@/components/layout/NavigationProgress";
+import {
+  CreateConfirmation,
+  CreateModalShell,
+  RequiredMark,
+  SummaryRow,
+} from "@/components/create-flow/CreateFlowUi";
+import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import {
-  DEPENDENCY_IMPACTS,
-  DEPENDENCY_KINDS,
-  DEPENDENCY_TYPES,
-} from "@/lib/validation/dependency";
-import {
-  DEFAULT_DEPENDENCY_LIFECYCLE_CONFIG,
-  type DependencyLifecycleConfig,
-} from "@/lib/dependency-lifecycle-config";
-import { legalNextDependencyStatuses } from "@/lib/dependency-lifecycle-transition";
-import { intakeEntityStatusLabels } from "@/lib/entity-lifecycle-status-ui";
+import { DEPENDENCY_IMPACTS, DEPENDENCY_TYPES } from "@/lib/validation/dependency";
 
 type ReleaseOption = { id: string; releaseCode: string; name: string };
 
@@ -27,7 +22,6 @@ export type DependencyFormValues = {
   releaseId: string;
   dependsOnReleaseId: string;
   dependencyType: (typeof DEPENDENCY_TYPES)[number];
-  dependencyKind: (typeof DEPENDENCY_KINDS)[number];
   status: string;
   impactIfBlocked: (typeof DEPENDENCY_IMPACTS)[number];
   notes: string;
@@ -39,7 +33,6 @@ type CreatedSummary = {
   releaseCode: string;
   dependsOnCode: string;
   dependencyType: string;
-  dependencyKind?: string;
   status: string;
   impactIfBlocked: string;
 };
@@ -58,6 +51,8 @@ type Props = {
   statusOptions?: string[];
   /** Default create status from lifecycle config. */
   defaultStatus?: string;
+  /** When set, the "from" release is fixed (Release detail add). */
+  lockReleaseId?: string;
 };
 
 function coerceEnum<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
@@ -77,51 +72,33 @@ export function DependencyFormModal({
   depCode,
   statusOptions: statusOptionsProp,
   defaultStatus: defaultStatusProp,
+  lockReleaseId,
 }: Props) {
   const isEdit = Boolean(editId);
   const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
-  const graph = useMemo(
-    () =>
-      (lifecycle.config as DependencyLifecycleConfig | null) ??
-      DEFAULT_DEPENDENCY_LIFECYCLE_CONFIG,
-    [lifecycle.config]
-  );
-  const intakeOptions = useMemo(
-    () => intakeEntityStatusLabels(graph),
-    [graph]
-  );
-  const createOptions = useMemo(() => {
-    if (isEdit) return [] as string[];
-    if (intakeOptions.length > 0) return intakeOptions;
-    if (statusOptionsProp && statusOptionsProp.length > 0) return statusOptionsProp;
-    return lifecycle.createOptions;
-  }, [isEdit, intakeOptions, lifecycle.createOptions, statusOptionsProp]);
-  const defaultStatus =
-    defaultStatusProp || lifecycle.defaultStatus || intakeOptions[0] || "Identified";
+  const createOptions =
+    statusOptionsProp && statusOptionsProp.length > 0
+      ? statusOptionsProp
+      : lifecycle.createOptions;
+  const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Pending";
+  const scoped = Boolean(lockReleaseId);
 
   const defaults = useMemo<DependencyFormValues>(() => {
     const statusFallback = defaultStatus;
     const initialStatus = initial?.status?.trim();
     return {
-      releaseId: initial?.releaseId ?? "",
+      releaseId: lockReleaseId || initial?.releaseId || "",
       dependsOnReleaseId: initial?.dependsOnReleaseId ?? "",
       dependencyType: coerceEnum(initial?.dependencyType, DEPENDENCY_TYPES, "Hard"),
-      dependencyKind: coerceEnum(
-        initial?.dependencyKind,
-        DEPENDENCY_KINDS,
-        "Release-to-Release"
-      ),
       status:
         initialStatus &&
-        (createOptions.length === 0 ||
-          createOptions.includes(initialStatus) ||
-          isEdit)
+        (createOptions.length === 0 || createOptions.includes(initialStatus) || isEdit)
           ? initialStatus
           : statusFallback,
       impactIfBlocked: coerceEnum(initial?.impactIfBlocked, DEPENDENCY_IMPACTS, "Release Delay"),
       notes: initial?.notes ?? "",
     };
-  }, [initial, defaultStatus, createOptions, isEdit]);
+  }, [initial, defaultStatus, createOptions, isEdit, lockReleaseId]);
 
   const [form, setForm] = useState(defaults);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
@@ -131,13 +108,9 @@ export function DependencyFormModal({
   const [created, setCreated] = useState<CreatedSummary | null>(null);
 
   const statusSelectOptions = useMemo(() => {
-    if (isEdit) {
-      const next = legalNextDependencyStatuses(graph, form.status);
-      return [...new Set([form.status, ...next.map((s) => s.label)].filter(Boolean))];
-    }
     const base = createOptions.length > 0 ? createOptions : [defaultStatus].filter(Boolean);
-    return [...new Set(base.filter(Boolean))];
-  }, [createOptions, defaultStatus, form.status, graph, isEdit]);
+    return [...new Set([...base, form.status].filter(Boolean))];
+  }, [createOptions, defaultStatus, form.status]);
 
   useEffect(() => {
     if (!open) {
@@ -147,13 +120,6 @@ export function DependencyFormModal({
     setForm(defaults);
     setError(null);
     setCreated(null);
-  }, [open, defaults]);
-
-  // Releases list is independent of form defaults. Do not key this on `defaults` —
-  // that object was rebuilt every render (new intake-option arrays) and aborted
-  // the in-flight /api/releases call in a loop.
-  useEffect(() => {
-    if (!open) return;
     setLoadingReleases(true);
     const ac = new AbortController();
     void (async () => {
@@ -175,7 +141,6 @@ export function DependencyFormModal({
     return () => ac.abort();
   }, [open]);
 
-  // When lifecycle options arrive after open, snap create form to the enabled default.
   useEffect(() => {
     if (!open || isEdit || createOptions.length === 0) return;
     setForm((prev) => {
@@ -183,6 +148,18 @@ export function DependencyFormModal({
       return { ...prev, status: defaultStatus || createOptions[0]! };
     });
   }, [open, isEdit, createOptions, defaultStatus]);
+
+  const lockedRelease = releases.find((item) => item.id === form.releaseId);
+  const upstreamOptions = useMemo(
+    () =>
+      releases
+        .filter((item) => item.id !== form.releaseId)
+        .map((item) => ({
+          value: item.id,
+          label: `${item.releaseCode} — ${item.name}`,
+        })),
+    [releases, form.releaseId]
+  );
 
   if (!open) return null;
 
@@ -204,7 +181,6 @@ export function DependencyFormModal({
       releaseId: form.releaseId,
       dependsOnReleaseId: form.dependsOnReleaseId,
       dependencyType: form.dependencyType,
-      dependencyKind: form.dependencyKind,
       status: form.status,
       impactIfBlocked: form.impactIfBlocked,
       notes: form.notes.trim() ? form.notes.trim() : null,
@@ -235,7 +211,6 @@ export function DependencyFormModal({
 
     onSaved();
 
-    // Create gets an explicit confirmation; edit closes after refresh.
     if (!isEdit && result.data) {
       setCreated({
         id: result.data.id,
@@ -252,128 +227,117 @@ export function DependencyFormModal({
     onClose();
   };
 
-  const releaseOptions = releases.map((r) => (
-    <option key={r.id} value={r.id}>
-      {r.releaseCode} — {r.name}
-    </option>
-  ));
-
   if (created) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-        <div
-          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-theme-lg dark:bg-[var(--card)]"
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="dependency-created-title"
-        >
-          <div className="mb-4 flex items-start gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-              <CheckCircle2 className="h-5 w-5" aria-hidden />
-            </span>
-            <div>
-              <h2 id="dependency-created-title" className="text-lg font-semibold text-gray-900 dark:text-white">
-                Dependency created
-              </h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-white/60">
-                Your dependency was saved successfully.
-              </p>
-            </div>
-          </div>
-
-          <dl className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-sm dark:border-[var(--border)] dark:bg-white/5">
-            <SummaryRow label="Dep ID" value={created.depCode} mono />
-            <SummaryRow label="Release" value={created.releaseCode} mono />
-            <SummaryRow label="Depends on" value={created.dependsOnCode} mono />
-            <SummaryRow label="Type" value={created.dependencyType} />
-            <SummaryRow label="Status" value={created.status} />
-            <SummaryRow label="Impact if blocked" value={created.impactIfBlocked} />
-          </dl>
-
-          <div className="mt-5 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className={taBtnSecondary}
-              onClick={() => {
-                setCreated(null);
-                setForm({
-                  releaseId: "",
-                  dependsOnReleaseId: "",
-                  dependencyType: "Hard",
-                  dependencyKind: "Release-to-Release",
-                  status: defaultStatus,
-                  impactIfBlocked: "Release Delay",
-                  notes: "",
-                });
-                setError(null);
-              }}
-            >
-              Create another
-            </button>
-            <ProgressLink
-              href={`/dependencies/${created.id}`}
-              className={cn(taBtnSecondary, "inline-flex items-center")}
-            >
-              View dependency
-            </ProgressLink>
-            <button type="button" className={taBtnPrimary} onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
+      <CreateConfirmation
+        entity="Dependency"
+        viewHref={`/dependencies/${created.id}`}
+        onClose={onClose}
+        onCreateAnother={() => {
+          setCreated(null);
+          setForm({
+            releaseId: lockReleaseId || "",
+            dependsOnReleaseId: "",
+            dependencyType: "Hard",
+            status: defaultStatus,
+            impactIfBlocked: "Release Delay",
+            notes: "",
+          });
+          setError(null);
+        }}
+      >
+        <SummaryRow label="Dep ID" value={created.depCode} mono />
+        <SummaryRow label="Release" value={created.releaseCode} mono />
+        <SummaryRow label="Depends on" value={created.dependsOnCode} mono />
+        <SummaryRow label="Type" value={created.dependencyType} />
+        <SummaryRow label="Status" value={created.status} />
+        <SummaryRow label="Impact if blocked" value={created.impactIfBlocked} />
+      </CreateConfirmation>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl dark:bg-[var(--card)]">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {isEdit ? `Edit ${depCode ?? "Dependency"}` : "New Dependency"}
-          </h2>
-          <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
-            {isEdit
-              ? "Update type, status, impact, notes, or linked releases."
-              : "Link a release to another release it depends on. Dep ID is assigned automatically."}
-          </p>
-        </div>
-
-        <form onSubmit={submit} className="space-y-3">
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-            Release
-            <select
-              className={cn(taInput, "mt-1")}
-              value={form.releaseId}
-              onChange={(e) => set("releaseId")(e.target.value)}
-              required
-              disabled={loadingReleases}
+    <>
+      <CreateModalShell
+        title={isEdit ? `Edit ${depCode ?? "Dependency"}` : "New Dependency"}
+        description={
+          scoped
+            ? "This release depends on another. Dep ID is assigned automatically."
+            : "Link a release to another release it depends on. Dep ID is assigned automatically."
+        }
+        onClose={onClose}
+        footer={
+          <>
+            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="dependency-create-form"
+              className={taBtnPrimary}
+              disabled={saving || loadingReleases}
             >
-              <option value="">{loadingReleases ? "Loading…" : "Select release…"}</option>
-              {releaseOptions}
-            </select>
-          </label>
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Create dependency"}
+            </button>
+          </>
+        }
+      >
+        <form id="dependency-create-form" onSubmit={submit} className="min-w-0 space-y-4">
+          {scoped ? (
+            <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600 dark:bg-white/5 dark:text-white/70">
+              <p className="font-medium text-slate-800 dark:text-white">
+                {lockedRelease
+                  ? `${lockedRelease.releaseCode} — ${lockedRelease.name}`
+                  : "Loading release…"}
+              </p>
+            </div>
+          ) : (
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+              Release
+              <RequiredMark />
+              <div className="mt-1">
+                <SearchableSelect
+                  value={form.releaseId}
+                  onChange={(value) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      releaseId: value,
+                      dependsOnReleaseId: prev.dependsOnReleaseId === value ? "" : prev.dependsOnReleaseId,
+                    }));
+                  }}
+                  options={releases.map((item) => ({
+                    value: item.id,
+                    label: `${item.releaseCode} — ${item.name}`,
+                  }))}
+                  placeholder={loadingReleases ? "Loading…" : "Select release…"}
+                  disabled={loadingReleases}
+                  allowClear={false}
+                />
+              </div>
+            </label>
+          )}
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Depends on release
-            <select
-              className={cn(taInput, "mt-1")}
-              value={form.dependsOnReleaseId}
-              onChange={(e) => set("dependsOnReleaseId")(e.target.value)}
-              required
-              disabled={loadingReleases}
-            >
-              <option value="">{loadingReleases ? "Loading…" : "Select upstream release…"}</option>
-              {releaseOptions}
-            </select>
+            <RequiredMark />
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.dependsOnReleaseId}
+                onChange={set("dependsOnReleaseId")}
+                options={upstreamOptions}
+                placeholder={loadingReleases ? "Loading…" : "Select upstream release…"}
+                disabled={loadingReleases || (!scoped && !form.releaseId)}
+                allowClear={false}
+              />
+            </div>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Type
+              <RequiredMark />
               <select
-                className={cn(taInput, "mt-1")}
+                className={cn(taInput, "mt-1 min-w-0 max-w-full")}
                 value={form.dependencyType}
                 onChange={(e) => set("dependencyType")(e.target.value)}
                 required
@@ -385,25 +349,11 @@ export function DependencyFormModal({
                 ))}
               </select>
             </label>
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-              Kind
-              <select
-                className={cn(taInput, "mt-1")}
-                value={form.dependencyKind}
-                onChange={(e) => set("dependencyKind")(e.target.value)}
-                required
-              >
-                {DEPENDENCY_KINDS.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
               Status
+              <RequiredMark />
               <select
-                className={cn(taInput, "mt-1")}
+                className={cn(taInput, "mt-1 min-w-0 max-w-full")}
                 value={form.status}
                 onChange={(e) => set("status")(e.target.value)}
                 required
@@ -417,10 +367,11 @@ export function DependencyFormModal({
             </label>
           </div>
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Impact if blocked
+            <RequiredMark />
             <select
-              className={cn(taInput, "mt-1")}
+              className={cn(taInput, "mt-1 min-w-0 max-w-full")}
               value={form.impactIfBlocked}
               onChange={(e) => set("impactIfBlocked")(e.target.value)}
               required
@@ -433,54 +384,21 @@ export function DependencyFormModal({
             </select>
           </label>
 
-          <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
+          <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
             Notes (optional)
             <textarea
-              className={cn(taInput, "mt-1 min-h-[72px]")}
+              className={cn(taInput, "mt-1 min-h-[64px] min-w-0 max-w-full")}
               value={form.notes}
               onChange={(e) => set("notes")(e.target.value)}
               maxLength={4000}
             />
           </label>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
-            <button type="submit" className={taBtnPrimary} disabled={saving || loadingReleases}>
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Create dependency"}
-            </button>
-          </div>
         </form>
-      </div>
-
+      </CreateModalShell>
       <FormAlertDialog
-        alert={
-          error
-            ? buildFormSaveAlert(null, error, { entityLabel: "dependency" })
-            : null
-        }
+        alert={error ? buildFormSaveAlert(null, error, { entityLabel: "dependency" }) : null}
         onDismiss={() => setError(null)}
       />
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-gray-500 dark:text-white/55">{label}</dt>
-      <dd className={cn("text-right font-medium text-gray-900 dark:text-white", mono && "font-mono text-xs")}>
-        {value}
-      </dd>
-    </div>
+    </>
   );
 }

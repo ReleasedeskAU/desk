@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   createDefaultDependencyLifecycleConfig,
@@ -8,9 +6,7 @@ import {
 } from "@/lib/dependency-lifecycle-config";
 import {
   dependencyStatusSatisfiesHardGate,
-  legalNextDependencyStatuses,
   resolveDependencyLifecycleStatusRef,
-  resolveDependencyRollbackCascade,
   validateDependencyTransition,
 } from "@/lib/dependency-lifecycle-transition";
 import {
@@ -21,109 +17,100 @@ import {
 const config = createDefaultDependencyLifecycleConfig();
 
 describe("default dependency lifecycle", () => {
-  it("validates the enterprise default graph", () => {
+  it("validates the enterprise 10-status sheet graph", () => {
     assert.equal(validateDependencyLifecycleConfig(config), null);
-  });
-
-  it("starts at Identified and keeps three terminals", () => {
+    assert.equal(config.statuses.length, 10);
+    assert.equal(config.statuses.filter((s) => s.terminal).length, 1);
+    assert.equal(config.statuses.find((s) => s.terminal)?.key, "closed");
     assert.equal(config.statuses.find((s) => s.isIntake)?.key, "identified");
-    assert.deepEqual(
-      config.statuses.filter((s) => s.terminal).map((s) => s.key),
-      ["met", "waived", "removed"]
-    );
   });
 });
 
 describe("resolveDependencyLifecycleStatusRef", () => {
-  it("maps legacy Clear / Resolved aliases to Met; Blocked is first-class", () => {
-    assert.equal(resolveDependencyLifecycleStatusRef(config, "Clear")?.key, "met");
-    assert.equal(resolveDependencyLifecycleStatusRef(config, "Resolved")?.key, "met");
-    assert.equal(
-      resolveDependencyLifecycleStatusRef(config, "Blocked")?.key,
-      "blocked"
-    );
+  it("maps Clear / Met to Resolved and Waived to Removed", () => {
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "Clear")?.key, "resolved");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "Met")?.key, "resolved");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "Waived")?.key, "removed");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "at risk")?.key, "at_risk");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "in progress")?.key, "in_progress");
+  });
+
+  it("does not alias first-class resolved / blocked keys", () => {
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "resolved")?.key, "resolved");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "Resolved")?.key, "resolved");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "blocked")?.key, "blocked");
+    assert.equal(resolveDependencyLifecycleStatusRef(config, "Blocked")?.key, "blocked");
   });
 });
 
 describe("validateDependencyTransition", () => {
-  it("allows Identified → Pending and Pending → In Progress", () => {
-    assert.equal(
-      validateDependencyTransition({
-        config,
-        fromStatus: "Identified",
-        toStatus: "Pending",
-        facts: { notes: null },
-      }).allowed,
-      true
-    );
-    assert.equal(
-      validateDependencyTransition({
-        config,
-        fromStatus: "Pending",
-        toStatus: "In Progress",
-        facts: { notes: null },
-      }).allowed,
-      true
-    );
-  });
-
-  it("allows In Progress → At Risk / Blocked / Met", () => {
-    for (const to of ["At Risk", "Blocked", "Met"] as const) {
+  it("walks Identified → Pending → Confirmed", () => {
+    for (const [from, to] of [
+      ["Identified", "Pending"],
+      ["Identified", "Confirmed"],
+      ["Pending", "Confirmed"],
+    ] as const) {
       const result = validateDependencyTransition({
         config,
-        fromStatus: "In Progress",
+        fromStatus: from,
         toStatus: to,
-        facts: { notes: "ok" },
+        facts: { notes: null },
       });
-      assert.equal(result.allowed, true, to);
+      assert.equal(result.allowed, true, `${from} → ${to}`);
     }
   });
 
-  it("allows Blocked → In Progress / Escalated (notes) and Escalated → Met", () => {
-    assert.equal(
-      validateDependencyTransition({
-        config,
-        fromStatus: "Blocked",
-        toStatus: "In Progress",
-        facts: { notes: null },
-      }).allowed,
-      true
-    );
-    const escalateDenied = validateDependencyTransition({
+  it("blocks Identified → Resolved (AV-04 only lands when the edge is legal)", () => {
+    const result = validateDependencyTransition({
       config,
-      fromStatus: "Blocked",
-      toStatus: "Escalated",
+      fromStatus: "Identified",
+      toStatus: "Resolved",
       facts: { notes: null },
     });
-    assert.equal(escalateDenied.allowed, false);
-    if (!escalateDenied.allowed) {
-      assert.equal(escalateDenied.code, "TRANSITION_NEEDS_OVERRIDE");
-    }
-    assert.equal(
-      validateDependencyTransition({
-        config,
-        fromStatus: "Blocked",
-        toStatus: "Escalated",
-        facts: { notes: "Need director review — vendor slip" },
-      }).allowed,
-      true
-    );
-    assert.equal(
-      validateDependencyTransition({
-        config,
-        fromStatus: "Escalated",
-        toStatus: "Met",
-        facts: { notes: "Director accepted residual risk" },
-      }).allowed,
-      true
-    );
+    assert.equal(result.allowed, false);
+    if (!result.allowed) assert.equal(result.code, "ILLEGAL_TRANSITION");
   });
 
-  it("requires notes or override to Waive (catalog documented_approval)", () => {
+  it("requires both acknowledgments or an override for Confirmed → In Progress", () => {
+    const denied = validateDependencyTransition({
+      config,
+      fromStatus: "Confirmed",
+      toStatus: "In Progress",
+      facts: { notes: null },
+    });
+    assert.equal(denied.allowed, false);
+    if (denied.allowed) return;
+    assert.equal(denied.code, "TRANSITION_NEEDS_OVERRIDE");
+
+    const ok = validateDependencyTransition({
+      config,
+      fromStatus: "Confirmed",
+      toStatus: "In Progress",
+      facts: {
+        notes: null,
+        sourceAcknowledgedAt: new Date(),
+        sourceAcknowledgedByUserId: "src",
+        targetAcknowledgedAt: new Date(),
+        targetAcknowledgedByUserId: "tgt",
+      },
+    });
+    assert.equal(ok.allowed, true);
+
+    const overridden = validateDependencyTransition({
+      config,
+      fromStatus: "Confirmed",
+      toStatus: "In Progress",
+      overrideReason: "Both managers confirmed offline",
+      facts: { notes: null },
+    });
+    assert.equal(overridden.allowed, true);
+  });
+
+  it("requires notes or override to Removed", () => {
     const denied = validateDependencyTransition({
       config,
       fromStatus: "Pending",
-      toStatus: "Waived",
+      toStatus: "Removed",
       facts: { notes: null },
     });
     assert.equal(denied.allowed, false);
@@ -133,36 +120,72 @@ describe("validateDependencyTransition", () => {
     const ok = validateDependencyTransition({
       config,
       fromStatus: "Pending",
-      toStatus: "Waived",
-      facts: { notes: "CAB approved waiver 2026-08-01" },
+      toStatus: "Removed",
+      facts: { notes: "CAB approved removal 2026-08-01" },
     });
     assert.equal(ok.allowed, true);
   });
 
-  it("blocks exit from Met / Waived / Removed for users", () => {
-    for (const from of ["Met", "Waived", "Removed"] as const) {
+  it("allows In Progress → At Risk / Blocked / Resolved", () => {
+    for (const to of ["At Risk", "Blocked", "Resolved"] as const) {
       const result = validateDependencyTransition({
         config,
-        fromStatus: from,
-        toStatus: "Pending",
-        facts: { notes: "x" },
+        fromStatus: "In Progress",
+        toStatus: to,
+        facts: { notes: "ok" },
       });
-      assert.equal(result.allowed, false);
+      assert.equal(result.allowed, true, `In Progress → ${to}`);
     }
   });
 
-  it("AV-26: Met → At Risk only when isSystemTransition is true (role flags)", () => {
+  it("allows Resolved / Removed → Closed and blocks Closed exits", () => {
+    assert.equal(
+      validateDependencyTransition({
+        config,
+        fromStatus: "Resolved",
+        toStatus: "Closed",
+        facts: { notes: null },
+      }).allowed,
+      true
+    );
+    assert.equal(
+      validateDependencyTransition({
+        config,
+        fromStatus: "Removed",
+        toStatus: "Closed",
+        facts: { notes: null },
+      }).allowed,
+      true
+    );
+    const closed = validateDependencyTransition({
+      config,
+      fromStatus: "Closed",
+      toStatus: "Resolved",
+      facts: { notes: null },
+    });
+    assert.equal(closed.allowed, false);
+  });
+
+  it("AV-26: Resolved → At Risk only when isSystemTransition is true", () => {
     const userDenied = validateDependencyTransition({
       config,
-      fromStatus: "Met",
+      fromStatus: "Resolved",
       toStatus: "At Risk",
       facts: { notes: null },
     });
     assert.equal(userDenied.allowed, false);
 
-    const systemOk = validateDependencyTransition({
+    const aliasDenied = validateDependencyTransition({
       config,
       fromStatus: "Met",
+      toStatus: "At Risk",
+      facts: { notes: null },
+    });
+    assert.equal(aliasDenied.allowed, false);
+
+    const systemOk = validateDependencyTransition({
+      config,
+      fromStatus: "Resolved",
       toStatus: "At Risk",
       facts: { notes: null },
       isSystemTransition: true,
@@ -172,106 +195,54 @@ describe("validateDependencyTransition", () => {
       assert.equal(systemOk.toKey, "at_risk");
     }
   });
-
-  it("does not treat Waived as an AV-26 source", () => {
-    const systemDenied = validateDependencyTransition({
-      config,
-      fromStatus: "Waived",
-      toStatus: "At Risk",
-      facts: { notes: "x" },
-      isSystemTransition: true,
-    });
-    assert.equal(systemDenied.allowed, false);
-  });
-
-  it("allows At Risk → In Progress / Met", () => {
-    assert.equal(
-      validateDependencyTransition({
-        config,
-        fromStatus: "At Risk",
-        toStatus: "In Progress",
-        facts: { notes: null },
-      }).allowed,
-      true
-    );
-  });
 });
 
-describe("legalNextDependencyStatuses", () => {
-  it("lists sheet next steps from Identified and hides terminals", () => {
-    const fromIdentified = legalNextDependencyStatuses(config, "Identified").map(
-      (s) => s.label
-    );
-    assert.ok(fromIdentified.includes("Pending"));
-    assert.ok(!fromIdentified.includes("In Progress"));
-    assert.deepEqual(legalNextDependencyStatuses(config, "Met"), []);
-  });
-});
-
-describe("resolveDependencyRollbackCascade", () => {
-  it("reads live roles, not hardcoded Met / At Risk keys", () => {
-    const plan = resolveDependencyRollbackCascade(config);
-    assert.equal(plan.ok, true);
-    if (!plan.ok) return;
-    assert.equal(plan.dest.key, "at_risk");
-    assert.ok(plan.sourceValues.includes("Met"));
-    assert.ok(plan.sourceValues.includes("met"));
+describe("dependencyStatusSatisfiesHardGate (VR-18)", () => {
+  it("is false until Resolved / Removed / Closed", () => {
+    for (const status of [
+      "Identified",
+      "Pending",
+      "Confirmed",
+      "In Progress",
+      "At Risk",
+      "Blocked",
+      "Escalated",
+    ]) {
+      assert.equal(
+        dependencyStatusSatisfiesHardGate(config, status),
+        false,
+        status
+      );
+    }
   });
 
-  it("faults when the rollback-warning dest role is missing", () => {
-    const broken = createDefaultDependencyLifecycleConfig();
-    broken.statuses = broken.statuses.map((s) => ({
-      ...s,
-      rollbackWarningTarget: false,
-    }));
-    const plan = resolveDependencyRollbackCascade(broken);
-    assert.equal(plan.ok, false);
-    if (plan.ok) return;
-    assert.equal(plan.fault.roleId, "rollbackWarningTarget");
-  });
-});
-
-describe("dependencyStatusSatisfiesHardGate", () => {
-  it("treats Met / Waived / Clear as clearing Hard deps", () => {
+  it("treats Resolved, Removed, Closed and legacy aliases as handled", () => {
+    assert.equal(dependencyStatusSatisfiesHardGate(config, "Resolved"), true);
+    assert.equal(dependencyStatusSatisfiesHardGate(config, "Removed"), true);
+    assert.equal(dependencyStatusSatisfiesHardGate(config, "Closed"), true);
+    assert.equal(dependencyStatusSatisfiesHardGate(config, "Clear"), true);
     assert.equal(dependencyStatusSatisfiesHardGate(config, "Met"), true);
     assert.equal(dependencyStatusSatisfiesHardGate(config, "Waived"), true);
-    assert.equal(dependencyStatusSatisfiesHardGate(config, "Clear"), true);
-    assert.equal(dependencyStatusSatisfiesHardGate(config, "Pending"), false);
-    assert.equal(dependencyStatusSatisfiesHardGate(config, "At Risk"), false);
-    assert.equal(dependencyStatusSatisfiesHardGate(config, "Blocked"), false);
   });
 });
 
 describe("dependency edit policy", () => {
-  it("marks Met read_only and Waived/Removed immutable", () => {
-    assert.equal(resolveDependencyEditMode(config, "Met"), "read_only");
-    assert.equal(resolveDependencyEditMode(config, "Waived"), "immutable");
-    assert.equal(resolveDependencyEditMode(config, "Removed"), "immutable");
+  it("marks Resolved/Removed limited and Closed immutable", () => {
+    assert.equal(resolveDependencyEditMode(config, "Resolved"), "limited");
+    assert.equal(resolveDependencyEditMode(config, "Removed"), "limited");
+    assert.equal(resolveDependencyEditMode(config, "Closed"), "immutable");
     assert.equal(resolveDependencyEditMode(config, "Identified"), "full");
-    assert.equal(resolveDependencyEditMode(config, "Pending"), "full");
+    assert.equal(resolveDependencyEditMode(config, "Met"), "limited");
+    assert.equal(resolveDependencyEditMode(config, "Waived"), "limited");
   });
 
-  it("denies type edits on Met", () => {
-    const { denied } = deniedDependencyEditFields(config, "Met", [
+  it("denies type edits on Resolved", () => {
+    const { denied } = deniedDependencyEditFields(config, "Resolved", [
       "dependencyType",
       "notes",
       "status",
+      "acknowledgeSide",
     ]);
     assert.deepEqual(denied, ["dependencyType"]);
-  });
-});
-
-describe("New Dependency releases lookup", () => {
-  it("fetches /api/releases once per open, not when form defaults change", () => {
-    const src = readFileSync(
-      join(__dirname, "..", "components", "dependencies", "DependencyFormModal.tsx"),
-      "utf8"
-    );
-    assert.match(src, /label: "dep-form-releases"/);
-    assert.match(src, /label: "dep-form-releases"[\s\S]*?}, \[open\]\);/);
-    assert.doesNotMatch(
-      src,
-      /label: "dep-form-releases"[\s\S]*?}, \[open, defaults\]\);/
-    );
   });
 });

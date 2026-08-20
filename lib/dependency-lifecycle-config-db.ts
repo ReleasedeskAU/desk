@@ -94,7 +94,10 @@ export async function saveDependencyLifecycleConfig(
   clerkUserId: string,
   config: DependencyLifecycleConfig
 ): Promise<DependencyLifecycleConfig> {
-  const validationError = validateDependencyLifecycleConfig(config);
+  const reconciled = reconcileDependencyLifecycleSpec(
+    normalizeDependencyLifecycleConfig(config)
+  );
+  const validationError = validateDependencyLifecycleConfig(reconciled);
   if (validationError) throw new Error(validationError);
   await ensureDependencyLifecycleTables();
 
@@ -107,7 +110,7 @@ export async function saveDependencyLifecycleConfig(
     id,
     clerkUserId,
     nextVersion,
-    JSON.stringify(config)
+    JSON.stringify(reconciled)
   );
-  return config;
+  return reconciled;
 }

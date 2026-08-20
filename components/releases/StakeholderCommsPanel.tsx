@@ -12,9 +12,12 @@ import { taBtnSecondary } from "@/lib/styles";
 export function StakeholderCommsPanel({
   releaseId,
   releaseCode,
+  embedded = false,
 }: {
   releaseId: string;
   releaseCode: string;
+  /** Skip outer card when already inside a DetailSection. */
+  embedded?: boolean;
 }) {
   const [context, setContext] = useState<StakeholderCommsContext | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
@@ -92,16 +95,16 @@ export function StakeholderCommsPanel({
     await navigator.clipboard.writeText(draft);
   };
 
-  return (
-    <AdvancedCard title="Stakeholder comms" subtitle="Draft status update for email or Teams" icon={MessageSquare} variant="ai">
-      <p className="text-xs text-gray-500 dark:text-white/60 mb-3">
+  const body = (
+    <>
+      <p className="mb-3 text-xs text-gray-500 dark:text-white/60">
         Uses live readiness, Blockers register count, slip impact, and Jira counts for {releaseCode}.
       </p>
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="mb-4 flex flex-wrap gap-2">
         <button type="button" className={taBtnSecondary + " text-sm !py-2"} onClick={generate} disabled={loading || !context}>
           {loading ? (
             <>
-              <RefreshCw className="h-4 w-4 inline animate-spin mr-1" /> Drafting…
+              <RefreshCw className="mr-1 inline h-4 w-4 animate-spin" /> Drafting…
             </>
           ) : (
             "Draft update"
@@ -109,14 +112,24 @@ export function StakeholderCommsPanel({
         </button>
         {draft && (
           <button type="button" className={taBtnSecondary + " text-sm !py-2"} onClick={copy}>
-            <Copy className="h-4 w-4 inline mr-1" /> Copy
+            <Copy className="mr-1 inline h-4 w-4" /> Copy
           </button>
         )}
       </div>
 
-      <AIPanel title="Comms draft" agent="Comms Agent" loading={loading} error={error}>
-        {draft && <p className="whitespace-pre-wrap text-sm">{draft}</p>}
-      </AIPanel>
+      {(loading || error || draft) ? (
+        <AIPanel title="Comms draft" agent="Comms Agent" loading={loading} error={error}>
+          {draft && <p className="whitespace-pre-wrap text-sm">{draft}</p>}
+        </AIPanel>
+      ) : null}
+    </>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <AdvancedCard title="Stakeholder comms" subtitle="Draft status update for email or Teams" icon={MessageSquare} variant="ai">
+      {body}
     </AdvancedCard>
   );
 }

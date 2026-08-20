@@ -1,99 +1,92 @@
 /**
- * Merge shipped Alert vocabulary, graph edges, types, and checks into stored configs.
- * Missing system items are additive; user-created edges and renamed labels stay.
+ * Rebuild a stored alert graph to the sheet’s 7 statuses.
+ * Strict: Pending → Active, Actioned → Resolved, Dismissed/Expired → Closed.
+ * Extra statuses and edges are dropped — not added on top of the old 5.
  */
 import {
   createDefaultAlertLifecycleConfig,
   type AlertLifecycleConfig,
+  type AlertLifecycleStatusConfig,
   type AlertLifecycleTransitionConfig,
   type AlertTypeConfig,
 } from "@/lib/alert-lifecycle-config";
-import type { AlertLifecycleGateAttachment } from "@/lib/alert-lifecycle-gates";
 
-const PREVIOUS_DEFAULT_LABELS: Readonly<Record<string, string>> = {
-  pending: "pending",
-  actioned: "actioned",
-};
-
-function edgeId(item: Pick<AlertLifecycleTransitionConfig, "fromKey" | "toKey">): string {
+function edgeId(
+  item: Pick<AlertLifecycleTransitionConfig, "fromKey" | "toKey">
+): string {
   return `${item.fromKey}:${item.toKey}`;
 }
 
-function cloneGate(gate: AlertLifecycleGateAttachment): AlertLifecycleGateAttachment {
-  return { ...gate };
+function remapStatusKey(key: string): string {
+  if (key === "pending") return "active";
+  if (key === "actioned") return "resolved";
+  if (key === "dismissed" || key === "expired") return "closed";
+  return key;
+}
+
+function overlayStatus(
+  def: AlertLifecycleStatusConfig,
+  stored: AlertLifecycleStatusConfig | undefined
+): AlertLifecycleStatusConfig {
+  if (!stored) return { ...def };
+  const storedLabel = stored.label.trim();
+  const lower = storedLabel.toLocaleLowerCase();
+  const label =
+    (def.key === "active" && lower === "pending") ||
+    (def.key === "resolved" && lower === "actioned") ||
+    (def.key === "closed" && (lower === "dismissed" || lower === "expired"))
+      ? def.label
+      : storedLabel || def.label;
+  return {
+    ...def,
+    label,
+    enabled: stored.enabled !== false,
+  };
 }
 
 /**
- * Reconcile one stored Alert config toward the current enterprise specification.
- * @param config - Current normalized per-user graph
- * @returns A cloned graph with missing defaults and untouched legacy labels updated
+ * Reconcile a stored alert config to the shipped 7-status spec.
+ * @param config - Current user graph (already field-normalized).
+ * @returns Sheet graph: 7 statuses, sheet edges, stored types kept when present.
  */
 export function reconcileAlertLifecycleSpec(
   config: AlertLifecycleConfig
 ): AlertLifecycleConfig {
   const defaults = createDefaultAlertLifecycleConfig();
-  const statuses = config.statuses.map((item) => ({ ...item }));
-  const byKey = new Map(statuses.map((item) => [item.key, item]));
-
-  for (const def of defaults.statuses) {
-    const existing = byKey.get(def.key);
-    if (!existing) {
-      const copy = { ...def };
-      statuses.push(copy);
-      byKey.set(def.key, copy);
-      continue;
-    }
-    if (typeof existing.isIntake !== "boolean") existing.isIntake = def.isIntake;
-    if (typeof existing.suppressesRepeatAlerts !== "boolean") {
-      existing.suppressesRepeatAlerts = def.suppressesRepeatAlerts;
-    }
-    if (existing.expiryDays === undefined) existing.expiryDays = def.expiryDays;
-    const oldLabel = PREVIOUS_DEFAULT_LABELS[def.key];
-    if (oldLabel && existing.label.trim().toLocaleLowerCase() === oldLabel) {
-      existing.label = def.label;
-    }
-    if (def.key === "actioned" && existing.terminal && existing.isSystem) {
-      // Sheet: Resolved is working, not final. Only flip untouched system defaults.
-      existing.terminal = false;
-      if (existing.editMode === "immutable") existing.editMode = "limited";
-    }
+  const storedByKey = new Map<string, AlertLifecycleStatusConfig>();
+  for (const item of config.statuses) {
+    const key = remapStatusKey(item.key);
+    if (!storedByKey.has(key)) storedByKey.set(key, { ...item, key });
   }
 
-  const transitions = config.transitions.map((transition) => ({
-    ...transition,
-    gates: (transition.gates ?? []).map(cloneGate),
-  }));
-  const byEdge = new Map(transitions.map((transition) => [edgeId(transition), transition]));
+  const statuses = defaults.statuses.map((def) =>
+    overlayStatus(def, storedByKey.get(def.key))
+  );
 
-  for (const def of defaults.transitions) {
-    const existing = byEdge.get(edgeId(def));
-    if (!existing) {
-      const copy = {
-        ...def,
-        gates: def.gates.map(cloneGate),
-      };
-      transitions.push(copy);
-      byEdge.set(edgeId(def), copy);
-      continue;
-    }
-    if (def.enforcement === "required") {
-      existing.enforcement = "required";
-    }
-    const attached = new Set(existing.gates.map((gate) => gate.gateType));
-    for (const gate of def.gates) {
-      if (attached.has(gate.gateType)) continue;
-      existing.gates.push(cloneGate(gate));
-      attached.add(gate.gateType);
-    }
+  const storedEdges = new Map<string, AlertLifecycleTransitionConfig>();
+  for (const item of config.transitions) {
+    const fromKey = remapStatusKey(item.fromKey);
+    const toKey = remapStatusKey(item.toKey);
+    if (fromKey === toKey) continue;
+    const remapped = { ...item, fromKey, toKey };
+    const id = edgeId(remapped);
+    if (!storedEdges.has(id)) storedEdges.set(id, remapped);
   }
 
-  const types = config.types.map((type) => ({ ...type }));
-  const typeKeys = new Set(types.map((type) => type.key));
-  for (const def of defaults.types) {
-    if (typeKeys.has(def.key)) continue;
-    types.push({ ...def } satisfies AlertTypeConfig);
-    typeKeys.add(def.key);
-  }
+  const transitions = defaults.transitions.map((def) => {
+    const stored = storedEdges.get(edgeId(def));
+    if (!stored) return { ...def };
+    return {
+      ...def,
+      enabled: stored.enabled,
+      enforcement: stored.enforcement,
+    };
+  });
+
+  const types: AlertTypeConfig[] =
+    config.types.length > 0
+      ? config.types.map((t) => ({ ...t }))
+      : defaults.types.map((t) => ({ ...t }));
 
   return { statuses, transitions, types };
 }

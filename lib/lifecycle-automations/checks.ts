@@ -7,7 +7,9 @@
  * Missing owner and missing bridge share one path: scopeSource = fallback_default.
  */
 import { prisma } from "@/lib/prisma";
-import { createAutoMonitoringAlert } from "@/lib/alert-repeat-suppress";
+import { alertIntakeStatus } from "@/lib/alert-lifecycle-config";
+import { systemAlertCreateFields } from "@/lib/alert-source";
+import { persistResolvedStatus } from "@/lib/lifecycle-status-persist";
 import {
   createDefaultApprovalLifecycleConfig,
   type ApprovalLifecycleConfig,
@@ -16,34 +18,20 @@ import {
   resolveApprovalLifecycleStatusRef,
   validateApprovalTransition,
 } from "@/lib/approval-lifecycle-transition";
-import { createDefaultAlertLifecycleConfig } from "@/lib/alert-lifecycle-config";
-import {
-  resolveAlertLifecycleStatusRef,
-  validateAlertTransition,
-} from "@/lib/alert-lifecycle-transition";
 import { createDefaultBlockerLifecycleConfig } from "@/lib/blocker-lifecycle-config";
 import { resolveBlockerLifecycleStatusRef } from "@/lib/blocker-lifecycle-transition";
 import {
   createDefaultRiskLifecycleConfig,
   type RiskLifecycleConfig,
 } from "@/lib/risk-lifecycle-config";
-import {
-  resolveRiskLifecycleStatusRef,
-  validateRiskTransition,
-} from "@/lib/risk-lifecycle-transition";
+import { validateRiskTransition } from "@/lib/risk-lifecycle-transition";
 import {
   createDefaultSignoffLifecycleConfig,
-  SIGNOFF_SLA_FIELDS,
+  SIGNOFF_RELEASE_FIELDS,
   type SignoffLifecycleConfig,
   type SignoffReleaseField,
 } from "@/lib/signoff-lifecycle-config";
 import { resolveSignoffLifecycleStatusRef } from "@/lib/signoff-lifecycle-transition";
-import {
-  ensureSignoffIntakeAtColumn,
-  readSignoffIntakeAt,
-  signoffFieldIntakeAnchor,
-  type SignoffIntakeAtMap,
-} from "@/lib/signoff-intake-at";
 import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db";
 import { loadRiskLifecycleConfig } from "@/lib/risk-lifecycle-config-db";
 import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
@@ -87,6 +75,18 @@ export type CheckRunSummary = {
 };
 
 export { escalateAfterDaysForRiskStatus };
+
+/**
+ * AV-02 due window in days for a risk row (live owner graph when provided).
+ */
+export function dueRiskEscalationDays(args: {
+  status: string;
+  statusChangedAt: Date;
+  config?: RiskLifecycleConfig;
+  now?: Date;
+}): number | null {
+  return escalateAfterDaysForRiskStatus(args.status, args.config);
+}
 
 function emptySummary(check: string): CheckRunSummary {
   return {
@@ -203,141 +203,107 @@ function createReleaseConfigLoader() {
 }
 
 /**
- * Resolve whether one risk is due using its owner's live graph and status-entry time.
- * @returns Configured elapsed-day threshold when due, otherwise null.
- */
-export function dueRiskEscalationDays(args: {
-  status: string;
-  statusChangedAt: Date;
-  config: RiskLifecycleConfig;
-  now: Date;
-}): number | null {
-  const days = escalateAfterDaysForRiskStatus(args.status, args.config);
-  return days != null &&
-    isPastDayThreshold(args.statusChangedAt, days, args.now)
-    ? days
-    : null;
-}
-
-/**
- * AV-02 — escalate risks past their live-config escalateAfterDays threshold.
- * Uses risk owner's linked Clerk settings and the status-entry timestamp.
+ * AV-02 — escalate Identified/Assessing risks past escalateAfterDays.
+ * Uses risk owner's linked Clerk settings when available.
  */
 export async function runAv02RiskEscalations(
   now: Date = new Date(),
   batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
 ): Promise<CheckRunSummary> {
-  const summary = emptySummary("AV-02");
-  const roleSeen = new Set<string>();
-  const loadConfig = createRiskConfigLoader();
-  const pageSize = Math.max(batchSize * 3, 100);
-  let cursor: string | undefined;
+  const defaultConfig = createDefaultRiskLifecycleConfig();
+  const candidateStatuses = enabledStatusMatchValues(
+    defaultConfig.statuses,
+    (s) => s.escalateAfterDays != null && s.escalateAfterDays > 0
+  );
 
-  while (summary.mutated < batchSize) {
-    const rows = await prisma.risk.findMany({
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      // Stable id pagination: successful updates change statusChangedAt mid-scan.
-      orderBy: { id: "asc" },
-      take: pageSize,
-      select: {
-        id: true,
-        riskCode: true,
-        status: true,
-        statusChangedAt: true,
-        likelihood: true,
-        impact: true,
-        riskScore: true,
-        mitigationStrategy: true,
-        notes: true,
-        riskOwner: { select: { clerkUserId: true } },
+  const summary = emptySummary("AV-02");
+  if (candidateStatuses.length === 0) return summary;
+  const roleSeen = new Set<string>();
+
+  const loadConfig = createRiskConfigLoader();
+  const rows = await prisma.risk.findMany({
+    where: { status: { in: candidateStatuses } },
+    orderBy: { updatedAt: "asc" },
+    take: batchSize * 3,
+    select: {
+      id: true,
+      riskCode: true,
+      status: true,
+      updatedAt: true,
+      likelihood: true,
+      impact: true,
+      riskScore: true,
+      mitigationStrategy: true,
+      notes: true,
+      riskOwner: { select: { clerkUserId: true } },
+    },
+  });
+
+  summary.examined = rows.length;
+
+  for (const row of rows) {
+    if (summary.mutated >= batchSize) {
+      summary.truncated = true;
+      break;
+    }
+    const { scopeSource, clerkUserId } = resolveCronScope(
+      row.riskOwner?.clerkUserId
+    );
+    tallyScope(summary, scopeSource);
+    const config = await loadConfig(clerkUserId);
+    const days = escalateAfterDaysForRiskStatus(row.status, config);
+    if (days == null || !isPastDayThreshold(row.updatedAt, days, now)) {
+      summary.skipped += 1;
+      continue;
+    }
+    const target = resolveExclusiveRole(
+      config.statuses,
+      (s) => s.escalateTarget,
+      "escalateTarget",
+      "AV-02"
+    );
+    if (!target.ok) {
+      recordRoleFault(summary, target.fault, roleSeen);
+      continue;
+    }
+    const transition = validateRiskTransition({
+      config,
+      fromStatus: row.status,
+      toStatus: target.status.label,
+      overrideReason: `AV-02: auto-escalated after ${days} days in ${row.status}`,
+      facts: {
+        likelihood: row.likelihood,
+        impact: row.impact,
+        riskScore: row.riskScore,
+        mitigationStrategy: row.mitigationStrategy,
+        notes: row.notes,
       },
     });
-    if (rows.length === 0) break;
-    summary.examined += rows.length;
-    cursor = rows[rows.length - 1]!.id;
-
-    for (const row of rows) {
-      if (summary.mutated >= batchSize) {
-        summary.truncated = true;
-        break;
-      }
-      const { scopeSource, clerkUserId } = resolveCronScope(
-        row.riskOwner?.clerkUserId
-      );
-      tallyScope(summary, scopeSource);
-      const config = await loadConfig(clerkUserId);
-      const days = dueRiskEscalationDays({
-        status: row.status,
-        statusChangedAt: row.statusChangedAt,
-        config,
-        now,
-      });
-      if (days == null) {
-        summary.skipped += 1;
-        continue;
-      }
-      const target = resolveExclusiveRole(
-        config.statuses,
-        (status) => status.escalateTarget,
-        "escalateTarget",
-        "AV-02"
-      );
-      if (!target.ok) {
-        recordRoleFault(summary, target.fault, roleSeen);
-        continue;
-      }
-      const transition = validateRiskTransition({
-        config,
-        fromStatus: row.status,
-        toStatus: target.status.label,
-        overrideReason: `AV-02: auto-escalated after ${days} days in ${row.status}`,
-        facts: {
-          likelihood: row.likelihood,
-          impact: row.impact,
-          riskScore: row.riskScore,
-          mitigationStrategy: row.mitigationStrategy,
-          notes: row.notes,
-        },
-      });
-      if (!transition.allowed) {
-        summary.skipped += 1;
-        continue;
-      }
-      const statusKey = resolveRiskLifecycleStatusRef(
-        config,
-        transition.canonicalStatus
-      )?.key;
-      if (!statusKey) {
-        summary.errors += 1;
-        continue;
-      }
-      try {
-        await prisma.risk.update({
-          where: { id: row.id },
-          data: {
-            status: transition.canonicalStatus,
-            statusKey,
-            statusChangedAt: now,
-          },
-        });
-        summary.mutated += 1;
-        console.warn("[lifecycle-cron] AV-02 escalated risk", {
-          riskCode: row.riskCode,
-          from: row.status,
-          to: transition.canonicalStatus,
-          scopeSource,
-          clerkUserId,
-        });
-      } catch (err) {
-        summary.errors += 1;
-        console.warn("[lifecycle-cron] AV-02 update failed", {
-          riskCode: row.riskCode,
-          scopeSource,
-          message: err instanceof Error ? err.message : "unknown",
-        });
-      }
+    if (!transition.allowed) {
+      summary.skipped += 1;
+      continue;
     }
-    if (rows.length < pageSize) break;
+    try {
+      await prisma.risk.update({
+        where: { id: row.id },
+        data: { status: transition.canonicalStatus },
+      });
+      summary.mutated += 1;
+      console.warn("[lifecycle-cron] AV-02 escalated risk", {
+        riskCode: row.riskCode,
+        from: row.status,
+        to: transition.canonicalStatus,
+        scopeSource,
+        clerkUserId,
+      });
+    } catch (err) {
+      summary.errors += 1;
+      console.warn("[lifecycle-cron] AV-02 update failed", {
+        riskCode: row.riskCode,
+        scopeSource,
+        message: err instanceof Error ? err.message : "unknown",
+      });
+    }
   }
   return summary;
 }
@@ -388,6 +354,15 @@ export async function runAv03BlockerStaleAlerts(
       summary.skipped += 1;
       continue;
     }
+    const alertCode = `STALE-${row.blockerCode}`;
+    const existing = await prisma.monitoringAlert.findUnique({
+      where: { alertCode },
+      select: { id: true },
+    });
+    if (existing) {
+      summary.skipped += 1;
+      continue;
+    }
     const application = await prisma.application.findFirst({
       where: { name: row.applicationName },
       select: { id: true },
@@ -401,31 +376,35 @@ export async function runAv03BlockerStaleAlerts(
       continue;
     }
     try {
-      const raised = await createAutoMonitoringAlert({
-        baseAlertCode: `STALE-${row.blockerCode}`,
-        applicationId: application.id,
-        departmentName: row.departmentName,
-        alertType: "Escalation",
-        alertSource: "System",
-        severity: row.severity || "Medium",
-        metric: "blocker_stale_days",
-        threshold: String(staleDays),
-        currentValue: String(
-          Math.floor(
-            (now.getTime() - row.updatedAt.getTime()) / (24 * 60 * 60 * 1000)
-          )
-        ),
-        environmentName: "n/a",
+      const maxOrder = await prisma.monitoringAlert.aggregate({
+        _max: { sourceOrder: true },
       });
-      if (raised === "suppressed") {
-        summary.skipped += 1;
-        continue;
-      }
+      await prisma.monitoringAlert.create({
+        data: {
+          alertCode,
+          timestamp: now,
+          applicationId: application.id,
+          departmentName: row.departmentName,
+          alertType: "Escalation",
+          severity: row.severity || "Medium",
+          metric: "blocker_stale_days",
+          threshold: String(staleDays),
+          currentValue: String(
+            Math.floor(
+              (now.getTime() - row.updatedAt.getTime()) / (24 * 60 * 60 * 1000)
+            )
+          ),
+          ...persistResolvedStatus(alertIntakeStatus()),
+          environmentName: "n/a",
+          ...systemAlertCreateFields(),
+          sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
+        },
+      });
       summary.mutated += 1;
       console.warn("[lifecycle-cron] AV-03 stale blocker alert", {
         blockerCode: row.blockerCode,
         releaseCode: row.releaseCode,
-        alertCode: `STALE-${row.blockerCode}`,
+        alertCode,
         scopeSource,
         clerkUserId: null,
       });
@@ -564,8 +543,9 @@ export async function runAv22ApprovalExpiry(
 }
 
 /**
- * Sign-off SLA — Pending decision fields expire using each field's intake clock
- * (`signoffIntakeAt`), not release.createdAt. Training Status is not in this list.
+ * Sign-off SLA — Pending checklist fields expire using release owner's setting.
+ * Anchor: release.createdAt. Candidate window uses the default 30d cutoff so
+ * owners with longer SLAs still get picked up on later runs when past their limit.
  */
 export async function runSignoffSlaExpiry(
   now: Date = new Date(),
@@ -580,11 +560,9 @@ export async function runSignoffSlaExpiry(
   if (pendingValues.length === 0) return summary;
   const roleSeen = new Set<string>();
 
-  await ensureSignoffIntakeAtColumn();
-  // Candidate window still uses createdAt as a cheap prefilter (1-day floor).
-  // Per-field clocks in signoffIntakeAt decide whether to expire.
+  // Widest practical floor: 1 day — per-owner expiry applied in memory.
   const floorCutoff = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
-  const orFilters = SIGNOFF_SLA_FIELDS.flatMap((field) =>
+  const orFilters = SIGNOFF_RELEASE_FIELDS.flatMap((field) =>
     pendingValues.map((value) => ({ [field]: value }))
   );
 
@@ -600,6 +578,7 @@ export async function runSignoffSlaExpiry(
       id: true,
       releaseCode: true,
       createdAt: true,
+      // Keep in sync with SIGNOFF_RELEASE_FIELDS — SLA expiry indexes every key.
       devSignoff: true,
       testSignoff: true,
       uatSignoff: true,
@@ -607,16 +586,12 @@ export async function runSignoffSlaExpiry(
       businessSignoff: true,
       opsSignoff: true,
       dressRehearsal: true,
+      trainingStatus: true,
       supportBriefed: true,
       releaseOwner: { select: { clerkUserId: true } },
     },
   });
   summary.examined = rows.length;
-
-  const intakeByRelease = new Map<string, SignoffIntakeAtMap>();
-  for (const row of rows) {
-    intakeByRelease.set(row.id, await readSignoffIntakeAt(row.id));
-  }
 
   for (const row of rows) {
     if (summary.mutated >= batchSize) {
@@ -665,21 +640,17 @@ export async function runSignoffSlaExpiry(
       );
       continue;
     }
-    const intakeAt = intakeByRelease.get(row.id) ?? {};
+    if (!isPastDayThreshold(row.createdAt, expiryDays, now)) {
+      summary.skipped += 1;
+      continue;
+    }
     const data: Partial<Record<SignoffReleaseField, string>> = {};
-    for (const field of SIGNOFF_SLA_FIELDS) {
-      const value = row[field as keyof typeof row];
-      if (typeof value !== "string" && value != null) continue;
-      const resolved = resolveSignoffLifecycleStatusRef(
-        config,
-        typeof value === "string" ? value : null
-      );
-      if (!resolved?.enabled || !resolved.isIntake) continue;
-      const anchor = signoffFieldIntakeAnchor(field, intakeAt);
-      // Missing stamp: do not expire (setting Pending on an old release must
-      // not inherit release.createdAt).
-      if (!anchor || !isPastDayThreshold(anchor, expiryDays, now)) continue;
-      data[field] = dest.label;
+    for (const field of SIGNOFF_RELEASE_FIELDS) {
+      const value = row[field];
+      const resolved = resolveSignoffLifecycleStatusRef(config, value);
+      if (resolved?.enabled && resolved.isIntake) {
+        data[field] = dest.label;
+      }
     }
     if (Object.keys(data).length === 0) {
       summary.skipped += 1;
@@ -708,105 +679,12 @@ export async function runSignoffSlaExpiry(
 }
 
 /**
- * Alert TTL — expire Active alerts using expiryDays + the unique Required exit
- * (same pattern as AV-22). Default graph: Active → Expired after 7 days.
+ * Alert TTL (ALERT-TTL) is not run on the 7-status graph — Expired aliases to
+ * Closed and there is no auto-expiry timer. Kept so the daily dispatcher compiles.
  */
 export async function runAlertTtlExpiry(
-  now: Date = new Date(),
-  batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
+  _now: Date = new Date(),
+  _batchSize: number = LIFECYCLE_CRON_BATCH_SIZE
 ): Promise<CheckRunSummary> {
-  const config = createDefaultAlertLifecycleConfig();
-  const expiringValues = enabledStatusMatchValues(
-    config.statuses,
-    (s) => s.expiryDays != null && s.expiryDays > 0
-  );
-  const summary = emptySummary("ALERT-TTL");
-  if (expiringValues.length === 0) return summary;
-
-  const rows = await prisma.monitoringAlert.findMany({
-    where: {
-      OR: [
-        { status: { in: expiringValues } },
-        { statusKey: { in: expiringValues } },
-      ],
-    },
-    orderBy: { timestamp: "asc" },
-    take: batchSize * 3,
-    select: {
-      id: true,
-      alertCode: true,
-      status: true,
-      timestamp: true,
-      createdAt: true,
-    },
-  });
-  summary.examined = rows.length;
-  const roleSeen = new Set<string>();
-
-  for (const row of rows) {
-    if (summary.mutated >= batchSize) {
-      summary.truncated = true;
-      break;
-    }
-    summary.fallbackScoped += 1;
-    const from = resolveAlertLifecycleStatusRef(config, row.status);
-    const expiryDays = from?.expiryDays ?? null;
-    if (!from || expiryDays == null || expiryDays <= 0) {
-      summary.skipped += 1;
-      continue;
-    }
-    const destKey = uniqueOutgoingToKey(config.transitions, from.key, true);
-    const dest = destKey
-      ? config.statuses.find((s) => s.enabled && s.key === destKey)
-      : null;
-    if (!dest) {
-      recordRoleFault(
-        summary,
-        {
-          code: "LIFECYCLE_ROLE_MISSING",
-          message:
-            "No single expiry destination from the alert status that has an expiry window. Add exactly one Required exit from that status under Alert Lifecycle Settings.",
-          roleId: "isIntake",
-          automation: "ALERT-TTL",
-        },
-        roleSeen
-      );
-      continue;
-    }
-    const anchor = row.timestamp ?? row.createdAt;
-    if (!isPastDayThreshold(anchor, expiryDays, now)) {
-      summary.skipped += 1;
-      continue;
-    }
-    const transition = validateAlertTransition({
-      config,
-      fromStatus: row.status,
-      toStatus: dest.label,
-      facts: { notes: null },
-    });
-    if (!transition.allowed) {
-      summary.skipped += 1;
-      continue;
-    }
-    try {
-      await prisma.monitoringAlert.update({
-        where: { id: row.id },
-        data: {
-          status: transition.canonicalStatus,
-          statusKey: dest.key,
-        },
-      });
-      summary.mutated += 1;
-      console.warn("[lifecycle-cron] ALERT-TTL expired alert", {
-        alertCode: row.alertCode,
-      });
-    } catch (err) {
-      summary.errors += 1;
-      console.warn("[lifecycle-cron] ALERT-TTL update failed", {
-        alertCode: row.alertCode,
-        message: err instanceof Error ? err.message : "unknown",
-      });
-    }
-  }
-  return summary;
+  return emptySummary("alert-ttl");
 }

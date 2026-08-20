@@ -8,11 +8,11 @@ import { ClipboardCheck, Pencil, Save, X } from "lucide-react";
 import {
   createDefaultApprovalLifecycleConfig,
   type ApprovalLifecycleConfig,
-  type ApprovalLifecycleEnforcement,
 } from "@/lib/approval-lifecycle-config";
 import { lifecycleEditModeLabel } from "@/lib/lifecycle-edit-mode-label";
 import { LifecycleToggle } from "@/components/settings/lifecycle/LifecycleToggle";
 import { StatusAvailabilityToggle } from "@/components/settings/lifecycle/StatusAvailabilityToggle";
+import { EntityTransitionsList } from "@/components/settings/lifecycle/EntityTransitionsList";
 import { ExclusiveRoleWarning } from "@/components/settings/lifecycle/ExclusiveRoleWarning";
 import { StatusMeaningControls } from "@/components/settings/lifecycle/StatusMeaningEditor";
 import { APPROVAL_STATUS_ROLE_IDS } from "@/lib/lifecycle-status-roles";
@@ -279,68 +279,31 @@ export function ApprovalLifecycleSettings() {
         </ul>
         </div>
       ) : (
-        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-white/10 dark:border-[var(--border)]">
-          {draft.transitions
-            .slice()
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((transition) => {
-              const from =
-                draft.statuses.find((s) => s.key === transition.fromKey)?.label ??
-                transition.fromKey;
-              const to =
-                draft.statuses.find((s) => s.key === transition.toKey)?.label ??
-                transition.toKey;
-              return (
-                <li
-                  key={`${transition.fromKey}:${transition.toKey}`}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                >
-                  <p className="text-[14px] font-semibold text-slate-900 dark:text-white">
-                    {from} → {to}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <LifecycleToggle
-                      checked={transition.enabled}
-                      disabled={!editing}
-                      label={transition.enabled ? "On" : "Off"}
-                      onCheckedChange={(enabled) => {
-                        setDraft((prev) => ({
-                          ...prev,
-                          transitions: prev.transitions.map((t) =>
-                            t.fromKey === transition.fromKey &&
-                            t.toKey === transition.toKey
-                              ? { ...t, enabled }
-                              : t
-                          ),
-                        }));
-                      }}
-                    />
-                    <LifecycleToggle
-                      checked={transition.enforcement === "required"}
-                      disabled={!editing}
-                      label={
-                        transition.enforcement === "required" ? "Required" : "Flexible"
-                      }
-                      onCheckedChange={(required) => {
-                        const enforcement: ApprovalLifecycleEnforcement = required
-                          ? "required"
-                          : "flexible";
-                        setDraft((prev) => ({
-                          ...prev,
-                          transitions: prev.transitions.map((t) =>
-                            t.fromKey === transition.fromKey &&
-                            t.toKey === transition.toKey
-                              ? { ...t, enforcement }
-                              : t
-                          ),
-                        }));
-                      }}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-        </ul>
+        <EntityTransitionsList
+          statuses={draft.statuses}
+          transitions={draft.transitions}
+          editing={editing}
+          onToggleEnabled={(fromKey, toKey, enabled) => {
+            setDraft((prev) => ({
+              ...prev,
+              transitions: prev.transitions.map((t) =>
+                t.fromKey === fromKey && t.toKey === toKey
+                  ? { ...t, enabled }
+                  : t
+              ),
+            }));
+          }}
+          onToggleEnforcement={(fromKey, toKey, required) => {
+            setDraft((prev) => ({
+              ...prev,
+              transitions: prev.transitions.map((t) =>
+                t.fromKey === fromKey && t.toKey === toKey
+                  ? { ...t, enforcement: required ? "required" : "flexible" }
+                  : t
+              ),
+            }));
+          }}
+        />
       )}
     </div>
   );

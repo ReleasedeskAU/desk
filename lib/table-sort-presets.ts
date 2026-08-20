@@ -47,6 +47,12 @@ export const APPROVAL_SORT_PRESETS: TableSortPreset[] = [
   { id: "release-az", label: "Release ID (A → Z)", sort: "releaseId", sortDir: "asc" },
 ];
 
+export const SIGNOFF_SORT_PRESETS: TableSortPreset[] = [
+  { id: "code-az", label: "Sign-off ID (A → Z)", sort: "signoffCode", sortDir: "asc" },
+  { id: "status", label: "Status", sort: "status", sortDir: "asc" },
+  { id: "release-az", label: "Release ID (A → Z)", sort: "releaseCode", sortDir: "asc" },
+];
+
 export const MAINTENANCE_SORT_PRESETS: TableSortPreset[] = [
   { id: "soonest", label: "Soonest scheduled", sort: "scheduledDate", sortDir: "asc" },
   { id: "latest", label: "Latest scheduled", sort: "scheduledDate", sortDir: "desc" },

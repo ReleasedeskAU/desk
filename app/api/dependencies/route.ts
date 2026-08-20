@@ -9,6 +9,7 @@ import { createDependencySchema } from "@/lib/validation/dependency";
 import { jsonError, zodErrorResponse } from "@/lib/api-errors";
 import {
   guardDependencyGraphMutation,
+  guardReleaseFullyLocked,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 
@@ -79,6 +80,7 @@ export async function GET(req: Request) {
     releaseNameQ: str(params, "releaseName"),
     dependsOnNameQ: str(params, "dependsOnName"),
     notesQ: str(params, "notes"),
+    linkedReleaseQ: str(params, "linked"),
   });
   return NextResponse.json(filtered);
 }
@@ -135,6 +137,8 @@ export async function POST(req: Request) {
       user!.id,
       release.lifecycleConfigVersionId
     );
+    const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
     const frozen = guardDependencyGraphMutation(release.status, releaseConfig);
     if (!frozen.ok) return frozen.response;
 

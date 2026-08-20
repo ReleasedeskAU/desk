@@ -9,6 +9,10 @@ import { loadApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config-db"
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 import { defaultEntityStatusLabel } from "@/lib/entity-lifecycle-status-ui";
 import { resolveApprovalLifecycleStatusRef } from "@/lib/approval-lifecycle-transition";
+import {
+  guardReleaseFullyLocked,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 async function nextApprovalCode(): Promise<string> {
   const rows = await prisma.approval.findMany({ select: { approvalCode: true } });
@@ -92,6 +96,12 @@ export async function POST(req: Request) {
     },
   });
   if (!release) return NextResponse.json({ error: "Release not found" }, { status: 404 });
+  const releaseConfig = await loadGuardReleaseConfig(
+    user!.id,
+    release.lifecycleConfigVersionId
+  );
+  const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
   const approver = await prisma.user.findUnique({ where: { id: body.approverId }, select: { id: true } });
   if (!approver) return NextResponse.json({ error: "Approver not found" }, { status: 404 });
 

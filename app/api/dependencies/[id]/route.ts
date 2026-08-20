@@ -11,44 +11,49 @@ import {
 } from "@/lib/dependency-lifecycle-transition";
 import {
   guardDependencyGraphMutation,
+  guardReleaseFullyLocked,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
-import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
+import {
+  ownerIdForDependencyAckSide,
+  type DependencyAckSide,
+} from "@/lib/dependency-ack";
 
 type Params = { params: Promise<{ id: string }> };
 
 async function findDependency(id: string) {
+  const include = {
+    release: {
+      select: {
+        id: true,
+        releaseCode: true,
+        name: true,
+        status: true,
+        lifecycleConfigVersionId: true,
+        releaseOwnerId: true,
+        releaseOwner: { select: { id: true, name: true, email: true } },
+      },
+    },
+    dependsOnRelease: {
+      select: {
+        id: true,
+        releaseCode: true,
+        name: true,
+        status: true,
+        releaseOwnerId: true,
+        releaseOwner: { select: { id: true, name: true, email: true } },
+      },
+    },
+  } as const;
   return (
     (await prisma.releaseDependency.findUnique({
       where: { id },
-      include: {
-        release: {
-          select: {
-            id: true,
-            releaseCode: true,
-            name: true,
-            status: true,
-            lifecycleConfigVersionId: true,
-          },
-        },
-        dependsOnRelease: { select: { id: true, releaseCode: true, name: true, status: true } },
-      },
+      include,
     })) ??
     (await prisma.releaseDependency.findFirst({
       where: { dependencyCode: id },
-      include: {
-        release: {
-          select: {
-            id: true,
-            releaseCode: true,
-            name: true,
-            status: true,
-            lifecycleConfigVersionId: true,
-          },
-        },
-        dependsOnRelease: { select: { id: true, releaseCode: true, name: true, status: true } },
-      },
+      include,
     }))
   );
 }
@@ -58,10 +63,13 @@ function mapDetail(row: NonNullable<Awaited<ReturnType<typeof findDependency>>>)
     id: row.id,
     depCode: row.dependencyCode ?? "",
     dependencyType: row.dependencyType ?? "",
-    dependencyKind: row.dependencyKind ?? "",
     status: row.status ?? "",
     impactIfBlocked: row.impactIfBlocked ?? "",
     notes: row.notes,
+    sourceAcknowledgedAt: row.sourceAcknowledgedAt,
+    sourceAcknowledgedByUserId: row.sourceAcknowledgedByUserId,
+    targetAcknowledgedAt: row.targetAcknowledgedAt,
+    targetAcknowledgedByUserId: row.targetAcknowledgedByUserId,
     release: row.release,
     dependsOnRelease: row.dependsOnRelease,
   };
@@ -89,6 +97,13 @@ export async function PATCH(req: Request, { params }: Params) {
   const existing = await findDependency(id);
   if (!existing) return NextResponse.json({ error: "Dependency not found" }, { status: 404 });
 
+  const parentConfig = await loadGuardReleaseConfig(
+    user!.id,
+    existing.release.lifecycleConfigVersionId
+  );
+  const cancelledLock = guardReleaseFullyLocked(existing.release.status, parentConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
+
   const parsed = patchDependencySchema.safeParse(await req.json());
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const body = parsed.data;
@@ -96,20 +111,19 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
-  const proposedKeys = keysWithActualPatchChanges({
-    existing: existing as unknown as Record<string, unknown>,
-    body: body as unknown as Record<string, unknown>,
-    metaKeys: new Set(["overrideReason"]),
-  });
-  const proposed = new Set(proposedKeys);
-
   let nextStatusKey: string | undefined;
-  // Lifecycle: edit policy + status transitions (config-driven soft gates).
+  let ackPatch: {
+    sourceAcknowledgedAt?: Date;
+    sourceAcknowledgedByUserId?: string;
+    targetAcknowledgedAt?: Date;
+    targetAcknowledgedByUserId?: string;
+  } = {};
   try {
     const { config } = await loadDependencyLifecycleConfig(user!.id);
+    const proposedKeys = Object.keys(body);
     const { mode, denied } = deniedDependencyEditFields(
       config,
-      existing.status ?? "Pending",
+      existing.status ?? "",
       proposedKeys
     );
     if (denied.length > 0) {
@@ -118,7 +132,7 @@ export async function PATCH(req: Request, { params }: Params) {
           error: editPolicyDeniedMessage({
             entity: "dependency",
             mode,
-            statusLabel: existing.status ?? "Pending",
+            statusLabel: existing.status ?? "Identified",
             deniedFields: denied,
           }),
           code: "EDIT_POLICY_DENIED",
@@ -128,17 +142,68 @@ export async function PATCH(req: Request, { params }: Params) {
         { status: 409 }
       );
     }
+
+    if (body.acknowledgeSide) {
+      const directory = await prisma.user.findFirst({
+        where: {
+          OR: [{ clerkUserId: user!.id }, { email: user!.email }],
+        },
+        select: { id: true },
+      });
+      const side = body.acknowledgeSide as DependencyAckSide;
+      const ownerId = ownerIdForDependencyAckSide(
+        existing.release.releaseOwnerId,
+        existing.dependsOnRelease.releaseOwnerId,
+        side
+      );
+      if (!ownerId) {
+        return NextResponse.json(
+          {
+            error:
+              side === "source"
+                ? "This release needs an owner before that manager can confirm."
+                : "The upstream release needs an owner before that manager can confirm.",
+          },
+          { status: 409 }
+        );
+      }
+      if (!directory || directory.id !== ownerId) {
+        return NextResponse.json(
+          {
+            error:
+              "Only the release manager for this side can record that confirmation.",
+          },
+          { status: 403 }
+        );
+      }
+      const now = new Date();
+      ackPatch =
+        side === "source"
+          ? { sourceAcknowledgedAt: now, sourceAcknowledgedByUserId: directory.id }
+          : { targetAcknowledgedAt: now, targetAcknowledgedByUserId: directory.id };
+    }
+
     if (
       body.status !== undefined &&
       String(body.status) !== (existing.status ?? "")
     ) {
       const transition = validateDependencyTransition({
         config,
-        fromStatus: existing.status ?? "Pending",
+        fromStatus: existing.status ?? "",
         toStatus: String(body.status),
         overrideReason: body.overrideReason ?? null,
         facts: {
           notes: body.notes !== undefined ? body.notes : existing.notes,
+          sourceAcknowledgedAt:
+            ackPatch.sourceAcknowledgedAt ?? existing.sourceAcknowledgedAt,
+          sourceAcknowledgedByUserId:
+            ackPatch.sourceAcknowledgedByUserId ??
+            existing.sourceAcknowledgedByUserId,
+          targetAcknowledgedAt:
+            ackPatch.targetAcknowledgedAt ?? existing.targetAcknowledgedAt,
+          targetAcknowledgedByUserId:
+            ackPatch.targetAcknowledgedByUserId ??
+            existing.targetAcknowledgedByUserId,
         },
       });
       if (!transition.allowed) {
@@ -176,11 +241,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   // VR-36: rewiring endpoints is an add/remove of the dependency graph.
-  // Skip when full-form saves only echo unchanged release FKs.
-  if (
-    (proposed.has("releaseId") && body.releaseId !== undefined) ||
-    (proposed.has("dependsOnReleaseId") && body.dependsOnReleaseId !== undefined)
-  ) {
+  if (body.releaseId !== undefined || body.dependsOnReleaseId !== undefined) {
     const parentStatus = existing.release.status;
     const parentConfig = await loadGuardReleaseConfig(
       user!.id,
@@ -198,6 +259,8 @@ export async function PATCH(req: Request, { params }: Params) {
           user!.id,
           nextParent.lifecycleConfigVersionId
         );
+        const nextCancelled = guardReleaseFullyLocked(nextParent.status, nextConfig);
+        if (!nextCancelled.ok) return nextCancelled.response;
         const nextFrozen = guardDependencyGraphMutation(
           nextParent.status,
           nextConfig
@@ -208,7 +271,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   try {
-    if (proposed.has("releaseId") || proposed.has("dependsOnReleaseId")) {
+    if (body.releaseId || body.dependsOnReleaseId) {
       const [release, dependsOn] = await Promise.all([
         prisma.release.findUnique({ where: { id: nextReleaseId }, select: { id: true } }),
         prisma.release.findUnique({ where: { id: nextDependsOnId }, select: { id: true } }),
@@ -233,47 +296,25 @@ export async function PATCH(req: Request, { params }: Params) {
     const row = await prisma.releaseDependency.update({
       where: { id: existing.id },
       data: {
-        ...(body.releaseId !== undefined && proposed.has("releaseId")
-          ? { releaseId: body.releaseId }
-          : {}),
-        ...(body.dependsOnReleaseId !== undefined &&
-        proposed.has("dependsOnReleaseId")
+        ...(body.releaseId !== undefined ? { releaseId: body.releaseId } : {}),
+        ...(body.dependsOnReleaseId !== undefined
           ? { dependsOnReleaseId: body.dependsOnReleaseId }
           : {}),
-        ...(body.dependencyType !== undefined && proposed.has("dependencyType")
-          ? { dependencyType: body.dependencyType }
-          : {}),
-        ...(body.dependencyKind !== undefined && proposed.has("dependencyKind")
-          ? { dependencyKind: body.dependencyKind }
-          : {}),
+        ...(body.dependencyType !== undefined ? { dependencyType: body.dependencyType } : {}),
         ...(body.status !== undefined
           ? {
               status: body.status,
               ...(nextStatusKey ? { statusKey: nextStatusKey } : {}),
             }
           : {}),
-        ...(body.impactIfBlocked !== undefined && proposed.has("impactIfBlocked")
-          ? { impactIfBlocked: body.impactIfBlocked }
-          : {}),
-        ...(body.notes !== undefined && proposed.has("notes")
-          ? { notes: body.notes }
-          : {}),
-      },
-      include: {
-        release: {
-          select: {
-            id: true,
-            releaseCode: true,
-            name: true,
-            status: true,
-            lifecycleConfigVersionId: true,
-          },
-        },
-        dependsOnRelease: { select: { id: true, releaseCode: true, name: true, status: true } },
+        ...(body.impactIfBlocked !== undefined ? { impactIfBlocked: body.impactIfBlocked } : {}),
+        ...(body.notes !== undefined ? { notes: body.notes } : {}),
+        ...ackPatch,
       },
     });
-
-    return NextResponse.json(mapDetail(row));
+    const fresh = await findDependency(existing.id);
+    if (!fresh) return NextResponse.json({ error: "Dependency not found" }, { status: 404 });
+    return NextResponse.json(mapDetail(fresh));
   } catch (err) {
     const code = (err as { code?: string })?.code;
     if (code === "P2002") {
@@ -300,6 +341,8 @@ export async function DELETE(_req: Request, { params }: Params) {
     user!.id,
     existing.release.lifecycleConfigVersionId
   );
+  const cancelledLock = guardReleaseFullyLocked(existing.release.status, parentConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
   const frozen = guardDependencyGraphMutation(
     existing.release.status,
     parentConfig

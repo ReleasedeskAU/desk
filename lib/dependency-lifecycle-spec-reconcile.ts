@@ -1,10 +1,11 @@
 /**
- * Merge shipped Dependency vocabulary, graph edges, and checks into stored configs.
- * Missing system items are additive; user-created edges and renamed labels stay.
+ * Rebuild a stored dependency graph to the sheet’s 10 statuses.
+ * Strict: Met → Resolved, Waived → Removed, extra statuses/edges dropped.
  */
 import {
   createDefaultDependencyLifecycleConfig,
   type DependencyLifecycleConfig,
+  type DependencyLifecycleStatusConfig,
   type DependencyLifecycleTransitionConfig,
 } from "@/lib/dependency-lifecycle-config";
 import type { DependencyLifecycleGateAttachment } from "@/lib/dependency-lifecycle-gates";
@@ -15,93 +16,92 @@ function edgeId(
   return `${item.fromKey}:${item.toKey}`;
 }
 
+function remapStatusKey(key: string): string {
+  if (key === "met") return "resolved";
+  if (key === "waived") return "removed";
+  return key;
+}
+
 function cloneGate(
   gate: DependencyLifecycleGateAttachment
 ): DependencyLifecycleGateAttachment {
   return { ...gate };
 }
 
+function overlayStatus(
+  def: DependencyLifecycleStatusConfig,
+  stored: DependencyLifecycleStatusConfig | undefined
+): DependencyLifecycleStatusConfig {
+  if (!stored) return { ...def };
+  const storedLabel = stored.label.trim();
+  const label =
+    def.key === "resolved" && storedLabel.toLocaleLowerCase() === "met"
+      ? def.label
+      : storedLabel || def.label;
+  return {
+    ...def,
+    label,
+    enabled: stored.enabled !== false,
+  };
+}
+
+function mergeGates(
+  defaults: DependencyLifecycleGateAttachment[],
+  stored: DependencyLifecycleGateAttachment[]
+): DependencyLifecycleGateAttachment[] {
+  const byType = new Map<string, DependencyLifecycleGateAttachment>();
+  for (const gate of defaults) byType.set(gate.gateType, cloneGate(gate));
+  for (const gate of stored) {
+    const existing = byType.get(gate.gateType);
+    if (existing) {
+      existing.enabled = gate.enabled;
+      existing.enforcement = gate.enforcement;
+    } else {
+      byType.set(gate.gateType, cloneGate(gate));
+    }
+  }
+  return [...byType.values()];
+}
+
 /**
- * Reconcile one stored Dependency config toward the current enterprise specification.
- * @param config - Current normalized per-user graph.
- * @returns A cloned graph with missing defaults; user Off toggles and labels stay.
+ * Reconcile a stored dependency config to the shipped 10-status spec.
+ * @param config - Current user graph (already field-normalized).
+ * @returns Sheet graph: 10 statuses, sheet edges, missing checks added.
  */
 export function reconcileDependencyLifecycleSpec(
   config: DependencyLifecycleConfig
 ): DependencyLifecycleConfig {
   const defaults = createDefaultDependencyLifecycleConfig();
-  const statuses = config.statuses.map((item) => ({ ...item }));
-  const byKey = new Map(statuses.map((item) => [item.key, item]));
-  const addedKeys = new Set<string>();
-
-  for (const def of defaults.statuses) {
-    const existing = byKey.get(def.key);
-    if (!existing) {
-      const copy = { ...def };
-      // Do not add a second Starting status when the tenant already set one.
-      if (copy.isIntake && statuses.some((s) => s.enabled && s.isIntake)) {
-        copy.isIntake = false;
-      }
-      statuses.push(copy);
-      byKey.set(def.key, copy);
-      addedKeys.add(def.key);
-      continue;
-    }
-    if (typeof existing.isIntake !== "boolean") existing.isIntake = def.isIntake;
-    if (typeof existing.satisfiesHardGate !== "boolean") {
-      existing.satisfiesHardGate = def.satisfiesHardGate;
-    }
-    if (typeof existing.reopensOnPredecessorRollback !== "boolean") {
-      existing.reopensOnPredecessorRollback = def.reopensOnPredecessorRollback;
-    }
-    if (typeof existing.rollbackWarningTarget !== "boolean") {
-      existing.rollbackWarningTarget = def.rollbackWarningTarget;
-    }
+  const storedByKey = new Map<string, DependencyLifecycleStatusConfig>();
+  for (const status of config.statuses) {
+    const key = remapStatusKey(status.key);
+    if (!storedByKey.has(key)) storedByKey.set(key, { ...status, key });
   }
 
-  // Old default used Pending as intake. Move it to Identified only when we
-  // just added Identified and Pending is still the sole starting status.
-  const identified = byKey.get("identified");
-  const pending = byKey.get("pending");
-  if (
-    addedKeys.has("identified") &&
-    identified &&
-    pending?.isIntake &&
-    statuses.filter((s) => s.enabled && s.isIntake).length === 1
-  ) {
-    identified.isIntake = true;
-    pending.isIntake = false;
-  }
-
-  const transitions = config.transitions.map((transition) => ({
-    ...transition,
-    gates: (transition.gates ?? []).map(cloneGate),
-  }));
-  const byEdge = new Map(
-    transitions.map((transition) => [edgeId(transition), transition])
+  const statuses = defaults.statuses.map((def) =>
+    overlayStatus(def, storedByKey.get(def.key))
   );
 
-  for (const def of defaults.transitions) {
-    const existing = byEdge.get(edgeId(def));
-    if (!existing) {
-      const copy = {
-        ...def,
-        gates: def.gates.map(cloneGate),
-      };
-      transitions.push(copy);
-      byEdge.set(edgeId(def), copy);
-      continue;
-    }
-    if (def.enforcement === "required") {
-      existing.enforcement = "required";
-    }
-    const attached = new Set(existing.gates.map((gate) => gate.gateType));
-    for (const gate of def.gates) {
-      if (attached.has(gate.gateType)) continue;
-      existing.gates.push(cloneGate(gate));
-      attached.add(gate.gateType);
-    }
+  const storedEdges = new Map<string, DependencyLifecycleTransitionConfig>();
+  for (const item of config.transitions) {
+    const fromKey = remapStatusKey(item.fromKey);
+    const toKey = remapStatusKey(item.toKey);
+    if (fromKey === toKey) continue;
+    const remapped = { ...item, fromKey, toKey, gates: (item.gates ?? []).map(cloneGate) };
+    const id = edgeId(remapped);
+    if (!storedEdges.has(id)) storedEdges.set(id, remapped);
   }
+
+  const transitions = defaults.transitions.map((def) => {
+    const stored = storedEdges.get(edgeId(def));
+    if (!stored) return { ...def, gates: def.gates.map(cloneGate) };
+    return {
+      ...def,
+      enabled: stored.enabled,
+      enforcement: stored.enforcement,
+      gates: mergeGates(def.gates, stored.gates),
+    };
+  });
 
   return { statuses, transitions };
 }

@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import { isReleaseFullyLocked } from "@/lib/release-lifecycle-edit-policy";
 import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
 import {
   loadPreviousReleaseStatus,
@@ -18,6 +19,10 @@ import {
   listLegalNextStatuses,
   resolveLifecycleStatusRef,
 } from "@/lib/release-lifecycle-transition";
+import {
+  isReleaseAtOrBeyondDeploying,
+  isReleaseAtOrBeyondReady,
+} from "@/lib/release-related-entity-guards";
 
 export async function GET(
   req: Request,
@@ -126,6 +131,12 @@ export async function GET(
       currentLabel: current?.label ?? release.status,
       currentKind: current?.kind ?? null,
       currentEnabled: current?.enabled ?? false,
+      /** VR-36 — dependency graph add/remove frozen at Ready and later. */
+      dependencyGraphFrozen: isReleaseAtOrBeyondReady(release.status, resolved.config),
+      /** VR-35 — new blockers locked once Deploying or later. */
+      blockerCreateLocked: isReleaseAtOrBeyondDeploying(release.status, resolved.config),
+      /** Cancelled — no field, status, related, or audit edits. Closed stays editable for status. */
+      editsLocked: isReleaseFullyLocked(resolved.config, release.status),
       unknownStatus: current == null,
       configPin: resolved.configPin,
       versionId: resolved.versionId,

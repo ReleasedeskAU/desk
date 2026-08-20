@@ -264,6 +264,32 @@ export const APPROVAL_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = APPROVAL_COLUMNS.ma
   (k) => !(APPROVAL_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
 );
 
+export const SIGNOFF_COLUMNS: ColumnDef[] = [
+  { key: "signoffCode", label: "Sign-off ID" },
+  { key: "typeLabel", label: "Type" },
+  { key: "status", label: "Status" },
+  { key: "required", label: "Required" },
+  { key: "releaseCode", label: "Release ID" },
+  { key: "releaseName", label: "Release Name" },
+  { key: "releaseStatus", label: "Release Status" },
+  { key: "application", label: "Application" },
+  { key: "department", label: "Department" },
+  { key: "owner", label: "Owner" },
+];
+
+export const SIGNOFF_DEFAULT_VISIBLE_COLUMN_KEYS = [
+  "signoffCode",
+  "typeLabel",
+  "status",
+  "required",
+  "releaseCode",
+  "releaseName",
+] as const;
+
+export const SIGNOFF_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = SIGNOFF_COLUMNS.map((c) => c.key).filter(
+  (k) => !(SIGNOFF_DEFAULT_VISIBLE_COLUMN_KEYS as readonly string[]).includes(k)
+);
+
 export const LEAVE_COLUMNS: ColumnDef[] = [
   { key: "leaveCode", label: "Leave ID" },
   { key: "userId", label: "User ID" },
@@ -619,6 +645,7 @@ export const TABLE_PAGE_KEYS = [
   "risks",
   "drifts",
   "approvals",
+  "signoffs",
   "leaves",
   "monitoring-alerts",
   "incidents",
@@ -777,6 +804,22 @@ export const APPROVALS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = APPROVALS_FILTER_F
     (k) =>
       !["decision", "approvalType", "approverQ", "releaseCodeQ", "releaseNameQ"].includes(k)
   );
+
+export const SIGNOFFS_FILTER_FIELDS: FilterFieldDef[] = [
+  { key: "status", label: "Status" },
+  { key: "signoffType", label: "Type" },
+  { key: "required", label: "Required" },
+  { key: "releaseCodeQ", label: "Release ID" },
+  { key: "releaseNameQ", label: "Release Name" },
+  { key: "signoffCodeQ", label: "Sign-off ID" },
+  { key: "applicationQ", label: "Application" },
+  { key: "departmentQ", label: "Department" },
+  { key: "ownerQ", label: "Owner" },
+];
+
+export const SIGNOFFS_DEFAULT_HIDDEN_FILTER_KEYS: string[] = SIGNOFFS_FILTER_FIELDS.map((f) => f.key).filter(
+  (k) => !["status", "signoffType", "required", "releaseCodeQ"].includes(k)
+);
 
 /**
  * Manage Filters registry for Releases.
