@@ -131,6 +131,7 @@ export async function GET(
       currentLabel: current?.label ?? release.status,
       currentKind: current?.kind ?? null,
       currentEnabled: current?.enabled ?? false,
+      currentTerminal: current?.terminal ?? false,
       /** VR-36 — dependency graph add/remove frozen at Ready and later. */
       dependencyGraphFrozen: isReleaseAtOrBeyondReady(release.status, resolved.config),
       /** VR-35 — new blockers locked once Deploying or later. */

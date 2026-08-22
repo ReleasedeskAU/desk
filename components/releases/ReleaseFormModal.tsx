@@ -19,7 +19,10 @@ import {
   type ReleaseFormAlert,
 } from "@/lib/release-form-save-alert";
 import { parseUxNoticesFromHeaders } from "@/lib/ux-notice";
-import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  createDefaultReleaseLifecycleConfig,
+  type ReleaseLifecycleConfig,
+} from "@/lib/release-lifecycle-config";
 import {
   defaultReleaseStatusLabel,
   editReleaseStatusOptions,
@@ -28,6 +31,7 @@ import {
 } from "@/lib/release-lifecycle-status-ui";
 import {
   MIN_LIFECYCLE_OVERRIDE_REASON_LENGTH,
+  resolveLifecycleStatusRef,
   type LegalNextStatusView,
 } from "@/lib/release-lifecycle-transition";
 import { shouldShowTerminalLifecycleEditNotice } from "@/lib/lifecycle-terminal-edit-notice";
@@ -248,6 +252,7 @@ export function ReleaseFormModal({
   );
   const [editLegalNext, setEditLegalNext] = useState<LegalNextStatusView[]>([]);
   const [legalNextLoading, setLegalNextLoading] = useState(false);
+  const [currentIsTerminal, setCurrentIsTerminal] = useState<boolean | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   const [defaultStatusLabel, setDefaultStatusLabel] = useState("Draft");
   const [signoffConfig, setSignoffConfig] = useState<SignoffLifecycleConfig>(
@@ -332,8 +337,9 @@ export function ReleaseFormModal({
     return shouldShowTerminalLifecycleEditNotice({
       currentLabel: current,
       legalNextCount: editLegalNext.length,
+      isTerminal: currentIsTerminal,
     });
-  }, [editLegalNext.length, form.status, initial?.status, isEdit]);
+  }, [currentIsTerminal, editLegalNext.length, form.status, initial?.status, isEdit]);
 
   const selectedNext = useMemo(() => {
     if (!isEdit) return null;
@@ -386,13 +392,18 @@ export function ReleaseFormModal({
     if (!open) {
       setEditLegalNext([]);
       setLegalNextLoading(false);
+      setCurrentIsTerminal(null);
       return;
     }
     if (isEdit && initial?.id) {
       const current = initial.status || form.status || "";
+      const previewConfig = createDefaultReleaseLifecycleConfig();
+      setCurrentIsTerminal(
+        resolveLifecycleStatusRef(previewConfig, current)?.terminal ?? false
+      );
       // Paint graph next immediately — the per-release lifecycle GET can take >15s.
       setEditLegalNext(
-        previewEditLegalNext(current, undefined, {
+        previewEditLegalNext(current, previewConfig, {
           name: initial.name,
           owner: initial.owner,
           applicationCount: initial.applicationIds?.length ?? 0,
@@ -405,11 +416,15 @@ export function ReleaseFormModal({
       setLegalNextLoading(true);
       const stop = loadJsonEffect<{
         currentLabel: string;
+        currentTerminal?: boolean;
         next: LegalNextStatusView[];
       }>(
         `/api/releases/${initial.id}/lifecycle?preview=1`,
         (payload) => {
           setEditLegalNext(payload.next ?? []);
+          if (typeof payload.currentTerminal === "boolean") {
+            setCurrentIsTerminal(payload.currentTerminal);
+          }
         },
         {
           label: "release-form-legal-next",

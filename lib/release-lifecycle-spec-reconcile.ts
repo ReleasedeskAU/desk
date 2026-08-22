@@ -206,28 +206,71 @@ export function reconcileLifecycleSpecDefaults(
   }
 
   applyWaveAGateRetargets(byKey, defaults);
-  // Repair shipped stages wrongly saved as terminal (e.g. Planning). Do not
-  // force transition.enabled — an Off toggle must survive reload/save.
+  // Repair shipped stages wrongly saved as terminal (e.g. Planning). That
+  // corruption also forced outgoing edges Off; restore those shipped exits only.
+  // Incoming Off toggles and user Off on already-valid stages stay Off.
   repairShippedStatusKinds(next, defaults);
+  // If the false-final flag was already cleared but every exit is still Off,
+  // Planning → Testing (and the other shipped exits) stay illegal on PATCH.
+  restoreStuckWorkingStageExits(next, defaults);
 
   return next;
 }
 
 /**
  * Restore kind/terminal for non-final shipped statuses if they were corrupted.
- * Leaves enabled alone so Statuses Off stays Off.
+ * When a stage was falsely terminal, re-enable its shipped outgoing edges so
+ * Edit is not stuck with an empty next-step list.
  */
 function repairShippedStatusKinds(
   next: ReleaseLifecycleConfig,
   defaults: ReleaseLifecycleConfig
 ): void {
   const shippedStatus = new Map(defaults.statuses.map((item) => [item.key, item]));
+  const repairedKeys = new Set<string>();
   for (const status of next.statuses) {
     const shipped = shippedStatus.get(status.key);
     if (!shipped || shipped.terminal) continue;
     if (status.terminal || status.kind === "terminal") {
       status.terminal = false;
       status.kind = shipped.kind;
+      repairedKeys.add(status.key);
     }
   }
+  if (repairedKeys.size === 0) return;
+  restoreShippedOutgoingEdges(next, defaults, repairedKeys);
+}
+
+function restoreShippedOutgoingEdges(
+  next: ReleaseLifecycleConfig,
+  defaults: ReleaseLifecycleConfig,
+  fromKeys: Set<string>
+): void {
+  const shippedOut = new Set(
+    defaults.transitions
+      .filter((item) => item.enabled && fromKeys.has(item.fromKey))
+      .map((item) => edgeKey(item))
+  );
+  for (const item of next.transitions) {
+    if (shippedOut.has(edgeKey(item))) item.enabled = true;
+  }
+}
+
+/**
+ * A working shipped stage with zero enabled exits is a stuck graph, not a
+ * user preference. Restore its shipped outgoing edges so PATCH can proceed.
+ */
+function restoreStuckWorkingStageExits(
+  next: ReleaseLifecycleConfig,
+  defaults: ReleaseLifecycleConfig
+): void {
+  const shipped = new Map(defaults.statuses.map((item) => [item.key, item]));
+  const stuck = new Set<string>();
+  for (const status of next.statuses) {
+    const def = shipped.get(status.key);
+    if (!def || def.terminal || status.terminal || !status.enabled) continue;
+    const hasExit = next.transitions.some((item) => item.enabled && item.fromKey === status.key);
+    if (!hasExit) stuck.add(status.key);
+  }
+  if (stuck.size > 0) restoreShippedOutgoingEdges(next, defaults, stuck);
 }

@@ -19,14 +19,14 @@ describe("shouldShowTerminalLifecycleEditNotice", () => {
     );
   });
 
-  it("shows on empty legal-next even when terminal flag is false", () => {
+  it("does not call a working stage final when the next-step list is empty", () => {
     assert.equal(
       shouldShowTerminalLifecycleEditNotice({
-        currentLabel: "Open",
+        currentLabel: "Planning",
         legalNextCount: 0,
         isTerminal: false,
       }),
-      true
+      false
     );
   });
 

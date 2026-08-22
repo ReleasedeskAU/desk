@@ -63,7 +63,7 @@ describe("reconcileLifecycleSpecDefaults", () => {
     assert.equal(edge(next, "draft", "planning")?.enabled, true);
   });
 
-  it("repairs Planning marked terminal without forcing its edges On", () => {
+  it("repairs Planning marked terminal and restores its shipped exits", () => {
     const stale = createDefaultReleaseLifecycleConfig();
     const planning = stale.statuses.find((s) => s.key === "planning")!;
     planning.terminal = true;
@@ -76,7 +76,27 @@ describe("reconcileLifecycleSpecDefaults", () => {
     const after = next.statuses.find((s) => s.key === "planning")!;
     assert.equal(after.terminal, false);
     assert.equal(after.kind, "mainline");
-    assert.equal(edge(next, "planning", "blocked")?.enabled, false);
+    assert.equal(edge(next, "planning", "testing")?.enabled, true);
+    assert.equal(edge(next, "planning", "blocked")?.enabled, true);
+    assert.equal(edge(next, "planning", "cancelled")?.enabled, true);
+    // Incoming Off stays Off — only the false-final exits are restored.
+    assert.equal(edge(next, "testing", "planning")?.enabled, false);
+    assert.equal(edge(next, "draft", "planning")?.enabled, false);
+  });
+
+  it("restores Planning exits when the stage is working but every exit is Off", () => {
+    const stale = createDefaultReleaseLifecycleConfig();
+    const planning = stale.statuses.find((s) => s.key === "planning")!;
+    planning.terminal = false;
+    planning.kind = "mainline";
+    for (const t of stale.transitions) {
+      if (t.fromKey === "planning") t.enabled = false;
+    }
+
+    const next = reconcileLifecycleSpecDefaults(stale);
+    assert.equal(edge(next, "planning", "testing")?.enabled, true);
+    assert.equal(edge(next, "planning", "blocked")?.enabled, true);
+    assert.equal(edge(next, "planning", "cancelled")?.enabled, true);
   });
 
   it("Wave A: retargets Ready/Deploying Progression Blocker gates off one-stage-late edges", () => {

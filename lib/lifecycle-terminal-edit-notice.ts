@@ -20,8 +20,10 @@ export function shouldShowTerminalLifecycleEditNotice(args: {
 }): boolean {
   const label = (args.currentLabel ?? "").trim();
   if (!label) return false;
-  // Prefer the lifecycle terminal flag; empty legal-next is the Edit dropdown signal.
+  // Only Closed/Cancelled (and other terminal flags) are final. An empty
+  // next-step list on a working stage (e.g. Planning) is a graph gap, not a finale.
   if (args.isTerminal === true) return true;
+  if (args.isTerminal === false) return false;
   return args.legalNextCount === 0;
 }
 

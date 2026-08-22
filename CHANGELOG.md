@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Planning is not a final status:** A corrupted lifecycle snapshot could mark Planning as terminal and disable its exits. Reconcile now restores Planning as a working stage and turns those shipped exits back on. Edit Release only shows the “final status” notice when the status is actually terminal (Closed / Cancelled). If Planning is already a working stage but every exit is still Off, those shipped exits are restored so Planning → Testing is legal on save.
+
 ### Changed
 
 - **Dependency lifecycle (sheet rebuild):** Exactly 10 statuses (Identified → Closed). Closed is the only terminal. Resolved and Removed are limited (archive to Closed). VR-18 treats Resolved, Removed, and Closed as handled hard dependencies. Confirmed → In Progress needs both release managers to acknowledge (separate source/target timestamps — never a single boolean). AV-04 lands on the exclusive `autoResolvedOnDeploy` status (Resolved) only when that move is legal. AV-26 is system-only Resolved → At Risk via role flags. Legacy Clear/Met map to Resolved; Waived maps to Removed if it ever appears (live count was 0). Dependency types (Hard/Soft/Technical/Data/Integration) are unchanged. Live rows: Clear→Resolved, empty→Identified, every row backfills `statusKey`. Additive ack columns via `scripts/rebuild-dependency-lifecycle-data.ts` — do not `prisma db push`.

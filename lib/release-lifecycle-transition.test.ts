@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { reconcileLifecycleSpecDefaults } from "@/lib/release-lifecycle-spec-reconcile";
 import {
   buildLifecycleStepperModel,
   emptyLifecycleGateFacts,
@@ -284,6 +285,29 @@ describe("listLegalNextStatuses / stepper", () => {
       gateFacts: baseFacts,
     });
     assert.equal(toCancelled.allowed, true);
+  });
+
+  it("allows Planning → Testing after a stuck graph (all Planning exits Off) is reconciled", () => {
+    const stale = createDefaultReleaseLifecycleConfig();
+    for (const t of stale.transitions) {
+      if (t.fromKey === "planning") t.enabled = false;
+    }
+    const denied = validateReleaseTransition({
+      config: stale,
+      fromStatus: "Planning",
+      toStatus: "Testing",
+      gateFacts: baseFacts,
+    });
+    assert.equal(denied.allowed, false);
+
+    const repaired = reconcileLifecycleSpecDefaults(stale);
+    const allowed = validateReleaseTransition({
+      config: repaired,
+      fromStatus: "Planning",
+      toStatus: "Testing",
+      gateFacts: baseFacts,
+    });
+    assert.equal(allowed.allowed, true);
   });
 
   it("VR-27: high-score risks without a mitigation plan need override before Ready", () => {
