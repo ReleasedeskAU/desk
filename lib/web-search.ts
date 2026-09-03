@@ -25,7 +25,7 @@ export async function searchWeb(query: string): Promise<string> {
     topics.slice(0, 5).forEach((t) => parts.push(String(t)));
 
     if (!parts.length) {
-      return `No instant results for "${query}". Answer from Sentinel application data when possible, or note that live web data was limited.`;
+      return `No instant results for "${query}". Answer from ReleaseDesk Everywhere application data when possible, or note that live web data was limited.`;
     }
     return parts.join("\n");
   } catch (err) {

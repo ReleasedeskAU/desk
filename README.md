@@ -1,6 +1,6 @@
-# Sentinel — Release Command Center
+# ReleaseDesk Everywhere — Release Command Center
 
-**Sentinel** (also referred to as **Release Desk**) is an AI-assisted release management platform for enterprise release managers. It helps teams plan releases, book test environments, track dependencies and conflicts, manage risk, and monitor portfolio health from a single workspace.
+**ReleaseDesk Everywhere** is an AI-assisted release management platform for enterprise release managers. It helps teams plan releases, book test environments, track dependencies and conflicts, manage risk, and monitor portfolio health from a single workspace.
 
 Built for release operations: morning triage → planning → environment readiness → governance → go-live.
 
@@ -29,7 +29,7 @@ Built for release operations: morning triage → planning → environment readin
 
 ## Overview
 
-Sentinel replaces fragmented spreadsheets and chat threads with a shared release desk:
+ReleaseDesk Everywhere replaces fragmented spreadsheets and chat threads with a shared release desk:
 
 | Capability | What you get |
 |------------|----------------|
@@ -45,7 +45,7 @@ Core operational data (departments, applications, environments, releases, bookin
 
 ## Features
 
-### Release Desk
+### ReleaseDesk Everywhere
 
 - **Releases** — Portfolio list with filters, sorting, column preferences, and deep links to release detail
 - **Release detail** — Readiness, lifecycle, stakeholders, dependencies map (React Flow)
@@ -338,6 +338,8 @@ Step-by-step narrative: **[WORKFLOW.md](./WORKFLOW.md)** (Word: **[WORKFLOW.docx
 3. Set environment variables (Clerk, `DATABASE_URL`, `DIRECT_URL`, optional AI/Redis).
 4. Deploy.
 
+- StaffLess AI (search/RAG engine) host deploy lives in the [Stafless-ai](https://github.com/ReleasedeskAU/Stafless-ai) fork under `deployment/releasedesk-overlay/` — see [docs/STAFFLESS-AI.md](./docs/STAFFLESS-AI.md).
+
 Ensure Neon allows connections from Vercel and that Clerk allowed origins include your production URL.
 
 ### Notes
@@ -351,9 +353,10 @@ Ensure Neon allows connections from Vercel and that Clerk allowed origins includ
 
 | Document | Contents |
 |----------|----------|
-| [WORKFLOW.md](./WORKFLOW.md) | End-to-end Release Desk workflow |
+| [WORKFLOW.md](./WORKFLOW.md) | End-to-end ReleaseDesk Everywhere workflow |
 | [WORKFLOW.docx](./WORKFLOW.docx) | Same workflow for sharing |
 | [docs/ENVIRONMENT-DESK.md](./docs/ENVIRONMENT-DESK.md) | Environment Desk deep dive |
+| [docs/STAFFLESS-AI.md](./docs/STAFFLESS-AI.md) | StaffLess AI engine deploy (lives in the Stafless-ai fork) |
 | [CHANGELOG.md](./CHANGELOG.md) | Release notes |
 | [design.md](./design.md) | Design notes |
 

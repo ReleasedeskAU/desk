@@ -19,7 +19,7 @@ function MaterioThemeInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Installs the synchronized Sentinel mode, color, and MUI theme providers. */
+/** Installs the synchronized ReleaseDesk Everywhere mode, color, and MUI theme providers. */
 export function MuiThemeProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppRouterCacheProvider>

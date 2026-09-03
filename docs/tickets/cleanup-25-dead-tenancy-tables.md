@@ -47,7 +47,7 @@ columns on core tables (still required by `lib/org-compat.ts` / CE writes).
 
 ## Required checklist before DROP
 
-1. Re-run a full-repo reference search for every name above (Sentinel +
+1. Re-run a full-repo reference search for every name above (ReleaseDesk Everywhere +
    connector-engine, all active branches). Must be zero hits outside this
    ticket / history docs.
 2. Create a fresh Neon branch backup from current production (named, dated).

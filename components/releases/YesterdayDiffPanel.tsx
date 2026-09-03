@@ -51,7 +51,7 @@ export function YesterdayDiffPanel({ release }: { release: Release }) {
           disabled={loading}
           className="inline-flex items-center gap-1.5 rounded-xl bg-ai px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50"
         >
-          <Sparkles className="w-3.5 h-3.5" /> Ask Sentinel
+          <Sparkles className="w-3.5 h-3.5" /> Ask ReleaseDesk Everywhere
         </button>
       }
     >

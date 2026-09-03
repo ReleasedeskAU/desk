@@ -1,6 +1,6 @@
 generator client {
   provider      = "prisma-client-js"
-  // Shared package output — both Sentinel and connector-engine import from here.
+  // Shared package output — both ReleaseDesk Everywhere and connector-engine import from here.
   output        = "../generated/client"
   // native = local/CI host; rhel-openssl-3.0.x = Vercel Node serverless runtime.
   binaryTargets = ["native", "rhel-openssl-3.0.x"]

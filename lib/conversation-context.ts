@@ -82,7 +82,7 @@ export async function buildConversationContext(
 
   return {
     mode: "conversation",
-    application: "Sentinel Release Desk",
+    application: "ReleaseDesk Everywhere",
     currentPath: currentPath ?? "/",
     sessionName,
     navigation: NAV_SECTIONS.map((s) => ({

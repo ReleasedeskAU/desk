@@ -1,14 +1,14 @@
-# Release Desk — Workflow Guide
+# ReleaseDesk Everywhere — Workflow Guide
 
 > **Word version:** [WORKFLOW.docx](./WORKFLOW.docx) (same content, formatted for sharing)
 
-This document explains how **Sentinel / Release Desk** fits together: what to do first, how pages connect, and the day-to-day steps for release managers.
+This document explains how **ReleaseDesk Everywhere** fits together: what to do first, how pages connect, and the day-to-day steps for release managers.
 
 ---
 
-## What Release Desk does
+## What ReleaseDesk Everywhere does
 
-Release Desk helps you:
+ReleaseDesk Everywhere helps you:
 
 1. **Plan** what is releasing and when  
 2. **Prepare** test environments for end-to-end validation  
@@ -84,7 +84,7 @@ Configure the master data every other page depends on:
 
 ### Step 2 — Releases (plan the work)
 
-**Page:** Release Desk → **Releases** (`/releases`)
+**Page:** ReleaseDesk Everywhere → **Releases** (`/releases`)
 
 Each release includes:
 
@@ -112,7 +112,7 @@ Each release includes:
 
 ### Step 3 — Release Calendar (when things land)
 
-**Page:** Release Desk → **Calendar** (`/calendar`)
+**Page:** ReleaseDesk Everywhere → **Calendar** (`/calendar`)
 
 - **Period filter:** Month | Quarter | Year  
 - **View:** Calendar grid or Timeline  
@@ -125,7 +125,7 @@ Use this to see deployment windows and portfolio load for the selected period.
 
 ### Step 4 — Environment Booking (can we test?)
 
-**Page:** Release Desk → **Env Booking** (`/booking`)
+**Page:** ReleaseDesk Everywhere → **Env Booking** (`/booking`)
 
 Used when end-to-end testing needs **one or more applications** at the same time.
 
@@ -145,7 +145,7 @@ Bookings are stored in the database and feed into **System Mapping** risk analys
 
 ### Step 5 — System Mapping (how systems connect)
 
-**Page:** Release Desk → **System Mapping** (`/system-mapping`)
+**Page:** ReleaseDesk Everywhere → **System Mapping** (`/system-mapping`)
 
 Documents which application environment talks to which (upstream/downstream).
 
@@ -164,7 +164,7 @@ Example risk: *“SAP TEST is required by FIN UAT mapping but is booked by anoth
 
 ### Step 6 — Versions & Config (promotion and topology)
 
-**Page:** Release Desk → **Versions & Config** (`/environments`)
+**Page:** ReleaseDesk Everywhere → **Versions & Config** (`/environments`)
 
 Live view from the database:
 
@@ -204,7 +204,7 @@ No release-level drill-down here by design — use Releases or Calendar for deta
 
 **Page:** Operations → **Connectors** (`/connectors`)
 
-- **Release Desk integrations** panel — live sync times for the four MVP sources  
+- **ReleaseDesk Everywhere integrations** panel — live sync times for the four MVP sources  
 - **Sync now** — refresh last-synced timestamp (Editor/Admin)  
 - Full connector catalog below is demo/static data for stakeholder presentations  
 
@@ -275,11 +275,11 @@ flowchart TB
 
 ## Demo vs production data
 
-Release Desk uses **two intentional data layers**. Both are required:
+ReleaseDesk Everywhere uses **two intentional data layers**. Both are required:
 
 | Layer | Purpose | Source |
 |-------|---------|--------|
-| **Release Desk MVP** | Operational workflow — reference data, releases, booking, mapping, versions | SQLite database (seed via `npm run db:setup`) |
+| **ReleaseDesk Everywhere MVP** | Operational workflow — reference data, releases, booking, mapping, versions | SQLite database (seed via `npm run db:setup`) |
 | **Synthetic demo** | Rich stakeholder demos — command center, Quick Start scenarios, portfolio views | `lib/dummy-data.ts` + `localStorage` |
 
 ### Synthetic demo (keep this)
@@ -323,4 +323,4 @@ Release detail pages auto-detect the layer: IDs like `rel-v2140` open the **synt
 6. **Versions & Config** → promote SAP  
 7. **Dashboard** → read AI summary and P1 list  
 
-That completes one full pass through the Release Desk workflow.
+That completes one full pass through the ReleaseDesk Everywhere workflow.

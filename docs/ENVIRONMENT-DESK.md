@@ -16,7 +16,7 @@ Environment Desk answers four questions release managers ask daily:
 3. **What version** is running in DEV vs TEST vs PROD — and is anything drifting?
 4. **What must pause** (queues, DB, apps) during an enterprise release window?
 
-All views are **derived from the same synthetic release train** used elsewhere in Sentinel (`lib/dummy-data.ts`), so timeline, bookings, versions, and impact stay consistent with `/releases`, `/calendar`, and `/executive`.
+All views are **derived from the same synthetic release train** used elsewhere in ReleaseDesk Everywhere (`lib/dummy-data.ts`), so timeline, bookings, versions, and impact stay consistent with `/releases`, `/calendar`, and `/executive`.
 
 ---
 

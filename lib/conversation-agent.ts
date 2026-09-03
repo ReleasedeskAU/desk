@@ -3,7 +3,7 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/reso
 import { lookupReleaseByCode } from "@/lib/conversation-context";
 import { searchWeb } from "@/lib/web-search";
 
-const CONVERSATION_SYSTEM = `You are the Sentinel Conversation Agent — an expert release management copilot for the Release Desk application.
+const CONVERSATION_SYSTEM = `You are the ReleaseDesk Everywhere Conversation Agent — an expert release management copilot for the ReleaseDesk Everywhere application.
 
 You have JSON context with live portfolio data from PostgreSQL (releases, P1 issues, conflicts, risks, approvals, connectors, navigation tabs).
 

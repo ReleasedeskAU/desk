@@ -51,7 +51,7 @@ export function AppearanceSettings() {
           Appearance
         </h2>
         <p className="mt-1.5 max-w-2xl text-[14px] font-medium leading-6 text-gray-500 dark:text-gray-300">
-          Personalize how Sentinel looks and feels. Your changes are applied instantly.
+          Personalize how ReleaseDesk Everywhere looks and feels. Your changes are applied instantly.
         </p>
       </div>
 

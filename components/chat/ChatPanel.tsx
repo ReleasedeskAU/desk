@@ -97,7 +97,7 @@ export function ChatPanel() {
       <button
         onClick={toggle}
         className="fixed bottom-6 right-6 w-14 h-14 bg-brand-500 text-white rounded-full shadow-lg dark:shadow-md flex items-center justify-center hover:bg-brand-600 transition-all z-50"
-        aria-label={open ? "Close chat" : "Open Sentinel Conversation Agent"}
+        aria-label={open ? "Close chat" : "Open ReleaseDesk Everywhere Conversation Agent"}
       >
         {open ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
       </button>
@@ -107,7 +107,7 @@ export function ChatPanel() {
             <div>
               <p className="font-semibold text-gray-800 dark:text-white flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-brand-500" />
-                Sentinel Conversation Agent
+                ReleaseDesk Everywhere Conversation Agent
               </p>
               <AgentBadge agent="Conversation Agent" className="mt-1" />
               <p className="text-[11px] text-gray-500 dark:text-white/50 mt-1">

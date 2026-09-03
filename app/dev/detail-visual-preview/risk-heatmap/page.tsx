@@ -32,7 +32,7 @@ const RISKS: RiskRow[] = CELLS.flatMap(([likelihood, impact, count], cellIndex) 
     riskCode: `RSK-${cellIndex + 1}${index + 1}`,
     releaseId: RELEASE.id,
     release: RELEASE,
-    applicationName: "Sentinel",
+    applicationName: "ReleaseDesk Everywhere",
     departmentName: "Release Management",
     category: "Delivery",
     description: "Visual QA risk",

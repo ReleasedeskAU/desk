@@ -41,7 +41,7 @@ export function ApprovalNudge({ release }: { release: Release }) {
   const typical = release.typicalApprovalHours[first.gate] ?? 6;
   const defaultMessage =
     message ??
-    `Hi — ${first.gate} sign-off for ${release.version} has been pending ${hours}h (typical: ${typical}h). Please review and approve in Sentinel. Blockers: ${release.approvals.filter((a) => a.status === "Pending").map((a) => a.gate).join(", ")}.`;
+    `Hi — ${first.gate} sign-off for ${release.version} has been pending ${hours}h (typical: ${typical}h). Please review and approve in ReleaseDesk Everywhere. Blockers: ${release.approvals.filter((a) => a.status === "Pending").map((a) => a.gate).join(", ")}.`;
 
   return (
     <>

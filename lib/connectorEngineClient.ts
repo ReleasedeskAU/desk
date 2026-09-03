@@ -76,7 +76,7 @@ export type WebhookConnectorPublic = {
 };
 
 export type CreatedWebhookConnector = WebhookConnectorPublic & {
-  /** Plaintext secret — returned once on create; never persist in Sentinel. */
+  /** Plaintext secret — returned once on create; never persist in ReleaseDesk Everywhere. */
   secret: string;
 };
 

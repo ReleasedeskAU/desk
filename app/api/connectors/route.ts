@@ -1,101 +1,60 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
-import { prisma } from "@/lib/prisma";
-import { stripCredentialsList } from "@/lib/connectors/public";
-import { encryptCredentials } from "@/lib/connectorCrypto";
-import { getConnectorTypeDef } from "@/lib/connectors/types";
-import { normalizeDataTypes } from "@/lib/connectorDataTypes";
-import { createConnectorRow } from "@/lib/org-compat";
-
-function buildConfig(type: string, config: Record<string, unknown> | undefined) {
-  const typeDef = getConnectorTypeDef(type);
-  const dataTypes = normalizeDataTypes(type, config?.dataTypes as string[] | undefined);
-  if (dataTypes.length === 0) {
-    return null;
-  }
-  return {
-    ...(config ?? {}),
-    dataTypes,
-    targetModel: typeDef?.targetModel ?? "WorkItem",
-  };
-}
+import { createStafflessConnector, listStafflessConnectors } from "@/lib/staffless/api";
+import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
   const { error } = await requireRole("readonly");
   if (error) return error;
 
-  const rows = await prisma.connector.findMany({ orderBy: { name: "asc" } });
-  return NextResponse.json(stripCredentialsList(rows));
+  try {
+    const rows = await listStafflessConnectors();
+    return NextResponse.json(rows);
+  } catch (err) {
+    logger.error("api/connectors.GET", { kind: err instanceof Error ? err.name : "unknown" });
+    return NextResponse.json(
+      { error: stafflessPublicMessage(err) },
+      { status: stafflessHttpStatus(err) }
+    );
+  }
 }
 
 export async function POST(req: Request) {
-  const { user, error } = await requireRole("editor");
+  const { error } = await requireRole("editor");
   if (error) return error;
 
   const body = (await req.json()) as {
     name?: string;
     type?: string;
-    authType?: string;
     baseUrl?: string;
     credentials?: Record<string, string>;
     config?: Record<string, unknown>;
     pollInterval?: number;
-    enabled?: boolean;
   };
 
-  if (!body.name?.trim()) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  }
-  if (!body.type) {
-    return NextResponse.json({ error: "Connector type is required" }, { status: 400 });
-  }
-  if (!body.credentials || Object.keys(body.credentials).length === 0) {
-    return NextResponse.json({ error: "Credentials are required" }, { status: 400 });
-  }
-
-  const typeDef = getConnectorTypeDef(body.type);
-  if (!typeDef?.available) {
-    return NextResponse.json({ error: "Connector type is not available yet" }, { status: 400 });
-  }
-
-  const config = buildConfig(body.type, body.config);
-  if (!config) {
-    return NextResponse.json({ error: "Select at least one data type to sync" }, { status: 400 });
+  if (!body.name?.trim() || !body.type || !body.credentials) {
+    return NextResponse.json({ error: "Name, type, and credentials are required" }, { status: 400 });
   }
 
   try {
-    // Missing CONNECTOR_ENCRYPTION_KEY throws here — return JSON, never empty 500.
-    const encrypted = encryptCredentials(body.credentials);
-    // Live Neon requires organizationId on Connector — use org-compat helper.
-    const row = await createConnectorRow({
+    const created = await createStafflessConnector({
       name: body.name.trim(),
       type: body.type,
-      authType: body.authType ?? typeDef.authType,
-      baseUrl: body.baseUrl ?? null,
-      credentials: encrypted,
-      config,
-      pollInterval: body.pollInterval ?? typeDef.defaultPollInterval,
-      enabled: body.enabled ?? true,
-      createdBy: user?.name ?? null,
-      status: "PENDING",
+      baseUrl: body.baseUrl,
+      credentials: body.credentials,
+      config: body.config,
+      pollInterval: body.pollInterval,
     });
-
-    const { credentials: _c, ...safe } = row;
-    return NextResponse.json(safe, { status: 201 });
+    return NextResponse.json({ id: String(created.id), name: body.name.trim(), type: body.type }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create connector";
-    const status =
-      message.includes("CONNECTOR_ENCRYPTION_KEY") || message.includes("32 bytes")
-        ? 503
-        : 500;
-    return NextResponse.json(
-      {
-        error:
-          process.env.NODE_ENV === "production"
-            ? "Failed to create connector"
-            : message,
-      },
-      { status }
-    );
+    logger.error("api/connectors.POST", { kind: err instanceof Error ? err.name : "unknown" });
+    const message = err instanceof Error && err.message.startsWith("Only Jira")
+      ? err.message
+      : err instanceof Error && err.message.includes("needs")
+        ? err.message
+        : stafflessPublicMessage(err);
+    const status = message === stafflessPublicMessage(err) ? stafflessHttpStatus(err) : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }

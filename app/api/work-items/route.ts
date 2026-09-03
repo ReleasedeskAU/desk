@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/api";
 import { summarizeWorkItems } from "@/lib/dependency-impact";
-import { ensureDbAwake, isRetryableDbError, prisma, withDbRetry } from "@/lib/prisma";
+import { listStafflessConnectors, searchStafflessWorkItems } from "@/lib/staffless/api";
+import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
+import { logger } from "@/lib/logger";
 
 export const maxDuration = 60;
 
@@ -20,8 +22,7 @@ const querySchema = z
   .strict();
 
 /**
- * Lists synced WorkItems (Jira/GitHub/etc.) for the Connectors demo view.
- * Rejects unexpected query params; never returns credentials.
+ * Lists indexed documents from StaffLess AI (POST /admin/search), not Postgres WorkItem.
  */
 export async function GET(req: Request) {
   const { error } = await requireRole("readonly");
@@ -39,73 +40,25 @@ export async function GET(req: Request) {
   const { connectorId, source, q, limit = DEFAULT_LIMIT, offset = 0 } = parsed.data;
 
   try {
-    await ensureDbAwake();
-
-    const where = {
-      ...(connectorId ? { connectorId } : {}),
-      ...(source ? { source } : {}),
-      ...(q
-        ? {
-            OR: [
-              { externalId: { contains: q, mode: "insensitive" as const } },
-              { title: { contains: q, mode: "insensitive" as const } },
-              { releaseCode: { contains: q, mode: "insensitive" as const } },
-              { assignee: { contains: q, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    };
-
-    const [total, items, summaryRows, connectors, jiraLastSync] = await withDbRetry(
-      () =>
-        Promise.all([
-          prisma.workItem.count({ where }),
-          prisma.workItem.findMany({
-            where,
-            orderBy: [{ updatedAt: "desc" }, { externalId: "asc" }],
-            take: limit,
-            skip: offset,
-            select: {
-              id: true,
-              externalId: true,
-              title: true,
-              itemType: true,
-              releaseCode: true,
-              status: true,
-              assignee: true,
-              priority: true,
-              blockedBy: true,
-              source: true,
-              connectorId: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          }),
-          prisma.workItem.findMany({
-            where,
-            select: { status: true, itemType: true },
-          }),
-          prisma.connector.findMany({
-            where: { enabled: true },
-            select: { id: true, name: true, type: true, lastSyncedAt: true },
-            orderBy: { name: "asc" },
-          }),
-          prisma.connector.findFirst({
-            where: { type: "jira", enabled: true },
-            select: { lastSyncedAt: true },
-            orderBy: { lastSyncedAt: "desc" },
-          }),
-        ]),
-      { label: "work-items-list" }
-    );
+    const connectors = await listStafflessConnectors();
+    const selected = connectorId ? connectors.find((c) => c.id === connectorId) : undefined;
+    const sourceFilter = source ?? selected?.type;
+    const items = await searchStafflessWorkItems(q ?? "", sourceFilter);
+    const page = items.slice(offset, offset + limit);
+    const lastSynced =
+      connectors
+        .map((c) => c.lastSyncedAt)
+        .filter((v): v is string => Boolean(v))
+        .sort()
+        .at(-1) ?? null;
 
     return NextResponse.json({
-      items,
-      total,
+      items: page,
+      total: items.length,
       limit,
       offset,
-      summary: summarizeWorkItems(summaryRows),
-      lastSynced: jiraLastSync?.lastSyncedAt ?? null,
+      summary: summarizeWorkItems(page),
+      lastSynced,
       connectors: connectors.map((c) => ({
         id: c.id,
         name: c.name,
@@ -114,11 +67,10 @@ export async function GET(req: Request) {
       })),
     });
   } catch (err) {
-    console.error("[api/work-items]", err);
-    const transient = isRetryableDbError(err);
+    logger.error("api/work-items", { kind: err instanceof Error ? err.name : "unknown" });
     return NextResponse.json(
-      { error: transient ? "Database temporarily unavailable" : "Failed to load work items" },
-      { status: transient ? 503 : 500, headers: transient ? { "Retry-After": "3" } : undefined }
+      { error: stafflessPublicMessage(err) },
+      { status: stafflessHttpStatus(err) }
     );
   }
 }

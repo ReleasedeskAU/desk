@@ -1,6 +1,6 @@
 /**
  * Typed domain errors for Copilot Phase 1 service-layer guards.
- * Matches Sentinel's throw-Error style; subclasses enable instanceof checks in tests/API.
+ * Matches ReleaseDesk Everywhere's throw-Error style; subclasses enable instanceof checks in tests/API.
  */
 
 /** Thrown when application code attempts to mutate or delete an append-only ReleaseEvent. */

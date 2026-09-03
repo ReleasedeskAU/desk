@@ -1,10 +1,10 @@
 ---
-description: Standard pattern every data table in Sentinel must follow — filters, columns, sorting, scrolling, persistence, visual style
+description: Standard pattern every data table in ReleaseDesk Everywhere must follow — filters, columns, sorting, scrolling, persistence, visual style
 globs: ["app/**/*.tsx", "components/**/*Table*.tsx", "components/**/*Content.tsx", "lib/table-*.ts", "hooks/useTable*.ts"]
 alwaysApply: false
 ---
 
-# Sentinel Table Standard
+# ReleaseDesk Everywhere Table Standard
 
 Every data table in this app — existing or new — must follow this pattern.
 Do not invent a new table pattern. Reuse the existing shared components.

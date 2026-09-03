@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Vendored Prisma schema/client for standalone Sentinel (Vercel) deploys.",
+  "description": "Vendored Prisma schema/client for standalone ReleaseDesk Everywhere (Vercel) deploys.",
   "main": "./generated/client/index.js",
   "types": "./generated/client/index.d.ts",
   "exports": {

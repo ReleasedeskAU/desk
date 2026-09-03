@@ -29,7 +29,7 @@ export function AgentControlHero() {
               animate={{ opacity: [0.7, 1, 0.7] }}
               transition={{ repeat: Infinity, duration: 2 }}
             >
-              Sentinel AI Fleet
+              ReleaseDesk Everywhere AI Fleet
             </motion.p>
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
               <ShimmerText>{agents.length} agents</ShimmerText> monitoring releases

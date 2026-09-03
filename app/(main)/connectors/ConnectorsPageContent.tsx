@@ -26,7 +26,6 @@ import {
   defaultDataTypesForType,
 } from "@/lib/connectorDataTypes";
 import type { ConnectorPublic } from "@/lib/connectors/public";
-import { WebhookConnectorsSection } from "@/components/connectors/WebhookConnectorsSection";
 import { SyncedWorkItemsSection } from "@/components/connectors/SyncedWorkItemsSection";
 
 type SyncLog = {
@@ -139,6 +138,21 @@ export default function ConnectorsPageContent() {
       }
       await loadConnectors();
       setWorkItemsRefreshKey((k) => k + 1);
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const refreshStatus = async (id: string) => {
+    setActionId(id);
+    try {
+      const res = await fetch(`/api/connectors/${id}/status`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) {
+        alert(body.error ?? "Could not refresh status");
+        return;
+      }
+      await loadConnectors();
     } finally {
       setActionId(null);
     }
@@ -259,6 +273,13 @@ export default function ConnectorsPageContent() {
                         </button>
                         <button
                           disabled={busy}
+                          onClick={() => refreshStatus(c.id)}
+                          className="text-[#2548C9] hover:underline text-xs font-semibold disabled:opacity-40"
+                        >
+                          Status
+                        </button>
+                        <button
+                          disabled={busy}
                           onClick={() => {
                             setEditConnector(c);
                             setWizardOpen(true);
@@ -298,8 +319,6 @@ export default function ConnectorsPageContent() {
         </table>
       </div>
       )}
-
-      <WebhookConnectorsSection />
 
       <SyncedWorkItemsSection refreshKey={workItemsRefreshKey} />
 

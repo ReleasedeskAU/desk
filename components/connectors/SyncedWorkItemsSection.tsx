@@ -65,7 +65,7 @@ function statusTone(status: string): string {
 }
 
 /**
- * Demo section: full WorkItem table synced by system connectors (Jira, etc.).
+ * Indexed documents from StaffLess AI, shown in the existing work-item table.
  * @param refreshKey - Increment after Sync Now so the table reloads.
  */
 export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number }) {
@@ -232,8 +232,8 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
                 {!payload || payload.items.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-5 py-10 text-center text-gray-500">
-                      No work items yet. Run <span className="font-semibold">Sync Now</span> on a Jira
-                      connector to pull issues here.
+                      No indexed documents yet. Run <span className="font-semibold">Sync Now</span> on a
+                      StaffLess AI connector, then refresh this table.
                     </td>
                   </tr>
                 ) : (

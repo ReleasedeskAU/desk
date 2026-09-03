@@ -1,46 +1,46 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
-import { prisma } from "@/lib/prisma";
 import { checkSyncNowRateLimit } from "@/lib/connectors/rate-limit";
-import { syncConnectorById } from "@/lib/connectorEngineClient";
+import { runStafflessConnectorOnce } from "@/lib/staffless/api";
+import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
+import { logger } from "@/lib/logger";
+
+function parseConnectorId(id: string): number | null {
+  if (!/^\d+$/.test(id)) return null;
+  const n = Number(id);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { error } = await requireRole("editor");
   if (error) return error;
 
   const { id } = await params;
-  const connector = await prisma.connector.findUnique({ where: { id } });
-  if (!connector) {
+  const connectorId = parseConnectorId(id);
+  if (connectorId == null) {
     return NextResponse.json({ error: "Connector not found" }, { status: 404 });
   }
 
   const limit = checkSyncNowRateLimit(id);
   if (!limit.allowed) {
     return NextResponse.json(
-      {
-        error: "Please wait before syncing again",
-        retryAfterSec: limit.retryAfterSec,
-      },
+      { error: "Please wait before syncing again", retryAfterSec: limit.retryAfterSec },
       { status: 429 }
     );
   }
 
   try {
-    const result = await syncConnectorById(id);
+    await runStafflessConnectorOnce(connectorId);
     return NextResponse.json({
-      ok: result.ok,
-      status: result.status,
-      lastSyncedAt: result.lastSyncedAt,
-      message:
-        result.status === "ERROR"
-          ? "Sync completed with errors. Check connector logs for details."
-          : "Sync completed successfully.",
-      lastError: result.lastError ?? null,
+      ok: true,
+      status: "PENDING",
+      message: "Index run queued on StaffLess AI.",
     });
   } catch (err) {
-    const { logger } = await import("@/lib/logger");
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error("api/connectors/[id]/sync-now", { detail: detail.slice(0, 500) });
-    return NextResponse.json({ error: "Connector engine unavailable" }, { status: 502 });
+    logger.error("api/connectors/sync-now", { kind: err instanceof Error ? err.name : "unknown" });
+    return NextResponse.json(
+      { error: stafflessPublicMessage(err) },
+      { status: stafflessHttpStatus(err) }
+    );
   }
 }

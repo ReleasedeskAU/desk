@@ -165,7 +165,7 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
     fullDocumentation: [
       "System Mapping is organized into operational tabs. Systems Hub and Critical Paths are database-backed catalogs with create, edit, and delete controls for editors. Department Matrix preserves the stored directional relationship for every pair of the eight supported departments; mirroring the reverse direction is enabled by default when editing.",
       "Visual Map collapses environment-level edges into system-to-system links and renders them like the Knowledge Graph: color-coded nodes, labeled feeds edges, Controls, and MiniMap. Focus mode lays out upstream → selected → downstream; All systems shows every application in a circular layout. Click a node to focus, click an edge for env pairs, or use Expand for a larger modal with the same controls and a full connection-info panel. Open via Visual Map or /system-mapping?tab=visual.",
-      "Shared Environments follows the common Sentinel table pattern: URL-driven server filters, sortable headers, a sort summary, saved Manage Filters and Manage Columns preferences, sticky headings and identifier, and horizontal scrolling on small screens.",
+      "Shared Environments follows the common ReleaseDesk Everywhere table pattern: URL-driven server filters, sortable headers, a sort summary, saved Manage Filters and Manage Columns preferences, sticky headings and identifier, and horizontal scrolling on small screens.",
       "Release Manager Notes remain visible beside the active tab on desktop (except Visual Map) and appear expanded before the tab content on mobile. Booking conflicts call the existing real analysis endpoint for the chosen date range and report environment reservations that overlap mapped dependencies.",
     ],
   },
@@ -390,7 +390,7 @@ export const PAGE_DOCUMENTATION: Record<PageDocKey, PageDocumentationEntry> = {
     pageKey: "departments",
     title: "Departments",
     summary:
-      "Organizational units that own applications and releases in Sentinel. Keep this catalog accurate so filters, ownership, and reporting stay aligned across Release Desk.",
+      "Organizational units that own applications and releases in ReleaseDesk Everywhere. Keep this catalog accurate so filters, ownership, and reporting stay aligned across ReleaseDesk Everywhere.",
     quickReference: [
       "Master list of departments used across releases, apps, and filters.",
       "Editors can create, rename, and deactivate organizational units.",

@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
-import { testConnectorConnection } from "@/lib/connectorEngineClient";
 import { getConnectorTypeDef } from "@/lib/connectors/types";
+import { planStafflessCreate } from "@/lib/staffless/create-payload";
 
+/**
+ * Validate wizard fields locally. StaffLess AI verifies credentials on first Sync Now
+ * (no separate test endpoint). Never forwards secrets to connector-engine.
+ */
 export async function POST(req: Request) {
   const { error } = await requireRole("editor");
   if (error) return error;
 
   const body = (await req.json()) as {
     type?: string;
-    authType?: string;
     baseUrl?: string;
     credentials?: Record<string, string>;
     config?: Record<string, unknown>;
@@ -25,18 +28,21 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await testConnectorConnection({
+    planStafflessCreate({
+      name: "test",
       type: body.type,
-      authType: body.authType ?? typeDef.authType,
-      baseUrl: body.baseUrl ?? null,
+      baseUrl: body.baseUrl,
       credentials: body.credentials,
-      config: body.config ?? {},
+      config: body.config,
     });
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ok: true,
+      message: "Fields look valid. StaffLess AI will verify credentials on Sync Now.",
+    });
   } catch (err) {
-    const { logger } = await import("@/lib/logger");
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error("api/connectors/test", { detail: detail.slice(0, 500) });
-    return NextResponse.json({ ok: false, message: "Connector engine unavailable" }, { status: 502 });
+    return NextResponse.json({
+      ok: false,
+      message: err instanceof Error ? err.message : "Invalid connector fields",
+    });
   }
 }

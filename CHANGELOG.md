@@ -1,10 +1,14 @@
 # Changelog
 
-All notable changes to Sentinel are documented in this file.
+All notable changes to ReleaseDesk Everywhere are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+
+- **Connectors tab → StaffLess AI:** Webhook Connectors are removed. Add Connector, Sync Now, and Status call StaffLess AI from the server (Community PAT, never in the browser). Synced Work Items keep the same table and now list indexed documents from `POST /api/admin/search` instead of Postgres `WorkItem`. Jira Key/Title/Type/Status/Priority/Assignee map from document metadata; Release is usually empty (StaffLess does not index Jira fixVersions).
 
 ### Fixed
 
@@ -178,7 +182,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Per-user **Risk Engine** settings (`UserRiskEngineConfig`, Settings → Risk Engine): Simple Risk scale/labels/cutoffs and Weighted Risk labels/cutoffs. Unifies list / heat map / detail-hero / RiskMatrix onto one classifier (defaults 5/11/19). RiskFactor catalog UI unchanged.
 - Copilot P1-S2 DependencyGraph: optional `Service.applicationId` bridge to Application/Release, `getBlockedReleases` / `calculateDeploymentOrder` / `CycleError`, and a live Release detail "Services Involved" section (computed via Service → Application → ReleaseApplication — not stored on Release).
-- Added Jira webhook connectors: shared `WebhookConnector` / `WebhookEvent` models, HMAC-SHA256 receiver on connector-engine, scheduler-based processing (no Redis/BullMQ), Sentinel setup UI with one-time secret confirmation, delivery log, and replay.
+- Added Jira webhook connectors: shared `WebhookConnector` / `WebhookEvent` models, HMAC-SHA256 receiver on connector-engine, scheduler-based processing (no Redis/BullMQ), ReleaseDesk Everywhere setup UI with one-time secret confirmation, delivery log, and replay.
 
 ### Deferred (do not lose)
 
@@ -197,7 +201,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Locked department rename (UI + PATCH): name is immutable so System Mapping matrix/edge projection stays consistent; only head is updatable.
 - Shared Environments filter option lists refresh after create/update/delete.
 - Risk, Blocker, and Drift detail edit forms now use the same select cascades / FK validation as create (applicationId for risks; release picker for blockers; dept→app→release→env for drifts).
-- Extracted canonical Prisma schema into workspace package `@releasedesk/database`; Sentinel and connector-engine now share one client (Neon retry logic remains in Sentinel `lib/prisma`).
+- Extracted canonical Prisma schema into workspace package `@releasedesk/database`; ReleaseDesk Everywhere and connector-engine now share one client (Neon retry logic remains in Sentinel `lib/prisma`).
 - Centralized organization-compatible create handling for Batch 2 entities and Releases so live v2 inserts always persist the required organization while local v1 remains supported.
 
 ### Security

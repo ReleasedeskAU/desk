@@ -21,7 +21,7 @@ export function ForecastChart({ data }: { data: ForecastTrendPoint[] }) {
   return (
     <AdvancedCard
       title="Predictive Readiness Model"
-      subtitle="sentinel-rm-v1.2 · 8 weeks actual + 4 week forecast"
+      subtitle="ReleaseDesk Everywhere · 8 weeks actual + 4 week forecast"
       icon={Brain}
       variant="glass"
       action={

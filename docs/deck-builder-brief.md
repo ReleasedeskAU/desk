@@ -1,4 +1,4 @@
-# Sentinel / Release Desk — MVP Deck Builder Brief
+# ReleaseDesk Everywhere — MVP Deck Builder Brief
 
 **Audience:** Release managers  
 **Data as of:** Seeded PostgreSQL (Neon), verified 2026-06-27  
@@ -8,13 +8,13 @@
 
 ## 1. One-line pitch
 
-**Sentinel is a release command center that gives release managers one place to track every production change, spot environment conflicts before they block a window, and get AI-assisted briefings on risk, approvals, and stakeholder comms — instead of chasing spreadsheets, calendars, and Slack threads.**
+**ReleaseDesk Everywhere is a release command center that gives release managers one place to track every production change, spot environment conflicts before they block a window, and get AI-assisted briefings on risk, approvals, and stakeholder comms — instead of chasing spreadsheets, calendars, and Slack threads.**
 
 ---
 
 ## 2. The problem it solves
 
-| Pain today (manual) | With Sentinel (before → after) |
+| Pain today (manual) | With ReleaseDesk Everywhere (before → after) |
 |---|---|
 | **Release tracking** — status scattered across Jira, ServiceNow, email, and team trackers; no single view of “what’s shipping when.” | **Before:** 80 releases tracked in 6+ tools. **After:** One Releases list with status, readiness %, blockers, department, and linked applications — filterable by dept/app/env and period. |
 | **Environment booking** — double-bookings discovered days before prod when two teams need the same Test/UAT slot. | **Before:** Email chains and shared Excel grids. **After:** 80 env bookings across 504 environments; **26 auto-flagged conflicts** (release + booking level) surfaced in a dedicated Conflicts queue. |
@@ -129,7 +129,7 @@ Logos/names for a non-technical exec slide:
 ## 6. Architecture in plain English
 
 **Paragraph:**  
-Sentinel stores all release, booking, risk, approval, and calendar data in a central PostgreSQL database (seeded from your release workbook). When a release manager opens the app, Next.js pages fetch that data through secure API routes, apply filters (department, application, time period), and render dashboards, queues, and detail views. Optional Redis caching keeps the Morning Inbox and Dashboard fast under load. When AI is invoked — chat, inbox briefing, risk analysis, or comms drafts — the app first assembles a JSON snapshot of the relevant database records (releases, blockers, bookings, conflicts, risks) and sends it to OpenAI with strict instructions to ground answers only in that data. The response flows back to the UI as plain-English text, structured risk flags, or draft communications. No AI agent writes back to the database autonomously in this MVP; humans remain in the loop for decisions.
+ReleaseDesk Everywhere stores all release, booking, risk, approval, and calendar data in a central PostgreSQL database (seeded from your release workbook). When a release manager opens the app, Next.js pages fetch that data through secure API routes, apply filters (department, application, time period), and render dashboards, queues, and detail views. Optional Redis caching keeps the Morning Inbox and Dashboard fast under load. When AI is invoked — chat, inbox briefing, risk analysis, or comms drafts — the app first assembles a JSON snapshot of the relevant database records (releases, blockers, bookings, conflicts, risks) and sends it to OpenAI with strict instructions to ground answers only in that data. The response flows back to the UI as plain-English text, structured risk flags, or draft communications. No AI agent writes back to the database autonomously in this MVP; humans remain in the loop for decisions.
 
 **Diagram-able structure (left → right):**
 

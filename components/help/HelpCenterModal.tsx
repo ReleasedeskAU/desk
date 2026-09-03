@@ -42,7 +42,7 @@ export function NewUserWelcomeModal() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
         <div className="p-6 border-b border-gray-100 bg-brand-50/80">
           <h2 id="welcome-title" className="text-lg font-bold text-gray-900">
-            Welcome to Sentinel
+            Welcome to ReleaseDesk Everywhere
           </h2>
           <p className="text-sm text-gray-600 mt-1">
             AI-powered release command center. Here&apos;s how release managers use it day to day.
@@ -52,7 +52,7 @@ export function NewUserWelcomeModal() {
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 flex items-center gap-1">
-              <Map className="h-3.5 w-3.5" /> Release Desk workflow
+              <Map className="h-3.5 w-3.5" /> ReleaseDesk Everywhere workflow
             </p>
             <ol className="space-y-2">
               {RELEASE_DESK_WORKFLOW.map((step) => (
