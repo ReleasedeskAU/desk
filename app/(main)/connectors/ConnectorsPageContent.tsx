@@ -512,12 +512,15 @@ function ConnectorWizard({
 
   const canProceedStep2 = useMemo(() => {
     if (!name.trim()) return false;
+    // Config fields (e.g. Jira project key) are connection-critical: StaffLess AI
+    // rejects the connector without them, so gate the step on them too.
+    const configFilled = typeDef?.configFields.every((f) => config[f.key]?.trim()) ?? true;
     if (!isEdit || replaceCredentials) {
       const credsFilled = typeDef?.credentialFields.every((f) => credentials[f.key]?.trim());
-      return Boolean(testResult?.ok && credsFilled);
+      return Boolean(testResult?.ok && credsFilled && configFilled);
     }
-    return true;
-  }, [name, isEdit, replaceCredentials, typeDef, credentials, testResult]);
+    return configFilled;
+  }, [name, isEdit, replaceCredentials, typeDef, credentials, config, testResult]);
 
   const runTest = async () => {
     if (!typeDef) return;
@@ -725,6 +728,22 @@ function ConnectorWizard({
                     )}
                   </div>
                 ))}
+              {/* Config fields (e.g. Jira project key) are required to test and create
+                  the connector in StaffLess AI, so collect them alongside credentials. */}
+              {typeDef.configFields.map((field) => (
+                <div key={field.key}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">{field.label}</label>
+                  <input
+                    value={config[field.key] ?? ""}
+                    onChange={(e) => {
+                      setConfig((prev) => ({ ...prev, [field.key]: e.target.value }));
+                      setTestResult(null);
+                    }}
+                    placeholder={field.placeholder}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              ))}
               <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"
@@ -763,18 +782,6 @@ function ConnectorWizard({
 
           {step === 3 && typeDef && (
             <div className="space-y-4">
-              {typeDef.configFields.map((field) => (
-                <div key={field.key}>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">{field.label}</label>
-                  <input
-                    value={config[field.key] ?? ""}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                    placeholder={field.placeholder}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-              ))}
-
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">What should we sync?</label>
                 {dataTypeOptions.map((opt) => (
