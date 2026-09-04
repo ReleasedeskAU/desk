@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask counts:** The model discovers stored field values (status, priority, issuetype) before counting. Catalog APIs do not rewrite user wording into synonyms.
 - **Connectors tab → StaffLess AI:** Webhook Connectors are removed. Add Connector, Sync Now, and Status call StaffLess AI from the server (Community PAT, never in the browser). Synced Work Items keep the same table and now list indexed documents from `POST /api/admin/search` instead of Postgres `WorkItem`. Jira Key/Title/Type/Status/Priority/Assignee map from document metadata; Release is usually empty (StaffLess does not index Jira fixVersions).
 
 ### Fixed

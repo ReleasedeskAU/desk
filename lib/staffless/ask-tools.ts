@@ -93,7 +93,7 @@ const fieldProp = { type: "string", enum: [...ALLOWED_COUNT_FIELDS] };
 export const ASK_TOOLS: ChatCompletionTool[] = [
   fnTool(
     ASK_TOOL_GET_VERIFIED_COUNT,
-    "Exact unique document count for a total or one known filter value (not a search sample). Use for how-many / total / assigned-to a specific person. Do not use for 'each person' or grouped breakdowns — call get_breakdown_by_field. Omit filters for an overall source total. For a person use filter_field=assignee and filter_value=their name (Kabir matches Mohd Kabir). For board columns use filter_field=status (todo matches To Do). If count is 0, list_distinct_values or get_breakdown_by_field and retry with an exact stored value.",
+    "Exact unique document count for a total or one known stored filter value (not a search sample). Use for how-many / total / assigned-to a specific person. Do not use for 'each person' or grouped breakdowns — call get_breakdown_by_field. Omit filters for an overall source total. For a person use filter_field=assignee and filter_value=their name (contains match). For status/priority/issuetype, discover stored values with get_breakdown_by_field first — do not guess spellings. If count is 0, list_distinct_values or get_breakdown_by_field and retry with an exact stored value.",
     {
       source: sourceProp,
       filter_field: fieldProp,
@@ -102,7 +102,7 @@ export const ASK_TOOLS: ChatCompletionTool[] = [
   ),
   fnTool(
     ASK_TOOL_BREAKDOWN,
-    "Exact unique-document counts grouped by one field. Use for 'how many does each person have', 'breakdown by status/priority/assignee', or any per-value count. Do not use search or get_verified_count for grouped questions.",
+    "Exact unique-document counts grouped by one field. Use for 'how many does each person have', 'breakdown by status/priority/assignee', or any per-value count. Prefer this for how-many-in-a-status questions so you see the real stored labels (To Do, In Review, …) instead of guessing a filter string. Do not use search or get_verified_count for grouped questions.",
     { source: sourceProp, field: fieldProp },
     ["field"]
   ),

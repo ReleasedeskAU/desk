@@ -34,7 +34,7 @@ describe("Ask catalog tools", () => {
         t.function.description ?? "",
       ])
     );
-    assert.match(byName[ASK_TOOL_GET_VERIFIED_COUNT] ?? "", /one known filter value/);
+    assert.match(byName[ASK_TOOL_GET_VERIFIED_COUNT] ?? "", /one known stored filter value/);
     assert.match(byName[ASK_TOOL_BREAKDOWN] ?? "", /grouped by one field/);
     assert.match(byName[ASK_TOOL_DISTINCT] ?? "", /values that actually exist/);
     assert.match(byName[ASK_TOOL_DOCUMENT_BY_KEY] ?? "", /exact lookup/i);
@@ -70,7 +70,8 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /get_breakdown_by_field/);
     assert.match(ASK_AGENT_SYSTEM, /list_distinct_values/);
     assert.match(ASK_AGENT_SYSTEM, /list_documents_matching/);
-    assert.match(ASK_AGENT_SYSTEM, /todo matches To Do/);
+    assert.match(ASK_AGENT_SYSTEM, /map onto a stored label/);
+    assert.match(ASK_AGENT_SYSTEM, /A 0 or empty list from a guessed filter is not proof of absence/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/onyx/i.test(ASK_AGENT_SYSTEM), false);
