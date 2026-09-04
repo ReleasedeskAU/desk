@@ -10,6 +10,7 @@ import {
   getDocumentByKey,
   getVerifiedCount,
   listDistinctValues,
+  listDocumentsMatching,
 } from "@/lib/staffless/ask-catalog";
 import { ASK_TOOL_FAILURE_HINT } from "@/lib/staffless/ask-errors";
 import { stafflessFetch } from "@/lib/staffless/client";
@@ -20,6 +21,7 @@ export const ASK_TOOL_GET_VERIFIED_COUNT = "get_verified_count";
 export const ASK_TOOL_BREAKDOWN = "get_breakdown_by_field";
 export const ASK_TOOL_DISTINCT = "list_distinct_values";
 export const ASK_TOOL_DOCUMENT_BY_KEY = "get_document_by_key";
+export const ASK_TOOL_LIST_MATCHING = "list_documents_matching";
 export const ASK_TOOL_SEARCH_INDEX = "search_indexed_documents";
 
 const MAX_SEARCH_DOCS = 25;
@@ -45,6 +47,14 @@ const lookupArgsSchema = z
   .object({
     source: SOURCE_ENUM.optional(),
     key: z.string().trim().min(1).max(40),
+  })
+  .strict();
+
+const matchArgsSchema = z
+  .object({
+    source: SOURCE_ENUM.optional(),
+    filter_field: FIELD_ENUM,
+    filter_value: z.string().trim().min(1).max(80),
   })
   .strict();
 
@@ -83,7 +93,7 @@ const fieldProp = { type: "string", enum: [...ALLOWED_COUNT_FIELDS] };
 export const ASK_TOOLS: ChatCompletionTool[] = [
   fnTool(
     ASK_TOOL_GET_VERIFIED_COUNT,
-    "Exact unique document count for a total or one known filter value (not a search sample). Use for how-many / total / assigned-to a specific person. Do not use for 'each person' or grouped breakdowns — call get_breakdown_by_field. Omit filters for an overall source total. For a person use filter_field=assignee and filter_value=their name (Kabir matches Mohd Kabir).",
+    "Exact unique document count for a total or one known filter value (not a search sample). Use for how-many / total / assigned-to a specific person. Do not use for 'each person' or grouped breakdowns — call get_breakdown_by_field. Omit filters for an overall source total. For a person use filter_field=assignee and filter_value=their name (Kabir matches Mohd Kabir). For board columns use filter_field=status (todo matches To Do). If count is 0, list_distinct_values or get_breakdown_by_field and retry with an exact stored value.",
     {
       source: sourceProp,
       filter_field: fieldProp,
@@ -109,8 +119,18 @@ export const ASK_TOOLS: ChatCompletionTool[] = [
     ["key"]
   ),
   fnTool(
+    ASK_TOOL_LIST_MATCHING,
+    "Exact list of indexed tickets matching one filter, including their keys/IDs (labels=release123, assignee=Kabir, status=Done). Use when they ask which tickets, their numbers/IDs/keys, or to list them. Prefer this over search after a count. Never say you cannot retrieve IDs if this tool can be called.",
+    {
+      source: sourceProp,
+      filter_field: fieldProp,
+      filter_value: { type: "string", description: "Substring match on the field (case-insensitive)" },
+    },
+    ["filter_field", "filter_value"]
+  ),
+  fnTool(
     ASK_TOOL_SEARCH_INDEX,
-    "Ranked sample of indexed documents for what/tell-me-about content questions. Never use this for how-many, breakdowns, listing all values, or a known ticket key — use the dedicated catalog tools instead.",
+    "Ranked sample of indexed documents for what/tell-me-about content questions. Never use this for how-many, breakdowns, listing all matching ticket IDs, listing all values, or a known ticket key — use the dedicated catalog tools instead.",
     { query: { type: "string" }, source: sourceProp },
     ["query"]
   ),
@@ -157,6 +177,11 @@ async function runAllowlistedTool(name: string, rawArgs: unknown): Promise<AskTo
     const parsed = lookupArgsSchema.safeParse(rawArgs);
     if (!parsed.success) return invalidArgs(name);
     return { name, result: JSON.stringify(await getDocumentByKey(parsed.data)) };
+  }
+  if (name === ASK_TOOL_LIST_MATCHING) {
+    const parsed = matchArgsSchema.safeParse(rawArgs);
+    if (!parsed.success) return invalidArgs(name);
+    return { name, result: JSON.stringify(await listDocumentsMatching(parsed.data)) };
   }
   if (name === ASK_TOOL_SEARCH_INDEX) {
     const parsed = searchArgsSchema.safeParse(rawArgs);

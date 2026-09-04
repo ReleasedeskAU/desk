@@ -17,6 +17,7 @@ export type { CountFilterField, VerifiedCountArgs, VerifiedCountResult };
 export const STAFFLESS_DOCUMENT_DISTINCT_PATH = "/api/admin/document-distinct";
 export const STAFFLESS_DOCUMENT_BREAKDOWN_PATH = "/api/admin/document-breakdown";
 export const STAFFLESS_DOCUMENT_BY_KEY_PATH = "/api/admin/document-by-key";
+export const STAFFLESS_DOCUMENT_LIST_PATH = "/api/admin/document-list";
 
 export type CatalogFieldArgs = {
   source?: "jira" | "github" | "all";
@@ -57,6 +58,29 @@ export type DocumentByKeyResult = {
   link?: string | null;
   source: string;
   fields?: Record<string, string | string[]>;
+  note: string;
+};
+
+export type DocumentMatchArgs = {
+  source?: "jira" | "github" | "all";
+  filter_field: CountFilterField;
+  filter_value: string;
+};
+
+export type MatchingDocument = {
+  key: string | null;
+  title: string | null;
+  link: string | null;
+};
+
+export type DocumentListResult = {
+  count: number;
+  source: string;
+  filter_field: string;
+  filter_value: string;
+  matched_values: string[];
+  documents: MatchingDocument[];
+  truncated: boolean;
   note: string;
 };
 
@@ -142,6 +166,38 @@ export async function getDocumentByKey(args: DocumentByKeyArgs): Promise<Documen
     note: found
       ? "Exact indexed document lookup by key, not a search ranking."
       : "No indexed document with this exact key.",
+  };
+}
+
+/**
+ * Exact indexed documents matching one allow-listed field value, with keys.
+ * @param args - Filter field/value such as labels=release123.
+ * @throws StafflessApiError when StaffLess rejects the request.
+ */
+export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<DocumentListResult> {
+  const result = await stafflessFetch<DocumentListResult>(STAFFLESS_DOCUMENT_LIST_PATH, {
+    json: {
+      ...sourceBody(args.source),
+      filter_field: args.filter_field,
+      filter_value: args.filter_value,
+    },
+  });
+  const documents = Array.isArray(result?.documents)
+    ? result.documents.slice(0, 50).map((row) => ({
+        key: typeof row?.key === "string" && row.key.trim() ? row.key : null,
+        title: typeof row?.title === "string" ? row.title : null,
+        link: typeof row?.link === "string" ? row.link : null,
+      }))
+    : [];
+  return {
+    count: finiteCount(result?.count),
+    source: typeof result?.source === "string" ? result.source : args.source ?? "all",
+    filter_field: typeof result?.filter_field === "string" ? result.filter_field : args.filter_field,
+    filter_value: typeof result?.filter_value === "string" ? result.filter_value : args.filter_value,
+    matched_values: stringList(result?.matched_values, 20),
+    documents,
+    truncated: result?.truncated === true,
+    note: "Exact indexed documents matching this filter, not a search sample.",
   };
 }
 

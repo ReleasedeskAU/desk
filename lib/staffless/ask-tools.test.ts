@@ -6,6 +6,7 @@ import {
   ASK_TOOL_DISTINCT,
   ASK_TOOL_DOCUMENT_BY_KEY,
   ASK_TOOL_GET_VERIFIED_COUNT,
+  ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_SEARCH_INDEX,
   ASK_TOOLS,
   dispatchAskTool,
@@ -19,11 +20,12 @@ const CATALOG_TOOLS = [
   ASK_TOOL_BREAKDOWN,
   ASK_TOOL_DISTINCT,
   ASK_TOOL_DOCUMENT_BY_KEY,
+  ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_SEARCH_INDEX,
 ];
 
 describe("Ask catalog tools", () => {
-  it("exposes five distinct tools with non-overlapping jobs", () => {
+  it("exposes six distinct tools with non-overlapping jobs", () => {
     const names = ASK_TOOLS.map((t) => (t.type === "function" ? t.function.name : "")).sort();
     assert.deepEqual(names, [...CATALOG_TOOLS].sort());
     const byName = Object.fromEntries(
@@ -36,6 +38,7 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_BREAKDOWN] ?? "", /grouped by one field/);
     assert.match(byName[ASK_TOOL_DISTINCT] ?? "", /values that actually exist/);
     assert.match(byName[ASK_TOOL_DOCUMENT_BY_KEY] ?? "", /exact lookup/i);
+    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /keys\/IDs/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /ranked sample/i);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Never use this for how-many/);
   });
@@ -53,6 +56,10 @@ describe("Ask catalog tools", () => {
     assert.match(badField.result, /invalid_args/);
     const badKey = await dispatchAskTool(ASK_TOOL_DOCUMENT_BY_KEY, { key: "" });
     assert.match(badKey.result, /invalid_args/);
+    const missingValue = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, {
+      filter_field: "labels",
+    });
+    assert.match(missingValue.result, /invalid_args/);
   });
 
   it("allow-lists metadata fields and describes tool choice rather than phrases", () => {
@@ -62,9 +69,57 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /choose by what the question needs/i);
     assert.match(ASK_AGENT_SYSTEM, /get_breakdown_by_field/);
     assert.match(ASK_AGENT_SYSTEM, /list_distinct_values/);
+    assert.match(ASK_AGENT_SYSTEM, /list_documents_matching/);
+    assert.match(ASK_AGENT_SYSTEM, /todo matches To Do/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/onyx/i.test(ASK_AGENT_SYSTEM), false);
+  });
+
+  it("returns ticket keys from list_documents_matching instead of a count-only payload", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          count: 4,
+          source: "jira",
+          filter_field: "labels",
+          filter_value: "release123",
+          matched_values: ["release123"],
+          documents: [
+            { key: "RD-10", title: "RD-10: One", link: "https://example.test/RD-10" },
+            { key: "RD-11", title: "RD-11: Two", link: "https://example.test/RD-11" },
+          ],
+          truncated: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+    try {
+      const result = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, {
+        source: "jira",
+        filter_field: "labels",
+        filter_value: "release123",
+      });
+      const payload = JSON.parse(result.result) as {
+        count: number;
+        documents: Array<{ key: string }>;
+      };
+      assert.equal(payload.count, 4);
+      assert.deepEqual(
+        payload.documents.map((row) => row.key),
+        ["RD-10", "RD-11"]
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
   });
 });
 
