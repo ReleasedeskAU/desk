@@ -11,6 +11,7 @@ import {
   getVerifiedCount,
   listDistinctValues,
   listDocumentsMatching,
+  listQueryableFields,
 } from "@/lib/staffless/ask-catalog";
 import { ASK_TOOL_FAILURE_HINT } from "@/lib/staffless/ask-errors";
 import { stafflessFetch } from "@/lib/staffless/client";
@@ -22,19 +23,36 @@ export const ASK_TOOL_BREAKDOWN = "get_breakdown_by_field";
 export const ASK_TOOL_DISTINCT = "list_distinct_values";
 export const ASK_TOOL_DOCUMENT_BY_KEY = "get_document_by_key";
 export const ASK_TOOL_LIST_MATCHING = "list_documents_matching";
+export const ASK_TOOL_QUERYABLE_FIELDS = "list_queryable_fields";
 export const ASK_TOOL_SEARCH_INDEX = "search_indexed_documents";
 
 const MAX_SEARCH_DOCS = 25;
 const SOURCE_ENUM = z.enum(["jira", "github", "all"]);
 const FIELD_ENUM = z.enum(ALLOWED_COUNT_FIELDS);
+const filterPairSchema = z
+  .object({
+    filter_field: FIELD_ENUM,
+    filter_value: z.string().trim().min(1).max(80),
+  })
+  .strict();
 
 const countArgsSchema = z
   .object({
     source: SOURCE_ENUM.optional(),
     filter_field: FIELD_ENUM.optional(),
     filter_value: z.string().trim().min(1).max(80).optional(),
+    filters: z.array(filterPairSchema).min(1).max(5).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasPair = value.filter_field !== undefined || value.filter_value !== undefined;
+    if (value.filters && hasPair) {
+      ctx.addIssue({ code: "custom", message: "Send filters or a single pair, not both" });
+    }
+    if ((value.filter_field === undefined) !== (value.filter_value === undefined)) {
+      ctx.addIssue({ code: "custom", message: "filter_field and filter_value must be sent together" });
+    }
+  });
 
 const fieldArgsSchema = z
   .object({
@@ -53,10 +71,27 @@ const lookupArgsSchema = z
 const matchArgsSchema = z
   .object({
     source: SOURCE_ENUM.optional(),
-    filter_field: FIELD_ENUM,
-    filter_value: z.string().trim().min(1).max(80),
+    filter_field: FIELD_ENUM.optional(),
+    filter_value: z.string().trim().min(1).max(80).optional(),
+    filters: z.array(filterPairSchema).min(1).max(5).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasPair = value.filter_field !== undefined && value.filter_value !== undefined;
+    const hasList = Boolean(value.filters?.length);
+    if (value.filters && (value.filter_field !== undefined || value.filter_value !== undefined) && !hasPair) {
+      ctx.addIssue({ code: "custom", message: "Send filters or a single pair, not both" });
+    }
+    if (value.filters && hasPair) {
+      ctx.addIssue({ code: "custom", message: "Send filters or a single pair, not both" });
+    }
+    if ((value.filter_field === undefined) !== (value.filter_value === undefined)) {
+      ctx.addIssue({ code: "custom", message: "filter_field and filter_value must be sent together" });
+    }
+    if (!hasPair && !hasList) {
+      ctx.addIssue({ code: "custom", message: "At least one filter is required" });
+    }
+  });
 
 const searchArgsSchema = z
   .object({
@@ -89,48 +124,65 @@ function fnTool(
 const sourceProp = { type: "string", enum: ["jira", "github", "all"] };
 const fieldProp = { type: "string", enum: [...ALLOWED_COUNT_FIELDS] };
 
+const filterItemProp = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    filter_field: fieldProp,
+    filter_value: { type: "string", description: "Stored value after discovery; names may be a substring" },
+  },
+  required: ["filter_field", "filter_value"],
+};
+const filtersProp = { type: "array", minItems: 1, maxItems: 5, items: filterItemProp };
+
 /** OpenAI function tools for Ask. extra fields on args are rejected in dispatch. */
 export const ASK_TOOLS: ChatCompletionTool[] = [
   fnTool(
+    ASK_TOOL_QUERYABLE_FIELDS,
+    "Published fields you may query (not raw database columns). Call this when unsure which field maps to the question. Does not include emails or other PII.",
+    { source: sourceProp }
+  ),
+  fnTool(
     ASK_TOOL_GET_VERIFIED_COUNT,
-    "Exact unique document count for a total or one known stored filter value (not a search sample). Use for how-many / total / assigned-to a specific person. Do not use for 'each person' or grouped breakdowns — call get_breakdown_by_field. Omit filters for an overall source total. For a person use filter_field=assignee and filter_value=their name (contains match). For status/priority/issuetype, discover stored values with get_breakdown_by_field first — do not guess spellings. If count is 0, list_distinct_values or get_breakdown_by_field and retry with an exact stored value.",
+    "Exact unique document count. Optional AND filters (issuetype + assignee + status). Omit filters for a source total. For names use contains (Kabir). For status/parent/key/dates use an exact stored value from list_distinct_values or get_breakdown_by_field first. Date ranges (this week) are not supported. Do not use for grouped breakdowns.",
     {
       source: sourceProp,
       filter_field: fieldProp,
-      filter_value: { type: "string", description: "Substring match on the field (case-insensitive)" },
+      filter_value: { type: "string" },
+      filters: filtersProp,
     }
   ),
   fnTool(
     ASK_TOOL_BREAKDOWN,
-    "Exact unique-document counts grouped by one field. Use for 'how many does each person have', 'breakdown by status/priority/assignee', or any per-value count. Prefer this for how-many-in-a-status questions so you see the real stored labels (To Do, In Review, …) instead of guessing a filter string. Do not use search or get_verified_count for grouped questions.",
+    "Exact unique-document counts grouped by one field. Prefer this to discover stored status labels before counting. Do not use search for grouped questions.",
     { source: sourceProp, field: fieldProp },
     ["field"]
   ),
   fnTool(
     ASK_TOOL_DISTINCT,
-    "List the values that actually exist for a field in the index (assignees, statuses, priorities, projects). Use for 'who are the assignees', 'what statuses exist'. Not a count and not a search sample.",
+    "List stored values for one queryable field. Use before filtering on status, issuetype, or dates so you pass an exact stored string.",
     { source: sourceProp, field: fieldProp },
     ["field"]
   ),
   fnTool(
     ASK_TOOL_DOCUMENT_BY_KEY,
-    "Exact lookup of one indexed ticket/document by its key (RD-82, JAR-5). Use when the user names a specific ID. More reliable than search for a known key. Returns not-found if that key is not in the index.",
-    { source: sourceProp, key: { type: "string", description: "Exact ticket or document key, e.g. RD-82" } },
+    "Exact lookup of one ticket by key. Returns allow-listed fields only (parent, duedate, status, …) never emails. Use for due date, parent, or epic of a named ticket.",
+    { source: sourceProp, key: { type: "string", description: "Exact ticket key, e.g. RD-82" } },
     ["key"]
   ),
   fnTool(
     ASK_TOOL_LIST_MATCHING,
-    "Exact list of indexed tickets matching one filter, including their keys/IDs (labels=release123, assignee=Kabir, status=Done). Use when they ask which tickets, their numbers/IDs/keys, or to list them. Prefer this over search after a count. Never say you cannot retrieve IDs if this tool can be called.",
+    "Exact list of tickets matching AND filters, including keys. Children of an epic: parent=<epic key>. Subtasks: parent=<ticket> AND issuetype=Subtask. If truncated, say showing first cap of count. Never invent IDs.",
     {
       source: sourceProp,
       filter_field: fieldProp,
-      filter_value: { type: "string", description: "Substring match on the field (case-insensitive)" },
-    },
-    ["filter_field", "filter_value"]
+      filter_value: { type: "string" },
+      filters: filtersProp,
+    }
   ),
   fnTool(
     ASK_TOOL_SEARCH_INDEX,
-    "Ranked sample of indexed documents for what/tell-me-about content questions. Never use this for how-many, breakdowns, listing all matching ticket IDs, listing all values, or a known ticket key — use the dedicated catalog tools instead.",
+    "Ranked sample for what/tell-me-about content. Never use for how-many, parent, children, due dates, or listing IDs.",
     { query: { type: "string" }, source: sourceProp },
     ["query"]
   ),
@@ -162,6 +214,11 @@ async function runAllowlistedTool(name: string, rawArgs: unknown): Promise<AskTo
     const parsed = countArgsSchema.safeParse(rawArgs);
     if (!parsed.success) return invalidArgs(name);
     return { name, result: JSON.stringify(await getVerifiedCount(parsed.data)) };
+  }
+  if (name === ASK_TOOL_QUERYABLE_FIELDS) {
+    const parsed = z.object({ source: SOURCE_ENUM.optional() }).strict().safeParse(rawArgs ?? {});
+    if (!parsed.success) return invalidArgs(name);
+    return { name, result: JSON.stringify(await listQueryableFields()) };
   }
   if (name === ASK_TOOL_BREAKDOWN) {
     const parsed = fieldArgsSchema.safeParse(rawArgs);

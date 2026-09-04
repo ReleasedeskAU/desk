@@ -45,5 +45,15 @@ describe("AskMarkdown rendering", () => {
     assert.match(html, /<h4/);
     assert.match(html, /<strong[^>]*>alpha<\/strong>/);
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.match(html, /rounded-xl border/);
+    assert.match(html, /tabular-nums/);
+  });
+
+  it("numbers ordered lists with the same row chrome as tables", () => {
+    const html = renderAsk("1. first\n2. second");
+    assert.match(html, /<ol/);
+    assert.match(html, />1</);
+    assert.match(html, />2</);
+    assert.match(html, /tabular-nums/);
   });
 });

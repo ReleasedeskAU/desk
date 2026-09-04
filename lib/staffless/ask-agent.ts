@@ -7,11 +7,12 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { randomUUID } from "node:crypto";
 import { ASK_AGENT_SYSTEM, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
+import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import { ASK_TOOLS, dispatchAskTool } from "@/lib/staffless/ask-tools";
 import type { AskEvent } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
-export const ASK_MAX_TOOL_ROUNDS = 6;
+export const ASK_MAX_TOOL_ROUNDS = 8;
 
 export type AskHistoryTurn = { role: "user" | "assistant"; content: string };
 
@@ -52,8 +53,14 @@ export async function* runAskAgent(opts: {
     const { text, tools } = await completeAskWithTools(openai, messages);
     logger.info("ask.agent_tools", { tools, n: tools.length });
     yield { type: "status", phase: "answering" };
-    if (text) yield { type: "text", text };
-    else yield { type: "error", message: ASK_PUBLIC_UNAVAILABLE };
+    if (!text) {
+      yield { type: "error", message: ASK_PUBLIC_UNAVAILABLE };
+      yield { type: "done" };
+      return;
+    }
+    const grounding = askGroundingFromTools(tools);
+    if (grounding) yield { type: "grounding", kind: grounding };
+    yield { type: "text", text };
     yield { type: "done" };
   } catch (err) {
     logger.error("ask.agent_failed", { kind: err instanceof Error ? err.name : "unknown" });

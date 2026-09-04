@@ -24,6 +24,7 @@ export const NAV_DATA_SECTIONS: readonly NavDataSection[] = [
   {
     items: [
       { href: "/inbox", label: "Morning Inbox", pulse: true },
+      { href: "/ask", label: "Ask" },
       { href: "/dashboard", label: "Dashboard" },
     ],
   },
@@ -87,7 +88,6 @@ export const NAV_DATA_SECTIONS: readonly NavDataSection[] = [
       { href: "/knowledge-graph", label: "Knowledge Graph" },
       { href: "/agents", label: "Agents", pulse: true },
       { href: "/history", label: "History Log" },
-      { href: "/ask", label: "Ask" },
       { href: "/connectors", label: "Connectors" },
       { href: "/admin/reference-data", label: "Reference Data" },
       { href: "/admin-voice", label: "Voice Admin" },

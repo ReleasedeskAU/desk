@@ -5,19 +5,22 @@
 import { stafflessFetch } from "@/lib/staffless/client";
 import {
   ALLOWED_COUNT_FIELDS,
+  PII_TAG_FIELDS,
+  type CatalogFilterPair,
   type CountFilterField,
   type VerifiedCountArgs,
   type VerifiedCountResult,
   getVerifiedCount,
 } from "@/lib/staffless/ask-count";
 
-export { ALLOWED_COUNT_FIELDS, getVerifiedCount };
-export type { CountFilterField, VerifiedCountArgs, VerifiedCountResult };
+export { ALLOWED_COUNT_FIELDS, PII_TAG_FIELDS, getVerifiedCount };
+export type { CatalogFilterPair, CountFilterField, VerifiedCountArgs, VerifiedCountResult };
 
 export const STAFFLESS_DOCUMENT_DISTINCT_PATH = "/api/admin/document-distinct";
 export const STAFFLESS_DOCUMENT_BREAKDOWN_PATH = "/api/admin/document-breakdown";
 export const STAFFLESS_DOCUMENT_BY_KEY_PATH = "/api/admin/document-by-key";
 export const STAFFLESS_DOCUMENT_LIST_PATH = "/api/admin/document-list";
+export const STAFFLESS_DOCUMENT_FIELDS_PATH = "/api/admin/document-fields";
 
 export type CatalogFieldArgs = {
   source?: "jira" | "github" | "all";
@@ -63,8 +66,9 @@ export type DocumentByKeyResult = {
 
 export type DocumentMatchArgs = {
   source?: "jira" | "github" | "all";
-  filter_field: CountFilterField;
-  filter_value: string;
+  filter_field?: CountFilterField;
+  filter_value?: string;
+  filters?: CatalogFilterPair[];
 };
 
 export type MatchingDocument = {
@@ -75,14 +79,44 @@ export type MatchingDocument = {
 
 export type DocumentListResult = {
   count: number;
+  returned: number;
+  cap: number;
   source: string;
-  filter_field: string;
-  filter_value: string;
+  filters: Array<{ filter_field: string; filter_value: string; matched_values: string[] }>;
+  filter_field: string | null;
+  filter_value: string | null;
   matched_values: string[];
   documents: MatchingDocument[];
   truncated: boolean;
   note: string;
 };
+
+export type QueryableFieldsResult = {
+  fields: string[];
+  contains_match: string[];
+  exact_match: string[];
+  cap: number;
+  note: string;
+};
+
+export async function listQueryableFields(): Promise<QueryableFieldsResult> {
+  const result = await stafflessFetch<QueryableFieldsResult>(STAFFLESS_DOCUMENT_FIELDS_PATH, {
+    json: {},
+  });
+  const fields = stringList(result?.fields, 40).filter(
+    (field) => !PII_TAG_FIELDS.includes(field as (typeof PII_TAG_FIELDS)[number])
+  );
+  return {
+    fields,
+    contains_match: stringList(result?.contains_match, 40),
+    exact_match: stringList(result?.exact_match, 40),
+    cap: finiteCount(result?.cap) || 50,
+    note:
+      typeof result?.note === "string"
+        ? result.note
+        : "Queryable indexed tags only. Date ranges are not supported.",
+  };
+}
 
 function sourceBody(source?: "jira" | "github" | "all"): Record<string, string> {
   return source && source !== "all" ? { source } : {};
@@ -175,13 +209,13 @@ export async function getDocumentByKey(args: DocumentByKeyArgs): Promise<Documen
  * @throws StafflessApiError when StaffLess rejects the request.
  */
 export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<DocumentListResult> {
-  const result = await stafflessFetch<DocumentListResult>(STAFFLESS_DOCUMENT_LIST_PATH, {
-    json: {
-      ...sourceBody(args.source),
-      filter_field: args.filter_field,
-      filter_value: args.filter_value,
-    },
-  });
+  const json: Record<string, unknown> = { ...sourceBody(args.source) };
+  if (args.filters && args.filters.length > 0) json.filters = args.filters;
+  else {
+    if (args.filter_field) json.filter_field = args.filter_field;
+    if (args.filter_value) json.filter_value = args.filter_value;
+  }
+  const result = await stafflessFetch<DocumentListResult>(STAFFLESS_DOCUMENT_LIST_PATH, { json });
   const documents = Array.isArray(result?.documents)
     ? result.documents.slice(0, 50).map((row) => ({
         key: typeof row?.key === "string" && row.key.trim() ? row.key : null,
@@ -189,23 +223,38 @@ export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<Do
         link: typeof row?.link === "string" ? row.link : null,
       }))
     : [];
+  const filters = Array.isArray(result?.filters)
+    ? result.filters.slice(0, 5).map((row) => ({
+        filter_field: typeof row?.filter_field === "string" ? row.filter_field : "",
+        filter_value: typeof row?.filter_value === "string" ? row.filter_value : "",
+        matched_values: stringList(row?.matched_values, 20),
+      }))
+    : [];
+  const truncated = result?.truncated === true;
+  const count = finiteCount(result?.count);
   return {
-    count: finiteCount(result?.count),
+    count,
+    returned: finiteCount(result?.returned) || documents.length,
+    cap: finiteCount(result?.cap) || 50,
     source: typeof result?.source === "string" ? result.source : args.source ?? "all",
-    filter_field: typeof result?.filter_field === "string" ? result.filter_field : args.filter_field,
-    filter_value: typeof result?.filter_value === "string" ? result.filter_value : args.filter_value,
+    filters,
+    filter_field: typeof result?.filter_field === "string" ? result.filter_field : args.filter_field ?? null,
+    filter_value: typeof result?.filter_value === "string" ? result.filter_value : args.filter_value ?? null,
     matched_values: stringList(result?.matched_values, 20),
     documents,
-    truncated: result?.truncated === true,
-    note: "Exact indexed documents matching this filter, not a search sample.",
+    truncated,
+    note: truncated
+      ? `Showing first ${documents.length} of ${count} matching indexed documents.`
+      : "Exact indexed documents matching this filter, not a search sample.",
   };
 }
 
 function sanitizeFields(raw: Record<string, unknown>): Record<string, string | string[]> {
   const allowed = new Set<string>(ALLOWED_COUNT_FIELDS);
+  const blocked = new Set<string>(PII_TAG_FIELDS);
   const out: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (!allowed.has(key)) continue;
+    if (!allowed.has(key) || blocked.has(key)) continue;
     if (typeof value === "string") out[key] = value;
     else if (Array.isArray(value)) out[key] = value.filter((item): item is string => typeof item === "string").slice(0, 20);
   }

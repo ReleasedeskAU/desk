@@ -44,13 +44,20 @@ function AskMdBlockView({ block }: { block: AskMdBlock }) {
   if (block.type === "list") {
     const List = block.ordered ? "ol" : "ul";
     return (
-      <List className={cn("space-y-1.5 pl-1", block.ordered ? "list-none" : "")}>
+      <List className="list-none overflow-hidden rounded-xl border border-gray-200 dark:border-[var(--border)]">
         {block.items.map((item, i) => (
-          <li key={i} className="flex gap-2 text-gray-700 dark:text-white/90">
-            <span className="mt-0.5 w-5 shrink-0 font-semibold text-brand-600 dark:text-brand-400">
-              {block.ordered ? `${i + 1}.` : "•"}
+          <li
+            key={i}
+            className={cn(
+              tableRow,
+              tableCell,
+              "flex gap-3 last:border-b-0"
+            )}
+          >
+            <span className="w-6 shrink-0 font-mono text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-400">
+              {block.ordered ? i + 1 : "•"}
             </span>
-            <span>
+            <span className="min-w-0">
               <AskInline text={item} />
             </span>
           </li>

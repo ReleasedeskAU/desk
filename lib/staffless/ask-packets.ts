@@ -4,6 +4,7 @@
  */
 
 import { ASK_ADDITIONAL_CONTEXT, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
+import type { AskGrounding } from "@/lib/staffless/ask-grounding";
 
 /** Live StaffLess chat endpoints (nginx `/api` prefix). */
 export const STAFFLESS_CREATE_SESSION_PATH = "/api/chat/create-chat-session";
@@ -21,6 +22,7 @@ export type AskEvent =
   | { type: "session"; sessionId: string }
   | { type: "status"; phase: "searching" | "answering" }
   | { type: "text"; text: string }
+  | { type: "grounding"; kind: AskGrounding }
   | { type: "sources"; sources: AskSource[] }
   | { type: "citation"; n: number; documentId: string }
   | { type: "error"; message: string }

@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import Link from "next/link";
-import { Loader2, Send, SquarePen } from "lucide-react";
-import { AISkeleton } from "@/components/ui/AISkeleton";
+import { Check, Copy, Loader2, Send, SquarePen } from "lucide-react";
+import { AskGroundingBadge } from "@/components/ask/AskGroundingBadge";
 import { AskMarkdown } from "@/components/ask/AskMarkdown";
+import { TopBar } from "@/components/layout/TopBar";
+import { AISkeleton } from "@/components/ui/AISkeleton";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import {
+  ASK_COMPOSER_PLACEHOLDER,
   ASK_EMPTY_BODY,
   ASK_EMPTY_HINT,
   ASK_EMPTY_TITLE,
@@ -17,8 +20,9 @@ import {
   ASK_PUBLIC_UNAVAILABLE,
   ASK_SEARCHING_LABEL,
 } from "@/lib/staffless/ask-copy";
+import type { AskGrounding } from "@/lib/staffless/ask-grounding";
 import { type AskEvent } from "@/lib/staffless/ask-packets";
-import { TopBar } from "@/components/layout/TopBar";
+import { cn } from "@/lib/utils";
 
 type AskMessage = {
   id: string;
@@ -26,6 +30,8 @@ type AskMessage = {
   content: string;
   limitedIndex: boolean;
   error: boolean;
+  grounding: AskGrounding | null;
+  createdAt: number;
 };
 
 function parseAskEventLine(line: string): AskEvent | null {
@@ -36,6 +42,25 @@ function parseAskEventLine(line: string): AskEvent | null {
   } catch {
     return null;
   }
+}
+
+function formatAskTime(createdAt: number): string {
+  return new Date(createdAt).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function emptyAssistant(id: string): AskMessage {
+  return {
+    id,
+    role: "assistant",
+    content: "",
+    limitedIndex: false,
+    error: false,
+    grounding: null,
+    createdAt: Date.now(),
+  };
 }
 
 /**
@@ -61,11 +86,11 @@ export function AskPageContent() {
         }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-[var(--border)] dark:bg-[var(--card)]">
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-4 py-5 sm:px-8 sm:py-6">
           {chat.messages.length === 0 ? (
             <AskEmptyState onPick={(prompt) => void chat.send(prompt)} disabled={chat.busy} />
           ) : (
-            <AskThread messages={chat.messages} searching={chat.searching} />
+            <AskThread messages={chat.messages} />
           )}
           <div ref={chat.bottomRef} />
         </div>
@@ -85,13 +110,12 @@ function useAskChat() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [searching, setSearching] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, searching, busy]);
+  }, [messages, busy]);
 
   const resetChat = useCallback(() => {
     abortRef.current?.abort();
@@ -100,7 +124,6 @@ function useAskChat() {
     setSessionId(null);
     setInput("");
     setBusy(false);
-    setSearching(false);
   }, []);
 
   const send = useCallback(
@@ -109,12 +132,19 @@ function useAskChat() {
       if (!message || busy) return;
       setInput("");
       setBusy(true);
-      setSearching(true);
       const assistantId = `a-${Date.now()}`;
       setMessages((prev) => [
         ...prev,
-        { id: `u-${Date.now()}`, role: "user", content: message, limitedIndex: false, error: false },
-        { id: assistantId, role: "assistant", content: "", limitedIndex: false, error: false },
+        {
+          id: `u-${Date.now()}`,
+          role: "user",
+          content: message,
+          limitedIndex: false,
+          error: false,
+          grounding: null,
+          createdAt: Date.now(),
+        },
+        emptyAssistant(assistantId),
       ]);
       await streamAskTurn({
         message,
@@ -126,16 +156,14 @@ function useAskChat() {
         assistantId,
         abortRef,
         setSessionId,
-        setSearching,
         setMessages,
       });
       setBusy(false);
-      setSearching(false);
     },
     [busy, sessionId]
   );
 
-  return { messages, input, setInput, busy, searching, bottomRef, resetChat, send };
+  return { messages, input, setInput, busy, bottomRef, resetChat, send };
 }
 
 function AskEmptyState({
@@ -146,7 +174,7 @@ function AskEmptyState({
   disabled: boolean;
 }) {
   return (
-    <div className="mx-auto max-w-2xl py-8 text-center">
+    <div className="mx-auto max-w-2xl px-1 py-6 text-center sm:py-10">
       <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{ASK_EMPTY_TITLE}</h2>
       <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-white/70">{ASK_EMPTY_BODY}</p>
       <p className="mt-2 text-xs text-gray-500 dark:text-white/50">{ASK_EMPTY_HINT}</p>
@@ -155,14 +183,14 @@ function AskEmptyState({
           Open Connectors
         </Link>
       </p>
-      <div className="mt-6 flex flex-col gap-2">
+      <div className="mt-6 flex flex-col gap-2 text-left">
         {ASK_EXAMPLE_PROMPTS.map((prompt) => (
           <button
             key={prompt}
             type="button"
             disabled={disabled}
             onClick={() => onPick(prompt)}
-            className="rounded-lg border border-gray-200 px-4 py-2.5 text-left text-sm text-gray-700 hover:border-brand-200 hover:bg-brand-50/60 disabled:opacity-50 dark:border-[var(--border)] dark:text-white/80 dark:hover:bg-white/5"
+            className={`${taBtnSecondary} w-full justify-start px-4 py-2.5 text-left text-sm disabled:opacity-50`}
           >
             {prompt}
           </button>
@@ -172,22 +200,17 @@ function AskEmptyState({
   );
 }
 
-function AskThread({ messages, searching }: { messages: AskMessage[]; searching: boolean }) {
-  const waiting = searching && !messages.some((m) => m.role === "assistant" && m.content);
+function AskThread({ messages }: { messages: AskMessage[] }) {
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+    <div
+      className="mx-auto flex w-full max-w-3xl flex-col gap-5"
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions"
+    >
       {messages.map((msg) => (
         <AskBubble key={msg.id} message={msg} />
       ))}
-      {waiting && (
-        <div className="max-w-2xl rounded-xl border border-gray-200 bg-white p-4 dark:border-[var(--border)] dark:bg-[var(--card)]">
-          <p className="mb-3 flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-white/50">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" />
-            {ASK_SEARCHING_LABEL}
-          </p>
-          <AISkeleton lines={4} />
-        </div>
-      )}
     </div>
   );
 }
@@ -195,17 +218,37 @@ function AskThread({ messages, searching }: { messages: AskMessage[]; searching:
 function AskBubble({ message }: { message: AskMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[min(36rem,85%)] rounded-xl bg-brand-500 px-4 py-3 text-sm leading-relaxed text-white shadow-theme-sm">
+      <div className="flex flex-col items-end gap-1">
+        <div className="max-w-[min(36rem,88%)] rounded-2xl rounded-br-md bg-brand-500 px-4 py-3 text-sm leading-relaxed text-white shadow-theme-sm">
           {message.content}
         </div>
+        <time
+          dateTime={new Date(message.createdAt).toISOString()}
+          className="px-1 text-[11px] text-gray-400 dark:text-white/40"
+        >
+          {formatAskTime(message.createdAt)}
+        </time>
       </div>
     );
   }
-  if (!message.content && !message.error) return null;
+  if (!message.content && !message.error) {
+    return <AskLoadingCard grounding={message.grounding} />;
+  }
   return (
-    <div className="flex justify-start">
-      <div className="w-full max-w-4xl rounded-xl border border-gray-200 bg-white p-5 dark:border-[var(--border)] dark:bg-[var(--card)]">
+    <div className="group/msg flex justify-start">
+      <div className="relative w-full max-w-3xl rounded-xl rounded-bl-md border border-gray-200 bg-white p-4 sm:p-5 dark:border-[var(--border)] dark:bg-[var(--card)]">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {message.grounding && !message.error ? <AskGroundingBadge kind={message.grounding} /> : null}
+            <time
+              dateTime={new Date(message.createdAt).toISOString()}
+              className="text-[11px] text-gray-400 dark:text-white/40"
+            >
+              {formatAskTime(message.createdAt)}
+            </time>
+          </div>
+          {message.content ? <AskCopyButton text={message.content} /> : null}
+        </div>
         {message.content ? <AskMarkdown content={message.content} /> : null}
         {message.error && !message.content && (
           <p className="text-sm text-gray-600 dark:text-white/70">{ASK_PUBLIC_UNAVAILABLE}</p>
@@ -215,6 +258,58 @@ function AskBubble({ message }: { message: AskMessage }) {
         )}
       </div>
     </div>
+  );
+}
+
+function AskLoadingCard({ grounding }: { grounding: AskGrounding | null }) {
+  return (
+    <div
+      className="w-full max-w-3xl rounded-xl border border-gray-200 bg-white p-4 sm:p-5 dark:border-[var(--border)] dark:bg-[var(--card)]"
+      aria-busy="true"
+      aria-label={ASK_SEARCHING_LABEL}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        {grounding ? (
+          <AskGroundingBadge kind={grounding} />
+        ) : (
+          <p className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-white/50">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" />
+            {ASK_SEARCHING_LABEL}
+          </p>
+        )}
+      </div>
+      <AISkeleton lines={4} />
+    </div>
+  );
+}
+
+function AskCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }, [text]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      className={cn(
+        taBtnSecondary,
+        "shrink-0 gap-1 px-2 py-1 text-xs opacity-100 transition-opacity",
+        "md:opacity-0 md:group-hover/msg:opacity-100 md:group-focus-within/msg:opacity-100 md:focus-visible:opacity-100"
+      )}
+      aria-label={copied ? "Answer copied" : "Copy answer"}
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 }
 
@@ -230,7 +325,7 @@ function AskComposer({
   onSend: () => void;
 }) {
   return (
-    <div className="flex gap-2 border-t border-gray-200 bg-gray-50/80 p-4 dark:border-[var(--border)] dark:bg-[var(--sidebar)]">
+    <div className="flex gap-2 border-t border-gray-200 bg-gray-50/80 p-3 sm:p-4 dark:border-[var(--border)] dark:bg-[var(--sidebar)]">
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -242,15 +337,17 @@ function AskComposer({
         }}
         disabled={busy}
         maxLength={8000}
-        placeholder="Ask about indexed tickets, changes, or documents…"
+        placeholder={ASK_COMPOSER_PLACEHOLDER}
+        aria-label={ASK_COMPOSER_PLACEHOLDER}
         className={`${taInput} min-w-0 flex-1`}
       />
       <button
         type="button"
         onClick={onSend}
         disabled={busy || !value.trim()}
-        className={`${taBtnPrimary} px-3 disabled:opacity-50`}
+        className={`${taBtnPrimary} shrink-0 px-3 disabled:opacity-50`}
         aria-label="Send message"
+        aria-busy={busy}
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
       </button>
@@ -265,7 +362,6 @@ type StreamHandlers = {
   assistantId: string;
   abortRef: MutableRefObject<AbortController | null>;
   setSessionId: (id: string) => void;
-  setSearching: (v: boolean) => void;
   setMessages: Dispatch<SetStateAction<AskMessage[]>>;
 };
 
@@ -325,10 +421,12 @@ async function readAskNdjson(body: ReadableStream<Uint8Array>, h: StreamHandlers
 function applyAskEvent(event: AskEvent | null, h: StreamHandlers): void {
   if (!event) return;
   if (event.type === "session") h.setSessionId(event.sessionId);
-  if (event.type === "status" && event.phase === "searching") h.setSearching(true);
-  if (event.type === "status" && event.phase === "answering") h.setSearching(false);
+  if (event.type === "grounding") {
+    h.setMessages((prev) =>
+      prev.map((m) => (m.id === h.assistantId ? { ...m, grounding: event.kind } : m))
+    );
+  }
   if (event.type === "text") {
-    h.setSearching(false);
     h.setMessages((prev) =>
       prev.map((m) => (m.id === h.assistantId ? { ...m, content: m.content + event.text } : m))
     );
@@ -342,7 +440,7 @@ function applyAskEvent(event: AskEvent | null, h: StreamHandlers): void {
     h.setMessages((prev) =>
       prev.map((m) =>
         m.id === h.assistantId
-          ? { ...m, error: true, content: m.content || event.message }
+          ? { ...m, error: true, content: m.content || event.message, grounding: null }
           : m
       )
     );
