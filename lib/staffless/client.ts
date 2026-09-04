@@ -23,6 +23,28 @@ export class StafflessApiError extends Error {
 
 type JsonBody = Record<string, unknown> | unknown[];
 
+/** Chat streams can run well past the 30s JSON timeout used for connector calls. */
+export const STAFFLESS_STREAM_TIMEOUT_MS = 180_000;
+
+function stafflessUrlAndPat(path: string): { url: string; pat: string } {
+  const pat = stafflessPat();
+  if (!pat) {
+    throw new StafflessConfigError("StaffLess AI PAT is not configured");
+  }
+  if (!path.startsWith("/")) {
+    throw new StafflessConfigError("StaffLess AI path must be absolute");
+  }
+  return { url: `${stafflessBaseUrl()}${path}`, pat };
+}
+
+function stafflessAuthHeaders(pat: string, json: boolean): HeadersInit {
+  return {
+    Authorization: `Bearer ${pat}`,
+    Accept: "application/json",
+    ...(json ? { "Content-Type": "application/json" } : {}),
+  };
+}
+
 /**
  * Call StaffLess AI with the server PAT. Prefer `/api/...` paths (nginx strips `/api`).
  * @param path - Absolute path beginning with `/`.
@@ -35,25 +57,13 @@ export async function stafflessFetch<T>(
   path: string,
   init: { method?: string; json?: JsonBody; timeoutMs?: number } = {}
 ): Promise<T> {
-  const pat = stafflessPat();
-  if (!pat) {
-    throw new StafflessConfigError("StaffLess AI PAT is not configured");
-  }
-  if (!path.startsWith("/")) {
-    throw new StafflessConfigError("StaffLess AI path must be absolute");
-  }
-
-  const url = `${stafflessBaseUrl()}${path}`;
+  const { url, pat } = stafflessUrlAndPat(path);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), init.timeoutMs ?? 30_000);
   try {
     const res = await fetch(url, {
       method: init.method ?? (init.json ? "POST" : "GET"),
-      headers: {
-        Authorization: `Bearer ${pat}`,
-        Accept: "application/json",
-        ...(init.json ? { "Content-Type": "application/json" } : {}),
-      },
+      headers: stafflessAuthHeaders(pat, Boolean(init.json)),
       body: init.json ? JSON.stringify(init.json) : undefined,
       signal: controller.signal,
       cache: "no-store",
@@ -71,6 +81,44 @@ export async function stafflessFetch<T>(
     throw new StafflessApiError(502, "StaffLess AI is unavailable");
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/**
+ * POST and return the raw Response so the caller can stream NDJSON.
+ * Drains error bodies without exposing them — upstream JSON can include internals.
+ * @param path - Absolute path beginning with `/`.
+ * @param init.json - JSON body (required).
+ * @returns Upstream Response with a readable body.
+ * @throws StafflessConfigError when PAT is missing.
+ * @throws StafflessApiError on non-2xx or missing body.
+ */
+export async function stafflessFetchStream(
+  path: string,
+  init: { json: JsonBody; timeoutMs?: number; signal?: AbortSignal }
+): Promise<Response> {
+  const { url, pat } = stafflessUrlAndPat(path);
+  const timeout = AbortSignal.timeout(init.timeoutMs ?? STAFFLESS_STREAM_TIMEOUT_MS);
+  const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: stafflessAuthHeaders(pat, true),
+      body: JSON.stringify(init.json),
+      signal,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      await res.text().catch(() => "");
+      logger.warn("staffless.stream_failed", { status: res.status, path });
+      throw new StafflessApiError(res.status, publicStafflessError(res.status));
+    }
+    if (!res.body) throw new StafflessApiError(502, "StaffLess AI is unavailable");
+    return res;
+  } catch (err) {
+    if (err instanceof StafflessApiError || err instanceof StafflessConfigError) throw err;
+    logger.error("staffless.stream_error", { path, kind: err instanceof Error ? err.name : "unknown" });
+    throw new StafflessApiError(502, "StaffLess AI is unavailable");
   }
 }
 

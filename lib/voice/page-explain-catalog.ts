@@ -336,7 +336,19 @@ const PAGES: readonly VoicePageExplain[] = [
       "Explore linked entities",
       "Search a release and ask what depends on it",
     ],
-    nextSteps: ["Dependencies", "System Mapping", "Releases"],
+    nextSteps: ["Ask", "Dependencies", "System Mapping", "Releases"],
+  },
+  {
+    path: "/ask",
+    title: "Ask",
+    purpose:
+      "Search chat over documents indexed from Connectors. Answers stay limited to the search index — the knowledge graph is not used.",
+    canDo: [
+      "Ask about synced tickets or documents",
+      "Start a new chat to clear conversation context",
+      "Open Connectors if the index looks empty",
+    ],
+    nextSteps: ["Connectors", "History Log"],
   },
   {
     path: "/agents",
@@ -369,7 +381,7 @@ const PAGES: readonly VoicePageExplain[] = [
       "Check connector health",
       "Relate synced entities back to releases via search",
     ],
-    nextSteps: ["History Log", "Reference Data", "Settings"],
+    nextSteps: ["Ask", "History Log", "Reference Data", "Settings"],
   },
   {
     path: "/admin/reference-data",

@@ -33,6 +33,7 @@ import {
   Bell,
   HeartPulse,
   CalendarClock,
+  MessageSquare,
   Mic,
   Stamp,
 } from "lucide-react";
@@ -83,6 +84,7 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/knowledge-graph": Share2,
   "/agents": Bot,
   "/history": History,
+  "/ask": MessageSquare,
   "/connectors": Plug,
   "/admin/reference-data": Database,
   "/admin-voice": Mic,

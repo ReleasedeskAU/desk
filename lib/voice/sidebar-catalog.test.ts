@@ -54,6 +54,7 @@ describe("voiceSidebarCatalogBrief", () => {
       "Executive",
       "Compare",
       "Knowledge Graph",
+      "Ask",
       "Reference Data",
       "Settings",
     ]) {
@@ -65,6 +66,7 @@ describe("voiceSidebarCatalogBrief", () => {
     assert.match(brief, /\/executive/);
     assert.match(brief, /\/compare/);
     assert.match(brief, /\/knowledge-graph/);
+    assert.match(brief, /\/ask/);
     assert.match(brief, /\/admin\/reference-data/);
     assert.match(brief, /\/settings/);
     assert.match(brief, /Never say you cannot open a listed sidebar tab/i);
@@ -79,6 +81,7 @@ describe("resolveVoiceNavTarget missing-from-brief tabs", () => {
     assert.equal(resolveVoiceNavTarget("executive")?.path, "/executive");
     assert.equal(resolveVoiceNavTarget("compare")?.path, "/compare");
     assert.equal(resolveVoiceNavTarget("knowledge graph")?.path, "/knowledge-graph");
+    assert.equal(resolveVoiceNavTarget("ask")?.path, "/ask");
     assert.equal(resolveVoiceNavTarget("reference data")?.path, "/admin/reference-data");
     assert.equal(resolveVoiceNavTarget("settings")?.path, "/settings");
   });

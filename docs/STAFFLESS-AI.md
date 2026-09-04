@@ -14,8 +14,10 @@ script, host setup, and checklist). Clone that fork on the VM — not a bare
 
 Connectors in this app talk to StaffLess AI from the Next.js server only
 (`STAFFLESS_AI_URL` + `STAFFLESS_AI_PAT` / `ONYX_API_KEY`). The PAT is never
-sent to the browser. Synced Work Items read `POST /api/admin/search` (not
-Postgres `WorkItem`). Add Connector creates a credential, then
-`POST /api/manage/admin/connector`, then binds the cc-pair. Sync Now is
-`POST /api/manage/admin/connector/run-once`. Status is
+sent to the browser. The **Ask** tab (`/ask`) streams
+`POST /api/chat/send-chat-message` through `POST /api/ask` the same way —
+OpenSearch hybrid search only, no graph. Synced Work Items read
+`POST /api/admin/search` (not Postgres `WorkItem`). Add Connector creates a
+credential, then `POST /api/manage/admin/connector`, then binds the cc-pair.
+Sync Now is `POST /api/manage/admin/connector/run-once`. Status is
 `POST /api/manage/admin/connector/indexing-status`.

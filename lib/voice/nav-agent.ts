@@ -83,6 +83,7 @@ const VOICE_NAV_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
   "/knowledge-graph": ["knowledge graph", "kg"],
   "/agents": ["agents"],
   "/history": ["history", "history log"],
+  "/ask": ["ask", "ask tab", "search chat", "document search"],
   "/connectors": ["connectors"],
   "/admin/reference-data": ["reference data"],
   "/admin-voice": ["voice admin", "voice usage admin", "admin voice"],
@@ -114,6 +115,7 @@ export const VOICE_PATH_ALIASES: Readonly<Record<string, string>> = {
   "/settings/lifecycle": "/lifecycle",
   "/settings/release-lifecycle": "/lifecycle",
   "/release-lifecycle": "/lifecycle",
+  "/ask-ai": "/ask",
 };
 
 /** Shell extras not always in NAV_DATA (reserved for non-NAV_DATA shell links). */

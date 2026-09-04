@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Ask tab:** Operations sidebar item `/ask` (above Connectors). Native chat UI streams through server-side `POST /api/ask` using a tool-calling agent (OpenAI + StaffLess PAT, never sent to the browser). Catalog tools: `get_verified_count`, `get_breakdown_by_field`, `list_distinct_values`, `get_document_by_key` (StaffLess Postgres tag APIs, not OpenSearch top-N) and `search_indexed_documents` (ranked sample). The model chooses tools by description. Infrastructure failures use a plain capability message, never raw exceptions.
+
 ### Changed
 
 - **Connectors tab → StaffLess AI:** Webhook Connectors are removed. Add Connector, Sync Now, and Status call StaffLess AI from the server (Community PAT, never in the browser). Synced Work Items keep the same table and now list indexed documents from `POST /api/admin/search` instead of Postgres `WorkItem`. Jira Key/Title/Type/Status/Priority/Assignee map from document metadata; Release is usually empty (StaffLess does not index Jira fixVersions).

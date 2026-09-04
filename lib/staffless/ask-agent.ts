@@ -1,0 +1,103 @@
+/**
+ * Ask tool loop: the model chooses catalog vs search tools. No phrase matching.
+ * Tool failures stay in the tool result; infrastructure failures use ASK_PUBLIC_UNAVAILABLE.
+ */
+
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { randomUUID } from "node:crypto";
+import { ASK_AGENT_SYSTEM, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
+import { ASK_TOOLS, dispatchAskTool } from "@/lib/staffless/ask-tools";
+import type { AskEvent } from "@/lib/staffless/ask-packets";
+import { logger } from "@/lib/logger";
+
+export const ASK_MAX_TOOL_ROUNDS = 6;
+
+export type AskHistoryTurn = { role: "user" | "assistant"; content: string };
+
+/**
+ * Run the Ask agent and yield the same AskEvent stream the UI already consumes.
+ * @param message - Current user question.
+ * @param history - Prior turns in this tab (not including the current question).
+ * @param sessionId - Existing tab session, or a new UUID is minted.
+ */
+export async function* runAskAgent(opts: {
+  message: string;
+  history: AskHistoryTurn[];
+  sessionId?: string;
+}): AsyncGenerator<AskEvent> {
+  const sessionId = opts.sessionId ?? randomUUID();
+  yield { type: "session", sessionId };
+  yield { type: "status", phase: "searching" };
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    logger.error("ask.agent_unconfigured", { kind: "missing_openai" });
+    yield { type: "error", message: ASK_PUBLIC_UNAVAILABLE };
+    yield { type: "done" };
+    return;
+  }
+
+  const openai = new OpenAI({ apiKey });
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: ASK_AGENT_SYSTEM },
+    ...opts.history.slice(-16).map((turn) => ({
+      role: turn.role as "user" | "assistant",
+      content: turn.content,
+    })),
+    { role: "user", content: opts.message },
+  ];
+
+  try {
+    const { text, tools } = await completeAskWithTools(openai, messages);
+    logger.info("ask.agent_tools", { tools, n: tools.length });
+    yield { type: "status", phase: "answering" };
+    if (text) yield { type: "text", text };
+    else yield { type: "error", message: ASK_PUBLIC_UNAVAILABLE };
+    yield { type: "done" };
+  } catch (err) {
+    logger.error("ask.agent_failed", { kind: err instanceof Error ? err.name : "unknown" });
+    yield { type: "error", message: ASK_PUBLIC_UNAVAILABLE };
+    yield { type: "done" };
+  }
+}
+
+export async function completeAskWithTools(
+  openai: OpenAI,
+  messages: ChatCompletionMessageParam[]
+): Promise<{ text: string; tools: string[] }> {
+  const tools: string[] = [];
+  for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages,
+      tools: ASK_TOOLS,
+      tool_choice: "auto",
+      temperature: 0.2,
+      max_tokens: 1600,
+    });
+    const choice = res.choices[0]?.message;
+    if (!choice) return { text: "", tools };
+    const calls = choice.tool_calls ?? [];
+    if (calls.length === 0) return { text: (choice.content ?? "").trim(), tools };
+
+    messages.push(choice);
+    for (const call of calls) {
+      if (call.type !== "function") continue;
+      tools.push(call.function.name);
+      let raw: unknown = {};
+      try {
+        raw = JSON.parse(call.function.arguments || "{}") as unknown;
+      } catch {
+        raw = {};
+      }
+      const dispatched = await dispatchAskTool(call.function.name, raw);
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: dispatched.result,
+      });
+    }
+  }
+  return { text: "", tools };
+}

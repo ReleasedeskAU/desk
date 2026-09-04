@@ -208,7 +208,7 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
       "Use from demo release detail via Knowledge Graph links.",
     ],
     related: [
-      { label: "Releases", href: "/releases" },
+      { label: "Ask", href: "/ask" },
       { label: "History Log", href: "/history" },
     ],
   },
@@ -239,8 +239,24 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
       "DB releases have their own audit trail on the release detail page.",
     ],
     related: [
-      { label: "Demo releases", href: "/releases?view=demo" },
+      { label: "Ask", href: "/ask" },
       { label: "Agents", href: "/agents" },
+    ],
+  },
+  "/ask": {
+    key: "ask",
+    title: "Ask",
+    description:
+      "Search chat over documents indexed from Connectors (hybrid keyword and vector search). Conversation stays in this tab until you start a new chat. Does not use the knowledge graph.",
+    dataSource: "none",
+    tips: [
+      "Answers only use what Connectors have already synced — a thin index yields a thin answer, not an error.",
+      "Cited sources are the retrieved documents, when the engine returns them.",
+      "Separate from the floating in-app assistant, which talks about Release Desk records rather than the search index.",
+    ],
+    related: [
+      { label: "Connectors", href: "/connectors" },
+      { label: "Knowledge Graph", href: "/knowledge-graph" },
     ],
   },
   "/connectors": {
@@ -254,7 +270,7 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
       "Filter with ?filter=issues for connectors needing attention.",
     ],
     related: [
-      { label: "Dashboard", href: "/dashboard" },
+      { label: "Ask", href: "/ask" },
       { label: "Reference Data", href: "/admin/reference-data" },
     ],
   },
