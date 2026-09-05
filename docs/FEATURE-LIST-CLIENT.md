@@ -254,10 +254,10 @@ StaffLess AI is the engine underneath connectors and Ask. It holds a searchable 
 - Only a published set of fields can be queried (status, assignee, type, priority, parent, dates, and so on). Personal email addresses are never available to Ask.
 - If the index has not been synced, the product says so instead of fabricating an answer.
 - Combined filters are supported (for example type **and** assignee **and** status).
+- Date-range questions (“created in August”, “due before today”) use indexed dates. Open/unresolved means every stored status except Done (until the published resolved list changes).
 
 ### On the roadmap
 
-- Questions that need a **date range** (“due this week”) — the product will say it cannot do that yet rather than guess.
 - Automatically recognising that the same person in Jira and GitHub is one person.
 - A graph of relationships *across* the search index (the desk already has a visual map of *Release Desk* records; that is a different feature).
 - Writing back to Jira or GitHub from Ask.
@@ -283,7 +283,7 @@ Ask is available to signed-in viewers as well as editors. It does not use the vo
 
 ### On the roadmap
 
-Spoken questions *inside* Ask (today, speak to the voice assistant to move around the desk; type in Ask for index facts). Questions that need date ranges, as above.
+Spoken questions *inside* Ask (today, speak to the voice assistant to move around the desk; type in Ask for index facts).
 
 ---
 
@@ -363,7 +363,7 @@ Stated so expectations stay clear:
 
 - Ask will not invent work that has not been synced.
 - Ask will not guess a count from a few search results when an exact count is available — and it will say so if a lookup cannot be completed.
-- Ask will not answer “due this week” until date-range support is built.
+- Ask will not invent a “closed” status that is not on the published resolved list (today: Done only).
 - Ask will not change Jira or GitHub tickets.
 - Cancelled releases stay locked.
 - Personal email addresses from source tools are not exposed in Ask.

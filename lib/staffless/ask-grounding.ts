@@ -1,6 +1,7 @@
 /**
  * Map tools used on an Ask turn onto a UI trust signal.
  * Presentation only — does not change which tools ran or how answers were computed.
+ * "verified" means a catalog tool ran, not that open/overdue/related logic was correct.
  */
 
 import {

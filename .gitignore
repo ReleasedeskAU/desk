@@ -60,3 +60,6 @@ overview.json
 /vendor/releasedesk-database/generated/
 /vendor/releasedesk-database/node_modules/
 .env*
+
+# Ask vs StaffLess benchmark output (may contain ticket titles)
+/scripts/ask-benchmark-output/

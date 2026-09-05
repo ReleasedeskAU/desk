@@ -9,8 +9,8 @@ import { randomUUID } from "node:crypto";
 import { ASK_AGENT_SYSTEM, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
 import {
   formatDocumentByKeyAnswer,
-  isDocumentOnlyTurn,
   parseDocumentByKeyResult,
+  shouldFormatTicketTable,
 } from "@/lib/staffless/ask-format";
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
@@ -56,7 +56,9 @@ export async function* runAskAgent(opts: {
   ];
 
   try {
-    const { text, tools } = await completeAskWithTools(openai, messages);
+    const { text, tools } = await completeAskWithTools(openai, messages, {
+      allowTicketTable: opts.history.length === 0,
+    });
     logger.info("ask.agent_tools", { tools, n: tools.length });
     yield { type: "status", phase: "answering" };
     if (!text) {
@@ -77,8 +79,10 @@ export async function* runAskAgent(opts: {
 
 export async function completeAskWithTools(
   openai: OpenAI,
-  messages: ChatCompletionMessageParam[]
+  messages: ChatCompletionMessageParam[],
+  opts?: { allowTicketTable?: boolean }
 ): Promise<{ text: string; tools: string[] }> {
+  const allowTicketTable = opts?.allowTicketTable ?? true;
   const tools: string[] = [];
   let lastDocument: DocumentByKeyResult | null = null;
   for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
@@ -94,7 +98,7 @@ export async function completeAskWithTools(
     if (!choice) return { text: "", tools };
     const calls = choice.tool_calls ?? [];
     if (calls.length === 0) {
-      return { text: finalAskText(tools, lastDocument, choice.content), tools };
+      return { text: finalAskText(tools, lastDocument, choice.content, allowTicketTable), tools };
     }
 
     messages.push(choice);
@@ -122,14 +126,17 @@ export async function completeAskWithTools(
 }
 
 /**
- * Ticket-only turns use a Field | Value table from stored fields.
- * Mixed turns keep the model text so counts/lists are not dropped.
+ * First-turn ticket-only lookups use a Field | Value table from stored fields.
+ * Follow-ups and mixed turns keep the model text so summaries and groupings are not dropped.
  */
 function finalAskText(
   tools: string[],
   document: DocumentByKeyResult | null,
-  content: string | null | undefined
+  content: string | null | undefined,
+  allowTicketTable: boolean
 ): string {
-  if (document && isDocumentOnlyTurn(tools)) return formatDocumentByKeyAnswer(document);
+  if (document && allowTicketTable && shouldFormatTicketTable(tools, true)) {
+    return formatDocumentByKeyAnswer(document);
+  }
   return (content ?? "").trim();
 }

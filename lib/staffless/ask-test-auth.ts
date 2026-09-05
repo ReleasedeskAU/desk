@@ -1,15 +1,12 @@
 /**
  * Temporary Ask test-route gate. Fail closed unless explicitly enabled.
  * Timing-safe compare so a wrong token does not leak length via early return.
+ * No request-volume cap — a valid token may run a full benchmark without 429s.
  */
 
 import { timingSafeEqual } from "node:crypto";
 
 export const ASK_TEST_MIN_TOKEN_CHARS = 32;
-const ASK_TEST_WINDOW_MS = 5 * 60 * 1000;
-const ASK_TEST_MAX_HITS = 20;
-
-const askTestHits: number[] = [];
 
 export type AskTestAuthResult =
   | { ok: true }
@@ -31,9 +28,6 @@ export function authorizeAskTest(authorizationHeader: string | null): AskTestAut
   if (!tokensMatch(provided, expected)) {
     return { ok: false, status: 401, error: "Unauthorized" };
   }
-  if (!allowAskTestHit()) {
-    return { ok: false, status: 429, error: "Too many test requests — try again in a few minutes" };
-  }
   return { ok: true };
 }
 
@@ -48,19 +42,4 @@ function tokensMatch(provided: string, expected: string): boolean {
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
-}
-
-function allowAskTestHit(): boolean {
-  const now = Date.now();
-  while (askTestHits.length > 0 && now - (askTestHits[0] ?? 0) > ASK_TEST_WINDOW_MS) {
-    askTestHits.shift();
-  }
-  if (askTestHits.length >= ASK_TEST_MAX_HITS) return false;
-  askTestHits.push(now);
-  return true;
-}
-
-/** Test-only: clear the in-memory window. */
-export function resetAskTestRateLimit(): void {
-  askTestHits.length = 0;
 }

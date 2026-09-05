@@ -231,16 +231,18 @@ Dashboard “connector issues” still use dummy connector data (`lib/dummy-data
 | Capability | API | Notes |
 |------------|-----|--------|
 | Ranked search | `POST /api/admin/search` | Sample, not a census. Ask caps at 25 docs. |
-| Exact count | `POST /api/admin/document-count` | Unique indexed documents; AND filters |
-| Breakdown | `POST /api/admin/document-breakdown` | Group-and-count, cap 50 |
+| Exact count | `POST /api/admin/document-count` | Unique indexed documents; AND filters + date ranges |
+| Breakdown | `POST /api/admin/document-breakdown` | Group-and-count, cap 50; `date_bucket=month` on date fields |
 | Distinct values | `POST /api/admin/document-distinct` | Stored values for one field |
 | Lookup by key | `POST /api/admin/document-by-key` | Exact `key` (RD-9 ≠ RD-90) |
-| List matching | `POST /api/admin/document-list` | AND filters, keys, cap 50 of N |
-| Published schema | `POST /api/admin/document-fields` | Allow-list only — not raw columns |
+| List matching | `POST /api/admin/document-list` | AND filters and/or date ranges; keys + assignee/status/created/updated/duedate; `sort_by` |
+| Published schema | `POST /api/admin/document-fields` | Allow-list + `resolved_statuses` + date-range params — not raw columns |
 
-**Queryable fields:** assignee, status, priority, project, project_name, labels, issuetype, reporter, key, parent, duedate, created, updated, resolution, resolution_date.
+**Queryable fields:** assignee, status, priority, project, project_name, labels, issuetype, reporter, key, parent, duedate, created, updated, resolution, resolution_date, issuelink, issuelink_type, last_updater, status_was.
 
-**Match modes:** contains (substring) for assignee, reporter, labels; exact (case-insensitive) for the rest (including `key` and `parent`). AND up to 5 filter pairs.
+**Match modes:** contains (substring) for assignee, reporter, labels, last_updater; exact (case-insensitive) for the rest (including `key` and `parent`). AND up to 5 filter pairs. Date ranges compare the YYYY-MM-DD prefix (`created_from`/`to`, `resolved_from`/`to`, `updated_from`/`to`, `due_from`/`due_to`/`due_before`).
+
+**Resolved statuses (published):** `["Done"]` until a product update. Open/unresolved = every other stored status, discovered dynamically. There is no `statusCategory` field.
 
 **Semantic layer (as implemented):** the model maps user language onto **stored** field names and values. Code does not synonym-match “todo” → “To Do”. Children = other docs with `parent=<key>`. Subtasks = `parent` + `issuetype=Subtask`. No invented `epic` / `subtasks` columns.
 
@@ -254,7 +256,6 @@ Dashboard “connector issues” still use dummy connector data (`lib/dummy-data
 ### 3.3 Not built
 
 - Neo4j / knowledge graph over indexed docs (overlay checklist: later phase)
-- Date-range filters (“due this week”) — Ask must refuse
 - Cross-source person matching (Jira assignee ↔ GitHub user)
 - Write-back to Jira/GitHub from Ask
 - StaffLess chat `send-chat-message` as the Ask path — **unused**. Current Ask is OpenAI tools + catalog APIs. `docs/STAFFLESS-AI.md` still describes the old stream (stale).
@@ -273,16 +274,16 @@ Dashboard “connector issues” still use dummy connector data (`lib/dummy-data
 - Empty state with three examples: To Do count, “What is RD-3 about?”, breakdown by status
 - `POST /api/ask` (Clerk `readonly+`): OpenAI gpt-4o, up to 8 tool rounds, temperature 0.2
 - Tools: the seven catalog/search tools in §3.1
-- **Verified** badge when catalog tools ran; **Based on search** when `search_indexed_documents` ran; both if mixed; none on failure
+- **Verified** badge when catalog tools ran; **Based on search** when `search_indexed_documents` ran; both if mixed; none on failure. Verified is not a correctness guarantee (open/overdue/related rules can still be applied wrong).
 - Markdown: DataTable-styled tables, bordered lists, safe links only (no `javascript:`)
-- Single-ticket lookups formatted in **code** as Field \| Value (not a model paragraph)
+- First-turn single-ticket lookups formatted in **code** as Field \| Value; follow-up group/filter/summarize answers stay model prose
 - New chat resets session; history of prior turns is sent (capped)
 - Errors: generic “couldn’t complete that lookup…” — no internals
 
 ### Limitations
 
 - Answers only what Connectors have already indexed
-- Date ranges not supported
+- Date ranges supported via catalog params (not free-form SQL)
 - Ask has **no voice** (the Text/Voice pill on screen is global VoiceMic, not Ask)
 - Requires `OPENAI_API_KEY` + StaffLess PAT; missing OpenAI → public unavailable message
 - Production and local both depend on the VM being reachable (nginx 502 looks like a “couldn’t retrieve” ticket miss)
@@ -391,7 +392,7 @@ The Text / Voice chrome on `/ask` is the **global** mic, not an Ask input mode.
 3. Env Booking has **no** lifecycle graph.
 4. Drift **scan** (AV-13) and Alert **TTL** cron are not implemented.
 5. Connectors: only **Jira + GitHub** actually create; Jenkins wizard lies; webhook UI unmounted; logs drawer broken for StaffLess ids.
-6. Ask cannot do date ranges, graph joins, or person identity across sources.
+6. Ask cannot do graph joins or person identity across sources. Date ranges use catalog params.
 7. History page, Settings General/Team/Notifications/Security, and several Portfolio/Agents views are demo or placeholders.
 8. `docs/STAFFLESS-AI.md` still says Ask streams StaffLess `send-chat-message` — **false** in current code.
 

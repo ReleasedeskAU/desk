@@ -7,7 +7,7 @@ import { authorizeAskTest } from "@/lib/staffless/ask-test-auth";
 /**
  * Temporary Ask test stream. Clerk is skipped in middleware; this handler
  * requires ASK_TEST_ENABLED=true and a matching ASK_TEST_TOKEN bearer.
- * Disable and rotate the token after external testing.
+ * No request-volume cap. Disable and rotate the token after external testing.
  */
 export async function POST(req: Request) {
   const gate = authorizeAskTest(req.headers.get("authorization"));

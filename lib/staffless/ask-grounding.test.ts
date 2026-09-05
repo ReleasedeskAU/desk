@@ -9,7 +9,7 @@ import {
 import { askGroundingFromTools } from "./ask-grounding";
 
 describe("askGroundingFromTools", () => {
-  it("marks catalog lookups as verified", () => {
+  it("marks catalog lookups as verified without claiming the answer is correct", () => {
     assert.equal(askGroundingFromTools([ASK_TOOL_GET_VERIFIED_COUNT]), "verified");
     assert.equal(askGroundingFromTools([ASK_TOOL_DOCUMENT_BY_KEY]), "verified");
     assert.equal(askGroundingFromTools([ASK_TOOL_LIST_MATCHING]), "verified");

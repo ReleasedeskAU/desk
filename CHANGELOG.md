@@ -6,9 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Ask correctness (Jira assistant):** Open/unresolved is every stored status except published `resolved_statuses` (Done only, for now) — not `To Do` and not a `statusCategory` field. The Field|Value ticket table runs only on a first-turn identity lookup; follow-ups (group/filter/summarize) stay in prose after looking up the full prior set. Ties, title-vs-description labeling, and title-collision duplicate candidates are prompt rules. Date-range params (`created_from`/`to`, `resolved_from`/`to`, `updated_from`/`to`, `due_from`/`due_to`/`due_before`) and list `sort_by` plus created/updated/assignee on list rows are catalog reads. Overdue is due date before today and not Done. Issue links (`issuelink`, `issuelink_type`) and changelog tags (`last_updater`, `status_was`) are indexed into StaffLess — Ask does not call live Jira REST. The Verified badge still means a catalog tool ran, not that the semantic rule was applied correctly.
+
 ### Added
 
-- **Ask test route:** Temporary `POST /api/ask/test` (Bearer `ASK_TEST_TOKEN`, `ASK_TEST_ENABLED=true`). Same agent as `/api/ask`; StaffLess PAT and OpenAI key stay on the server. Disable after testing.
+- **Ask test route:** Temporary `POST /api/ask/test` (Bearer `ASK_TEST_TOKEN`, `ASK_TEST_ENABLED=true`). Same agent as `/api/ask`; StaffLess PAT and OpenAI key stay on the server. Disable after testing. No request-volume cap (a valid token can run a full Ask benchmark). Rotate the token when testing ends.
 - **Ask tab:** Sidebar item `/ask` (directly below Morning Inbox). Native chat UI streams through server-side `POST /api/ask` using a tool-calling agent (OpenAI + StaffLess PAT, never sent to the browser). Catalog tools: `get_verified_count`, `get_breakdown_by_field`, `list_distinct_values`, `get_document_by_key` (StaffLess Postgres tag APIs, not OpenSearch top-N) and `search_indexed_documents` (ranked sample). The model chooses tools by description. Infrastructure failures use a plain capability message, never raw exceptions.
 
 ### Changed

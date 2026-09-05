@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  ASK_TEST_MIN_TOKEN_CHARS,
-  authorizeAskTest,
-  resetAskTestRateLimit,
-} from "./ask-test-auth";
+import { ASK_TEST_MIN_TOKEN_CHARS, authorizeAskTest } from "./ask-test-auth";
 
 const TOKEN = "a".repeat(ASK_TEST_MIN_TOKEN_CHARS);
 
@@ -30,7 +26,6 @@ describe("authorizeAskTest", () => {
     const prevToken = process.env.ASK_TEST_TOKEN;
     process.env.ASK_TEST_ENABLED = "true";
     process.env.ASK_TEST_TOKEN = TOKEN;
-    resetAskTestRateLimit();
     try {
       assert.equal(authorizeAskTest(null).status, 401);
       assert.equal(authorizeAskTest("Bearer short").status, 401);
@@ -42,14 +37,15 @@ describe("authorizeAskTest", () => {
     }
   });
 
-  it("allows a matching bearer token when enabled", () => {
+  it("allows a matching bearer token when enabled, including many sequential calls", () => {
     const prevEnabled = process.env.ASK_TEST_ENABLED;
     const prevToken = process.env.ASK_TEST_TOKEN;
     process.env.ASK_TEST_ENABLED = "true";
     process.env.ASK_TEST_TOKEN = TOKEN;
-    resetAskTestRateLimit();
     try {
-      assert.deepEqual(authorizeAskTest(`Bearer ${TOKEN}`), { ok: true });
+      for (let i = 0; i < 25; i++) {
+        assert.deepEqual(authorizeAskTest(`Bearer ${TOKEN}`), { ok: true });
+      }
     } finally {
       restore(prevEnabled, prevToken);
     }
@@ -61,5 +57,4 @@ function restore(enabled: string | undefined, token: string | undefined): void {
   else process.env.ASK_TEST_ENABLED = enabled;
   if (token === undefined) delete process.env.ASK_TEST_TOKEN;
   else process.env.ASK_TEST_TOKEN = token;
-  resetAskTestRateLimit();
 }

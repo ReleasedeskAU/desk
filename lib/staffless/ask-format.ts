@@ -17,18 +17,23 @@ const FIELD_LABELS: Record<string, string> = {
   reporter: "Reporter",
   parent: "Parent",
   duedate: "Due date",
-  created: "Created",
-  updated: "Updated",
   project: "Project",
   project_name: "Project name",
   labels: "Labels",
   resolution: "Resolution",
   resolution_date: "Resolution date",
+  issuelink: "Issue links",
+  issuelink_type: "Link types",
+  last_updater: "Last updater",
+  status_was: "Status history",
 };
 
 const FIELD_ORDER = Object.keys(FIELD_LABELS);
 
 const BLOCKED = new Set<string>(PII_TAG_FIELDS);
+
+/** Timestamps stay queryable and on list rows; they clutter the ticket table. */
+const HIDDEN_TABLE_FIELDS = new Set(["created", "updated"]);
 
 /**
  * True when this turn only looked up one ticket (plus optional schema).
@@ -39,6 +44,17 @@ export function isDocumentOnlyTurn(tools: readonly string[]): boolean {
   return tools.every(
     (name) => name === ASK_TOOL_DOCUMENT_BY_KEY || name === ASK_TOOL_QUERYABLE_FIELDS
   );
+}
+
+/**
+ * Auto Field|Value table only on a first-turn identity lookup.
+ * Follow-ups (grouping, filter, summarize) keep the model prose.
+ */
+export function shouldFormatTicketTable(
+  tools: readonly string[],
+  historyEmpty: boolean
+): boolean {
+  return historyEmpty && isDocumentOnlyTurn(tools);
 }
 
 /**
@@ -85,7 +101,7 @@ function buildFieldRows(doc: DocumentByKeyResult): [string, string][] {
     seen.add("key");
   }
   for (const key of FIELD_ORDER) {
-    if (key === "key" || seen.has(key) || BLOCKED.has(key)) continue;
+    if (key === "key" || seen.has(key) || BLOCKED.has(key) || HIDDEN_TABLE_FIELDS.has(key)) continue;
     const raw = fields[key];
     const value = formatFieldValue(raw);
     if (!value) continue;

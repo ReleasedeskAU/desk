@@ -23,6 +23,10 @@ export const ALLOWED_COUNT_FIELDS = [
   "updated",
   "resolution",
   "resolution_date",
+  "issuelink",
+  "issuelink_type",
+  "last_updater",
+  "status_was",
 ] as const;
 
 export const PII_TAG_FIELDS = ["assignee_email", "reporter_email"] as const;
@@ -34,7 +38,19 @@ export type CatalogFilterPair = {
   filter_value: string;
 };
 
-export type VerifiedCountArgs = {
+export type DateRangeArgs = {
+  created_from?: string;
+  created_to?: string;
+  resolved_from?: string;
+  resolved_to?: string;
+  updated_from?: string;
+  updated_to?: string;
+  due_from?: string;
+  due_to?: string;
+  due_before?: string;
+};
+
+export type VerifiedCountArgs = DateRangeArgs & {
   source?: "jira" | "github" | "all";
   filter_field?: CountFilterField;
   filter_value?: string;
@@ -57,6 +73,29 @@ export type VerifiedCountResult = {
   note: string;
 };
 
+const DATE_RANGE_KEYS = [
+  "created_from",
+  "created_to",
+  "resolved_from",
+  "resolved_to",
+  "updated_from",
+  "updated_to",
+  "due_from",
+  "due_to",
+  "due_before",
+] as const;
+
+/** Copy allow-listed YYYY-MM-DD range fields onto a StaffLess body. */
+export function assignDateRangeFields(
+  body: Record<string, unknown>,
+  args: DateRangeArgs
+): void {
+  for (const key of DATE_RANGE_KEYS) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) body[key] = value.trim();
+  }
+}
+
 function countBody(args: VerifiedCountArgs): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.source && args.source !== "all") body.source = args.source;
@@ -65,6 +104,7 @@ function countBody(args: VerifiedCountArgs): Record<string, unknown> {
     if (args.filter_field) body.filter_field = args.filter_field;
     if (args.filter_value) body.filter_value = args.filter_value;
   }
+  assignDateRangeFields(body, args);
   return body;
 }
 

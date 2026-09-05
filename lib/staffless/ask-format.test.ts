@@ -8,6 +8,7 @@ import {
   formatDocumentByKeyAnswer,
   isDocumentOnlyTurn,
   parseDocumentByKeyResult,
+  shouldFormatTicketTable,
 } from "./ask-format";
 
 const FOUND = {
@@ -23,6 +24,8 @@ const FOUND = {
     priority: "Medium",
     assignee: "Suresh Chudoji",
     parent: "RD-90",
+    created: "2026-08-04T21:04:50.367+1000",
+    updated: "2026-08-23T00:26:54.282+1000",
     assignee_email: "hidden@example.com",
   },
   note: "Exact indexed document lookup by key, not a search ranking.",
@@ -38,6 +41,9 @@ describe("formatDocumentByKeyAnswer", () => {
     assert.match(md, /\| Status \| In Progress \|/);
     assert.match(md, /\| Parent \| RD-90 \|/);
     assert.match(md, /Open ticket/);
+    assert.equal(md.includes("Created"), false);
+    assert.equal(md.includes("Updated"), false);
+    assert.equal(md.includes("2026-08-04"), false);
     assert.equal(md.includes("hidden@example.com"), false);
     assert.equal(md.includes("The ticket RD-3 is titled"), false);
   });
@@ -59,6 +65,15 @@ describe("document-only turn", () => {
     assert.equal(isDocumentOnlyTurn([ASK_TOOL_DOCUMENT_BY_KEY]), true);
     assert.equal(isDocumentOnlyTurn([ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOL_GET_VERIFIED_COUNT]), false);
     assert.equal(isDocumentOnlyTurn([]), false);
+  });
+
+  it("auto-tables only on a first-turn identity lookup, not follow-ups", () => {
+    assert.equal(shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], true), true);
+    assert.equal(shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], false), false);
+    assert.equal(
+      shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOL_GET_VERIFIED_COUNT], true),
+      false
+    );
   });
 
   it("ignores invalid or failed tool payloads", () => {

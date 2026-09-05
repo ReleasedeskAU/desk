@@ -6,15 +6,23 @@ import { stafflessFetch } from "@/lib/staffless/client";
 import {
   ALLOWED_COUNT_FIELDS,
   PII_TAG_FIELDS,
+  assignDateRangeFields,
   type CatalogFilterPair,
   type CountFilterField,
+  type DateRangeArgs,
   type VerifiedCountArgs,
   type VerifiedCountResult,
   getVerifiedCount,
 } from "@/lib/staffless/ask-count";
 
 export { ALLOWED_COUNT_FIELDS, PII_TAG_FIELDS, getVerifiedCount };
-export type { CatalogFilterPair, CountFilterField, VerifiedCountArgs, VerifiedCountResult };
+export type {
+  CatalogFilterPair,
+  CountFilterField,
+  DateRangeArgs,
+  VerifiedCountArgs,
+  VerifiedCountResult,
+};
 
 export const STAFFLESS_DOCUMENT_DISTINCT_PATH = "/api/admin/document-distinct";
 export const STAFFLESS_DOCUMENT_BREAKDOWN_PATH = "/api/admin/document-breakdown";
@@ -25,6 +33,7 @@ export const STAFFLESS_DOCUMENT_FIELDS_PATH = "/api/admin/document-fields";
 export type CatalogFieldArgs = {
   source?: "jira" | "github" | "all";
   field: CountFilterField;
+  date_bucket?: "month";
 };
 
 export type DistinctValuesResult = {
@@ -64,17 +73,24 @@ export type DocumentByKeyResult = {
   note: string;
 };
 
-export type DocumentMatchArgs = {
+export type DocumentMatchArgs = DateRangeArgs & {
   source?: "jira" | "github" | "all";
   filter_field?: CountFilterField;
   filter_value?: string;
   filters?: CatalogFilterPair[];
+  sort_by?: "key_asc" | "created_asc" | "created_desc" | "updated_asc" | "updated_desc";
 };
 
 export type MatchingDocument = {
   key: string | null;
   title: string | null;
   link: string | null;
+  assignee?: string | null;
+  status?: string | null;
+  created?: string | null;
+  updated?: string | null;
+  duedate?: string | null;
+  priority?: string | null;
 };
 
 export type DocumentListResult = {
@@ -95,6 +111,11 @@ export type QueryableFieldsResult = {
   fields: string[];
   contains_match: string[];
   exact_match: string[];
+  resolved_statuses?: string[];
+  date_range_fields?: string[];
+  date_range_params?: string[];
+  sort_by?: string[];
+  list_projection?: string[];
   cap: number;
   note: string;
 };
@@ -111,10 +132,15 @@ export async function listQueryableFields(): Promise<QueryableFieldsResult> {
     contains_match: stringList(result?.contains_match, 40),
     exact_match: stringList(result?.exact_match, 40),
     cap: finiteCount(result?.cap) || 50,
+    resolved_statuses: stringList(result?.resolved_statuses, 20),
+    date_range_fields: stringList(result?.date_range_fields, 20),
+    date_range_params: stringList(result?.date_range_params, 20),
+    sort_by: stringList(result?.sort_by, 20),
+    list_projection: stringList(result?.list_projection, 20),
     note:
       typeof result?.note === "string"
         ? result.note
-        : "Queryable indexed tags only. Date ranges are not supported.",
+        : "Queryable indexed tags only. Date ranges use created_from/to, due_before, and related params.",
   };
 }
 
@@ -158,7 +184,11 @@ export async function listDistinctValues(args: CatalogFieldArgs): Promise<Distin
  */
 export async function getBreakdownByField(args: CatalogFieldArgs): Promise<BreakdownResult> {
   const result = await stafflessFetch<BreakdownResult>(STAFFLESS_DOCUMENT_BREAKDOWN_PATH, {
-    json: { ...sourceBody(args.source), field: args.field },
+    json: {
+      ...sourceBody(args.source),
+      field: args.field,
+      ...(args.date_bucket ? { date_bucket: args.date_bucket } : {}),
+    },
   });
   const groups = Array.isArray(result?.groups)
     ? result.groups
@@ -215,13 +245,11 @@ export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<Do
     if (args.filter_field) json.filter_field = args.filter_field;
     if (args.filter_value) json.filter_value = args.filter_value;
   }
+  if (args.sort_by) json.sort_by = args.sort_by;
+  assignDateRangeFields(json, args);
   const result = await stafflessFetch<DocumentListResult>(STAFFLESS_DOCUMENT_LIST_PATH, { json });
   const documents = Array.isArray(result?.documents)
-    ? result.documents.slice(0, 50).map((row) => ({
-        key: typeof row?.key === "string" && row.key.trim() ? row.key : null,
-        title: typeof row?.title === "string" ? row.title : null,
-        link: typeof row?.link === "string" ? row.link : null,
-      }))
+    ? result.documents.slice(0, 50).map((row) => mapMatchingDocument(row))
     : [];
   const filters = Array.isArray(result?.filters)
     ? result.filters.slice(0, 5).map((row) => ({
@@ -246,6 +274,24 @@ export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<Do
     note: truncated
       ? `Showing first ${documents.length} of ${count} matching indexed documents.`
       : "Exact indexed documents matching this filter, not a search sample.",
+  };
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function mapMatchingDocument(row: MatchingDocument | Record<string, unknown>): MatchingDocument {
+  return {
+    key: typeof row?.key === "string" && row.key.trim() ? row.key : null,
+    title: typeof row?.title === "string" ? row.title : null,
+    link: typeof row?.link === "string" ? row.link : null,
+    assignee: optionalText(row.assignee),
+    status: optionalText(row.status),
+    created: optionalText(row.created),
+    updated: optionalText(row.updated),
+    duedate: optionalText(row.duedate),
+    priority: optionalText(row.priority),
   };
 }
 

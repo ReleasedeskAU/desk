@@ -72,6 +72,8 @@ describe("Ask catalog tools", () => {
     assert.ok(ALLOWED_COUNT_FIELDS.includes("status"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("parent"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("duedate"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("issuelink"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("last_updater"));
     for (const blocked of PII_TAG_FIELDS) {
       assert.equal(
         (ALLOWED_COUNT_FIELDS as readonly string[]).includes(blocked),
@@ -86,9 +88,15 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /list_distinct_values/);
     assert.match(ASK_AGENT_SYSTEM, /list_documents_matching/);
     assert.match(ASK_AGENT_SYSTEM, /Date ranges/);
+    assert.match(ASK_AGENT_SYSTEM, /due_before/);
     assert.match(ASK_AGENT_SYSTEM, /RD-9 is not RD-90/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
-    assert.match(ASK_AGENT_SYSTEM, /Field and Value/);
+    assert.match(ASK_AGENT_SYSTEM, /Field\|Value/);
+    assert.match(ASK_AGENT_SYSTEM, /resolved_statuses/);
+    assert.match(ASK_AGENT_SYSTEM, /statusCategory/);
+    assert.match(ASK_AGENT_SYSTEM, /candidates, not confirmed duplicates/);
+    assert.match(ASK_AGENT_SYSTEM, /title\/summary match/);
+    assert.equal(/Q26|Q24|Q33/i.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/onyx/i.test(ASK_AGENT_SYSTEM), false);
   });
@@ -125,13 +133,83 @@ describe("Ask catalog tools", () => {
       });
       const payload = JSON.parse(result.result) as {
         count: number;
-        documents: Array<{ key: string }>;
+        documents: Array<{ key: string; assignee?: string | null }>;
       };
       assert.equal(payload.count, 4);
       assert.deepEqual(
         payload.documents.map((row) => row.key),
         ["RD-10", "RD-11"]
       );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+});
+
+describe("Ask date-range tools", () => {
+  it("accepts due_before on count and rejects a non-ISO date", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    let sent: unknown;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify({ count: 7, source: "jira", filters: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    try {
+      const bad = await dispatchAskTool(ASK_TOOL_GET_VERIFIED_COUNT, { due_before: "tomorrow" });
+      assert.match(bad.result, /invalid_args/);
+      const ok = await dispatchAskTool(ASK_TOOL_GET_VERIFIED_COUNT, { due_before: "2026-09-05" });
+      const payload = JSON.parse(ok.result) as { count: number };
+      assert.equal(payload.count, 7);
+      assert.equal((sent as { due_before?: string }).due_before, "2026-09-05");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("allows list_documents_matching with only a date range", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          count: 2,
+          documents: [
+            { key: "RD-28", title: "A", assignee: null, status: "To Do", duedate: "2026-08-01" },
+          ],
+          truncated: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+    try {
+      const missing = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, {});
+      assert.match(missing.result, /invalid_args/);
+      const result = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, {
+        due_before: "2026-09-05",
+        sort_by: "created_asc",
+      });
+      const payload = JSON.parse(result.result) as {
+        documents: Array<{ key: string; assignee: string | null }>;
+      };
+      assert.equal(payload.documents[0]?.key, "RD-28");
+      assert.equal(payload.documents[0]?.assignee, null);
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
