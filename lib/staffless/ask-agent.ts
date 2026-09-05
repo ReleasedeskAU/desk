@@ -7,8 +7,14 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { randomUUID } from "node:crypto";
 import { ASK_AGENT_SYSTEM, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
+import {
+  formatDocumentByKeyAnswer,
+  isDocumentOnlyTurn,
+  parseDocumentByKeyResult,
+} from "@/lib/staffless/ask-format";
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
-import { ASK_TOOLS, dispatchAskTool } from "@/lib/staffless/ask-tools";
+import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
+import { ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOLS, dispatchAskTool } from "@/lib/staffless/ask-tools";
 import type { AskEvent } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
@@ -74,6 +80,7 @@ export async function completeAskWithTools(
   messages: ChatCompletionMessageParam[]
 ): Promise<{ text: string; tools: string[] }> {
   const tools: string[] = [];
+  let lastDocument: DocumentByKeyResult | null = null;
   for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
     const res = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -86,7 +93,9 @@ export async function completeAskWithTools(
     const choice = res.choices[0]?.message;
     if (!choice) return { text: "", tools };
     const calls = choice.tool_calls ?? [];
-    if (calls.length === 0) return { text: (choice.content ?? "").trim(), tools };
+    if (calls.length === 0) {
+      return { text: finalAskText(tools, lastDocument, choice.content), tools };
+    }
 
     messages.push(choice);
     for (const call of calls) {
@@ -99,6 +108,9 @@ export async function completeAskWithTools(
         raw = {};
       }
       const dispatched = await dispatchAskTool(call.function.name, raw);
+      if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
+        lastDocument = parseDocumentByKeyResult(dispatched.result);
+      }
       messages.push({
         role: "tool",
         tool_call_id: call.id,
@@ -107,4 +119,17 @@ export async function completeAskWithTools(
     }
   }
   return { text: "", tools };
+}
+
+/**
+ * Ticket-only turns use a Field | Value table from stored fields.
+ * Mixed turns keep the model text so counts/lists are not dropped.
+ */
+function finalAskText(
+  tools: string[],
+  document: DocumentByKeyResult | null,
+  content: string | null | undefined
+): string {
+  if (document && isDocumentOnlyTurn(tools)) return formatDocumentByKeyAnswer(document);
+  return (content ?? "").trim();
 }

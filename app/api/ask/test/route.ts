@@ -1,16 +1,19 @@
-import { requireRole } from "@/lib/auth/api";
+import { NextResponse } from "next/server";
 import { zodErrorResponse } from "@/lib/api-errors";
 import { askAgentNdjsonResponse } from "@/lib/staffless/ask-http";
 import { askBodySchema } from "@/lib/staffless/ask-schema";
-import { NextResponse } from "next/server";
+import { authorizeAskTest } from "@/lib/staffless/ask-test-auth";
 
 /**
- * Stream an Ask turn. Tool-calling agent on the server (PAT and OpenAI key never
- * go to the browser). Catalog tools cover count, breakdown, distinct values, and key lookup.
+ * Temporary Ask test stream. Clerk is skipped in middleware; this handler
+ * requires ASK_TEST_ENABLED=true and a matching ASK_TEST_TOKEN bearer.
+ * Disable and rotate the token after external testing.
  */
 export async function POST(req: Request) {
-  const { error } = await requireRole("readonly");
-  if (error) return error;
+  const gate = authorizeAskTest(req.headers.get("authorization"));
+  if (!gate.ok) {
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
+  }
 
   let json: unknown;
   try {

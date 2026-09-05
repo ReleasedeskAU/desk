@@ -88,6 +88,7 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /Date ranges/);
     assert.match(ASK_AGENT_SYSTEM, /RD-9 is not RD-90/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
+    assert.match(ASK_AGENT_SYSTEM, /Field and Value/);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/onyx/i.test(ASK_AGENT_SYSTEM), false);
   });

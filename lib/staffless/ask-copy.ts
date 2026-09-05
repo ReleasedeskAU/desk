@@ -68,4 +68,5 @@ Rules:
 - ${ASK_NO_TOOL_HINT}
 - If a tool returns an error object, explain that this lookup failed. Never dump internals.
 - Do not invent tickets, people, or releases. Do not name internal search engines.
-- Keep answers concise. Use the numbers, keys, and fields the tools return.`;
+- Keep answers concise. Use the numbers, keys, and fields the tools return.
+- When showing one ticket from get_document_by_key, use a markdown table with columns Field and Value (one row per stored field). Do not rewrite the ticket as a paragraph.`;

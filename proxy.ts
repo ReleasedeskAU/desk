@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
+  // Temporary Ask test route — handler fail-closes unless ASK_TEST_ENABLED=true.
+  "/api/ask/test",
   // Legacy /api/auth/login removed from public allowlist — Clerk-only auth.
   // Dev-only overlay diagnostic (no auth). Safe: no secrets, local verification only.
   ...(process.env.NODE_ENV === "development"
