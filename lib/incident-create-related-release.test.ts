@@ -15,7 +15,8 @@ import { prisma } from "@/lib/prisma";
 import { createReleaseRow } from "@/lib/org-compat";
 
 const TEST_SCOPE = "rd124_incident_create_test_scope";
-const skipDb = process.env.FIELD_LOCK_WIRING_SKIP_DB === "1";
+const skipDb =
+  process.env.FIELD_LOCK_WIRING_SKIP_DB === "1" || !process.env.DATABASE_URL;
 
 describe("POST /api/incidents relatedReleaseCode (RD-124)", () => {
   async function installAuthMock(): Promise<boolean> {
@@ -41,8 +42,11 @@ describe("POST /api/incidents relatedReleaseCode (RD-124)", () => {
   it(
     "persists a create when Related Release is selected",
     { skip: skipDb },
-    async () => {
-      if (!(await installAuthMock())) return;
+    async (t) => {
+      if (!(await installAuthMock())) {
+        t.skip("node:test mock.module is not available");
+        return;
+      }
 
       const dept = await prisma.department.findFirst({ select: { id: true } });
       const app = await prisma.application.findFirst({
@@ -111,8 +115,11 @@ describe("POST /api/incidents relatedReleaseCode (RD-124)", () => {
   it(
     "does not persist a create without Related Release and returns a clear error",
     { skip: skipDb },
-    async () => {
-      if (!(await installAuthMock())) return;
+    async (t) => {
+      if (!(await installAuthMock())) {
+        t.skip("node:test mock.module is not available");
+        return;
+      }
 
       const app = await prisma.application.findFirst({ select: { id: true } });
       assert.ok(app, "need an application row");
