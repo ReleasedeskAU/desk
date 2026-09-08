@@ -47,6 +47,21 @@ describe("mapSearchDocToWorkItem", () => {
     assert.equal(row.assignee, "octo");
   });
 
+  it("labels Teams and IMAP sources honestly", () => {
+    const teams = mapSearchDocToWorkItem({
+      document_id: "teams-1",
+      semantic_identifier: "Standup notes",
+      source_type: "teams",
+    });
+    const mail = mapSearchDocToWorkItem({
+      document_id: "imap-1",
+      semantic_identifier: "Release freeze",
+      source_type: "imap",
+    });
+    assert.equal(teams.source, "Microsoft Teams");
+    assert.equal(mail.source, "Email (IMAP)");
+  });
+
   it("deduplicates the same document_id", () => {
     const rows = mapSearchDocsToWorkItems([
       { document_id: "doc-1", semantic_identifier: "A: one", source_type: "jira", metadata: { key: "A" } },

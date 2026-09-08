@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import Link from "next/link";
-import { Check, Copy, Loader2, Send, SquarePen } from "lucide-react";
+import { ArrowUp, Check, Copy, Loader2, SquarePen } from "lucide-react";
 import { AskGroundingBadge } from "@/components/ask/AskGroundingBadge";
 import { AskMarkdown } from "@/components/ask/AskMarkdown";
 import { TopBar } from "@/components/layout/TopBar";
 import { AISkeleton } from "@/components/ui/AISkeleton";
-import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
+import { taBtnSecondary } from "@/lib/styles";
 import {
   ASK_COMPOSER_PLACEHOLDER,
   ASK_EMPTY_BODY,
@@ -22,7 +22,6 @@ import {
 } from "@/lib/staffless/ask-copy";
 import type { AskGrounding } from "@/lib/staffless/ask-grounding";
 import { type AskEvent } from "@/lib/staffless/ask-packets";
-import { cn } from "@/lib/utils";
 
 type AskMessage = {
   id: string;
@@ -85,8 +84,8 @@ export function AskPageContent() {
           </button>
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-[var(--border)] dark:bg-[var(--card)]">
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-4 py-5 sm:px-8 sm:py-6">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-4 py-6 sm:px-8">
           {chat.messages.length === 0 ? (
             <AskEmptyState onPick={(prompt) => void chat.send(prompt)} disabled={chat.busy} />
           ) : (
@@ -174,23 +173,27 @@ function AskEmptyState({
   disabled: boolean;
 }) {
   return (
-    <div className="mx-auto max-w-2xl px-1 py-6 text-center sm:py-10">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{ASK_EMPTY_TITLE}</h2>
-      <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-white/70">{ASK_EMPTY_BODY}</p>
-      <p className="mt-2 text-xs text-gray-500 dark:text-white/50">{ASK_EMPTY_HINT}</p>
-      <p className="mt-3 text-sm">
+    <div className="mx-auto max-w-2xl px-1 py-10 text-center sm:py-16">
+      <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+        {ASK_EMPTY_TITLE}
+      </h2>
+      <p className="mx-auto mt-3 max-w-md text-[15px] leading-7 text-gray-600 dark:text-white/70">
+        {ASK_EMPTY_BODY}
+      </p>
+      <p className="mt-2 text-sm text-gray-500 dark:text-white/50">{ASK_EMPTY_HINT}</p>
+      <p className="mt-4 text-sm">
         <Link href="/connectors" className="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300">
           Open Connectors
         </Link>
       </p>
-      <div className="mt-6 flex flex-col gap-2 text-left">
+      <div className="mt-8 flex flex-col gap-2.5 text-left">
         {ASK_EXAMPLE_PROMPTS.map((prompt) => (
           <button
             key={prompt}
             type="button"
             disabled={disabled}
             onClick={() => onPick(prompt)}
-            className={`${taBtnSecondary} w-full justify-start px-4 py-2.5 text-left text-sm disabled:opacity-50`}
+            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left text-sm text-gray-800 shadow-theme-sm transition hover:border-brand-300 hover:bg-brand-50/40 disabled:opacity-50 dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-white/90 dark:hover:bg-white/5"
           >
             {prompt}
           </button>
@@ -203,7 +206,7 @@ function AskEmptyState({
 function AskThread({ messages }: { messages: AskMessage[] }) {
   return (
     <div
-      className="mx-auto flex w-full max-w-3xl flex-col gap-5"
+      className="mx-auto flex w-full max-w-3xl flex-col gap-8"
       role="log"
       aria-live="polite"
       aria-relevant="additions"
@@ -218,8 +221,8 @@ function AskThread({ messages }: { messages: AskMessage[] }) {
 function AskBubble({ message }: { message: AskMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="max-w-[min(36rem,88%)] rounded-2xl rounded-br-md bg-brand-500 px-4 py-3 text-sm leading-relaxed text-white shadow-theme-sm">
+      <div className="flex flex-col items-end gap-1.5">
+        <div className="max-w-[min(36rem,88%)] rounded-2xl rounded-br-md bg-brand-500 px-4 py-3 text-[15px] leading-6 text-white">
           {message.content}
         </div>
         <time
@@ -235,27 +238,29 @@ function AskBubble({ message }: { message: AskMessage }) {
     return <AskLoadingCard grounding={message.grounding} />;
   }
   return (
-    <div className="group/msg flex justify-start">
-      <div className="relative w-full max-w-3xl rounded-xl rounded-bl-md border border-gray-200 bg-white p-4 sm:p-5 dark:border-[var(--border)] dark:bg-[var(--card)]">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {message.grounding && !message.error ? <AskGroundingBadge kind={message.grounding} /> : null}
-            <time
-              dateTime={new Date(message.createdAt).toISOString()}
-              className="text-[11px] text-gray-400 dark:text-white/40"
-            >
-              {formatAskTime(message.createdAt)}
-            </time>
-          </div>
-          {message.content ? <AskCopyButton text={message.content} /> : null}
+    <div className="flex justify-start">
+      <div className="w-full max-w-3xl">
+        <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+          {message.grounding && !message.error ? <AskGroundingBadge kind={message.grounding} /> : null}
+          <time
+            dateTime={new Date(message.createdAt).toISOString()}
+            className="text-[11px] text-gray-400 dark:text-white/40"
+          >
+            {formatAskTime(message.createdAt)}
+          </time>
         </div>
         {message.content ? <AskMarkdown content={message.content} /> : null}
         {message.error && !message.content && (
-          <p className="text-sm text-gray-600 dark:text-white/70">{ASK_PUBLIC_UNAVAILABLE}</p>
+          <p className="text-[15px] leading-7 text-gray-600 dark:text-white/70">{ASK_PUBLIC_UNAVAILABLE}</p>
         )}
         {message.limitedIndex && (
-          <p className="mt-3 max-w-prose text-xs text-gray-500 dark:text-white/50">{ASK_LIMITED_INDEX_HINT}</p>
+          <p className="mt-3 max-w-prose text-sm text-gray-500 dark:text-white/50">{ASK_LIMITED_INDEX_HINT}</p>
         )}
+        {message.content ? (
+          <div className="mt-3">
+            <AskCopyButton text={message.content} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -263,17 +268,13 @@ function AskBubble({ message }: { message: AskMessage }) {
 
 function AskLoadingCard({ grounding }: { grounding: AskGrounding | null }) {
   return (
-    <div
-      className="w-full max-w-3xl rounded-xl border border-gray-200 bg-white p-4 sm:p-5 dark:border-[var(--border)] dark:bg-[var(--card)]"
-      aria-busy="true"
-      aria-label={ASK_SEARCHING_LABEL}
-    >
-      <div className="mb-3 flex items-center gap-2">
+    <div className="w-full max-w-3xl py-1" aria-busy="true" aria-label={ASK_SEARCHING_LABEL}>
+      <div className="mb-4 flex items-center gap-2">
         {grounding ? (
           <AskGroundingBadge kind={grounding} />
         ) : (
-          <p className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-white/50">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" />
+          <p className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-white/50">
+            <Loader2 className="h-4 w-4 animate-spin text-brand-500" />
             {ASK_SEARCHING_LABEL}
           </p>
         )}
@@ -300,15 +301,10 @@ function AskCopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={() => void copy()}
-      className={cn(
-        taBtnSecondary,
-        "shrink-0 gap-1 px-2 py-1 text-xs opacity-100 transition-opacity",
-        "md:opacity-0 md:group-hover/msg:opacity-100 md:group-focus-within/msg:opacity-100 md:focus-visible:opacity-100"
-      )}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
       aria-label={copied ? "Answer copied" : "Copy answer"}
     >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
     </button>
   );
 }
@@ -324,33 +320,50 @@ function AskComposer({
   onChange: (value: string) => void;
   onSend: () => void;
 }) {
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  const resize = useCallback(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, []);
+
+  useEffect(() => {
+    resize();
+  }, [value, resize]);
+
   return (
-    <div className="flex gap-2 border-t border-gray-200 bg-gray-50/80 p-3 sm:p-4 dark:border-[var(--border)] dark:bg-[var(--sidebar)]">
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            onSend();
-          }
-        }}
-        disabled={busy}
-        maxLength={8000}
-        placeholder={ASK_COMPOSER_PLACEHOLDER}
-        aria-label={ASK_COMPOSER_PLACEHOLDER}
-        className={`${taInput} min-w-0 flex-1`}
-      />
-      <button
-        type="button"
-        onClick={onSend}
-        disabled={busy || !value.trim()}
-        className={`${taBtnPrimary} shrink-0 px-3 disabled:opacity-50`}
-        aria-label="Send message"
-        aria-busy={busy}
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-      </button>
+    <div className="px-4 pb-4 pt-1 sm:px-8 sm:pb-5">
+      <div className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-theme-sm dark:border-[var(--border)] dark:bg-[var(--card)]">
+        <textarea
+          ref={areaRef}
+          value={value}
+          rows={1}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          disabled={busy}
+          maxLength={8000}
+          placeholder={ASK_COMPOSER_PLACEHOLDER}
+          aria-label={ASK_COMPOSER_PLACEHOLDER}
+          className="max-h-36 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-[15px] leading-6 text-gray-800 placeholder:text-gray-400 focus:outline-none disabled:opacity-60 dark:text-white dark:placeholder:text-white/40"
+        />
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={busy || !value.trim()}
+          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-white transition hover:bg-brand-600 disabled:opacity-40"
+          aria-label="Send message"
+          aria-busy={busy}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+        </button>
+      </div>
     </div>
   );
 }

@@ -49,11 +49,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ id: String(created.id), name: body.name.trim(), type: body.type }, { status: 201 });
   } catch (err) {
     logger.error("api/connectors.POST", { kind: err instanceof Error ? err.name : "unknown" });
-    const message = err instanceof Error && err.message.startsWith("Only Jira")
-      ? err.message
-      : err instanceof Error && err.message.includes("needs")
+    const planMessage =
+      err instanceof Error &&
+      (err.message.startsWith("Unsupported connector") ||
+        err.message.includes("needs") ||
+        err.message.startsWith("IMAP port"))
         ? err.message
-        : stafflessPublicMessage(err);
+        : null;
+    const message = planMessage ?? stafflessPublicMessage(err);
     const status = message === stafflessPublicMessage(err) ? stafflessHttpStatus(err) : 400;
     return NextResponse.json({ error: message }, { status });
   }

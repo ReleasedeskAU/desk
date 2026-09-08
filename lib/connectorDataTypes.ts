@@ -23,6 +23,8 @@ export const CONNECTOR_DATA_TYPES: Record<string, ConnectorDataTypeOption[]> = {
     { value: "test_results", label: "Test results", default: false },
     { value: "console_log_on_failure", label: "Console log on failure", default: false },
   ],
+  teams: [{ value: "channel_messages", label: "Channel messages", default: true, fixed: true }],
+  imap: [{ value: "mail", label: "Email messages", default: true, fixed: true }],
 };
 
 export function defaultDataTypesForType(type: string): string[] {

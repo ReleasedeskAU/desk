@@ -219,7 +219,7 @@ Point-in-time health per application and environment: Healthy, Degraded, or Down
 
 ### Fully working today
 
-**Jira** and **GitHub** can be connected. Release Desk stores credentials on the server only. Teams set how often to refresh, run **Sync now**, and see connection status (connected, pending, error, or disabled).
+**Jira**, **GitHub**, **Microsoft Teams**, and **Email (IMAP)** can be connected. Release Desk stores credentials on the server only. Teams set how often to refresh, run **Sync now**, and see connection status (connected, pending, error, or disabled). Email is IMAP, not a native Outlook/Graph connector — many Microsoft 365 tenants block basic IMAP login.
 
 What flows in is the indexed work from those tools — tickets, issues, and related documents (keys, titles, status, assignee, type, priority, parent, due date, and similar). A **Synced work items** list shows what is already in the index. **Ask** answers only from that index.
 

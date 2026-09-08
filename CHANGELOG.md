@@ -6,8 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Connectors — Microsoft Teams and Email (IMAP):** The Add Connector wizard can create StaffLess AI `teams` and `imap` poll connectors (credential + connector + cc-pair). Teams uses Azure AD app `teams_client_id` / `teams_client_secret` / `teams_directory_id` and an optional comma-separated team-name list. Email is labeled IMAP (not Outlook); fields are `imap_username`, `imap_password`, `host`, optional `port`/`mailboxes`. There is no `outlook` type in StaffLess. Wizard copy explains Azure AD + Graph setup for Teams, and that many Microsoft 365 tenants block basic IMAP.
+
 ### Changed
 
+- **GitHub connector payload:** Wizard Pull Requests / Issues checkboxes now set StaffLess `include_prs` / `include_issues`. CI checks and milestones stay UI-only (StaffLess GitHub does not index them). The create path is unchanged: credential (`github_access_token`) → connector (`github`, poll, `repo_owner` + `repositories`) → cc-pair bind → Sync Now `run-once`.
 - **Ask correctness (Jira assistant):** Open/unresolved is every stored status except published `resolved_statuses` (Done only, for now) — not `To Do` and not a `statusCategory` field. The Field|Value ticket table runs only on a first-turn identity lookup; follow-ups (group/filter/summarize) stay in prose after looking up the full prior set. Ties, title-vs-description labeling, and title-collision duplicate candidates are prompt rules. Date-range params (`created_from`/`to`, `resolved_from`/`to`, `updated_from`/`to`, `due_from`/`due_to`/`due_before`) and list `sort_by` plus created/updated/assignee on list rows are catalog reads. Overdue is due date before today and not Done. Issue links (`issuelink`, `issuelink_type`) and changelog tags (`last_updater`, `status_was`) are indexed into StaffLess — Ask does not call live Jira REST. The Verified badge still means a catalog tool ran, not that the semantic rule was applied correctly.
 
 ### Added

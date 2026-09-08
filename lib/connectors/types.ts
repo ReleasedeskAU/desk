@@ -1,4 +1,21 @@
-export type ConnectorTypeId = "jira" | "github" | "jenkins" | "servicenow" | "sonarqube";
+export type ConnectorTypeId =
+  | "jira"
+  | "github"
+  | "teams"
+  | "imap"
+  | "jenkins"
+  | "servicenow"
+  | "sonarqube";
+
+export interface ConnectorFieldDef {
+  key: string;
+  label: string;
+  type: "text" | "password" | "url" | "select";
+  placeholder?: string;
+  optional?: boolean;
+  help?: string;
+  options?: string[];
+}
 
 export interface ConnectorTypeDef {
   id: ConnectorTypeId;
@@ -6,19 +23,10 @@ export interface ConnectorTypeDef {
   authType: "api_key" | "oauth2" | "basic_token";
   available: boolean;
   defaultPollInterval: number;
-  credentialFields: Array<{
-    key: string;
-    label: string;
-    type: "text" | "password" | "url";
-    placeholder?: string;
-  }>;
-  configFields: Array<{
-    key: string;
-    label: string;
-    type: "text" | "select";
-    placeholder?: string;
-    options?: string[];
-  }>;
+  /** Shown in the wizard so customers know how to obtain credentials. */
+  setupHint?: string;
+  credentialFields: ConnectorFieldDef[];
+  configFields: ConnectorFieldDef[];
   targetModel: "WorkItem" | "P1Issue";
 }
 
@@ -44,6 +52,85 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     defaultPollInterval: 15,
     credentialFields: [{ key: "token", label: "Personal Access Token", type: "password" }],
     configFields: [{ key: "repo", label: "Repository", type: "text", placeholder: "owner/repo" }],
+    targetModel: "WorkItem",
+  },
+  {
+    id: "teams",
+    label: "Microsoft Teams",
+    authType: "api_key",
+    available: true,
+    defaultPollInterval: 15,
+    setupHint:
+      "Register an Azure AD (Microsoft Entra ID) app and grant Microsoft Graph application permissions with admin consent so the app can read Teams, channels, and channel messages. Then enter the Application (client) ID, Directory (tenant) ID, and a client secret. StaffLess uses those three values — there is no OAuth click-through in this wizard.",
+    credentialFields: [
+      {
+        key: "teams_client_id",
+        label: "Application (client) ID",
+        type: "text",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      },
+      { key: "teams_client_secret", label: "Client secret", type: "password" },
+      {
+        key: "teams_directory_id",
+        label: "Directory (tenant) ID",
+        type: "text",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      },
+    ],
+    configFields: [
+      {
+        key: "teamNames",
+        label: "Team names",
+        type: "text",
+        placeholder: "Support, Engineering",
+        optional: true,
+        help: "Comma-separated display names. Leave blank to index every Team the app can access.",
+      },
+    ],
+    targetModel: "WorkItem",
+  },
+  {
+    id: "imap",
+    label: "Email (IMAP)",
+    authType: "basic_token",
+    available: true,
+    defaultPollInterval: 15,
+    setupHint:
+      "This is IMAP-based email, not a native Outlook or Microsoft Graph connector. Enter the mailbox username, password, and IMAP host. Many Microsoft 365 organizations block basic IMAP login for security reasons, so this may not work for every customer’s email setup.",
+    credentialFields: [
+      {
+        key: "imap_username",
+        label: "IMAP username",
+        type: "text",
+        placeholder: "you@company.com",
+      },
+      { key: "imap_password", label: "IMAP password", type: "password" },
+    ],
+    configFields: [
+      {
+        key: "host",
+        label: "IMAP host",
+        type: "text",
+        placeholder: "outlook.office365.com",
+        help: "Hostname only (for example outlook.office365.com or imap.gmail.com).",
+      },
+      {
+        key: "port",
+        label: "Port",
+        type: "text",
+        placeholder: "993",
+        optional: true,
+        help: "Defaults to 993 (IMAPS) when left blank.",
+      },
+      {
+        key: "mailboxes",
+        label: "Mailboxes",
+        type: "text",
+        placeholder: "INBOX, Sent",
+        optional: true,
+        help: "Comma-separated mailbox names. Leave blank to index every mailbox the account can see.",
+      },
+    ],
     targetModel: "WorkItem",
   },
   {

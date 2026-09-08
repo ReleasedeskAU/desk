@@ -189,7 +189,7 @@ Comment in `entity-field-lock.ts`: remaining entity types are still to be added.
 
 | Stack | What it does | Status |
 |-------|----------------|--------|
-| **StaffLess AI** (live Connectors tab) | Poll connectors in the search engine; Sync Now = `run-once`; work items from `POST /api/admin/search` | **Working** for Jira + GitHub |
+| **StaffLess AI** (live Connectors tab) | Poll connectors in the search engine; Sync Now = `run-once`; work items from `POST /api/admin/search` | **Working** for Jira, GitHub, Teams, Email (IMAP) |
 | **connector-engine** (webhooks) | Near-real-time webhook ingest | **UI-only / orphaned** — `WebhookConnectorsSection` is not mounted; API + client still exist |
 
 PAT and URL stay on the Next.js server (`STAFFLESS_AI_URL`, `STAFFLESS_AI_PAT` / `ONYX_API_KEY`). Never `NEXT_PUBLIC_*`.
@@ -199,13 +199,15 @@ PAT and URL stay on the Next.js server (`STAFFLESS_AI_URL`, `STAFFLESS_AI_PAT` /
 | Type | In wizard | `available` | StaffLess create |
 |------|-----------|-------------|------------------|
 | Jira | Yes | true | **Yes** (poll, project key, email+token) |
-| GitHub | Yes | true | **Yes** (poll, repo, PAT) |
-| Jenkins | Yes | true | **No** — API throws “Only Jira and GitHub…” |
+| GitHub | Yes | true | **Yes** (poll, repo, PAT; PR/issue checkboxes map to `include_prs` / `include_issues`) |
+| Microsoft Teams | Yes | true | **Yes** (poll, Azure AD client id/secret/tenant, optional team names) |
+| Email (IMAP) | Yes | true | **Yes** (poll, IMAP username/password/host; not Outlook/Graph) |
+| Jenkins | Yes | true | **No** — API throws “Unsupported connector type” |
 | ServiceNow | Yes | false (Coming soon) | No |
 | SonarQube | Yes | false (Coming soon) | No |
-| Splunk / others | Not in wizard | — | Seed/dummy/copy only |
+| Outlook | No | — | **No** — StaffLess has no `outlook` enum/class |
 
-Data-type checkboxes in the wizard are **UI-only** — not sent to StaffLess.
+Data-type checkboxes in the wizard are **UI-only** except GitHub Pull Requests / Issues (`include_prs` / `include_issues`). CI checks and milestones are not indexed by StaffLess.
 
 ### 2.3 Sync
 
@@ -391,7 +393,7 @@ The Text / Voice chrome on `/ask` is the **global** mic, not an Ask input mode.
 2. Approvals have **no** spec-reconcile pass.
 3. Env Booking has **no** lifecycle graph.
 4. Drift **scan** (AV-13) and Alert **TTL** cron are not implemented.
-5. Connectors: only **Jira + GitHub** actually create; Jenkins wizard lies; webhook UI unmounted; logs drawer broken for StaffLess ids.
+5. Connectors: Jira, GitHub, Teams, and Email (IMAP) create in StaffLess; Jenkins wizard still lies; webhook UI unmounted; logs drawer broken for StaffLess ids.
 6. Ask cannot do graph joins or person identity across sources. Date ranges use catalog params.
 7. History page, Settings General/Team/Notifications/Security, and several Portfolio/Agents views are demo or placeholders.
 8. `docs/STAFFLESS-AI.md` still says Ask streams StaffLess `send-chat-message` — **false** in current code.

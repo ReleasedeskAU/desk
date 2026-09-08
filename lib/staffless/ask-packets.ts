@@ -164,6 +164,8 @@ function sourceLabel(sourceType: string): string {
   const lower = sourceType.toLowerCase();
   if (lower === "jira") return "Jira";
   if (lower === "github") return "GitHub";
+  if (lower === "teams") return "Microsoft Teams";
+  if (lower === "imap") return "Email (IMAP)";
   if (!sourceType) return "Indexed";
   return sourceType.replace(/_/g, " ");
 }

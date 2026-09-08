@@ -533,6 +533,39 @@ body {
     border-bottom-color: var(--border);
   }
 
+  /*
+   * Ask chat tables only — do not change DataTable defaults.
+   * Same scrollport and row-divider rules; lighter header and cell padding.
+   */
+  .data-table-body.ask-chat-table table > thead > tr > th {
+    background-color: var(--background);
+    padding: 0.7rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: rgb(107 114 128);
+  }
+  .theme-dark .data-table-body.ask-chat-table table > thead > tr > th,
+  :is(.dark) .data-table-body.ask-chat-table table > thead > tr > th {
+    background-color: var(--background);
+    color: rgb(255 255 255 / 0.5);
+  }
+  .data-table-body.ask-chat-table table > tbody > tr > td {
+    padding: 0.9rem 1rem;
+  }
+  .data-table-body.ask-chat-table table > thead > tr > th:first-child,
+  .data-table-body.ask-chat-table table > tbody > tr > td:first-child {
+    background-color: var(--background);
+  }
+  .data-table-body.ask-chat-table table > tbody > tr:hover > td:first-child {
+    background-color: #f9fafb;
+  }
+  .theme-dark .data-table-body.ask-chat-table table > tbody > tr:hover > td:first-child,
+  :is(.dark) .data-table-body.ask-chat-table table > tbody > tr:hover > td:first-child {
+    background-color: rgb(31 41 55 / 0.85);
+  }
+
   /* Edge-fade cues — toggled by DataTableScrollArea via data attributes. */
   .data-table-scroll-shell {
     position: relative;

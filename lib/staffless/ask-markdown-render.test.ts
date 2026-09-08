@@ -29,7 +29,8 @@ describe("AskMarkdown rendering", () => {
     assert.equal(html.includes("| --- |"), false);
     assert.equal(/\|\s*Key\s*\|/.test(html), false);
     assert.match(html, /data-table-body/);
-    assert.match(html, /uppercase tracking-wide/);
+    assert.match(html, /ask-chat-table/);
+    assert.equal(html.includes("uppercase tracking-wide"), false);
   });
 
   it("collapses long tables behind Show all", () => {
@@ -37,7 +38,7 @@ describe("AskMarkdown rendering", () => {
     const rows = Array.from({ length: ASK_TABLE_PREVIEW_ROWS + 3 }, (_, i) => `| RD-${i} | Row ${i} |`).join("\n");
     const html = renderAsk(header + rows);
     assert.match(html, /Show all 15 rows/);
-    assert.equal((html.match(/<tr /g) ?? []).length, ASK_TABLE_PREVIEW_ROWS + 1);
+    assert.equal((html.match(/<tr[\s>]/g) ?? []).length, ASK_TABLE_PREVIEW_ROWS + 1);
   });
 
   it("renders lists and leaves raw HTML as text", () => {
@@ -45,7 +46,7 @@ describe("AskMarkdown rendering", () => {
     assert.match(html, /<h4/);
     assert.match(html, /<strong[^>]*>alpha<\/strong>/);
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-    assert.match(html, /rounded-xl border/);
+    assert.equal(html.includes("rounded-xl border"), false);
     assert.match(html, /tabular-nums/);
   });
 

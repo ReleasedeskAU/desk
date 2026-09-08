@@ -57,6 +57,8 @@ function TypeIcon({ type }: { type: string }) {
   const colors: Record<string, string> = {
     jira: "bg-[#F4F5F7] text-[#0052CC]",
     github: "bg-gray-900 text-white",
+    teams: "bg-[#5558AF] text-white",
+    imap: "bg-[#0F6CBD] text-white",
     jenkins: "bg-[#D33833] text-white",
     servicenow: "bg-[#E8F5E9] text-[#2E7D32]",
     sonarqube: "bg-[#E8F0FE] text-[#326CE5]",
@@ -196,7 +198,7 @@ export default function ConnectorsPageContent() {
           <div className="max-w-[700px]">
             <h1 className="text-[32px] font-bold text-[#111827] tracking-tight mb-2">System Connectors</h1>
             <p className="text-[15px] text-gray-500 font-medium leading-relaxed">
-              Connect Jira, GitHub, Jenkins, and other tools. Data syncs automatically on a schedule you choose.
+              Connect Jira, GitHub, Teams, email (IMAP), and other tools. Data syncs automatically on a schedule you choose.
             </p>
           </div>
           <button
@@ -514,7 +516,8 @@ function ConnectorWizard({
     if (!name.trim()) return false;
     // Config fields (e.g. Jira project key) are connection-critical: StaffLess AI
     // rejects the connector without them, so gate the step on them too.
-    const configFilled = typeDef?.configFields.every((f) => config[f.key]?.trim()) ?? true;
+    const configFilled =
+      typeDef?.configFields.every((f) => f.optional || config[f.key]?.trim()) ?? true;
     if (!isEdit || replaceCredentials) {
       const credsFilled = typeDef?.credentialFields.every((f) => credentials[f.key]?.trim());
       return Boolean(testResult?.ok && credsFilled && configFilled);
@@ -665,6 +668,11 @@ function ConnectorWizard({
 
           {step === 2 && typeDef && (
             <div className="space-y-4">
+              {typeDef.setupHint ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 leading-relaxed">
+                  {typeDef.setupHint}
+                </div>
+              ) : null}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Display name</label>
                 <input
@@ -721,6 +729,7 @@ function ConnectorWizard({
                       }
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     />
+                    {field.help ? <p className="text-xs text-gray-500 mt-1">{field.help}</p> : null}
                     {isEdit && replaceCredentials && field.type === "password" && (
                       <p className="text-xs text-gray-500 mt-1">
                         Test connection after entering a new token
@@ -742,6 +751,7 @@ function ConnectorWizard({
                     placeholder={field.placeholder}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
+                  {field.help ? <p className="text-xs text-gray-500 mt-1">{field.help}</p> : null}
                 </div>
               ))}
               <div className="flex items-center gap-3 pt-2">

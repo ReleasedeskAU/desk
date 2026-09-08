@@ -48,7 +48,7 @@ describe("Ask answer content types", () => {
       })
     );
     assert.match(breakdown, /<ol/);
-    assert.match(breakdown, /rounded-xl border/);
+    assert.equal(breakdown.includes("rounded-xl border"), false);
     assert.match(breakdown, />1</);
     assert.match(breakdown, /To Do/);
 

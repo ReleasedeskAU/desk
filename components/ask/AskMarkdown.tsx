@@ -2,13 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import {
-  dataTableTableClass,
-  tableCell,
-  tableHeadCell,
-  tableHeadRow,
-  tableRow,
-} from "@/components/ui/data-table";
+import { dataTableTableClass, tableRow } from "@/components/ui/data-table";
 import {
   ASK_TABLE_PREVIEW_ROWS,
   parseAskInline,
@@ -18,13 +12,14 @@ import {
 } from "@/lib/staffless/ask-markdown";
 
 /**
- * Render Ask assistant markdown with Release Desk table styles.
- * Tables use the shared DataTable cell/header classes and a bounded scrollport.
+ * Render Ask assistant markdown with chat-weight typography and tables.
+ * Tables keep the shared data-table scrollport (horizontal dividers, overflow)
+ * but drop the admin card chrome so ticket lists read like a chat answer.
  */
 export function AskMarkdown({ content, className }: { content: string; className?: string }) {
   const blocks = parseAskMarkdown(content);
   return (
-    <div className={cn("space-y-3 text-sm leading-relaxed", className)}>
+    <div className={cn("space-y-5 text-[15px] leading-7", className)}>
       {blocks.map((block, i) => (
         <AskMdBlockView key={`${block.type}-${i}`} block={block} />
       ))}
@@ -36,7 +31,7 @@ function AskMdBlockView({ block }: { block: AskMdBlock }) {
   if (block.type === "heading") {
     const Tag = block.level === 2 ? "h3" : "h4";
     return (
-      <Tag className="text-sm font-bold text-gray-900 dark:text-white">
+      <Tag className="text-base font-semibold tracking-tight text-gray-900 dark:text-white">
         <AskInline text={block.text} />
       </Tag>
     );
@@ -44,17 +39,10 @@ function AskMdBlockView({ block }: { block: AskMdBlock }) {
   if (block.type === "list") {
     const List = block.ordered ? "ol" : "ul";
     return (
-      <List className="list-none overflow-hidden rounded-xl border border-gray-200 dark:border-[var(--border)]">
+      <List className="list-none space-y-2.5">
         {block.items.map((item, i) => (
-          <li
-            key={i}
-            className={cn(
-              tableRow,
-              tableCell,
-              "flex gap-3 last:border-b-0"
-            )}
-          >
-            <span className="w-6 shrink-0 font-mono text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-400">
+          <li key={i} className="flex gap-3 text-gray-700 dark:text-white/90">
+            <span className="w-6 shrink-0 pt-0.5 font-mono text-xs font-semibold tabular-nums text-gray-400 dark:text-white/40">
               {block.ordered ? i + 1 : "•"}
             </span>
             <span className="min-w-0">
@@ -67,7 +55,7 @@ function AskMdBlockView({ block }: { block: AskMdBlock }) {
   }
   if (block.type === "code") {
     return (
-      <pre className="overflow-x-auto rounded-lg bg-gray-100 px-3 py-2 font-mono text-[12px] text-gray-800 dark:bg-white/10 dark:text-white/80">
+      <pre className="overflow-x-auto rounded-xl bg-gray-100 px-4 py-3 font-mono text-[13px] leading-6 text-gray-800 dark:bg-white/[0.06] dark:text-white/80">
         {block.text}
       </pre>
     );
@@ -93,13 +81,13 @@ function AskMdTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
   const visible = expanded || !overflow ? rows : rows.slice(0, ASK_TABLE_PREVIEW_ROWS);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-[var(--border)]">
-      <div className="data-table-body max-h-80">
+    <div className="w-full min-w-0">
+      <div className="data-table-body ask-chat-table max-h-80">
         <table className={dataTableTableClass}>
           <thead>
-            <tr className={cn(tableHeadRow, "bg-gray-50 dark:bg-[var(--card)]")}>
+            <tr>
               {headers.map((header, hi) => (
-                <th key={`${hi}-${header}`} className={tableHeadCell} title={header}>
+                <th key={`${hi}-${header}`} title={header}>
                   <AskInline text={header} />
                 </th>
               ))}
@@ -111,7 +99,7 @@ function AskMdTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
                 {row.map((cell, ci) => (
                   <td
                     key={`${ri}-${ci}`}
-                    className={cn(tableCell, ci === 0 && "whitespace-nowrap font-mono text-xs font-semibold")}
+                    className={cn(ci === 0 && "whitespace-nowrap font-mono text-[13px] font-semibold")}
                   >
                     <AskInline text={cell} />
                   </td>
@@ -125,7 +113,7 @@ function AskMdTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="w-full border-t border-gray-200 px-4 py-2 text-left text-xs font-medium text-brand-600 hover:bg-gray-50 dark:border-[var(--border)] dark:text-brand-300 dark:hover:bg-white/5"
+          className="mt-2 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200"
         >
           {expanded
             ? "Show fewer rows"
@@ -152,7 +140,7 @@ function inlineNode(part: AskMdInline, key: number): ReactNode {
     return (
       <code
         key={key}
-        className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[12px] text-brand-700 dark:bg-white/10 dark:text-brand-300"
+        className="rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-[13px] text-brand-700 dark:bg-white/10 dark:text-brand-300"
       >
         {part.text}
       </code>

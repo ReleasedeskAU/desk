@@ -131,8 +131,8 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
         <div>
           <h2 className="text-xl font-bold text-[#111827] tracking-tight">Synced Work Items</h2>
           <p className="mt-1 text-[14px] text-gray-500 font-medium leading-relaxed max-w-[720px]">
-            Full dataset from Jira sync and webhooks. New Jira issues apply within seconds via webhook,
-            and this table auto-refreshes every 5s for demos.
+            Indexed documents from StaffLess AI after sync (Jira, GitHub, Teams, and IMAP email when
+            connected). This table refreshes after Sync Now.
           </p>
         </div>
         <button
@@ -191,7 +191,7 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
               </span>
             ) : null}
             <span className="text-gray-500 font-medium">
-              Last Jira sync: {relativeTime(payload.lastSynced)}
+              Last sync: {relativeTime(payload.lastSynced)}
             </span>
           </div>
         ) : null}

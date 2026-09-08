@@ -47,6 +47,20 @@ function sourceToType(source: string | undefined): string {
   return (source ?? "unknown").toLowerCase();
 }
 
+function authTypeFor(type: string): string {
+  if (type === "jira" || type === "imap") return "basic_token";
+  return "api_key";
+}
+
+function stringList(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    const parts = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    return parts.length > 0 ? parts.join(", ") : undefined;
+  }
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return undefined;
+}
+
 /**
  * Translate StaffLess index attempt status into the existing badge keys.
  */
@@ -77,12 +91,13 @@ export function mapConnectorToTableRow(
   const badge = mapIndexingStatusToBadge(status ?? {});
   const cfg = connector.connector_specific_config ?? {};
   const type = sourceToType(connector.source);
+  const host = typeof cfg.host === "string" ? cfg.host : undefined;
   const baseUrl =
     typeof cfg.jira_base_url === "string"
       ? cfg.jira_base_url
       : typeof cfg.github_base_url === "string"
         ? cfg.github_base_url
-        : null;
+        : host ?? null;
   const projectKey = typeof cfg.project_key === "string" ? cfg.project_key : undefined;
   const repoOwner = typeof cfg.repo_owner === "string" ? cfg.repo_owner : "";
   const repositories = typeof cfg.repositories === "string" ? cfg.repositories : "";
@@ -92,17 +107,29 @@ export function mapConnectorToTableRow(
         ? repositories
         : `${repoOwner}/${repositories}`
       : repositories || undefined;
+  const teamNames = stringList(cfg.teams);
+  const mailboxes = stringList(cfg.mailboxes);
+  const port =
+    typeof cfg.port === "number"
+      ? String(cfg.port)
+      : typeof cfg.port === "string" && cfg.port.trim()
+        ? cfg.port.trim()
+        : undefined;
 
   return {
     id: String(connector.id),
     ccPairId: status?.cc_pair_id ?? null,
     name: connector.name,
     type,
-    authType: type === "jira" ? "basic_token" : "api_key",
+    authType: authTypeFor(type),
     baseUrl,
     config: {
       ...(projectKey ? { projectKey } : {}),
       ...(repo ? { repo } : {}),
+      ...(teamNames ? { teamNames } : {}),
+      ...(host ? { host } : {}),
+      ...(port ? { port } : {}),
+      ...(mailboxes ? { mailboxes } : {}),
     },
     pollInterval: connector.refresh_freq ? Math.max(1, Math.round(connector.refresh_freq / 60)) : 15,
     status: badge.status,
