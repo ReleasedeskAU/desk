@@ -26,7 +26,7 @@ import {
   type RiskEngineConfig,
 } from "@/lib/risk-engine-config";
 import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
-import { FilterPills, FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
+import { FilterRangeInputs, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import {
   RISK_COLUMNS,
   RISK_DEFAULT_HIDDEN_COLUMN_KEYS,
@@ -1283,11 +1283,15 @@ export default function RiskRegisterContent() {
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("status") && (
-            <FilterPills
-              options={statusOptions.map((s) => ({ value: s, label: s }))}
-              value={values.status || ""}
-              onChange={(v) => setFilter("status", v)}
-            />
+            <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
+              {/* Status options come from enabled risk lifecycle labels (shared FilterSelect). */}
+              <option value="">All statuses</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </FilterSelect>
           )}
           {isFilterVisible("category") && (
             <FilterSelect value={values.category} onChange={(v) => setFilter("category", v)}>
