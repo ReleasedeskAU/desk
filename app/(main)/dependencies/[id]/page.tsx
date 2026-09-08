@@ -345,13 +345,13 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
         ? data.unmetReasons.filter((r): r is string => typeof r === "string")
         : [];
       if (code === "TRANSITION_NEEDS_OVERRIDE" && draft.status !== row.status) {
-        const { status: _status, ...extraBody } = patchBody;
+        const { status: _status, ...rest } = patchBody;
         exceptionFromModalSave.current = true;
         statusConfirm.presentException({
           targetStatus: draft.status,
           targetLabel: draft.status,
           patchUrl: `/api/dependencies/${row.id}`,
-          extraBody,
+          extraBody: { ...rest } as Record<string, unknown>,
           unmetReasons,
           leadMessage: apiError || null,
         });
@@ -654,7 +654,7 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
               </div>
             ) : null}
           </EditableFieldGrid>
-        ) : null}
+        ) : null
       }
       relatedLinks={
         <>
