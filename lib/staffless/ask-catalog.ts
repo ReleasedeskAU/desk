@@ -87,6 +87,7 @@ export type MatchingDocument = {
   link: string | null;
   assignee?: string | null;
   status?: string | null;
+  status_category?: string | null;
   created?: string | null;
   updated?: string | null;
   duedate?: string | null;
@@ -111,7 +112,8 @@ export type QueryableFieldsResult = {
   fields: string[];
   contains_match: string[];
   exact_match: string[];
-  resolved_statuses?: string[];
+  resolved_status_category?: string;
+  status_category_values?: string[];
   date_range_fields?: string[];
   date_range_params?: string[];
   sort_by?: string[];
@@ -132,7 +134,11 @@ export async function listQueryableFields(): Promise<QueryableFieldsResult> {
     contains_match: stringList(result?.contains_match, 40),
     exact_match: stringList(result?.exact_match, 40),
     cap: finiteCount(result?.cap) || 50,
-    resolved_statuses: stringList(result?.resolved_statuses, 20),
+    resolved_status_category:
+      typeof result?.resolved_status_category === "string"
+        ? result.resolved_status_category.trim().toLowerCase()
+        : undefined,
+    status_category_values: stringList(result?.status_category_values, 8),
     date_range_fields: stringList(result?.date_range_fields, 20),
     date_range_params: stringList(result?.date_range_params, 20),
     sort_by: stringList(result?.sort_by, 20),
@@ -173,8 +179,18 @@ export async function listDistinctValues(args: CatalogFieldArgs): Promise<Distin
     untagged_count: finiteCount(result?.untagged_count),
     total_indexed: finiteCount(result?.total_indexed),
     truncated: result?.truncated === true,
-    note: "Exact distinct indexed tag values, not a search sample.",
+    note: distinctNote(args.field),
   };
+}
+
+function distinctNote(field: string): string {
+  if (field === "repo") {
+    return "Each value is a repository owner/name. Repository count is the number of values, not total_indexed (that is document count).";
+  }
+  if (field === "object_type") {
+    return "GitHub stores PullRequest and Issue here. Document count filtered by object_type is PRs or issues, not repositories.";
+  }
+  return "Exact distinct indexed tag values, not a search sample.";
 }
 
 /**

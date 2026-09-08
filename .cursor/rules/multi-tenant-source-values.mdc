@@ -1,0 +1,26 @@
+---
+description: Multi-tenant SaaS — never hardcode customer-specific status names or source config as if they were universal
+alwaysApply: true
+---
+
+# Multi-tenant source values
+
+Release Desk is sold to many companies. Each tenant has its own workflows, status names, boards, and labels. A literal like `"Done"` is one customer’s word, not a platform rule.
+
+## Do
+
+- Use the source system’s **universal key** when it has one (Jira `statusCategory.key`: `new` | `indeterminate` | `done`).
+- Or make the value **configurable** (same pattern as Lifecycle Settings).
+- If the indexed field is missing, **do not guess**. Treat it as not classifiable; say a re-sync is needed.
+
+## Do not
+
+- Hardcode a status name, workflow step, or board column as if every tenant uses it.
+- Infer “closed” from English words (`Done`, `Closed`, `Resolved`) when a category/key exists.
+- Teach the model a `!=` filter the catalog cannot run.
+
+Before writing a status/label/config check: would this break for a tenant who named things differently? If yes, it is not ready.
+
+## Future review (do not “fix” in passing)
+
+Hardcoded name lists still live in: `lib/inbox.ts`, `lib/conversation-context.ts`, `lib/voice/manager-reads.ts`, `lib/dummy-data.ts`, `lib/types.ts`, `lib/utils.ts`, `lib/knowledge-graph.ts`, `lib/enterprise-env-data.ts`, `DbLinkedWorkItems.tsx` (Done/Closed/Resolved → Approved), `summarizeWorkItems` blocked/Pending names, `scripts/jira-ask-benchmark` classifiers.

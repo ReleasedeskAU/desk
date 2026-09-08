@@ -1,8 +1,4 @@
-/**
- * Map StaffLess AI SearchDoc records onto the Synced Work Items table shape.
- * Jira metadata is the close match; GitHub and other sources fill what they have.
- * StaffLess does not store Jira fixVersions, so Release is usually empty.
- */
+import { classifyStatusCategory } from "@/lib/jira-status-category";
 
 export type StafflessSearchDoc = {
   document_id?: string;
@@ -20,6 +16,7 @@ export type WorkItemRow = {
   itemType: string;
   releaseCode: string | null;
   status: string;
+  statusCategory: string | null;
   assignee: string | null;
   priority: string | null;
   blockedBy: string | null;
@@ -96,6 +93,7 @@ export function mapSearchDocToWorkItem(
     itemType: metaString(metadata, "issuetype", "object_type") || "Document",
     releaseCode: metaString(metadata, "release", "fixVersion", "fix_version", "version"),
     status: metaString(metadata, "status", "state") || "Indexed",
+    statusCategory: classifyStatusCategory(metaString(metadata, "status_category")),
     assignee: metaString(metadata, "assignee", "user"),
     priority: metaString(metadata, "priority"),
     blockedBy: metaString(metadata, "parent"),

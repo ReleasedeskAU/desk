@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { mapSearchDocToWorkItem, mapSearchDocsToWorkItems } from "./map-search-docs";
+import { summarizeWorkItems } from "@/lib/dependency-impact";
 
 describe("mapSearchDocToWorkItem", () => {
   it("maps Jira metadata onto the existing table columns", () => {
@@ -25,6 +26,7 @@ describe("mapSearchDocToWorkItem", () => {
     assert.equal(row.status, "In Progress");
     assert.equal(row.priority, "High");
     assert.equal(row.assignee, "Ada Lovelace");
+    assert.equal(row.statusCategory, null);
     assert.equal(row.releaseCode, null);
     assert.equal(row.source, "Jira");
     assert.equal(row.blockedBy, "RD-1");
@@ -45,6 +47,26 @@ describe("mapSearchDocToWorkItem", () => {
     assert.equal(row.priority, null);
     assert.equal(row.source, "GitHub");
     assert.equal(row.assignee, "octo");
+    assert.equal(row.statusCategory, null);
+  });
+
+  it("maps status_category=done on a Closed ticket and leaves a Done name unclassifiable without it", () => {
+    const closed = mapSearchDocToWorkItem({
+      document_id: "RD-1",
+      semantic_identifier: "RD-1: Ship",
+      source_type: "jira",
+      metadata: { key: "RD-1", status: "Closed", status_category: "done" },
+    });
+    const namedDone = mapSearchDocToWorkItem({
+      document_id: "RD-2",
+      semantic_identifier: "RD-2: Old",
+      source_type: "jira",
+      metadata: { key: "RD-2", status: "Done" },
+    });
+    assert.equal(closed.status, "Closed");
+    assert.equal(closed.statusCategory, "done");
+    assert.equal(namedDone.status, "Done");
+    assert.equal(namedDone.statusCategory, null);
   });
 
   it("labels Teams and IMAP sources honestly", () => {
@@ -68,5 +90,19 @@ describe("mapSearchDocToWorkItem", () => {
       { document_id: "doc-1", semantic_identifier: "A: one again", source_type: "jira", metadata: { key: "A" } },
     ]);
     assert.equal(rows.length, 1);
+  });
+});
+
+describe("summarizeWorkItems category rule", () => {
+  it("counts Closed + status_category=done as done, not the status word", () => {
+    const summary = summarizeWorkItems([
+      { status: "Closed", itemType: "Bug", statusCategory: "done" },
+      { status: "To Do", itemType: "Story", statusCategory: "new" },
+      { status: "Done", itemType: "Task" },
+    ]);
+    assert.equal(summary.done, 1);
+    assert.equal(summary.open, 1);
+    assert.equal(summary.unclassified, 1);
+    assert.equal(summary.total, 3);
   });
 });

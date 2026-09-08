@@ -254,7 +254,7 @@ StaffLess AI is the engine underneath connectors and Ask. It holds a searchable 
 - Only a published set of fields can be queried (status, assignee, type, priority, parent, dates, and so on). Personal email addresses are never available to Ask.
 - If the index has not been synced, the product says so instead of fabricating an answer.
 - Combined filters are supported (for example type **and** assignee **and** status).
-- Date-range questions (“created in August”, “due before today”) use indexed dates. Open/unresolved means every stored status except Done (until the published resolved list changes).
+- Date-range questions (“created in August”, “due before today”) use indexed dates. Open/unresolved means Jira’s status category is To Do or In Progress (`status_category` = `new` or `indeterminate`), not the word on the board. Tickets that have not been re-synced after this field was added are left unclassified.
 
 ### On the roadmap
 
@@ -363,7 +363,7 @@ Stated so expectations stay clear:
 
 - Ask will not invent work that has not been synced.
 - Ask will not guess a count from a few search results when an exact count is available — and it will say so if a lookup cannot be completed.
-- Ask will not invent a “closed” status that is not on the published resolved list (today: Done only).
+- Ask will not guess open vs resolved from a status display name (Done, Closed, or any other word). It uses Jira’s status category key. Tickets missing that indexed field stay unclassified until a Jira re-sync.
 - Ask will not change Jira or GitHub tickets.
 - Cancelled releases stay locked.
 - Personal email addresses from source tools are not exposed in Ask.

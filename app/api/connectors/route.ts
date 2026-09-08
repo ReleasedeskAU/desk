@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
+import { parseOptionalIndexingStart } from "@/lib/jira/project-keys";
 import { createStafflessConnector, listStafflessConnectors } from "@/lib/staffless/api";
 import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
 import { logger } from "@/lib/logger";
@@ -31,10 +32,16 @@ export async function POST(req: Request) {
     credentials?: Record<string, string>;
     config?: Record<string, unknown>;
     pollInterval?: number;
+    indexingStart?: string | null;
   };
 
   if (!body.name?.trim() || !body.type || !body.credentials) {
     return NextResponse.json({ error: "Name, type, and credentials are required" }, { status: 400 });
+  }
+
+  const indexingStart = parseOptionalIndexingStart(body.indexingStart);
+  if (indexingStart === false) {
+    return NextResponse.json({ error: "Sync start date is not valid" }, { status: 400 });
   }
 
   try {
@@ -45,6 +52,7 @@ export async function POST(req: Request) {
       credentials: body.credentials,
       config: body.config,
       pollInterval: body.pollInterval,
+      indexingStart,
     });
     return NextResponse.json({ id: String(created.id), name: body.name.trim(), type: body.type }, { status: 201 });
   } catch (err) {

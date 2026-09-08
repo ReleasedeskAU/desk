@@ -70,10 +70,15 @@ describe("Ask catalog tools", () => {
   it("allow-lists metadata fields and describes tool choice rather than phrases", () => {
     assert.ok(ALLOWED_COUNT_FIELDS.includes("assignee"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("status"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("status_category"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("parent"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("duedate"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("issuelink"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("last_updater"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("repo"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("object_type"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("num_files_changed"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("num_commits"));
     for (const blocked of PII_TAG_FIELDS) {
       assert.equal(
         (ALLOWED_COUNT_FIELDS as readonly string[]).includes(blocked),
@@ -92,11 +97,16 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /RD-9 is not RD-90/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
     assert.match(ASK_AGENT_SYSTEM, /Field\|Value/);
-    assert.match(ASK_AGENT_SYSTEM, /resolved_statuses/);
-    assert.match(ASK_AGENT_SYSTEM, /statusCategory/);
+    assert.match(ASK_AGENT_SYSTEM, /resolved_status_category/);
+    assert.match(ASK_AGENT_SYSTEM, /status_category/);
+    assert.equal(/resolved_statuses/.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /candidates, not confirmed duplicates/);
     assert.match(ASK_AGENT_SYSTEM, /title\/summary match/);
     assert.equal(/Q26|Q24|Q33/i.test(ASK_AGENT_SYSTEM), false);
+    assert.match(ASK_AGENT_SYSTEM, /Never call that number "repos"/);
+    assert.match(ASK_AGENT_SYSTEM, /num_files_changed/);
+    const countTool = ASK_TOOLS.find((t) => t.type === "function" && t.function.name === ASK_TOOL_GET_VERIFIED_COUNT);
+    assert.match(countTool && countTool.type === "function" ? countTool.function.description ?? "" : "", /not repositories/);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/onyx/i.test(ASK_AGENT_SYSTEM), false);
   });
@@ -172,6 +182,9 @@ describe("Ask date-range tools", () => {
       const payload = JSON.parse(ok.result) as { count: number };
       assert.equal(payload.count, 7);
       assert.equal((sent as { due_before?: string }).due_before, "2026-09-05");
+      const github = await dispatchAskTool(ASK_TOOL_GET_VERIFIED_COUNT, { source: "github" });
+      const githubPayload = JSON.parse(github.result) as { note?: string };
+      assert.match(githubPayload.note ?? "", /not repositories/);
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;

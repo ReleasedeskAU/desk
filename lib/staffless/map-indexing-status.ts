@@ -1,6 +1,10 @@
 /**
- * Map StaffLess indexing-status + connector snapshots onto the System Connectors table.
+ * Map StaffLess cc-pair + indexing-status onto the System Connectors table.
+ * Join key is `cc_pair_id` from the engine — not display name.
+ * Credential JSON from `/admin/connector/status` is ignored on purpose.
  */
+
+import { parseGeneratedJiraProjectJql } from "@/lib/jira/project-keys";
 
 export type StafflessIndexingStatus = {
   cc_pair_id?: number;
@@ -8,10 +12,12 @@ export type StafflessIndexingStatus = {
   source?: string;
   cc_pair_status?: string;
   in_progress?: boolean;
+  in_repeated_error_state?: boolean;
   last_status?: string | null;
   last_finished_status?: string | null;
   last_success?: string | null;
   docs_indexed?: number;
+  latest_index_attempt_docs_indexed?: number | null;
 };
 
 export type StafflessConnectorSnapshot = {
@@ -21,13 +27,23 @@ export type StafflessConnectorSnapshot = {
   credential_ids?: number[];
   connector_specific_config?: Record<string, unknown>;
   refresh_freq?: number | null;
+  indexing_start?: string | null;
   time_created?: string;
   time_updated?: string;
+};
+
+/** `/admin/connector/status` row. Do not read `credential.credential_json`. */
+export type StafflessCcPairStatus = {
+  cc_pair_id?: number;
+  name?: string;
+  connector?: StafflessConnectorSnapshot;
+  credential?: { id?: number };
 };
 
 export type ConnectorTableRow = {
   id: string;
   ccPairId: number | null;
+  credentialIds: number[];
   name: string;
   type: string;
   authType: string;
@@ -36,12 +52,20 @@ export type ConnectorTableRow = {
   pollInterval: number;
   status: string;
   lastSyncedAt: string | null;
+  lastStatus: string | null;
+  lastFinishedStatus: string | null;
   lastError: string | null;
   enabled: boolean;
+  docsIndexed: number;
+  latestAttemptDocsIndexed: number | null;
+  inProgress: boolean;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+  indexingStart: string | null;
 };
+
+const HIDDEN_SOURCES = new Set(["ingestion_api"]);
 
 function sourceToType(source: string | undefined): string {
   return (source ?? "unknown").toLowerCase();
@@ -50,6 +74,14 @@ function sourceToType(source: string | undefined): string {
 function authTypeFor(type: string): string {
   if (type === "jira" || type === "imap") return "basic_token";
   return "api_key";
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function optionalCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function stringList(value: unknown): string | undefined {
@@ -61,14 +93,32 @@ function stringList(value: unknown): string | undefined {
   return undefined;
 }
 
+function githubDataTypes(cfg: Record<string, unknown>): string[] {
+  const types: string[] = [];
+  if (cfg.include_prs !== false) types.push("pull_requests");
+  if (cfg.include_issues === true) types.push("issues");
+  if (cfg.include_files === true) types.push("files");
+  return types;
+}
+
+function credentialIdsFrom(connector: StafflessConnectorSnapshot, pair: StafflessCcPairStatus): number[] {
+  const fromConnector = (connector.credential_ids ?? []).filter((id) => Number.isSafeInteger(id) && id > 0);
+  if (fromConnector.length > 0) return fromConnector;
+  const fromPair = pair.credential?.id;
+  return fromPair != null && Number.isSafeInteger(fromPair) && fromPair > 0 ? [fromPair] : [];
+}
+
 /**
  * Translate StaffLess index attempt status into the existing badge keys.
  */
 export function mapIndexingStatusToBadge(
   row: StafflessIndexingStatus
 ): { status: string; enabled: boolean; lastError: string | null } {
-  const paused = (row.cc_pair_status ?? "").toUpperCase() === "PAUSED";
-  if (paused) {
+  const pairStatus = (row.cc_pair_status ?? "").toUpperCase();
+  if (pairStatus === "DELETING") {
+    return { status: "DELETING", enabled: false, lastError: null };
+  }
+  if (pairStatus === "PAUSED") {
     return { status: "DISABLED", enabled: false, lastError: null };
   }
   if (row.in_progress || row.last_status === "in_progress") {
@@ -86,7 +136,8 @@ export function mapIndexingStatusToBadge(
 
 export function mapConnectorToTableRow(
   connector: StafflessConnectorSnapshot,
-  status: StafflessIndexingStatus | undefined
+  status: StafflessIndexingStatus | undefined,
+  pair?: StafflessCcPairStatus
 ): ConnectorTableRow {
   const badge = mapIndexingStatusToBadge(status ?? {});
   const cfg = connector.connector_specific_config ?? {};
@@ -99,46 +150,74 @@ export function mapConnectorToTableRow(
         ? cfg.github_base_url
         : host ?? null;
   const projectKey = typeof cfg.project_key === "string" ? cfg.project_key : undefined;
+  const jqlQuery = typeof cfg.jql_query === "string" ? cfg.jql_query : undefined;
+  const jqlKeys = parseGeneratedJiraProjectJql(jqlQuery);
+  const projectKeys = jqlKeys ?? (projectKey ? [projectKey] : undefined);
+  const allProjects = type === "jira" && !projectKey && !jqlQuery;
   const repoOwner = typeof cfg.repo_owner === "string" ? cfg.repo_owner : "";
   const repositories = typeof cfg.repositories === "string" ? cfg.repositories : "";
+  const repoNames = repositories
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const githubRepos =
+    repoOwner && repoNames.length > 0 ? repoNames.map((name) => (name.includes("/") ? name : `${repoOwner}/${name}`)) : undefined;
+  const allRepos = type === "github" && Boolean(repoOwner) && repoNames.length === 0;
   const repo =
-    repoOwner && repositories
-      ? repositories.includes("/")
-        ? repositories
-        : `${repoOwner}/${repositories}`
-      : repositories || undefined;
+    githubRepos && githubRepos.length === 1
+      ? githubRepos[0]
+      : repoOwner && repositories && !repositories.includes(",")
+        ? `${repoOwner}/${repositories}`
+        : undefined;
   const teamNames = stringList(cfg.teams);
   const mailboxes = stringList(cfg.mailboxes);
+  const allowedSenders = stringList(cfg.allowed_senders);
   const port =
     typeof cfg.port === "number"
       ? String(cfg.port)
       : typeof cfg.port === "string" && cfg.port.trim()
         ? cfg.port.trim()
         : undefined;
+  const dataTypes = type === "github" ? githubDataTypes(cfg) : undefined;
 
   return {
     id: String(connector.id),
-    ccPairId: status?.cc_pair_id ?? null,
-    name: connector.name,
+    ccPairId: pair?.cc_pair_id ?? status?.cc_pair_id ?? null,
+    credentialIds: pair ? credentialIdsFrom(connector, pair) : connector.credential_ids ?? [],
+    name: pair?.name?.trim() || connector.name,
     type,
     authType: authTypeFor(type),
     baseUrl,
     config: {
       ...(projectKey ? { projectKey } : {}),
+      ...(projectKeys ? { projectKeys } : {}),
+      ...(allProjects ? { allProjects: true } : {}),
+      ...(jqlQuery && !jqlKeys ? { jqlQuery } : {}),
       ...(repo ? { repo } : {}),
+      ...(repoOwner ? { repoOwner } : {}),
+      ...(githubRepos ? { repos: githubRepos } : {}),
+      ...(allRepos ? { allRepos: true } : {}),
       ...(teamNames ? { teamNames } : {}),
       ...(host ? { host } : {}),
       ...(port ? { port } : {}),
       ...(mailboxes ? { mailboxes } : {}),
+      ...(allowedSenders ? { allowedSenders } : {}),
+      ...(dataTypes ? { dataTypes } : {}),
     },
     pollInterval: connector.refresh_freq ? Math.max(1, Math.round(connector.refresh_freq / 60)) : 15,
     status: badge.status,
-    lastSyncedAt: status?.last_success ?? null,
+    lastSyncedAt: optionalString(status?.last_success),
+    lastStatus: optionalString(status?.last_status),
+    lastFinishedStatus: optionalString(status?.last_finished_status),
     lastError: badge.lastError,
     enabled: badge.enabled,
+    docsIndexed: optionalCount(status?.docs_indexed) ?? 0,
+    latestAttemptDocsIndexed: optionalCount(status?.latest_index_attempt_docs_indexed),
+    inProgress: status?.in_progress === true || status?.last_status === "in_progress",
     createdBy: null,
     createdAt: connector.time_created ?? new Date(0).toISOString(),
     updatedAt: connector.time_updated ?? connector.time_created ?? new Date(0).toISOString(),
+    indexingStart: connector.indexing_start ?? null,
   };
 }
 
@@ -159,13 +238,41 @@ export function flattenIndexingStatusPayload(payload: unknown): StafflessIndexin
   return out;
 }
 
+/**
+ * Join GET /admin/connector/status to indexing-status by cc_pair_id.
+ * Pairs without a connector id are skipped (not guessed).
+ */
+export function mergeCcPairsWithIndexingStatus(
+  pairs: StafflessCcPairStatus[],
+  statuses: StafflessIndexingStatus[]
+): ConnectorTableRow[] {
+  const byCcPairId = new Map<number, StafflessIndexingStatus>();
+  for (const status of statuses) {
+    if (typeof status.cc_pair_id === "number") byCcPairId.set(status.cc_pair_id, status);
+  }
+  const rows: ConnectorTableRow[] = [];
+  for (const pair of pairs) {
+    const connector = pair.connector;
+    if (!connector || typeof connector.id !== "number" || connector.id <= 0) continue;
+    if (HIDDEN_SOURCES.has(sourceToType(connector.source))) continue;
+    const ccPairId = typeof pair.cc_pair_id === "number" ? pair.cc_pair_id : null;
+    const status = ccPairId != null ? byCcPairId.get(ccPairId) : undefined;
+    rows.push(mapConnectorToTableRow(connector, status, pair));
+  }
+  return rows;
+}
+
+/**
+ * Legacy name+source join used only in older tests. Prefer mergeCcPairsWithIndexingStatus.
+ */
 export function mergeConnectorsWithStatus(
   connectors: StafflessConnectorSnapshot[],
   statuses: StafflessIndexingStatus[]
 ): ConnectorTableRow[] {
   return connectors.map((connector) => {
+    const type = sourceToType(connector.source);
     const match =
-      statuses.find((s) => s.name === connector.name && sourceToType(s.source) === sourceToType(connector.source)) ??
+      statuses.find((s) => s.name === connector.name && sourceToType(s.source) === type) ??
       statuses.find((s) => s.name === connector.name);
     return mapConnectorToTableRow(connector, match);
   });

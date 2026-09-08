@@ -26,6 +26,11 @@ const FIELD_LABELS: Record<string, string> = {
   issuelink_type: "Link types",
   last_updater: "Last updater",
   status_was: "Status history",
+  status_category: "Status category",
+  repo: "Repository",
+  object_type: "Object type",
+  num_files_changed: "Files changed",
+  num_commits: "Commits",
 };
 
 const FIELD_ORDER = Object.keys(FIELD_LABELS);

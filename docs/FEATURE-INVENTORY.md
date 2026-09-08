@@ -189,34 +189,35 @@ Comment in `entity-field-lock.ts`: remaining entity types are still to be added.
 
 | Stack | What it does | Status |
 |-------|----------------|--------|
-| **StaffLess AI** (live Connectors tab) | Poll connectors in the search engine; Sync Now = `run-once`; work items from `POST /api/admin/search` | **Working** for Jira, GitHub, Teams, Email (IMAP) |
+| **StaffLess AI** (live Connectors tab) | List is `GET /admin/connector/status` joined to indexing-status by `cc_pair_id`. Create, pause, sync, edit, prune, delete, and index history call StaffLess from the Next.js server. Work items from `POST /api/admin/search`. | **Working** for Jira, GitHub, Teams, Email (IMAP) |
 | **connector-engine** (webhooks) | Near-real-time webhook ingest | **UI-only / orphaned** — `WebhookConnectorsSection` is not mounted; API + client still exist |
 
-PAT and URL stay on the Next.js server (`STAFFLESS_AI_URL`, `STAFFLESS_AI_PAT` / `ONYX_API_KEY`). Never `NEXT_PUBLIC_*`.
+PAT and URL stay on the Next.js server (`STAFFLESS_AI_URL`, `STAFFLESS_AI_PAT` / `ONYX_API_KEY`). Never `NEXT_PUBLIC_*`. Credential JSON from StaffLess is never sent to the browser.
 
 ### 2.2 Wizard catalog vs actually creatable
 
-| Type | In wizard | `available` | StaffLess create |
-|------|-----------|-------------|------------------|
-| Jira | Yes | true | **Yes** (poll, project key, email+token) |
-| GitHub | Yes | true | **Yes** (poll, repo, PAT; PR/issue checkboxes map to `include_prs` / `include_issues`) |
-| Microsoft Teams | Yes | true | **Yes** (poll, Azure AD client id/secret/tenant, optional team names) |
-| Email (IMAP) | Yes | true | **Yes** (poll, IMAP username/password/host; not Outlook/Graph) |
-| Jenkins | Yes | true | **No** — API throws “Unsupported connector type” |
-| ServiceNow | Yes | false (Coming soon) | No |
-| SonarQube | Yes | false (Coming soon) | No |
-| Outlook | No | — | **No** — StaffLess has no `outlook` enum/class |
+| Type | In wizard | StaffLess create |
+|------|-----------|------------------|
+| Jira | Yes | **Yes** (live project picker from Jira Cloud; one StaffLess connector for one or many projects via `project_key` or `jql_query`; optional `indexing_start`) |
+| GitHub | Yes | **Yes** (live repo picker; one StaffLess connector per owner; PRs/Issues/Documents; create-only `indexing_start`) |
+| Microsoft Teams | Yes | **Yes** (poll, Azure AD client id/secret/tenant, optional team names) |
+| Email (IMAP) | Yes | **Yes** (live folder picker; folders required; optional/required From allow-list; create-only `indexing_start`; not Outlook/Graph) |
+| Jenkins / ServiceNow / SonarQube / Outlook | **No** | **No** |
 
-Data-type checkboxes in the wizard are **UI-only** except GitHub Pull Requests / Issues (`include_prs` / `include_issues`). CI checks and milestones are not indexed by StaffLess.
+GitHub wizard types are Pull Requests, Issues, and Documents (`include_files`). Jira/Teams/IMAP index a fixed document set.
 
-### 2.3 Sync
+### 2.3 Sync and other actions
 
-- **Polling:** StaffLess `refresh_freq` from the wizard interval (engine-side schedule).
-- **Sync Now:** `POST /api/manage/admin/connector/run-once`, 60s rate limit, async PENDING.
-- **Status:** merge of StaffLess indexing-status → CONNECTED / ERROR / PENDING / DISABLED.
-- **Test connection:** local required-field check only — real credentials proven on next Sync Now.
-- **Logs drawer:** queries Prisma `Connector` by cuid — **broken** for live numeric StaffLess ids.
-- **Synced Work Items:** StaffLess search, client refresh every 5s. Copy that mentions webhooks is overstated.
+- **Polling:** StaffLess `refresh_freq` from the wizard interval.
+- **Sync Now:** `POST /api/manage/admin/connector/run-once` (`from_beginning: false`), 60s rate limit.
+- **Re-index from beginning:** same endpoint with `from_beginning: true` (sync logs drawer).
+- **Pause / Resume:** `PUT /admin/cc-pair/{id}/status` `PAUSED` / `ACTIVE`.
+- **Edit:** `PATCH /admin/connector/{id}` plus `PUT /admin/cc-pair/{id}/name`. New secrets use `PUT /admin/credential/{id}`.
+- **Delete:** `POST /admin/deletion-attempt` with `connector_id` + `credential_id`. Async. Indexed copies are removed; the source system is not. Requires exactly one credential — refuse if missing or ambiguous.
+- **Index history / sync logs:** History (clock) opens live StaffLess data: indexing-status (`docs_indexed`, `latest_index_attempt_docs_indexed`, `in_progress`, `last_status`, `last_success`), `GET /admin/cc-pair/{id}/index-attempts` (no stack traces), and unresolved `GET /admin/cc-pair/{id}/errors`. Auto-refreshes while queued or in progress. Lookup is StaffLess connector id or `cc_pair_id` (not Prisma). StaffLess does not expose separate “records found” vs “fetched” counts.
+- **Prune:** `POST /admin/cc-pair/{id}/prune`.
+- **Check fields:** local wizard validation only. StaffLess has no connection-test API.
+- **Synced Work Items:** StaffLess search. Copy that mentions webhooks is overstated.
 
 Dashboard “connector issues” still use dummy connector data (`lib/dummy-data.ts`), not StaffLess.
 
@@ -237,14 +238,16 @@ Dashboard “connector issues” still use dummy connector data (`lib/dummy-data
 | Breakdown | `POST /api/admin/document-breakdown` | Group-and-count, cap 50; `date_bucket=month` on date fields |
 | Distinct values | `POST /api/admin/document-distinct` | Stored values for one field |
 | Lookup by key | `POST /api/admin/document-by-key` | Exact `key` (RD-9 ≠ RD-90) |
-| List matching | `POST /api/admin/document-list` | AND filters and/or date ranges; keys + assignee/status/created/updated/duedate; `sort_by` |
-| Published schema | `POST /api/admin/document-fields` | Allow-list + `resolved_statuses` + date-range params — not raw columns |
+| List matching | `POST /api/admin/document-list` | AND filters and/or date ranges; keys + assignee/status/status_category/created/updated/duedate; `sort_by` |
+| Published schema | `POST /api/admin/document-fields` | Allow-list + `resolved_status_category` + `status_category_values` + date-range params — not raw columns |
 
-**Queryable fields:** assignee, status, priority, project, project_name, labels, issuetype, reporter, key, parent, duedate, created, updated, resolution, resolution_date, issuelink, issuelink_type, last_updater, status_was.
+**Queryable fields:** assignee, status, status_category, priority, project, project_name, labels, issuetype, reporter, key, parent, duedate, created, updated, resolution, resolution_date, issuelink, issuelink_type, last_updater, status_was, repo, object_type, num_files_changed, num_commits.
 
-**Match modes:** contains (substring) for assignee, reporter, labels, last_updater; exact (case-insensitive) for the rest (including `key` and `parent`). AND up to 5 filter pairs. Date ranges compare the YYYY-MM-DD prefix (`created_from`/`to`, `resolved_from`/`to`, `updated_from`/`to`, `due_from`/`due_to`/`due_before`).
+**Match modes:** contains (substring) for assignee, reporter, labels, last_updater; exact (case-insensitive) for the rest (including `key`, `parent`, and `status_category`). AND up to 5 filter pairs. Date ranges compare the YYYY-MM-DD prefix (`created_from`/`to`, `resolved_from`/`to`, `updated_from`/`to`, `due_from`/`due_to`/`due_before`).
 
-**Resolved statuses (published):** `["Done"]` until a product update. Open/unresolved = every other stored status, discovered dynamically. There is no `statusCategory` field.
+**GitHub:** source=github document count is PRs/issues/files, not repositories. Repository count = distinct `repo` values. PRs vs issues = `object_type`. `num_files_changed` and `num_commits` are PR tags (Ask context only — not Weighted Risk).
+
+**Resolved / open:** `status_category=done` vs `new` + `indeterminate` (Jira `statusCategory.key`). Missing `status_category` is not classified. Display names such as Done/Closed are not the rule.
 
 **Semantic layer (as implemented):** the model maps user language onto **stored** field names and values. Code does not synonym-match “todo” → “To Do”. Children = other docs with `parent=<key>`. Subtasks = `parent` + `issuetype=Subtask`. No invented `epic` / `subtasks` columns.
 
@@ -393,7 +396,7 @@ The Text / Voice chrome on `/ask` is the **global** mic, not an Ask input mode.
 2. Approvals have **no** spec-reconcile pass.
 3. Env Booking has **no** lifecycle graph.
 4. Drift **scan** (AV-13) and Alert **TTL** cron are not implemented.
-5. Connectors: Jira, GitHub, Teams, and Email (IMAP) create in StaffLess; Jenkins wizard still lies; webhook UI unmounted; logs drawer broken for StaffLess ids.
+5. Connectors: Jira (live project picker + optional `indexing_start`), GitHub, Teams, and Email (IMAP: folder picker + sender allow-list) create in StaffLess; Jenkins/ServiceNow/SonarQube are not in the wizard; webhook UI unmounted.
 6. Ask cannot do graph joins or person identity across sources. Date ranges use catalog params.
 7. History page, Settings General/Team/Notifications/Security, and several Portfolio/Agents views are demo or placeholders.
 8. `docs/STAFFLESS-AI.md` still says Ask streams StaffLess `send-chat-message` — **false** in current code.

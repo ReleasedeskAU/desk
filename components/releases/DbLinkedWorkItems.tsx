@@ -55,6 +55,7 @@ export function DbLinkedWorkItems({ releaseId, embedded = false }: Props) {
           <Stat label="Total" value={summary.total} />
           <Stat label="Open" value={summary.open} />
           <Stat label="Done" value={summary.done} />
+          {summary.unclassified > 0 && <Stat label="Unclassified" value={summary.unclassified} />}
           {summary.blocked > 0 && <Stat label="Blocked" value={summary.blocked} warn />}
         </div>
       )}

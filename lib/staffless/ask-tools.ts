@@ -198,12 +198,12 @@ function hasDateRange(value: {
 export const ASK_TOOLS: ChatCompletionTool[] = [
   fnTool(
     ASK_TOOL_QUERYABLE_FIELDS,
-    "Published fields you may query (not raw database columns). Also returns resolved_statuses, date_range_params, sort_by, and list_projection. Does not include emails or other PII.",
+    "Published fields you may query (not raw database columns). Also returns resolved_status_category (done), status_category_values, date_range_params, sort_by, and list_projection. Does not include emails or other PII.",
     { source: sourceProp }
   ),
   fnTool(
     ASK_TOOL_GET_VERIFIED_COUNT,
-    "Exact unique document count. Optional AND filters (issuetype + assignee + status) plus date ranges: created_from/to, resolved_from/to, updated_from/to, due_from/due_to/due_before (YYYY-MM-DD). Omit filters for a source total. For names use contains (Kabir). For status/parent/key use an exact stored value from list_distinct_values or get_breakdown_by_field first. Open/unresolved = sum this count across every stored status except published resolved_statuses (Done only, for now). Overdue = due_before=today AND not resolved. Do not use for grouped breakdowns.",
+    "Exact unique document count. Optional AND filters (issuetype + assignee + status_category) plus date ranges: created_from/to, resolved_from/to, updated_from/to, due_from/due_to/due_before (YYYY-MM-DD). Omit filters for a source total. source=github with no filter counts PRs/issues, not repositories — use list_distinct_values on repo for repository count. For names use contains (Kabir). For status_category use new, indeterminate, or done — not the status display name. Open/unresolved = count(status_category=new) + count(status_category=indeterminate). Resolved = count(status_category=done). Tickets missing status_category are not classified. Overdue = due_before=today AND status_category is new or indeterminate. Do not use for grouped breakdowns.",
     {
       source: sourceProp,
       filter_field: fieldProp,
@@ -214,25 +214,25 @@ export const ASK_TOOLS: ChatCompletionTool[] = [
   ),
   fnTool(
     ASK_TOOL_BREAKDOWN,
-    "Exact unique-document counts grouped by one field. Prefer this to discover stored status labels before counting. For created/updated/duedate/resolution_date, date_bucket=month groups by YYYY-MM. Do not use search for grouped questions.",
+    "Exact unique-document counts grouped by one field. Prefer status_category (new / indeterminate / done) for open vs resolved. Status display names are labels only. For created/updated/duedate/resolution_date, date_bucket=month groups by YYYY-MM. Do not use search for grouped questions.",
     { source: sourceProp, field: fieldProp, date_bucket: { type: "string", enum: ["month"] } },
     ["field"]
   ),
   fnTool(
     ASK_TOOL_DISTINCT,
-    "List stored values for one queryable field. Use before filtering on status, issuetype, or dates so you pass an exact stored string.",
+    "List stored values for one queryable field. Use before filtering on status, issuetype, object_type, or dates so you pass an exact stored string. For GitHub repository names or how-many-repos, use field=repo.",
     { source: sourceProp, field: fieldProp },
     ["field"]
   ),
   fnTool(
     ASK_TOOL_DOCUMENT_BY_KEY,
-    "Exact lookup of one ticket by key. Returns allow-listed fields only (parent, duedate, status, issuelink, last_updater, status_was, …) never emails. Use for due date, parent, links, or last updater of a named ticket. For a follow-up about a listed set, call this for every key that is missing a needed field — not one key.",
+    "Exact lookup of one ticket by key. Returns allow-listed fields only (parent, duedate, status, status_category, issuelink, last_updater, status_was, …) never emails. Use for due date, parent, links, or last updater of a named ticket. For a follow-up about a listed set, call this for every key that is missing a needed field — not one key.",
     { source: sourceProp, key: { type: "string", description: "Exact ticket key, e.g. RD-82" } },
     ["key"]
   ),
   fnTool(
     ASK_TOOL_LIST_MATCHING,
-    "Exact list of tickets matching AND filters and/or date ranges, including keys plus assignee, status, created, updated, duedate, priority. sort_by: key_asc, created_asc, created_desc, updated_asc, updated_desc. Children of an epic: parent=<epic key>. Subtasks: parent=<ticket> AND issuetype=Subtask. If truncated, say showing first cap of count. Never invent IDs.",
+    "Exact list of tickets matching AND filters and/or date ranges, including keys plus assignee, status, status_category, created, updated, duedate, priority. sort_by: key_asc, created_asc, created_desc, updated_asc, updated_desc. Children of an epic: parent=<epic key>. Subtasks: parent=<ticket> AND issuetype=Subtask. If truncated, say showing first cap of count. Never invent IDs.",
     {
       source: sourceProp,
       filter_field: fieldProp,

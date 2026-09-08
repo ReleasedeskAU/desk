@@ -1,11 +1,4 @@
-export type ConnectorTypeId =
-  | "jira"
-  | "github"
-  | "teams"
-  | "imap"
-  | "jenkins"
-  | "servicenow"
-  | "sonarqube";
+export type ConnectorTypeId = "jira" | "github" | "teams" | "imap";
 
 export interface ConnectorFieldDef {
   key: string;
@@ -37,11 +30,13 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     authType: "basic_token",
     available: true,
     defaultPollInterval: 15,
+    setupHint:
+      "Use the same Atlassian account email as the API token. After this step we load the live project list from your Jira site so you can pick one or more projects.",
     credentialFields: [
       { key: "email", label: "Email", type: "text", placeholder: "you@company.com" },
       { key: "apiToken", label: "API Token", type: "password" },
     ],
-    configFields: [{ key: "projectKey", label: "Project Key", type: "text", placeholder: "PROJ" }],
+    configFields: [],
     targetModel: "WorkItem",
   },
   {
@@ -50,8 +45,17 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     authType: "api_key",
     available: true,
     defaultPollInterval: 15,
-    credentialFields: [{ key: "token", label: "Personal Access Token", type: "password" }],
-    configFields: [{ key: "repo", label: "Repository", type: "text", placeholder: "owner/repo" }],
+    setupHint:
+      "Use a GitHub personal access token with repo access (or public_repo for public repositories). After this step we load the live repository list so you can pick one or more repos from the same owner.",
+    credentialFields: [
+      {
+        key: "token",
+        label: "Personal Access Token",
+        type: "password",
+        help: "Classic or fine-grained PAT. Never pasted into Ask or logs.",
+      },
+    ],
+    configFields: [],
     targetModel: "WorkItem",
   },
   {
@@ -96,7 +100,7 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     available: true,
     defaultPollInterval: 15,
     setupHint:
-      "This is IMAP-based email, not a native Outlook or Microsoft Graph connector. Enter the mailbox username, password, and IMAP host. Many Microsoft 365 organizations block basic IMAP login for security reasons, so this may not work for every customer’s email setup.",
+      "This is IMAP, not Outlook or Microsoft Graph. Use a shared mailbox when you can (for example releases@company.com). Many Microsoft 365 organizations block basic IMAP login. After this step we load the live folder list — you must pick folders; there is no whole-inbox option.",
     credentialFields: [
       {
         key: "imap_username",
@@ -122,48 +126,7 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
         optional: true,
         help: "Defaults to 993 (IMAPS) when left blank.",
       },
-      {
-        key: "mailboxes",
-        label: "Mailboxes",
-        type: "text",
-        placeholder: "INBOX, Sent",
-        optional: true,
-        help: "Comma-separated mailbox names. Leave blank to index every mailbox the account can see.",
-      },
     ],
-    targetModel: "WorkItem",
-  },
-  {
-    id: "jenkins",
-    label: "Jenkins",
-    authType: "basic_token",
-    available: true,
-    defaultPollInterval: 15,
-    credentialFields: [
-      { key: "username", label: "Username", type: "text" },
-      { key: "apiToken", label: "API Token", type: "password" },
-    ],
-    configFields: [{ key: "jobName", label: "Job Name", type: "text", placeholder: "my-pipeline" }],
-    targetModel: "WorkItem",
-  },
-  {
-    id: "servicenow",
-    label: "ServiceNow",
-    authType: "oauth2",
-    available: false,
-    defaultPollInterval: 30,
-    credentialFields: [],
-    configFields: [],
-    targetModel: "P1Issue",
-  },
-  {
-    id: "sonarqube",
-    label: "SonarQube",
-    authType: "api_key",
-    available: false,
-    defaultPollInterval: 30,
-    credentialFields: [],
-    configFields: [],
     targetModel: "WorkItem",
   },
 ];
@@ -180,8 +143,11 @@ export function getConnectorTypeDef(type: string): ConnectorTypeDef | undefined 
 }
 
 export function statusBadge(status: string, enabled: boolean): { label: string; color: string; emoji: string } {
+  if (status === "DELETING") {
+    return { label: "Deleting", color: "bg-orange-100 text-orange-800", emoji: "🟠" };
+  }
   if (!enabled || status === "DISABLED") {
-    return { label: "Disabled", color: "bg-gray-100 text-gray-600", emoji: "⚪" };
+    return { label: "Paused", color: "bg-gray-100 text-gray-600", emoji: "⚪" };
   }
   switch (status) {
     case "CONNECTED":

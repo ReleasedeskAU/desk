@@ -1,3 +1,5 @@
+import { isOpenCategory, isResolvedCategory } from "@/lib/jira-status-category";
+
 export type ReleaseImpactNode = {
   id: string;
   releaseCode: string;
@@ -178,28 +180,33 @@ export type WorkItemSummary = {
   total: number;
   done: number;
   open: number;
+  unclassified: number;
   blocked: number;
   byType: Record<string, number>;
 };
 
 export function summarizeWorkItems(
-  items: { status: string; itemType: string }[]
+  items: { status: string; itemType: string; statusCategory?: string | null }[]
 ): WorkItemSummary {
-  const doneStatuses = new Set(["Done", "Closed", "Resolved"]);
   const byType: Record<string, number> = {};
   let done = 0;
+  let open = 0;
+  let unclassified = 0;
   let blocked = 0;
 
   items.forEach((i) => {
     byType[i.itemType] = (byType[i.itemType] ?? 0) + 1;
-    if (doneStatuses.has(i.status)) done += 1;
+    if (isResolvedCategory(i.statusCategory)) done += 1;
+    else if (isOpenCategory(i.statusCategory)) open += 1;
+    else unclassified += 1;
     if (i.status === "Blocked" || i.status === "Pending") blocked += 1;
   });
 
   return {
     total: items.length,
     done,
-    open: items.length - done,
+    open,
+    unclassified,
     blocked,
     byType,
   };

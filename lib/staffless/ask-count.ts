@@ -27,6 +27,11 @@ export const ALLOWED_COUNT_FIELDS = [
   "issuelink_type",
   "last_updater",
   "status_was",
+  "status_category",
+  "repo",
+  "object_type",
+  "num_files_changed",
+  "num_commits",
 ] as const;
 
 export const PII_TAG_FIELDS = ["assignee_email", "reporter_email"] as const;
@@ -140,6 +145,16 @@ export async function getVerifiedCount(args: VerifiedCountArgs): Promise<Verifie
     filter_field: typeof result?.filter_field === "string" ? result.filter_field : null,
     filter_value: typeof result?.filter_value === "string" ? result.filter_value : null,
     matched_values: matched,
-    note: "Exact unique indexed document count, not a search sample.",
+    note: githubCountNote(
+      typeof result?.source === "string" ? result.source : undefined,
+      args.source,
+      "Exact unique indexed document count, not a search sample."
+    ),
   };
+}
+
+/** GitHub source totals are PRs/issues, never a repository census. */
+function githubCountNote(source: string | undefined, requested: string | undefined, base: string): string {
+  if (source !== "github" && requested !== "github") return base;
+  return `${base} GitHub count is unique indexed documents (pull requests and issues), not repositories. Repository count is how many distinct repo values exist.`;
 }

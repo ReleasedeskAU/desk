@@ -3,7 +3,15 @@
  * not phrase matchers and not a second query engine.
  */
 
-export const DEFAULT_RESOLVED_STATUSES = ["Done"] as const;
+import { isOpenCategory, isResolvedCategory } from "@/lib/jira-status-category";
+
+export {
+  RESOLVED_STATUS_CATEGORY,
+  STATUS_CATEGORY_KEYS,
+  classifyStatusCategory,
+  isOpenCategory,
+  isResolvedCategory,
+} from "@/lib/jira-status-category";
 
 export const ASK_SEP5_FIXTURE = {
   asOf: "2026-09-05",
@@ -22,63 +30,45 @@ export type NamedCount = { party: string; count: number };
 export type ListedTicket = { key: string; assignee: string | null };
 
 /**
- * Published resolved statuses, or Done-only when StaffLess omitted the list.
- * @param published - resolved_statuses from list_queryable_fields.
+ * Stored category keys that count as open. Unknown or missing keys are omitted.
+ * @param stored - values from list_distinct_values(status_category) or a breakdown.
  */
-export function resolvedStatuses(published?: readonly string[] | null): string[] {
-  if (published && published.length > 0) return [...published];
-  return [...DEFAULT_RESOLVED_STATUSES];
+export function openCategoryValues(stored: readonly string[]): string[] {
+  return stored.filter((value) => isOpenCategory(value));
 }
 
 /**
- * True when the stored status is one of the published resolved values.
- * Comparison is exact on the stored name — there is no statusCategory field.
+ * Sum unique-document counts for new + indeterminate category groups.
+ * Groups with missing or invalid keys are not open and not resolved.
  */
-export function isResolvedStatus(
-  status: string,
-  published?: readonly string[] | null
-): boolean {
-  const resolved = new Set(resolvedStatuses(published).map((item) => item.toLowerCase()));
-  return resolved.has(status.trim().toLowerCase());
-}
-
-/**
- * Stored statuses that count as open. Discovered list minus resolved — never hardcoded.
- * @param stored - values from list_distinct_values(status) or a breakdown.
- */
-export function openStatusValues(
-  stored: readonly string[],
-  published?: readonly string[] | null
-): string[] {
-  return stored.filter((value) => value.trim() && !isResolvedStatus(value, published));
-}
-
-/**
- * Sum unique-document counts for every non-resolved status group.
- * @param groups - get_breakdown_by_field(status) groups, optionally already type-filtered.
- */
-export function sumOpenCount(
-  groups: readonly StatusCountGroup[],
-  published?: readonly string[] | null
-): number {
+export function sumOpenCount(groups: readonly StatusCountGroup[]): number {
   return groups.reduce((total, group) => {
-    if (isResolvedStatus(group.value, published)) return total;
+    if (!isOpenCategory(group.value)) return total;
     return total + Math.max(0, group.count);
   }, 0);
 }
 
 /**
- * Overdue = due date strictly before today AND status is not resolved.
- * Workflow state alone is never overdue.
+ * Sum unique-document counts for status_category=done groups.
+ */
+export function sumResolvedCount(groups: readonly StatusCountGroup[]): number {
+  return groups.reduce((total, group) => {
+    if (!isResolvedCategory(group.value)) return total;
+    return total + Math.max(0, group.count);
+  }, 0);
+}
+
+/**
+ * Overdue = due date strictly before today AND status_category is open.
+ * Missing category is not classifiable — not overdue.
  */
 export function isOverdue(opts: {
   duedate: string | null | undefined;
-  status: string;
+  statusCategory: unknown;
   today: string;
-  publishedResolved?: readonly string[] | null;
 }): boolean {
   if (!opts.duedate) return false;
-  if (isResolvedStatus(opts.status, opts.publishedResolved)) return false;
+  if (!isOpenCategory(opts.statusCategory)) return false;
   const prefix = opts.duedate.trim().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return false;
   return prefix < opts.today;

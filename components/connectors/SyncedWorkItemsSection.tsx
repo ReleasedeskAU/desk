@@ -19,6 +19,7 @@ type WorkItemRow = {
   connectorId: string | null;
   createdAt: string;
   updatedAt: string;
+  statusCategory?: string | null;
 };
 
 type ConnectorOption = {
@@ -185,6 +186,11 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-800">
               {payload.summary.done} done
             </span>
+            {payload.summary.unclassified > 0 ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-900">
+                {payload.summary.unclassified} unclassified
+              </span>
+            ) : null}
             {payload.summary.blocked > 0 ? (
               <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-800">
                 {payload.summary.blocked} blocked

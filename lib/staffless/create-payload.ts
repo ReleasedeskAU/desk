@@ -4,13 +4,23 @@
  * or StaffLess cannot index.
  */
 
-export type WizardCreateInput = {
+import { parseGithubRepoSelection } from "@/lib/github/repos";
+import { allowedSenderValues } from "@/lib/imap/allowed-senders";
+import { parseImapMailboxNames } from "@/lib/imap/mailboxes";
+import { isJiraAllProjects, jiraProjectInJql, parseJiraProjectKeys } from "@/lib/jira/project-keys";
+
+export type WizardConnectorInput = {
   name: string;
   type: string;
   baseUrl?: string;
-  credentials: Record<string, string>;
   config?: Record<string, unknown>;
   pollInterval?: number;
+  /** StaffLess connector.indexing_start ISO UTC, or omit for all time. */
+  indexingStart?: string | null;
+};
+
+export type WizardCreateInput = WizardConnectorInput & {
+  credentials: Record<string, string>;
 };
 
 export type StafflessCreatePlan = {
@@ -27,6 +37,7 @@ export type StafflessCreatePlan = {
     access_type: "public";
     groups: number[];
     refresh_freq: number;
+    indexing_start?: string | null;
     connector_specific_config: Record<string, unknown>;
   };
 };
@@ -34,6 +45,31 @@ export type StafflessCreatePlan = {
 const SUPPORTED = new Set(["jira", "github", "teams", "imap"]);
 const IMAP_DEFAULT_PORT = 993;
 const IMAP_MAX_PORT = 65535;
+
+/** True when StaffLess can create/update this source (jira, github, teams, imap). */
+export function isStafflessConnectorType(type: string): boolean {
+  return SUPPORTED.has(type.trim().toLowerCase());
+}
+
+function refreshSeconds(pollInterval?: number): number {
+  return Math.max(60, (pollInterval ?? 15) * 60);
+}
+
+/**
+ * Connector body for create or PATCH. Does not include secrets.
+ * @throws Error when the type is unsupported or required config is missing.
+ */
+export function planStafflessConnector(input: WizardConnectorInput): StafflessCreatePlan["connector"] {
+  const type = input.type.trim().toLowerCase();
+  if (!SUPPORTED.has(type)) {
+    throw new Error("Unsupported connector type");
+  }
+  const refresh = refreshSeconds(input.pollInterval);
+  if (type === "jira") return jiraConnector(input, refresh);
+  if (type === "github") return githubConnector(input, refresh);
+  if (type === "teams") return teamsConnector(input, refresh);
+  return imapConnector(input, refresh);
+}
 
 /**
  * Build StaffLess credential + connector bodies from the wizard.
@@ -44,7 +80,7 @@ export function planStafflessCreate(input: WizardCreateInput): StafflessCreatePl
   if (!SUPPORTED.has(type)) {
     throw new Error("Unsupported connector type");
   }
-  const refresh = Math.max(60, (input.pollInterval ?? 15) * 60);
+  const refresh = refreshSeconds(input.pollInterval);
   if (type === "jira") return jiraPlan(input, refresh);
   if (type === "github") return githubPlan(input, refresh);
   if (type === "teams") return teamsPlan(input, refresh);
@@ -65,14 +101,42 @@ function commaList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function jiraConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const baseUrl = input.baseUrl?.trim();
+  if (!baseUrl) {
+    throw new Error("Jira needs email, API token, base URL, and at least one project");
+  }
+  const allProjects = isJiraAllProjects(input.config);
+  const keys = parseJiraProjectKeys(input.config);
+  if (!allProjects && keys.length === 0) {
+    throw new Error("Jira needs email, API token, base URL, and at least one project");
+  }
+  const connector_specific_config: Record<string, unknown> = {
+    jira_base_url: baseUrl.replace(/\/+$/, ""),
+    comment_email_blacklist: [],
+  };
+  if (!allProjects && keys.length === 1) {
+    connector_specific_config.project_key = keys[0];
+  } else if (!allProjects) {
+    connector_specific_config.jql_query = jiraProjectInJql(keys);
+  }
+  return {
+    name: input.name,
+    source: "jira",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    ...(input.indexingStart ? { indexing_start: input.indexingStart } : {}),
+    connector_specific_config,
+  };
+}
+
 function jiraPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
   const email = input.credentials.email?.trim();
   const token = input.credentials.apiToken?.trim();
-  const baseUrl = input.baseUrl?.trim();
-  const projectKey =
-    typeof input.config?.projectKey === "string" ? input.config.projectKey.trim() : "";
-  if (!email || !token || !baseUrl || !projectKey) {
-    throw new Error("Jira needs email, API token, base URL, and project key");
+  if (!email || !token) {
+    throw new Error("Jira needs email, API token, base URL, and at least one project");
   }
   return {
     credential: {
@@ -81,46 +145,64 @@ function jiraPlan(input: WizardCreateInput, refresh: number): StafflessCreatePla
       admin_public: true,
       credential_json: { jira_user_email: email, jira_api_token: token },
     },
-    connector: {
-      name: input.name,
-      source: "jira",
-      input_type: "poll",
-      access_type: "public",
-      groups: [],
-      refresh_freq: refresh,
-      connector_specific_config: {
-        jira_base_url: baseUrl.replace(/\/+$/, ""),
-        project_key: projectKey,
-        comment_email_blacklist: [],
-      },
-    },
+    connector: jiraConnector(input, refresh),
   };
 }
 
 function githubIncludeFlags(config?: Record<string, unknown>): {
   include_prs: boolean;
   include_issues: boolean;
+  include_files: boolean;
 } {
   const types = Array.isArray(config?.dataTypes)
     ? config.dataTypes.filter((v): v is string => typeof v === "string")
-    : [];
-  const hasPrs = types.includes("pull_requests");
-  const hasIssues = types.includes("issues");
-  // CI checks / milestones are UI-only; if neither real GitHub type is selected, keep both on.
-  if (!hasPrs && !hasIssues) {
-    return { include_prs: true, include_issues: true };
+    : null;
+  if (types && types.length === 0) {
+    throw new Error("GitHub needs at least one of pull requests, issues, or documents");
   }
-  return { include_prs: hasPrs, include_issues: hasIssues };
+  if (!types) {
+    return { include_prs: true, include_issues: true, include_files: false };
+  }
+  const flags = {
+    include_prs: types.includes("pull_requests"),
+    include_issues: types.includes("issues"),
+    include_files: types.includes("files"),
+  };
+  if (!flags.include_prs && !flags.include_issues && !flags.include_files) {
+    throw new Error("GitHub needs at least one of pull requests, issues, or documents");
+  }
+  return flags;
+}
+
+function githubConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const selection = parseGithubRepoSelection(input.config);
+  const flags = githubIncludeFlags(input.config);
+  const connector_specific_config: Record<string, unknown> = {
+    repo_owner: selection.owner,
+    include_prs: flags.include_prs,
+    include_issues: flags.include_issues,
+    include_files: flags.include_files,
+  };
+  if (!selection.allRepos) {
+    connector_specific_config.repositories = selection.names.join(",");
+  }
+  return {
+    name: input.name,
+    source: "github",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    ...(input.indexingStart ? { indexing_start: input.indexingStart } : {}),
+    connector_specific_config,
+  };
 }
 
 function githubPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
   const token = input.credentials.token?.trim();
-  const repo = typeof input.config?.repo === "string" ? input.config.repo.trim() : "";
-  const [owner, name] = repo.split("/");
-  if (!token || !owner || !name) {
-    throw new Error("GitHub needs a token and repository as owner/name");
+  if (!token) {
+    throw new Error("GitHub needs a token and at least one repository");
   }
-  const flags = githubIncludeFlags(input.config);
   return {
     credential: {
       name: `${input.name} credentials`,
@@ -128,19 +210,20 @@ function githubPlan(input: WizardCreateInput, refresh: number): StafflessCreateP
       admin_public: true,
       credential_json: { github_access_token: token },
     },
-    connector: {
-      name: input.name,
-      source: "github",
-      input_type: "poll",
-      access_type: "public",
-      groups: [],
-      refresh_freq: refresh,
-      connector_specific_config: {
-        repo_owner: owner,
-        repositories: name,
-        include_prs: flags.include_prs,
-        include_issues: flags.include_issues,
-      },
+    connector: githubConnector(input, refresh),
+  };
+}
+
+function teamsConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  return {
+    name: input.name,
+    source: "teams",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    connector_specific_config: {
+      teams: commaList(input.config?.teamNames),
     },
   };
 }
@@ -169,17 +252,7 @@ function teamsPlan(input: WizardCreateInput, refresh: number): StafflessCreatePl
         teams_directory_id: directoryId,
       },
     },
-    connector: {
-      name: input.name,
-      source: "teams",
-      input_type: "poll",
-      access_type: "public",
-      groups: [],
-      refresh_freq: refresh,
-      connector_specific_config: {
-        teams: commaList(input.config?.teamNames),
-      },
-    },
+    connector: teamsConnector(input, refresh),
   };
 }
 
@@ -194,25 +267,42 @@ function imapPort(raw: unknown): number {
   return port;
 }
 
-function imapPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
-  const username = requiredText(
-    input.credentials.imap_username,
-    "IMAP needs username, password, and host"
-  );
-  const password = requiredText(
-    input.credentials.imap_password,
-    "IMAP needs username, password, and host"
-  );
-  const host = requiredText(input.config?.host, "IMAP needs username, password, and host");
-  const mailboxes = commaList(input.config?.mailboxes);
+function imapConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const host = requiredText(input.config?.host, "IMAP needs username, password, host, and at least one folder");
+  const mailboxes = parseImapMailboxNames(input.config);
+  if (mailboxes.length === 0) {
+    throw new Error("IMAP needs username, password, host, and at least one folder");
+  }
+  const allowedSenders = allowedSenderValues(input.config?.allowedSenders ?? input.config?.allowed_senders);
   const connector_specific_config: Record<string, unknown> = {
     host,
     port: imapPort(input.config?.port),
+    mailboxes,
   };
-  // Empty list is falsy in StaffLess and would fetch all mailboxes; omit instead of sending [].
-  if (mailboxes.length > 0) {
-    connector_specific_config.mailboxes = mailboxes;
+  if (allowedSenders.length > 0) {
+    connector_specific_config.allowed_senders = allowedSenders;
   }
+  return {
+    name: input.name,
+    source: "imap",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    ...(input.indexingStart ? { indexing_start: input.indexingStart } : {}),
+    connector_specific_config,
+  };
+}
+
+function imapPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
+  const username = requiredText(
+    input.credentials.imap_username,
+    "IMAP needs username, password, host, and at least one folder"
+  );
+  const password = requiredText(
+    input.credentials.imap_password,
+    "IMAP needs username, password, host, and at least one folder"
+  );
   return {
     credential: {
       name: `${input.name} credentials`,
@@ -220,14 +310,6 @@ function imapPlan(input: WizardCreateInput, refresh: number): StafflessCreatePla
       admin_public: true,
       credential_json: { imap_username: username, imap_password: password },
     },
-    connector: {
-      name: input.name,
-      source: "imap",
-      input_type: "poll",
-      access_type: "public",
-      groups: [],
-      refresh_freq: refresh,
-      connector_specific_config,
-    },
+    connector: imapConnector(input, refresh),
   };
 }

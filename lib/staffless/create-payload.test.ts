@@ -19,6 +19,47 @@ describe("planStafflessCreate", () => {
     assert.equal(plan.credential.credential_json.jira_user_email, "a@b.com");
   });
 
+  it("uses jql_query for two Jira projects and indexing_start for a date range", () => {
+    const plan = planStafflessCreate({
+      name: "Jira multi",
+      type: "jira",
+      baseUrl: "https://ex.atlassian.net",
+      credentials: { email: "a@b.com", apiToken: "tok" },
+      config: { projectKeys: ["RD", "OPS"] },
+      indexingStart: "2026-03-08T00:00:00.000Z",
+    });
+    assert.equal(plan.connector.connector_specific_config.project_key, undefined);
+    assert.equal(plan.connector.connector_specific_config.jql_query, 'project in ("RD", "OPS")');
+    assert.equal(plan.connector.indexing_start, "2026-03-08T00:00:00.000Z");
+  });
+
+  it("rejects Jira with neither a project selection nor all-projects", () => {
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "Jira RD",
+          type: "jira",
+          baseUrl: "https://ex.atlassian.net",
+          credentials: { email: "a@b.com", apiToken: "tok" },
+          config: {},
+        }),
+      /at least one project/
+    );
+  });
+
+  it("omits project_key and jql_query when indexing every Jira project the token can see", () => {
+    const plan = planStafflessCreate({
+      name: "Jira all",
+      type: "jira",
+      baseUrl: "https://ex.atlassian.net",
+      credentials: { email: "a@b.com", apiToken: "tok" },
+      config: { allProjects: true },
+    });
+    assert.equal(plan.connector.connector_specific_config.project_key, undefined);
+    assert.equal(plan.connector.connector_specific_config.jql_query, undefined);
+    assert.equal(plan.connector.indexing_start, undefined);
+  });
+
   it("builds GitHub StaffLess fields end-to-end (credential, poll, repo split, PR/issue flags)", () => {
     const plan = planStafflessCreate({
       name: "GH RD",
@@ -37,7 +78,35 @@ describe("planStafflessCreate", () => {
       repositories: "release-desk",
       include_prs: true,
       include_issues: false,
+      include_files: false,
     });
+  });
+
+  it("uses comma-separated repositories, include_files, and indexing_start for GitHub", () => {
+    const plan = planStafflessCreate({
+      name: "GH multi",
+      type: "github",
+      credentials: { token: "t" },
+      config: { repos: ["acme/app", "acme/api"], dataTypes: ["pull_requests", "files"] },
+      indexingStart: "2026-03-08T00:00:00.000Z",
+    });
+    assert.equal(plan.connector.connector_specific_config.repositories, "app,api");
+    assert.equal(plan.connector.connector_specific_config.include_files, true);
+    assert.equal(plan.connector.connector_specific_config.include_issues, false);
+    assert.equal(plan.connector.indexing_start, "2026-03-08T00:00:00.000Z");
+  });
+
+  it("omits repositories when indexing every GitHub repo for one owner", () => {
+    const plan = planStafflessCreate({
+      name: "GH all",
+      type: "github",
+      credentials: { token: "t" },
+      config: { allRepos: true, repoOwner: "acme", dataTypes: ["issues"] },
+    });
+    assert.equal(plan.connector.connector_specific_config.repo_owner, "acme");
+    assert.equal(plan.connector.connector_specific_config.repositories, undefined);
+    assert.equal(plan.connector.connector_specific_config.include_issues, true);
+    assert.equal(plan.connector.connector_specific_config.include_prs, false);
   });
 
   it("defaults GitHub include_prs and include_issues when dataTypes omit both", () => {
@@ -69,7 +138,7 @@ describe("planStafflessCreate", () => {
           credentials: { token: "t" },
           config: { repo: "no-slash" },
         }),
-      /owner\/name/
+      /at least one repository/
     );
   });
 
@@ -122,12 +191,18 @@ describe("planStafflessCreate", () => {
     );
   });
 
-  it("builds IMAP credential and numeric port, splitting mailboxes into an array", () => {
+  it("builds IMAP credential, folders, allow-list, and indexing_start", () => {
     const plan = planStafflessCreate({
       name: "Mail RD",
       type: "imap",
       credentials: { imap_username: "you@company.com", imap_password: "app-pass" },
-      config: { host: "outlook.office365.com", port: "993", mailboxes: "INBOX, Sent" },
+      config: {
+        host: "outlook.office365.com",
+        port: "993",
+        mailboxes: ["INBOX", "CAB"],
+        allowedSenders: "jira@company.com, company.com",
+      },
+      indexingStart: "2026-03-08T00:00:00.000Z",
     });
     assert.equal(plan.credential.source, "imap");
     assert.deepEqual(plan.credential.credential_json, {
@@ -136,22 +211,35 @@ describe("planStafflessCreate", () => {
     });
     assert.equal(plan.connector.source, "imap");
     assert.equal(plan.connector.input_type, "poll");
+    assert.equal(plan.connector.indexing_start, "2026-03-08T00:00:00.000Z");
     assert.deepEqual(plan.connector.connector_specific_config, {
       host: "outlook.office365.com",
       port: 993,
-      mailboxes: ["INBOX", "Sent"],
+      mailboxes: ["INBOX", "CAB"],
+      allowed_senders: ["jira@company.com", "company.com"],
     });
   });
 
-  it("defaults IMAP port to 993 and omits empty mailboxes so StaffLess fetches all", () => {
+  it("defaults IMAP port to 993 and rejects a missing folder list", () => {
     const plan = planStafflessCreate({
       name: "Mail RD",
       type: "imap",
       credentials: { imap_username: "u", imap_password: "p" },
-      config: { host: "imap.example.com" },
+      config: { host: "imap.example.com", mailboxes: ["INBOX"] },
     });
     assert.equal(plan.connector.connector_specific_config.port, 993);
-    assert.equal(plan.connector.connector_specific_config.mailboxes, undefined);
+    assert.deepEqual(plan.connector.connector_specific_config.mailboxes, ["INBOX"]);
+    assert.equal(plan.connector.connector_specific_config.allowed_senders, undefined);
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "Mail RD",
+          type: "imap",
+          credentials: { imap_username: "u", imap_password: "p" },
+          config: { host: "imap.example.com" },
+        }),
+      /at least one folder/
+    );
   });
 
   it("rejects IMAP missing host and a non-integer port", () => {
@@ -171,7 +259,7 @@ describe("planStafflessCreate", () => {
           name: "Mail RD",
           type: "imap",
           credentials: { imap_username: "u", imap_password: "p" },
-          config: { host: "imap.example.com", port: "imaps" },
+          config: { host: "imap.example.com", mailboxes: ["INBOX"], port: "imaps" },
         }),
       /IMAP port/
     );
