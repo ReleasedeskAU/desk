@@ -39,6 +39,10 @@ import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import { statusSelectOptions } from "@/lib/entity-lifecycle-status-ui";
 import type { DependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config";
 import {
+  dependencyEditFormPatchBody,
+  isDependencyEditFormFieldVisible,
+} from "@/lib/dependency-lifecycle-edit-policy";
+import {
   bothDependencyPartiesAcknowledged,
   isDependencySideAcknowledged,
   type DependencyAckSide,
@@ -245,6 +249,8 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
   const source = useMemo(() => (row ? toDraft(row) : null), [row]);
   const edit = useEditableDetail(source);
   const canEdit = sessionCanEdit(user);
+  const depConfig =
+    (lifecycle.config as DependencyLifecycleConfig | null) ?? null;
   const v = edit.values;
   const d = edit.draft;
   /** True when exception panel was opened from modal save (retry should completeSaveSuccess). */
@@ -295,21 +301,28 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
 
   const save = async () => {
     if (!row || !edit.draft) return;
-    if (edit.draft.releaseId === edit.draft.dependsOnReleaseId) {
+    const draft = edit.draft;
+    const releaseVisible = isDependencyEditFormFieldVisible(
+      depConfig,
+      draft.status,
+      "releaseId"
+    );
+    const upstreamVisible = isDependencyEditFormFieldVisible(
+      depConfig,
+      draft.status,
+      "dependsOnReleaseId"
+    );
+    if (
+      releaseVisible &&
+      upstreamVisible &&
+      draft.releaseId === draft.dependsOnReleaseId
+    ) {
       edit.setError("A release cannot depend on itself.");
       return;
     }
     edit.setSaving(true);
     edit.setError(null);
-    const draft = edit.draft;
-    const patchBody = {
-      releaseId: draft.releaseId,
-      dependsOnReleaseId: draft.dependsOnReleaseId,
-      dependencyType: draft.dependencyType,
-      status: draft.status,
-      impactIfBlocked: draft.impactIfBlocked,
-      notes: draft.notes.trim() ? draft.notes.trim() : null,
-    };
+    const patchBody = dependencyEditFormPatchBody(depConfig, draft);
     const res = await safeFetchJson(`/api/dependencies/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -555,60 +568,93 @@ export default function DependencyDetailPage({ params }: { params: Promise<{ id:
       editForm={
         d ? (
           <EditableFieldGrid cols={2}>
-            <EditableField
-              label="Source Release"
-              value={d.releaseId}
-              editing
-              kind="select"
-              options={releaseSelectOptions}
-              onChange={(n) => edit.setField("releaseId", n)}
-            />
-            <EditableField
-              label="Depends On (Upstream)"
-              value={d.dependsOnReleaseId}
-              editing
-              kind="select"
-              options={releaseSelectOptions}
-              onChange={(n) => edit.setField("dependsOnReleaseId", n)}
-            />
-            <EditableField
-              label="Dependency Type"
-              value={d.dependencyType}
-              editing
-              kind="select"
-              options={typeOptions}
-              onChange={(n) => edit.setField("dependencyType", n)}
-              display={<StatusChip label={d.dependencyType} tone="neutral" />}
-            />
-            <EditableField
-              label="Status"
-              value={d.status}
-              editing
-              kind="select"
-              options={statusOptions}
-              onChange={(n) => edit.setField("status", n)}
-              display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
-            />
-            <EditableField
-              label="Impact if Blocked"
-              value={d.impactIfBlocked}
-              editing
-              kind="select"
-              options={impactOptions}
-              onChange={(n) => edit.setField("impactIfBlocked", n)}
-              display={<StatusChip label={d.impactIfBlocked} tone={impactTone(d.impactIfBlocked)} />}
-            />
-            <EditableField
-              label="Notes"
-              value={d.notes}
-              editing
-              kind="textarea"
-              onChange={(n) => edit.setField("notes", n)}
-              placeholder="Impact context, mitigation, owners…"
-              className="sm:col-span-2"
-            />
+            {isDependencyEditFormFieldVisible(depConfig, d.status, "releaseId") ? (
+              <div data-testid="dependency-edit-field-releaseId">
+                <EditableField
+                  label="Source Release"
+                  value={d.releaseId}
+                  editing
+                  kind="select"
+                  options={releaseSelectOptions}
+                  onChange={(n) => edit.setField("releaseId", n)}
+                />
+              </div>
+            ) : null}
+            {isDependencyEditFormFieldVisible(
+              depConfig,
+              d.status,
+              "dependsOnReleaseId"
+            ) ? (
+              <div data-testid="dependency-edit-field-dependsOnReleaseId">
+                <EditableField
+                  label="Depends On (Upstream)"
+                  value={d.dependsOnReleaseId}
+                  editing
+                  kind="select"
+                  options={releaseSelectOptions}
+                  onChange={(n) => edit.setField("dependsOnReleaseId", n)}
+                />
+              </div>
+            ) : null}
+            {isDependencyEditFormFieldVisible(
+              depConfig,
+              d.status,
+              "dependencyType"
+            ) ? (
+              <div data-testid="dependency-edit-field-dependencyType">
+                <EditableField
+                  label="Dependency Type"
+                  value={d.dependencyType}
+                  editing
+                  kind="select"
+                  options={typeOptions}
+                  onChange={(n) => edit.setField("dependencyType", n)}
+                  display={<StatusChip label={d.dependencyType} tone="neutral" />}
+                />
+              </div>
+            ) : null}
+            <div data-testid="dependency-edit-field-status">
+              <EditableField
+                label="Status"
+                value={d.status}
+                editing
+                kind="select"
+                options={statusOptions}
+                onChange={(n) => edit.setField("status", n)}
+                display={<StatusChip label={d.status} tone={statusTone(d.status)} />}
+              />
+            </div>
+            {isDependencyEditFormFieldVisible(
+              depConfig,
+              d.status,
+              "impactIfBlocked"
+            ) ? (
+              <div data-testid="dependency-edit-field-impactIfBlocked">
+                <EditableField
+                  label="Impact if Blocked"
+                  value={d.impactIfBlocked}
+                  editing
+                  kind="select"
+                  options={impactOptions}
+                  onChange={(n) => edit.setField("impactIfBlocked", n)}
+                  display={<StatusChip label={d.impactIfBlocked} tone={impactTone(d.impactIfBlocked)} />}
+                />
+              </div>
+            ) : null}
+            {isDependencyEditFormFieldVisible(depConfig, d.status, "notes") ? (
+              <div data-testid="dependency-edit-field-notes" className="sm:col-span-2">
+                <EditableField
+                  label="Notes"
+                  value={d.notes}
+                  editing
+                  kind="textarea"
+                  onChange={(n) => edit.setField("notes", n)}
+                  placeholder="Impact context, mitigation, owners…"
+                />
+              </div>
+            ) : null}
           </EditableFieldGrid>
-        ) : null
+        ) : null}
       }
       relatedLinks={
         <>
