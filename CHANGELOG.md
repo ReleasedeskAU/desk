@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **RD-118 Dependency create:** Create now persists a valid payload using the selected enabled lifecycle status (or the config intake default). `intakeOnly` no longer rejects every non-start status the form already offers. Validation and API failures show a client-safe alert inside the create modal — the previous `FormAlertDialog` sat behind the shell (`z-60` vs `z-200`) so Create looked like a silent no-op. Editor `requireRole` is unchanged.
+
 - **Connector delete:** Trash uses this pair’s credential id (not every credential on the connector). Digit-string ids are accepted. A scheduled delete no longer greys out trash — retry re-queues StaffLess. The list polls while status is Deleting. 403/404 from StaffLess use a plain message.
 
 - **Connectors sync logs:** The History action now shows live StaffLess indexing-status (indexed docs, this run, last result, unresolved errors) plus index attempts. It looks up by StaffLess connector id or `cc_pair_id`, not Prisma. The drawer auto-refreshes while a run is queued or in progress. StaffLess does not expose separate “records found” vs “fetched” counts, so those are omitted. Stack traces stay off the payload.
