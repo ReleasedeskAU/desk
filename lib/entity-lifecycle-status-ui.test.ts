@@ -4,6 +4,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  choosableEntityStatusFilterOptions,
   defaultEntityStatusLabel,
   enabledEntityStatusLabels,
   entityStatusFilterOptions,
@@ -61,6 +62,23 @@ describe("entity lifecycle status SSOT helpers", () => {
     assert.ok(options.includes("Open"));
     assert.ok(options.includes("Legacy Off"));
     assert.ok(!entityStatusFilterOptions(sample, ["Open"]).includes("Legacy Off"));
+  });
+
+  it("choosable filter options stay on enabled labels and keep a selected unknown", () => {
+    const enabled = enabledEntityStatusLabels(sample);
+    assert.deepEqual(choosableEntityStatusFilterOptions(enabled), [
+      "Open",
+      "Escalated",
+      "Closed",
+    ]);
+    assert.equal(
+      choosableEntityStatusFilterOptions(enabled, "Legacy Off").includes("Legacy Off"),
+      true
+    );
+    assert.equal(
+      choosableEntityStatusFilterOptions(enabled).includes("Legacy Off"),
+      false
+    );
   });
 
   it("validates enabled and resolves display", () => {
