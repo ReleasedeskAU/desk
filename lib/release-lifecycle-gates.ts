@@ -248,7 +248,7 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
   deployment_outcome_confirmed: {
     label: "Deployment outcome confirmed",
     description:
-      "Deployment must be Verified before the Release can move to Deployed.",
+      "A missing Verified deployment outcome does not block the deployed milestone (RD-111). Open blockers, conflicts, sign-offs, and hard dependencies still apply when those gates are attached.",
     ruleIds: ["§4-08"],
     dataReliability: "reliable",
   },
