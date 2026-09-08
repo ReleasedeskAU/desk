@@ -275,9 +275,10 @@ export function evaluateLifecycleGate(
         ? pass()
         : fail("No UAT environment booking on record");
     case "environment_booked_for_deploy":
-      return facts.hasDeployBooking
-        ? pass()
-        : fail("No deployment environment booking on record");
+      // RD-129: Release Desk tracks Prod only. Prod is always available and
+      // does not need a booking; a missing booking must not block Deploying.
+      // Bookings stay on the record; this gate no longer treats absence as unmet.
+      return pass();
     case "no_expired_env_bookings":
       return facts.expiredEnvBookingCount === 0
         ? pass()
