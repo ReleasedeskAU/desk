@@ -43,6 +43,7 @@ export const RELEASE_COLUMNS: ColumnDef[] = [
   { key: "hypercarePlan", label: "Hypercare Plan" },
   { key: "commsPlan", label: "Comms Plan" },
   { key: "trainingStatus", label: "Training Status" },
+  { key: "actions", label: "Actions" },
 ];
 
 /** Core release-desk columns — visible by default; extended governance/sign-off columns stay hidden until enabled. */
@@ -60,6 +61,7 @@ export const RELEASE_DEFAULT_VISIBLE_COLUMN_KEYS = [
   "status",
   "regulatory",
   "deploymentWindow",
+  "actions",
 ] as const;
 
 export const RELEASE_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = RELEASE_COLUMNS.map((c) => c.key).filter(
@@ -275,6 +277,7 @@ export const SIGNOFF_COLUMNS: ColumnDef[] = [
   { key: "application", label: "Application" },
   { key: "department", label: "Department" },
   { key: "owner", label: "Owner" },
+  { key: "actions", label: "Actions" },
 ];
 
 export const SIGNOFF_DEFAULT_VISIBLE_COLUMN_KEYS = [
@@ -284,6 +287,7 @@ export const SIGNOFF_DEFAULT_VISIBLE_COLUMN_KEYS = [
   "required",
   "releaseCode",
   "releaseName",
+  "actions",
 ] as const;
 
 export const SIGNOFF_DEFAULT_HIDDEN_COLUMN_KEYS: string[] = SIGNOFF_COLUMNS.map((c) => c.key).filter(

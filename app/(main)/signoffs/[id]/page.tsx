@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { Stamp } from "lucide-react";
 import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
 import { DetailSection } from "@/components/detail/editable";
@@ -8,12 +8,14 @@ import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
-import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { type SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnPrimary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { RowEditButton } from "@/components/ui/RowEditButton";
 import type { SignoffListRow } from "@/lib/signoff-list";
 import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
+import { shouldOfferSignoffEdit } from "@/lib/signoff-lifecycle-edit-policy";
 import { signoffNextStatusLabels } from "@/lib/signoff-lifecycle-transition";
 
 type Props = { params: Promise<{ id: string }> };
@@ -30,6 +32,7 @@ export default function SignoffDetailPage({ params }: Props) {
   const [nextStatus, setNextStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nextStatusRef = useRef<HTMLSelectElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,7 +59,8 @@ export default function SignoffDetailPage({ params }: Props) {
   }, [row?.id, row?.status, nextOptions[0]]);
 
   const editsLocked = /^cancell?ed$/i.test(row?.releaseStatus ?? "");
-  const canEdit = sessionCanEdit(user) && !editsLocked;
+  const canEdit =
+    shouldOfferSignoffEdit({ user, config, status: row?.status }) && !editsLocked;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -92,6 +96,14 @@ export default function SignoffDetailPage({ params }: Props) {
       backHref="/signoffs"
       backLabel="Sign-offs"
       pageKey="signoffs"
+      actions={
+        canEdit ? (
+          <RowEditButton
+            recordLabel={row.signoffCode}
+            onClick={() => nextStatusRef.current?.focus()}
+          />
+        ) : null
+      }
     >
       <DetailSection
         icon={Stamp}
@@ -130,6 +142,8 @@ export default function SignoffDetailPage({ params }: Props) {
             <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
               Record decision
               <select
+                id="signoff-next-status"
+                ref={nextStatusRef}
                 className={cn(taInput, "mt-1")}
                 value={nextStatus}
                 onChange={(event) => setNextStatus(event.target.value)}
