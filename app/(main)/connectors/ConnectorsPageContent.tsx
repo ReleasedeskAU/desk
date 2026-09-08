@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ChevronRight, History, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { getConnectorTypeDef, statusBadge } from "@/lib/connectors/types";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
-import type { ConnectorTableRow } from "@/lib/staffless/map-indexing-status";
+import { CONNECTOR_DELETING_POLL_MS, type ConnectorTableRow } from "@/lib/staffless/map-indexing-status";
 import { isStafflessConnectorType } from "@/lib/staffless/create-payload";
 import { SyncedWorkItemsSection } from "@/components/connectors/SyncedWorkItemsSection";
 import { ConnectorWizard } from "./ConnectorWizard";
@@ -36,6 +36,7 @@ export default function ConnectorsPageContent() {
   const [connectors, setConnectors] = useState<ConnectorTableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editConnector, setEditConnector] = useState<ConnectorTableRow | null>(null);
   const [historyConnector, setHistoryConnector] = useState<ConnectorTableRow | null>(null);
@@ -48,9 +49,11 @@ export default function ConnectorsPageContent() {
     setHistoryConnector((prev) => (prev && prev.id === row.id ? row : prev));
   }, []);
 
-  const loadConnectors = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadConnectors = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) {
+      setLoading(true);
+      setError(null);
+    }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 15_000);
     try {
@@ -70,15 +73,24 @@ export default function ConnectorsPageContent() {
   }, []);
 
   useEffect(() => {
-    loadConnectors();
+    void loadConnectors();
   }, [loadConnectors]);
+
+  useEffect(() => {
+    if (!connectors.some((row) => row.status === "DELETING")) return;
+    const timer = window.setInterval(() => {
+      void loadConnectors({ quiet: true });
+    }, CONNECTOR_DELETING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [connectors, loadConnectors]);
 
   const runAction = async (id: string, work: () => Promise<void>) => {
     setActionId(id);
     setError(null);
+    setNotice(null);
     try {
       await work();
-      await loadConnectors();
+      await loadConnectors({ quiet: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Action failed");
     } finally {
@@ -108,13 +120,19 @@ export default function ConnectorsPageContent() {
     });
 
   const deleteConnector = (connector: ConnectorTableRow) => {
+    const retrying = connector.status === "DELETING";
     const ok = confirm(
-      `Delete "${connector.name}"? StaffLess will remove the indexed copy of this data. Nothing is deleted in ${typeLabel(connector.type)} itself. This cannot be undone.`
+      retrying
+        ? `"${connector.name}" is already marked for deletion. Queue StaffLess again to retry removing the indexed copy? Jira/GitHub/Teams/email themselves are unchanged.`
+        : `Delete "${connector.name}"? StaffLess will remove the indexed copy of this data. Nothing is deleted in ${typeLabel(connector.type)} itself. This cannot be undone.`
     );
     if (!ok) return;
     void runAction(connector.id, async () => {
       const res = await fetch(`/api/connectors/${connector.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await readError(res));
+      setNotice(
+        "Deletion scheduled. This row leaves the list when StaffLess finishes removing indexed copies. The source system is unchanged."
+      );
     });
   };
 
@@ -150,11 +168,14 @@ export default function ConnectorsPageContent() {
       {error && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
       )}
+      {notice && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{notice}</div>
+      )}
 
       {loading ? (
         <TableSkeleton showTitle={false} columns={6} rows={5} showFilterBar={false} />
       ) : (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 border-b border-gray-200 text-[12px] uppercase tracking-wide text-gray-500 font-semibold">
               <tr>
@@ -200,7 +221,7 @@ export default function ConnectorsPageContent() {
                       <td className="border-b border-gray-200 px-5 py-4 text-gray-600">{c.docsIndexed}</td>
                       <td className="border-b border-gray-200 px-5 py-4 text-gray-600">{relativeTime(c.lastSyncedAt)}</td>
                       <td className="border-b border-gray-200 px-5 py-4">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex flex-wrap items-center justify-end gap-2 min-w-[220px]">
                           <button
                             type="button"
                             disabled={busy || !c.enabled || deleting}
@@ -243,10 +264,10 @@ export default function ConnectorsPageContent() {
                           </button>
                           <button
                             type="button"
-                            disabled={busy || deleting}
+                            disabled={busy}
                             onClick={() => deleteConnector(c)}
                             className="text-red-600 hover:text-red-800 disabled:opacity-40"
-                            title="Delete"
+                            title={deleting ? "Retry delete" : "Delete"}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>

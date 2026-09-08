@@ -76,6 +76,42 @@ describe("mergeCcPairsWithIndexingStatus", () => {
     assert.ok(!JSON.stringify(rows[0]).includes("jira_api_token"));
   });
 
+  it("uses this pair's credential when the connector lists several", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 44,
+          name: "Release Desk Jira",
+          connector: {
+            id: 7,
+            name: "Release Desk Jira",
+            source: "jira",
+            credential_ids: [12, 99],
+            connector_specific_config: {},
+          },
+          credential: { id: 12 },
+        },
+      ],
+      []
+    );
+    assert.deepEqual(rows[0].credentialIds, [12]);
+  });
+
+  it("coerces a digit-string pair credential id", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 2,
+          name: "GH",
+          connector: { id: 3, name: "GH", source: "github", credential_ids: [], connector_specific_config: {} },
+          credential: { id: "8" },
+        },
+      ],
+      []
+    );
+    assert.deepEqual(rows[0].credentialIds, [8]);
+  });
+
   it("maps two-project JQL onto projectKeys without inventing extra filters", () => {
     const rows = mergeCcPairsWithIndexingStatus(
       [

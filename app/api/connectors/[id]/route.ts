@@ -10,7 +10,7 @@ import {
   StafflessIdError,
 } from "@/lib/staffless/api";
 import { parseStafflessId } from "@/lib/staffless/ids";
-import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
+import { StafflessApiError, stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
 import { logger } from "@/lib/logger";
 
 const patchSchema = z
@@ -107,6 +107,21 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       message: "Deletion scheduled. Indexed copies will be removed; the source system is unchanged.",
     });
   } catch (err) {
+    if (err instanceof StafflessApiError && (err.status === 401 || err.status === 403)) {
+      return NextResponse.json(
+        {
+          error:
+            "StaffLess would not delete this connector. The service account needs StaffLess administrator access.",
+        },
+        { status: err.status }
+      );
+    }
+    if (err instanceof StafflessApiError && err.status === 404) {
+      return NextResponse.json(
+        { error: "StaffLess could not find this connector-credential pair. It may already be deleted." },
+        { status: 404 }
+      );
+    }
     return routeError(err, "api/connectors.DELETE");
   }
 }

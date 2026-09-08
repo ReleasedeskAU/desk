@@ -12,14 +12,28 @@ export class StafflessIdError extends Error {
 }
 
 /**
+ * Coerce a JSON number or digit string to a positive StaffLess integer.
+ * Non-digits and unsafe values are refused — never guessed.
+ * @returns The id, or null when the value is not a safe positive integer.
+ */
+export function toPositiveStafflessId(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    const n = Number(value);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+/**
  * Parse a URL id that must be a positive StaffLess integer.
  * Prisma CUIDs and other non-digits are refused — never guessed.
  * @returns The id, or null when the string is not a safe positive integer.
  */
 export function parseStafflessId(id: string): number | null {
-  if (!/^\d+$/.test(id)) return null;
-  const n = Number(id);
-  return Number.isSafeInteger(n) && n > 0 ? n : null;
+  return toPositiveStafflessId(id);
 }
 
 type StafflessIdRow = { id: string; ccPairId: number | null };
@@ -40,7 +54,7 @@ export function findRowByStafflessId<T extends StafflessIdRow>(rows: T[], id: st
  * @throws StafflessIdError when missing or ambiguous.
  */
 export function requireSingleCredentialId(credentialIds: number[] | undefined): number {
-  const ids = (credentialIds ?? []).filter((id) => Number.isSafeInteger(id) && id > 0);
+  const ids = (credentialIds ?? []).map(toPositiveStafflessId).filter((id): id is number => id != null);
   if (ids.length === 1) return ids[0];
   if (ids.length === 0) {
     throw new StafflessIdError("This connector has no credential to operate on. Re-sync or recreate it.");

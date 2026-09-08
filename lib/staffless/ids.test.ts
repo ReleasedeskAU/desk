@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { requireCcPairId, requireSingleCredentialId, StafflessIdError } from "./ids";
+import { requireCcPairId, requireSingleCredentialId, StafflessIdError, toPositiveStafflessId } from "./ids";
 import { mapIndexAttempt, mapIndexAttemptPage, mapIndexError } from "./map-index-attempts";
 import { isStafflessConnectorType, planStafflessConnector, planStafflessCreate } from "./create-payload";
 
@@ -12,6 +12,16 @@ describe("requireSingleCredentialId", () => {
   it("refuses missing or multiple credentials", () => {
     assert.throws(() => requireSingleCredentialId([]), StafflessIdError);
     assert.throws(() => requireSingleCredentialId([1, 2]), /more than one credential/);
+  });
+});
+
+describe("toPositiveStafflessId", () => {
+  it("accepts digit strings and refuses junk", () => {
+    assert.equal(toPositiveStafflessId(12), 12);
+    assert.equal(toPositiveStafflessId("12"), 12);
+    assert.equal(toPositiveStafflessId("0"), null);
+    assert.equal(toPositiveStafflessId("12a"), null);
+    assert.equal(toPositiveStafflessId(1.5), null);
   });
 });
 

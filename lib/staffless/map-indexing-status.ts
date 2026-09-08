@@ -5,6 +5,10 @@
  */
 
 import { parseGeneratedJiraProjectJql } from "@/lib/jira/project-keys";
+import { toPositiveStafflessId } from "@/lib/staffless/ids";
+
+/** Quiet list refresh while a deletion job is in progress. */
+export const CONNECTOR_DELETING_POLL_MS = 4_000;
 
 export type StafflessIndexingStatus = {
   cc_pair_id?: number;
@@ -37,7 +41,7 @@ export type StafflessCcPairStatus = {
   cc_pair_id?: number;
   name?: string;
   connector?: StafflessConnectorSnapshot;
-  credential?: { id?: number };
+  credential?: { id?: number | string };
 };
 
 export type ConnectorTableRow = {
@@ -101,11 +105,14 @@ function githubDataTypes(cfg: Record<string, unknown>): string[] {
   return types;
 }
 
+/**
+ * Deletion-attempt needs this pair's credential, not every credential on the connector.
+ * Prefer `pair.credential.id`; fall back to connector.credential_ids only when the pair omits it.
+ */
 function credentialIdsFrom(connector: StafflessConnectorSnapshot, pair: StafflessCcPairStatus): number[] {
-  const fromConnector = (connector.credential_ids ?? []).filter((id) => Number.isSafeInteger(id) && id > 0);
-  if (fromConnector.length > 0) return fromConnector;
-  const fromPair = pair.credential?.id;
-  return fromPair != null && Number.isSafeInteger(fromPair) && fromPair > 0 ? [fromPair] : [];
+  const fromPair = toPositiveStafflessId(pair.credential?.id);
+  if (fromPair != null) return [fromPair];
+  return (connector.credential_ids ?? []).map(toPositiveStafflessId).filter((id): id is number => id != null);
 }
 
 /**
@@ -183,7 +190,9 @@ export function mapConnectorToTableRow(
   return {
     id: String(connector.id),
     ccPairId: pair?.cc_pair_id ?? status?.cc_pair_id ?? null,
-    credentialIds: pair ? credentialIdsFrom(connector, pair) : connector.credential_ids ?? [],
+    credentialIds: pair
+      ? credentialIdsFrom(connector, pair)
+      : (connector.credential_ids ?? []).map(toPositiveStafflessId).filter((id): id is number => id != null),
     name: pair?.name?.trim() || connector.name,
     type,
     authType: authTypeFor(type),

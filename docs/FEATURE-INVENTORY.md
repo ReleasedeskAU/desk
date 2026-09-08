@@ -213,7 +213,7 @@ GitHub wizard types are Pull Requests, Issues, and Documents (`include_files`). 
 - **Re-index from beginning:** same endpoint with `from_beginning: true` (sync logs drawer).
 - **Pause / Resume:** `PUT /admin/cc-pair/{id}/status` `PAUSED` / `ACTIVE`.
 - **Edit:** `PATCH /admin/connector/{id}` plus `PUT /admin/cc-pair/{id}/name`. New secrets use `PUT /admin/credential/{id}`.
-- **Delete:** `POST /admin/deletion-attempt` with `connector_id` + `credential_id`. Async. Indexed copies are removed; the source system is not. Requires exactly one credential — refuse if missing or ambiguous.
+- **Delete:** `POST /admin/deletion-attempt` with `connector_id` + this pair’s `credential_id`. Async. Indexed copies are removed; the source system is not. Refuse if that credential is missing or the pair has more than one. The Connectors tab polls while status is Deleting and allows retry if the background job did not finish.
 - **Index history / sync logs:** History (clock) opens live StaffLess data: indexing-status (`docs_indexed`, `latest_index_attempt_docs_indexed`, `in_progress`, `last_status`, `last_success`), `GET /admin/cc-pair/{id}/index-attempts` (no stack traces), and unresolved `GET /admin/cc-pair/{id}/errors`. Auto-refreshes while queued or in progress. Lookup is StaffLess connector id or `cc_pair_id` (not Prisma). StaffLess does not expose separate “records found” vs “fetched” counts.
 - **Prune:** `POST /admin/cc-pair/{id}/prune`.
 - **Check fields:** local wizard validation only. StaffLess has no connection-test API.
