@@ -3,6 +3,8 @@
  * Run: npx tsx --test lib/dependency-create.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { after, describe, it } from "node:test";
 import { resolveCreateLifecycleStatus } from "./entity-lifecycle-create-guard";
 import { createDefaultDependencyLifecycleConfig } from "./dependency-lifecycle-config";
@@ -93,6 +95,51 @@ describe("create status resolution (RD-118)", () => {
 });
 
 describe("dependency create client errors (silent no-op regression)", () => {
+  it("valid payload persists selected status; missing required field does not", () => {
+    const store = new Map<string, ReturnType<typeof toReleaseDependencyCreateData>>();
+    const parsed = parseDependencyCreateBody(validBody);
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    const resolved = resolveCreateLifecycleStatus(config, parsed.data.status, "dependency");
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    store.set(
+      "dep-1",
+      toReleaseDependencyCreateData(
+        parsed.data,
+        resolved.status,
+        resolved.statusKey,
+        "DEP-001",
+        1
+      )
+    );
+    assert.equal(store.get("dep-1")?.status, "Pending");
+    assert.equal(store.get("dep-1")?.statusKey, "pending");
+    assert.equal(store.size, 1);
+
+    const missing = parseDependencyCreateBody({
+      dependsOnReleaseId: "rel_onto",
+      dependencyType: "Hard",
+      status: "Pending",
+      impactIfBlocked: "Release Delay",
+    });
+    assert.equal(missing.ok, false);
+    if (!missing.ok) {
+      assert.match(dependencyCreateUserMessage(missing), /required|releaseId/i);
+    }
+    assert.equal(store.size, 1);
+  });
+
+  it("create modal shows errors inside the shell, not behind FormAlertDialog", () => {
+    const src = readFileSync(
+      resolve(process.cwd(), "components/dependencies/DependencyFormModal.tsx"),
+      "utf8"
+    );
+    assert.match(src, /role="alert"/);
+    assert.equal(src.includes("FormAlertDialog"), false);
+    assert.equal(src.includes("CreateModalShell"), true);
+  });
+
   it("does not treat empty/empty as a self-dependency", () => {
     assert.equal(isSelfDependency("", ""), false);
     assert.equal(isSelfDependency("  ", "  "), false);
@@ -116,6 +163,10 @@ describe("valid create persists", () => {
     { skip: skipDb },
     async (t) => {
       await import("./load-db-env-for-tests");
+      if (!process.env.DATABASE_URL) {
+        t.skip("database is not available");
+        return;
+      }
       const { prisma } = await import("./prisma");
       const { createReleaseRow } = await import("./org-compat");
       try {
@@ -217,7 +268,7 @@ describe("valid create persists", () => {
   );
 
   after(async () => {
-    if (skipDb) return;
+    if (skipDb || !process.env.DATABASE_URL) return;
     try {
       const { prisma } = await import("./prisma");
       await prisma.$disconnect();
