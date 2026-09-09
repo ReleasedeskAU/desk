@@ -92,26 +92,22 @@ export async function POST(req: Request) {
       where: { id: body.applicationId },
       select: { id: true, department: { select: { name: true } } },
     }),
-    body.relatedReleaseCode
-      ? prisma.release.findUnique({
-          where: { releaseCode: body.relatedReleaseCode },
-          select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
-        })
-      : Promise.resolve(null),
+    prisma.release.findUnique({
+      where: { releaseCode: body.relatedReleaseCode },
+      select: { id: true, releaseCode: true, status: true, lifecycleConfigVersionId: true },
+    }),
     prisma.incident.aggregate({ _max: { sourceOrder: true } }),
   ]);
   if (!application) return NextResponse.json({ error: "Application not found" }, { status: 400 });
-  if (body.relatedReleaseCode && !release) {
+  if (!release) {
     return NextResponse.json({ error: "Release not found" }, { status: 400 });
   }
-  if (release) {
-    const releaseConfig = await loadGuardReleaseConfig(
-      user!.id,
-      release.lifecycleConfigVersionId
-    );
-    const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
-    if (!cancelledLock.ok) return cancelledLock.response;
-  }
+  const releaseConfig = await loadGuardReleaseConfig(
+    user!.id,
+    release.lifecycleConfigVersionId
+  );
+  const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
+  if (!cancelledLock.ok) return cancelledLock.response;
 
   let status = String(body.status ?? "").trim();
   let statusKey: string | undefined;
@@ -143,7 +139,7 @@ export async function POST(req: Request) {
       statusKey,
       impact: body.impact,
       assignedTo: body.assignedTo ?? null,
-      relatedReleaseCode: body.relatedReleaseCode ?? null,
+      relatedReleaseCode: body.relatedReleaseCode,
       environmentName: body.environmentName,
       sourceOrder: (maxOrder._max.sourceOrder ?? 0) + 1,
     },

@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Incidents create (RD-124):** Related Release (`relatedReleaseCode`) is required when creating an incident. The create form marks the field mandatory and blocks save; `POST /api/incidents` rejects omit/null/blank with a client-safe “Related Release is required” issue. Existing incidents with no related release still load. Edit/PATCH is unchanged.
 - **RD-120 Alerts status change:** `PATCH /api/monitoring-alerts/[id]` now accepts `alertSource` (the Alerts detail save already sent it). A legal next status persists. Schema failures surface the first field issue instead of a generic “Validation failed”. Illegal transitions still return the lifecycle reason. Auth unchanged.
 - **Dependency edit status fields (RD-119):** The dependency edit form now shows only fields the lifecycle edit policy allows for the selected next status (status key + field rule). Locked fields are hidden. PATCH omits hidden fields. Auth is unchanged (editor). No dependency field-lock catalog exists — visibility follows `editMode`, not English status labels.
 - **RD-118 Dependency create:** Create now persists a valid payload using the selected enabled lifecycle status (or the config intake default). `intakeOnly` no longer rejects every non-start status the form already offers. Validation and API failures show a client-safe alert inside the create modal — the previous `FormAlertDialog` sat behind the shell (`z-60` vs `z-200`) so Create looked like a silent no-op. Editor `requireRole` is unchanged.
