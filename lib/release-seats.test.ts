@@ -10,7 +10,10 @@ import {
   isExactEditorDirectoryUser,
   isReleaseSeatWriteLocked,
 } from "@/lib/release-seats";
-import { scopeSectionCapabilities } from "@/lib/release-scope-permissions";
+import {
+  canGrantDraftSection,
+  scopeSectionCapabilities,
+} from "@/lib/release-scope-permissions";
 import {
   DEFAULT_SCOPE_SECTION_CONFIG,
   isScopeApprovalDueOverdue,
@@ -162,6 +165,45 @@ describe("scope section editors (grants, not account-role editors)", () => {
     assert.equal(caps.canAddAttachments, true);
     assert.equal(caps.canApprove, false);
     assert.equal(caps.canAddGrant, false);
+  });
+
+  it("lets the current owner or the current manager add section editors, not only the manager", () => {
+    const ownerOnly = computeReleaseSeats({
+      session: readonly,
+      directoryUser: ownerRow,
+      seats: { releaseOwnerId: "user_owner", releaseManagerId: "user_editor" },
+      writeLocked: false,
+    });
+    const managerOnly = computeReleaseSeats({
+      session: editor,
+      directoryUser: editorRow,
+      seats: { releaseOwnerId: "user_owner", releaseManagerId: "user_editor" },
+      writeLocked: false,
+    });
+    const neither = computeReleaseSeats({
+      session: admin,
+      directoryUser: adminRow,
+      seats: { releaseOwnerId: "user_owner", releaseManagerId: "user_editor" },
+      writeLocked: false,
+    });
+    assert.equal(ownerOnly.isCurrentOwner, true);
+    assert.equal(ownerOnly.isCurrentManager, false);
+    assert.equal(managerOnly.isCurrentManager, true);
+    assert.equal(managerOnly.isCurrentOwner, false);
+    assert.equal(canGrantDraftSection(ownerOnly, SCOPE_STATUS_DRAFT), true);
+    assert.equal(canGrantDraftSection(managerOnly, SCOPE_STATUS_DRAFT), true);
+    assert.equal(canGrantDraftSection(neither, SCOPE_STATUS_DRAFT), false);
+    assert.equal(canGrantDraftSection(ownerOnly, SCOPE_STATUS_APPROVED), false);
+    assert.equal(scopeSectionCapabilities(ownerOnly, {
+      kind: "scope",
+      statusKey: SCOPE_STATUS_DRAFT,
+      granteeUserIds: [],
+    }).canAddGrant, true);
+    assert.equal(scopeSectionCapabilities(ownerOnly, {
+      kind: "scope",
+      statusKey: SCOPE_STATUS_APPROVED,
+      granteeUserIds: [],
+    }).canAddGrant, false);
   });
 
   it("does not carry a scope grant onto a change-request section", () => {
