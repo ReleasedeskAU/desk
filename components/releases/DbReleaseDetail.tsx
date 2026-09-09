@@ -31,6 +31,10 @@ import { DbLinkedWorkItems } from "@/components/releases/DbLinkedWorkItems";
 import { DbReleaseServicesInvolved } from "@/components/releases/DbReleaseServicesInvolved";
 import { StakeholderCommsPanel } from "@/components/releases/StakeholderCommsPanel";
 import { ReleaseFormModal, releaseRowToFormInitial } from "@/components/releases/ReleaseFormModal";
+import {
+  ReleaseScopeSection,
+  type NativeScopeView,
+} from "@/components/releases/ReleaseScopeSection";
 import { taBtnSecondary, taInput } from "@/lib/styles";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/auth/roles";
@@ -120,6 +124,17 @@ type ReleaseDetail = {
   supportBriefed?: string | null;
   releaseOwnerId?: string | null;
   releaseOwner?: { id: string; userId: string; name: string; email: string; role: string } | null;
+  releaseManagerId?: string | null;
+  releaseManager?: { id: string; userId: string; name: string; email: string; role: string } | null;
+  nativeScope?: NativeScopeView | null;
+  capabilities?: {
+    canEditRelease?: boolean;
+    scope?: NativeScopeView["changeRequests"][number]["capabilities"];
+  };
+  assignmentOptions?: {
+    managers: { id: string; label: string; name: string }[];
+    owners: { id: string; label: string; name: string }[];
+  } | null;
   stakeholders?: { user: { id: string; userId: string; name: string; email: string; role: string } }[];
   applications: { application: { id: string; name: string } }[];
   dependsOn: { dependsOnRelease: { id: string; releaseCode: string; name: string } }[];
@@ -177,6 +192,7 @@ const RELEASE_DETAIL_RAIL_GROUPS: RailGroup[] = [
   {
     label: "Governance",
     links: [
+      { id: "section-scope", label: "Scope" },
       { id: "section-signoffs", label: "Sign-offs" },
       { id: "section-approvals", label: "Approvals" },
       { id: "section-environments", label: "Environments" },
@@ -629,6 +645,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
 
   const editsLocked =
     Boolean(lifecycleStatus?.editsLocked) || /^cancell?ed$/i.test(release?.status ?? "");
+  const canOfferEdit = Boolean(release?.capabilities?.canEditRelease) && !editsLocked;
   const canEdit = sessionCanEdit(user) && !editsLocked;
   const refreshCommandCenter = useCallback(() => {
     setCommandRefreshKey((key) => key + 1);
@@ -899,25 +916,29 @@ export function DbReleaseDetail({ id }: { id: string }) {
             </span>
           ) : null}
           {releaseSwitcher}
-          {canEdit ? (
+          {canOfferEdit || (sessionCanEdit(user) && !editsLocked) ? (
             <>
               <span className="mx-1 hidden h-6 w-px bg-slate-200 dark:bg-white/10 sm:inline-block" aria-hidden />
-              <button
-                type="button"
-                onClick={() => setDeleteOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-                Delete
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97] dark:shadow-indigo-900/40"
-              >
-                <Pencil className="h-4 w-4" aria-hidden />
-                Edit Release
-              </button>
+              {sessionCanEdit(user) && !editsLocked ? (
+                <button
+                  type="button"
+                  onClick={() => setDeleteOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                  Delete
+                </button>
+              ) : null}
+              {canOfferEdit ? (
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97] dark:shadow-indigo-900/40"
+                >
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Edit Release
+                </button>
+              ) : null}
             </>
           ) : null}
         </>
@@ -943,6 +964,12 @@ export function DbReleaseDetail({ id }: { id: string }) {
       <DetailDecisionHeader
         identity={[
           { label: "Owner", value: ownerDisplay },
+          {
+            label: "Manager",
+            value: release.releaseManager
+              ? `${release.releaseManager.userId} (${release.releaseManager.name})`
+              : "—",
+          },
           { label: "Program", value: release.programProject || "—" },
           { label: "Priority", value: release.priority },
         ]}
@@ -1108,6 +1135,16 @@ export function DbReleaseDetail({ id }: { id: string }) {
       {/* Governance gate — cleared to ship, and is there a slot? Sign-offs +
           approvals are the permission; environment booking is the deploy slot. */}
       <DetailBand label="Governance · cleared to ship?">
+        {release.nativeScope && release.capabilities?.scope ? (
+          <ReleaseScopeSection
+            key={`${release.nativeScope.id}-${release.nativeScope.lockVersion}`}
+            releaseId={release.id}
+            scope={release.nativeScope}
+            scopeCaps={release.capabilities.scope}
+            users={release.assignmentOptions?.owners ?? []}
+            onChanged={load}
+          />
+        ) : null}
         <DetailSection
           id="section-signoffs"
           icon={Calendar}

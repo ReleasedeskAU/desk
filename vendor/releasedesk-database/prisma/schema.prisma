@@ -166,6 +166,9 @@ model Release {
   deploymentWindow       String?
   releaseOwnerId         String?
   releaseOwner           User?     @relation("ReleaseOwner", fields: [releaseOwnerId], references: [id])
+  /** Current assigned Release Manager seat — not createdBy / previous / title. */
+  releaseManagerId       String?
+  releaseManager         User?     @relation("ReleaseManager", fields: [releaseManagerId], references: [id])
   // Go-live checklist / health (from Releases sheet)
   devSignoff             String?
   testSignoff            String?
@@ -229,11 +232,14 @@ model Release {
   dependentLeaves  LeaveRecordRelease[]
   stakeholders     ReleaseStakeholder[]
   calendarEvents   CalendarEvent[]
+  /// Native scope approval row (not CAB Approval). Created on first scope read.
+  scope            ReleaseScope?
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
 
   @@index([jiraIssueKey])
   @@index([lifecycleConfigVersionId])
+  @@index([releaseManagerId])
 }
 
 model ReleaseApplication {
@@ -595,11 +601,12 @@ model User {
   updatedAt   DateTime  @updatedAt
 
   // Back-relations
-  ownedReleases  Release[]            @relation("ReleaseOwner")
-  risksOwned     Risk[]
-  approvalsGiven Approval[]
-  leaveRecords   LeaveRecord[]
-  stakeholderOf  ReleaseStakeholder[]
+  ownedReleases    Release[]            @relation("ReleaseOwner")
+  managedReleases  Release[]            @relation("ReleaseManager")
+  risksOwned       Risk[]
+  approvalsGiven   Approval[]
+  leaveRecords     LeaveRecord[]
+  stakeholderOf    ReleaseStakeholder[]
 
   @@index([clerkUserId])
 }
@@ -1214,4 +1221,132 @@ model ReleaseEvent {
 
   @@index([organizationId, releaseId, createdAt])
   @@index([releaseId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Native Scope / Scope Change Request (not CAB Approval, not VR-21 snapshot)
+// Status keys are draft | approved. Display uses tenant labels (or purpose).
+// ---------------------------------------------------------------------------
+
+/// One scope row per release. Lock is this row's statusKey — never cabScopeSnapshot.
+model ReleaseScope {
+  id               String    @id @default(cuid())
+  releaseId        String    @unique
+  release          Release   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  /// Stable key: draft | approved. Not a tenant label.
+  statusKey        String
+  approvalDueAt    DateTime?
+  approvedAt       DateTime?
+  approvedByUserId String?
+  approvedByName   String?
+  /// Optimistic lock so concurrent edit vs first approve cannot diverge.
+  lockVersion      Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  history        ReleaseScopeHistory[]
+  attachments    ReleaseScopeFile[]          @relation("ScopeFiles")
+  grants         ReleaseScopeSectionGrant[]  @relation("ScopeGrants")
+  changeRequests ReleaseScopeChangeRequest[]
+
+  @@index([statusKey])
+}
+
+/// Append-only who/when + before/after text. Never edited or deleted.
+model ReleaseScopeHistory {
+  id          String       @id @default(cuid())
+  scopeId     String
+  scope       ReleaseScope @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  actorUserId String
+  actorName   String
+  beforeText  String?
+  afterText   String?
+  createdAt   DateTime     @default(now())
+
+  @@index([scopeId, createdAt])
+}
+
+/// Proposed scope text. Does not write Release.scopeDescription until approved.
+model ReleaseScopeChangeRequest {
+  id               String       @id @default(cuid())
+  scopeId          String
+  scope            ReleaseScope @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  /// Stable key: draft | approved.
+  statusKey        String
+  proposedText     String?
+  /// Required on the approve route (must already be saved). Not used for first scope approve.
+  approvalWhy      String?
+  approvedAt       DateTime?
+  approvedByUserId String?
+  approvedByName   String?
+  lockVersion      Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  history     ReleaseScopeChangeHistory[]
+  attachments ReleaseScopeFile[]         @relation("ChangeRequestFiles")
+  grants      ReleaseScopeSectionGrant[] @relation("ChangeRequestGrants")
+
+  @@index([scopeId, createdAt])
+  @@index([scopeId, statusKey])
+}
+
+/// Append-only history for a change request. Never edited or deleted.
+model ReleaseScopeChangeHistory {
+  id              String                    @id @default(cuid())
+  changeRequestId String
+  changeRequest   ReleaseScopeChangeRequest @relation(fields: [changeRequestId], references: [id], onDelete: Cascade)
+  actorUserId     String
+  actorName       String
+  beforeText      String?
+  afterText       String?
+  createdAt       DateTime                  @default(now())
+
+  @@index([changeRequestId, createdAt])
+}
+
+/// Server-stored file bound to a scope or a change request. Never a client URL.
+model ReleaseScopeFile {
+  id               String                     @id @default(cuid())
+  tenantKey        String
+  storageKey       String                     @unique
+  originalName     String
+  mimeType         String
+  byteSize         Int
+  uploadedByUserId String
+  uploadedByName   String
+  scopeId          String?
+  scope            ReleaseScope?              @relation("ScopeFiles", fields: [scopeId], references: [id], onDelete: Cascade)
+  changeRequestId  String?
+  changeRequest    ReleaseScopeChangeRequest? @relation("ChangeRequestFiles", fields: [changeRequestId], references: [id], onDelete: Cascade)
+  createdAt        DateTime                   @default(now())
+
+  @@index([scopeId])
+  @@index([changeRequestId])
+  @@index([tenantKey])
+}
+
+/// Draft-section grant: existing same-tenant user may edit that section only.
+model ReleaseScopeSectionGrant {
+  id               String                     @id @default(cuid())
+  granteeUserId    String
+  grantedByUserId  String
+  scopeId          String?
+  scope            ReleaseScope?              @relation("ScopeGrants", fields: [scopeId], references: [id], onDelete: Cascade)
+  changeRequestId  String?
+  changeRequest    ReleaseScopeChangeRequest? @relation("ChangeRequestGrants", fields: [changeRequestId], references: [id], onDelete: Cascade)
+  createdAt        DateTime                   @default(now())
+
+  @@index([scopeId])
+  @@index([changeRequestId])
+  @@index([granteeUserId])
+}
+
+/// Tenant labels + due-date rule for native scope statuses (second config).
+model UserScopeSectionConfig {
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique
+  snapshot    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

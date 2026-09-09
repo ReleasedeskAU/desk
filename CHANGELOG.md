@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Native Scope and Scope Change Requests:** Release page has a Scope section (status + due date above Description / History / Attachments). Status keys are `draft` / `approved` with tenant labels (or purpose). First approve records session actor + stored text and locks description, due date, attachments, and grants in one transaction. Change requests appear only after scope is approved; one draft at a time; proposed text does not write `scopeDescription` until approve; approve fails on the route if why was not saved. Request files stay on the request. Scope lock is this approval state — not `cabScopeSnapshot` / CAB Approved. Draft scope writes use `/api/releases/[id]/scope*` (not Release PATCH / VR-21). No Jira writes. Attachments are server-stored, tenant from session, append-only (PDF / Word / email). Section grants: current manager or owner can add an existing same-tenant user to a still-draft section; grantee can edit that section only.
+
+- **Release Manager / Owner seats:** `releaseManagerId` on Release. Current manager or current owner can edit the release, scope, manager, owner, and approve — account role does not block that seat (a readonly owner can edit/approve that release). Any other exact editor may only assign the manager seat to themselves. Manager picker = exact editors; owner picker = any existing same-tenant user. createdBy / previous / title / page access grant nothing. Live (`deployingMilestone` / `deployedMilestone`) and terminal statuses deny these writes. Reassignment appends to the release audit log (actor, time, previous, new) — not scope history.
+
 ### Fixed
 
 - **Release form field matrix (RD-154):** Create/Edit Release now shows the Field Lock Matrix fields that were missing from the form (Release Type, Backup Owner, Technical Lead, Business Owner, Scope Description, Go-Live/Deploy dates, Deployment Window, Deployment Checklist, Dress Rehearsal, Change Description, Justification, sign-offs on create, and always-locked computed/audit/previous-status). Locks follow the existing catalog (lifecycle **keys**, not tenant labels). Affected Systems is the Application list (no second column). Duration (Days) is computed from start/end, not stored. Auth unchanged (editor). No secrets or stack traces in client errors.

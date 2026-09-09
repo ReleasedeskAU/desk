@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
+import { resolveDirectoryUser } from "@/lib/release-directory-user";
+import { isExactEditorDirectoryUser } from "@/lib/release-seats";
 import { prisma } from "@/lib/prisma";
 import { releaseListOrderBy, releaseListWhere, sp } from "@/lib/list-api-filters";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
@@ -217,6 +219,37 @@ export async function POST(req: Request) {
     }
   }
 
+  const directoryUser = await resolveDirectoryUser(user!);
+  const requestedManagerId = optionalString(body.releaseManagerId) ?? null;
+  const createOwnerId = optionalString(body.releaseOwnerId) ?? null;
+  let createManagerId: string | null = null;
+  if (requestedManagerId) {
+    const managerRow = await prisma.user.findUnique({
+      where: { id: requestedManagerId },
+      select: { id: true, accessLevel: true, status: true, name: true, email: true },
+    });
+    const selfAssign =
+      Boolean(directoryUser?.id) &&
+      requestedManagerId === directoryUser!.id &&
+      isExactEditorDirectoryUser(directoryUser!);
+    const ownerNamingManager =
+      Boolean(directoryUser?.id) &&
+      createOwnerId === directoryUser!.id &&
+      managerRow &&
+      isExactEditorDirectoryUser(managerRow);
+    if (!selfAssign && !ownerNamingManager) {
+      return NextResponse.json(
+        {
+          error:
+            "On create, you may assign yourself as Release Manager, or name another editor if you are also the owner.",
+          code: "MANAGER_ASSIGN_DENIED",
+        },
+        { status: 403 }
+      );
+    }
+    createManagerId = requestedManagerId;
+  }
+
   const created = await createReleaseRow({
       releaseCode,
       name: String(body.name ?? ""),
@@ -250,6 +283,7 @@ export async function POST(req: Request) {
       goLiveChecklistPercent: checklist.value,
       deploymentWindow: optionalString(body.deploymentWindow) ?? null,
       releaseOwnerId: optionalString(body.releaseOwnerId) ?? null,
+      releaseManagerId: createManagerId,
       lifecycleConfigVersionId,
       releaseType: optionalString(body.releaseType) ?? null,
       backupOwner: optionalString(body.backupOwner) ?? null,

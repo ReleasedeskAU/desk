@@ -1,6 +1,25 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth/api";
+import { requireRole, requireSession } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
+import {
+  listDirectoryUsersForAssignment,
+  resolveDirectoryUser,
+} from "@/lib/release-directory-user";
+import { loadScopeSectionConfig } from "@/lib/release-scope-config-db";
+import {
+  buildScopeCapabilities,
+  ensureReleaseScope,
+  pickerPayload,
+  seatsForRelease,
+  toScopeClientPayload,
+} from "@/lib/release-scope-service";
+import { writeAssignmentAudit } from "@/lib/release-scope-routes";
+import {
+  assignmentWriteDenial,
+  isExactEditorDirectoryUser,
+  isAssignableOwnerDirectoryUser,
+  isReleaseSeatWriteLocked,
+} from "@/lib/release-seats";
 import {
   auditActorName,
   summarizeIdListChange,
@@ -59,10 +78,13 @@ import { buildCabScopeSnapshot } from "@/lib/release-cab-scope-snapshot";
 import { keysWithActualReleasePatchChanges } from "@/lib/release-patch-changed-keys";
 import { Prisma } from "@releasedesk/database";
 
+const userSelect = { id: true, userId: true, name: true, email: true, role: true, accessLevel: true };
+
 const releaseInclude = {
   department: true,
-  releaseOwner: { select: { id: true, userId: true, name: true, email: true, role: true } },
-  stakeholders: { include: { user: { select: { id: true, userId: true, name: true, email: true, role: true } } } },
+  releaseOwner: { select: userSelect },
+  releaseManager: { select: userSelect },
+  stakeholders: { include: { user: { select: userSelect } } },
   applications: { include: { application: { include: { department: true } } } },
   dependsOn: { include: { dependsOnRelease: true } },
   dependedBy: { include: { release: true } },
@@ -72,7 +94,7 @@ const releaseInclude = {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   // Accept both UUID primary key and releaseCode (e.g. REL-0002)
@@ -81,9 +103,45 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     include: releaseInclude,
   });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  let scopePayload: unknown = null;
+  let capabilities: unknown = null;
+  let assignmentOptions: unknown = null;
+  try {
+    const directoryUser = user ? await resolveDirectoryUser(user) : null;
+    const { config: lifeConfig } = await resolveLifecycleConfigForRelease(
+      user!.id,
+      row.lifecycleConfigVersionId
+    );
+    const decision = seatsForRelease({
+      session: user!,
+      directoryUser,
+      releaseOwnerId: row.releaseOwnerId,
+      releaseManagerId: row.releaseManagerId,
+      writeLocked: isReleaseSeatWriteLocked(lifeConfig, row.status),
+    });
+    const scope = await ensureReleaseScope(row.id);
+    const scopeConfig = await loadScopeSectionConfig(user!.id);
+    const caps = buildScopeCapabilities(decision, scope);
+    capabilities = caps;
+    scopePayload = toScopeClientPayload(scope, row.scopeDescription, scopeConfig, caps);
+    assignmentOptions = pickerPayload(await listDirectoryUsersForAssignment());
+  } catch (err) {
+    console.error("[releases GET] scope payload failed", {
+      releaseId: row.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+  }
+
   try {
     const computed = await loadReleaseSheetComputed(row);
-    return NextResponse.json({ ...row, ...computed });
+    return NextResponse.json({
+      ...row,
+      ...computed,
+      nativeScope: scopePayload,
+      capabilities,
+      assignmentOptions,
+    });
   } catch (err) {
     console.error("[releases GET] sheet computed fields failed", {
       releaseId: row.id,
@@ -94,6 +152,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       previousStatus: null,
       blockerCount: null,
       conflictCount: null,
+      nativeScope: scopePayload,
+      capabilities,
+      assignmentOptions,
     });
   }
 }
@@ -121,7 +182,7 @@ function optionalFloat(value: unknown): number | null | undefined {
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, error } = await requireRole("editor");
+  const { user, error } = await requireSession();
   if (error) return error;
 
   const body = await req.json();
@@ -129,6 +190,43 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const existing = await prisma.release.findFirst({ where: { OR: [{ id }, { releaseCode: id }] } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const realId = existing.id;
+
+  // Native scope edits must not use this path (VR-21 cab_approved side effect).
+  if (body.scopeDescription !== undefined) {
+    return NextResponse.json(
+      {
+        error: "Edit scope in the Scope section.",
+        code: "SCOPE_USE_NATIVE_SECTION",
+      },
+      { status: 400 }
+    );
+  }
+
+  const directoryUser = await resolveDirectoryUser(user!);
+  let seatWriteLocked = false;
+  try {
+    const resolved = await resolveLifecycleConfigForRelease(
+      user!.id,
+      existing.lifecycleConfigVersionId
+    );
+    seatWriteLocked = isReleaseSeatWriteLocked(resolved.config, existing.status);
+  } catch (err) {
+    console.error("[releases PATCH] seat lock resolve failed", {
+      releaseId: realId,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json(
+      { error: "Release edit policy is temporarily unavailable" },
+      { status: 500 }
+    );
+  }
+  const seatDecision = seatsForRelease({
+    session: user!,
+    directoryUser,
+    releaseOwnerId: existing.releaseOwnerId,
+    releaseManagerId: existing.releaseManagerId,
+    writeLocked: seatWriteLocked,
+  });
 
   // Full-form saves echo unchanged identity fields (Release ID, apps, dates).
   // Only real edits go through edit policy and field locks — otherwise an
@@ -165,6 +263,92 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     currentStakeholderIds,
   });
 
+  const assignmentIntent: {
+    releaseOwnerId?: string | null;
+    releaseManagerId?: string | null;
+  } = {};
+  if (proposedKeys.includes("releaseOwnerId") || proposedKeys.includes("owner")) {
+    assignmentIntent.releaseOwnerId =
+      body.releaseOwnerId !== undefined
+        ? optionalString(body.releaseOwnerId)
+        : existing.releaseOwnerId;
+  }
+  if (proposedKeys.includes("releaseManagerId")) {
+    assignmentIntent.releaseManagerId = optionalString(body.releaseManagerId);
+  }
+  const assignmentDenial = assignmentWriteDenial(seatDecision, assignmentIntent);
+  if (assignmentDenial) {
+    return NextResponse.json(
+      { error: assignmentDenial.error, code: assignmentDenial.code },
+      { status: 403 }
+    );
+  }
+
+  const statusChanging =
+    proposedKeys.includes("status") &&
+    body.status !== undefined &&
+    String(body.status) !== existing.status;
+  const otherKeys = proposedKeys.filter(
+    (key) =>
+      key !== "releaseOwnerId" &&
+      key !== "releaseManagerId" &&
+      key !== "owner" &&
+      key !== "status" &&
+      key !== "overrideReason" &&
+      key !== "previousStatus"
+  );
+  if ((otherKeys.length > 0 || statusChanging) && !seatDecision.holdsSeat) {
+    return NextResponse.json(
+      {
+        error: "Only the current Release Manager or current owner can edit this release.",
+        code: "RELEASE_SEAT_REQUIRED",
+      },
+      { status: 403 }
+    );
+  }
+  if (otherKeys.length > 0 && seatDecision.writeLocked) {
+    return NextResponse.json(
+      {
+        error: "Live and terminal releases cannot be edited.",
+        code: "RELEASE_SEAT_WRITES_LOCKED",
+      },
+      { status: 409 }
+    );
+  }
+
+  if (assignmentIntent.releaseOwnerId) {
+    const owners = await listDirectoryUsersForAssignment();
+    const nextOwner = owners.find((u) => u.id === assignmentIntent.releaseOwnerId);
+    if (!nextOwner || !isAssignableOwnerDirectoryUser(nextOwner)) {
+      return NextResponse.json(
+        { error: "Owner must be an existing Release Desk user.", code: "INVALID_OWNER" },
+        { status: 400 }
+      );
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(assignmentIntent, "releaseManagerId")) {
+    const managerId = assignmentIntent.releaseManagerId;
+    if (managerId) {
+      const people = await listDirectoryUsersForAssignment();
+      const nextManager = people.find((u) => u.id === managerId);
+      if (!nextManager || !isExactEditorDirectoryUser(nextManager)) {
+        return NextResponse.json(
+          {
+            error: "Release Manager must be an existing editor (not admin or read-only).",
+            code: "INVALID_MANAGER",
+          },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  // Seat-authorized assignment is not gated by field-lock / coarse edit-mode
+  // (those admit admin / lock a readonly owner incorrectly for these seats).
+  const policyKeys = proposedKeys.filter(
+    (key) => key !== "releaseOwnerId" && key !== "releaseManagerId" && key !== "owner"
+  );
+
   // Editable? column — deny non-status field writes based on current status.
   let pinnedReleaseConfig;
   try {
@@ -179,7 +363,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { mode, denied: editPolicyDenied } = deniedReleaseEditFields(
       config,
       existing.status,
-      proposedKeys
+      policyKeys
     );
     // Field-lock matrix is SSOT for catalogued fields (e.g. VR-21 Editable* at
     // CAB Approved). Coarse edit-mode still covers Cancelled (fully locked) and
@@ -221,7 +405,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const fieldLock = await validateReleaseFieldUpdate(
     user!.id,
     existing.status,
-    proposedKeys
+    policyKeys
   );
   if (!fieldLock.allowed) {
     const lockedLabels = fieldLock.rejected.map((r) => r.reason).join(" ");
@@ -408,7 +592,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     "backupOwner",
     "technicalLead",
     "businessOwner",
-    "scopeDescription",
     "changeDescription",
     "justification",
   ] as const) {
@@ -441,6 +624,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         data.owner = `${ownerUser.userId} (${ownerUser.name})`;
       }
     }
+  }
+  if (body.releaseManagerId !== undefined && proposed.has("releaseManagerId")) {
+    data.releaseManagerId = optionalString(body.releaseManagerId);
   }
 
   for (const key of [
@@ -625,7 +811,35 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
+  const previousOwnerId = existing.releaseOwnerId ?? null;
+  const previousManagerId = existing.releaseManagerId ?? null;
+
   await prisma.release.update({ where: { id: realId }, data });
+
+  if (proposed.has("releaseOwnerId") && data.releaseOwnerId !== undefined) {
+    const nextOwner = (data.releaseOwnerId as string | null) ?? null;
+    if (nextOwner !== previousOwnerId) {
+      await writeAssignmentAudit({
+        releaseId: realId,
+        field: "releaseOwnerId",
+        actorName: auditActorName(user!),
+        previousId: previousOwnerId,
+        nextId: nextOwner,
+      });
+    }
+  }
+  if (proposed.has("releaseManagerId") && data.releaseManagerId !== undefined) {
+    const nextManager = (data.releaseManagerId as string | null) ?? null;
+    if (nextManager !== previousManagerId) {
+      await writeAssignmentAudit({
+        releaseId: realId,
+        field: "releaseManagerId",
+        actorName: auditActorName(user!),
+        previousId: previousManagerId,
+        nextId: nextManager,
+      });
+    }
+  }
   if (signoffIntakeWrite) {
     try {
       await writeSignoffIntakeAt(realId, signoffIntakeWrite);
