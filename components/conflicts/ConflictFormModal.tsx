@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   CreatedConfirmation,
@@ -12,6 +12,10 @@ import {
 } from "@/components/forms/create-modal-primitives";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
+import {
+  CONFLICT_CREATE_FAILED_MESSAGE,
+  conflictCreateUiOutcome,
+} from "@/lib/conflict-create-confirmation";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import { CONFLICT_TYPES, mergeConflictTypes } from "@/lib/validation/conflict";
@@ -140,15 +144,20 @@ export function ConflictFormModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
   const [created, setCreated] = useState<CreatedConflict | null>(null);
+  const emptyFormRef = useRef(emptyForm);
+  emptyFormRef.current = emptyForm;
 
   const statusSelectOptions = useMemo(() => {
     const base = createOptions.length > 0 ? createOptions : [defaultStatus].filter(Boolean);
     return [...new Set([...base, form.status].filter(Boolean))];
   }, [createOptions, defaultStatus, form.status]);
 
+  // Reset only when the modal opens. `emptyForm` identity changes after
+  // onCreated() refetch (new type/status option arrays) and must not wipe
+  // CreatedConfirmation — that is why create looked like a no-op (RD-134).
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm());
+    setForm(emptyFormRef.current());
     setCreated(null);
     setFormError(null);
     setFieldErrors({});
@@ -173,7 +182,7 @@ export function ConflictFormModal({
       setReleases(releaseResult.data);
     })();
     return () => ac.abort();
-  }, [open, emptyForm]);
+  }, [open]);
 
   // When lifecycle options arrive after open, snap create form to the enabled default.
   useEffect(() => {
@@ -258,18 +267,17 @@ export function ConflictFormModal({
       rejectHttpErrors: false,
     });
     setSaving(false);
-    if (!result.ok || result.status >= 300) {
-      setFormError(
-        result.ok && result.data?.error ? result.data.error : "Failed to create conflict. Check the form and try again."
-      );
+    const outcome = conflictCreateUiOutcome(result);
+    if (!outcome.showConfirmation || !result.ok) {
+      setFormError(outcome.showConfirmation ? CONFLICT_CREATE_FAILED_MESSAGE : outcome.errorMessage);
       return;
     }
-    onCreated();
     setCreated(result.data);
+    onCreated();
   };
 
   if (created) {
-    return (
+    return createPortal(
       <CreatedConfirmation
         title="Conflict created"
         subtitle="The conflict queue has been refreshed."
@@ -292,7 +300,8 @@ export function ConflictFormModal({
           { label: "Environment", value: created.conflictingEnvironment },
           { label: "Conflict type", value: created.environmentConflictType },
         ]}
-      />
+      />,
+      document.body
     );
   }
 
