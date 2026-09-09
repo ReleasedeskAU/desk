@@ -28,6 +28,7 @@ import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import { choosableEntityStatusFilterOptions } from "@/lib/entity-lifecycle-status-ui";
 
 type IncidentRow = {
   id: string;
@@ -100,9 +101,10 @@ export default function IncidentsContent() {
   const [modalOpen, setModalOpen] = useState(false);
   const canEdit = sessionCanEdit(user);
   const lifecycle = useEntityLifecycleStatuses("/api/incident-lifecycle-config");
+  // Enabled lifecycle labels only. Do not union Off-in-use row statuses into the dropdown.
   const statusOptions = useMemo(
-    () => lifecycle.filterOptions(incidents.map((i) => i.status)),
-    [lifecycle, incidents]
+    () => choosableEntityStatusFilterOptions(lifecycle.createOptions, values.status),
+    [lifecycle.createOptions, values.status]
   );
   const openLabelSet = useMemo(
     () => new Set(lifecycle.openLabels.map((l) => l.toLocaleLowerCase())),

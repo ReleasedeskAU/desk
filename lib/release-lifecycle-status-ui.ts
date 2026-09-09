@@ -98,6 +98,39 @@ export function defaultReleaseStatusLabel(
 }
 
 /**
+ * Enabled intake (Starting) label from tenant lifecycle config.
+ * Prefers `isIntake`; if none is enabled, falls back to defaultReleaseStatusLabel.
+ * Does not hardcode the tenant word "Draft".
+ *
+ * @param config - Lifecycle graph.
+ * @returns Label or empty string if none enabled.
+ */
+export function intakeReleaseStatusLabel(
+  config: ReleaseLifecycleConfig
+): string {
+  const intake = [...config.statuses]
+    .filter((s) => s.enabled && s.isIntake === true)
+    .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+  return intake?.label ?? defaultReleaseStatusLabel(config);
+}
+
+/**
+ * Status persisted on create. Client-supplied status is ignored so a crafted
+ * POST cannot skip the lifecycle intake step (RD-110).
+ *
+ * @param config - Lifecycle graph.
+ * @param requested - Body status (ignored; accepted so callers can pass it).
+ * @returns Intake/default label, or empty if none enabled.
+ */
+export function resolveCreateReleaseStatus(
+  config: ReleaseLifecycleConfig,
+  requested?: string | null
+): string {
+  void requested;
+  return intakeReleaseStatusLabel(config);
+}
+
+/**
  * Whether a status label is allowed for create (enabled in config).
  * @param config - Lifecycle graph.
  * @param status - Proposed label.
