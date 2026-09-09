@@ -169,9 +169,9 @@ export function ApprovalLifecycleSettings() {
         <p className="font-semibold">Quick help · Approvals</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
           <li>
-            Pending can move to Approved, Approved with Conditions, Rejected, Deferred, or
+            Pending can move to Approved, Approved with Conditions, Rejected, or
             Withdrawn (Flexible). Approved is the usual next step — other Flexible moves need a
-            short recorded reason.
+            short recorded reason. Deferred is a release stage and stays Off unless you enable it.
           </li>
           <li>
             Approved with Conditions is a real terminal decision. The Conditions field (plain

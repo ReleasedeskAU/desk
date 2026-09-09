@@ -9,6 +9,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - **RD-118 Dependency create:** Create now persists a valid payload using the selected enabled lifecycle status (or the config intake default). `intakeOnly` no longer rejects every non-start status the form already offers. Validation and API failures show a client-safe alert inside the create modal — the previous `FormAlertDialog` sat behind the shell (`z-60` vs `z-200`) so Create looked like a silent no-op. Editor `requireRole` is unchanged.
+- **RD-117 Dependencies Status filter:** The Dependencies filter bar Status control uses the shared `FilterSelect` dropdown (same as Incidents/Blockers), fed by enabled dependency lifecycle labels. Off/unknown statuses already on loaded rows still appear as the current selection. No new control; Risk (RD-116) is unchanged.
+- **RD-115 Sign-off / Release Edit:** The Sign-offs list and Releases list now show an Edit action on each record. Sign-off Edit is offered only when the caller is editor+ and the decision’s lifecycle `editMode` is still editable (Pending / non-immutable). Immutable terminal decisions stay view-only. Release Edit opens the existing Edit Release modal and is hidden for readonly users, unknown statuses, missing `editMode`, and Cancelled (fully locked). Field locks in the modal are unchanged.
+- **RD-113 Approval create:** Creating an Approval Queue row now persists a valid payload (lifecycle decision, not a hardcoded status list). Validation and persist failures return a client-safe `error` (no stack traces). The create modal shows that error inside the create shell — the previous sibling dialog sat under the modal (`z-60` vs `z-200`) so Create looked like a no-op. Auth is unchanged (`requireRole("editor")`).
+- **RD-110 New release status:** Create defaults to the tenant lifecycle intake status (`isIntake`, else the existing default helper) and the Status field is read-only. The create API ignores a posted status so a crafted request cannot skip intake. Edit-release transitions are unchanged.
+
 
 - **Connector delete:** Trash uses this pair’s credential id (not every credential on the connector). Digit-string ids are accepted. A scheduled delete no longer greys out trash — retry re-queues StaffLess. The list polls while status is Deleting. 403/404 from StaffLess use a plain message.
 
