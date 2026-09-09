@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **RD-120 Alerts status change:** `PATCH /api/monitoring-alerts/[id]` now accepts `alertSource` (the Alerts detail save already sent it). A legal next status persists. Schema failures surface the first field issue instead of a generic “Validation failed”. Illegal transitions still return the lifecycle reason. Auth unchanged.
 - **Dependency edit status fields (RD-119):** The dependency edit form now shows only fields the lifecycle edit policy allows for the selected next status (status key + field rule). Locked fields are hidden. PATCH omits hidden fields. Auth is unchanged (editor). No dependency field-lock catalog exists — visibility follows `editMode`, not English status labels.
 - **RD-118 Dependency create:** Create now persists a valid payload using the selected enabled lifecycle status (or the config intake default). `intakeOnly` no longer rejects every non-start status the form already offers. Validation and API failures show a client-safe alert inside the create modal — the previous `FormAlertDialog` sat behind the shell (`z-60` vs `z-200`) so Create looked like a silent no-op. Editor `requireRole` is unchanged.
 - **RD-117 Dependencies Status filter:** The Dependencies filter bar Status control uses the shared `FilterSelect` dropdown (same as Incidents/Blockers), fed by enabled dependency lifecycle labels. Off/unknown statuses already on loaded rows still appear as the current selection. No new control; Risk (RD-116) is unchanged.
