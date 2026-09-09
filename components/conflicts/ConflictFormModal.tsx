@@ -18,6 +18,8 @@ import {
 } from "@/lib/conflict-create-confirmation";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { filterReleasesForRelatedCreate } from "@/lib/release-related-link-eligibility";
 import { CONFLICT_TYPES, mergeConflictTypes } from "@/lib/validation/conflict";
 
 const CONFLICT_PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium"] as const;
@@ -25,7 +27,7 @@ const CONFLICT_PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium"] as con
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId: string };
 type Environment = { id: string; name: string; applicationId: string };
-type Release = { id: string; releaseCode: string; name: string };
+type Release = { id: string; releaseCode: string; name: string; status: string };
 
 type FormValues = {
   status: string;
@@ -111,6 +113,8 @@ export function ConflictFormModal({
   lockOrg = null,
 }: Props) {
   const lifecycle = useEntityLifecycleStatuses("/api/conflict-lifecycle-config");
+  const releaseLifecycle = useEntityLifecycleStatuses("/api/release-lifecycle-config");
+  const releaseConfig = (releaseLifecycle.config ?? null) as ReleaseLifecycleConfig | null;
   const createOptions =
     statusOptionsProp && statusOptionsProp.length > 0
       ? statusOptionsProp
@@ -201,9 +205,13 @@ export function ConflictFormModal({
     () => environments.filter((environment) => environment.applicationId === form.applicationId),
     [environments, form.applicationId]
   );
+  const linkableReleases = useMemo(
+    () => filterReleasesForRelatedCreate(releases, releaseConfig),
+    [releases, releaseConfig]
+  );
   const otherReleases = useMemo(
-    () => releases.filter((item) => item.releaseCode !== form.release1Code),
-    [releases, form.release1Code]
+    () => linkableReleases.filter((item) => item.releaseCode !== form.release1Code),
+    [linkableReleases, form.release1Code]
   );
   const departmentName = departments.find((item) => item.id === form.departmentId)?.name ?? "";
   const applicationName = applications.find((item) => item.id === form.applicationId)?.name ?? "";
@@ -414,7 +422,7 @@ export function ConflictFormModal({
             Release 1 <RequiredMark />
             <div className="mt-1">
               <SearchableSelect
-                options={releases.map((item) => ({
+                options={linkableReleases.map((item) => ({
                   value: item.releaseCode,
                   label: `${item.releaseCode} — ${item.name}`,
                 }))}
@@ -426,8 +434,10 @@ export function ConflictFormModal({
                     release2Code: current.release2Code === value ? "" : current.release2Code,
                   }));
                 }}
-                placeholder={loadingLookups ? "Loading…" : "Select release…"}
-                disabled={loadingLookups}
+                placeholder={
+                  loadingLookups || !releaseConfig ? "Loading…" : "Select release…"
+                }
+                disabled={loadingLookups || !releaseConfig}
                 allowClear={false}
               />
             </div>
@@ -447,8 +457,16 @@ export function ConflictFormModal({
               }))}
               value={form.release2Code}
               onChange={(value) => set("release2Code", value)}
-              placeholder={loadingLookups ? "Loading…" : "Select the other release…"}
-              disabled={loadingLookups || (!scoped && !form.release1Code)}
+              placeholder={
+                loadingLookups || !releaseConfig
+                  ? "Loading…"
+                  : "Select the other release…"
+              }
+              disabled={
+                loadingLookups ||
+                !releaseConfig ||
+                (!scoped && !form.release1Code)
+              }
               allowClear={false}
             />
           </div>

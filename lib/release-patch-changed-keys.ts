@@ -22,6 +22,20 @@ const META_KEYS = new Set([
   "overrideReason",
   "previousStatus",
   "supersedeSignoffFields",
+  "raiseConflicts",
+  "conflictNotes",
+  // Sheet computed/audit — never writable via PATCH.
+  "blockerCount",
+  "conflictCount",
+  "releaseHealth",
+  "readinessPercent",
+  "weightedRiskScore",
+  "weightedRiskLevel",
+  "createdAt",
+  "updatedAt",
+  "createdBy",
+  "lastModifiedBy",
+  "durationDays",
 ]);
 
 function dateOnlyIso(value: unknown): string | null {

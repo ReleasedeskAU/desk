@@ -12,7 +12,7 @@ import { sp, str } from "@/lib/list-api-filters";
 import { jsonError } from "@/lib/api-errors";
 import {
   guardDependencyGraphMutation,
-  guardReleaseFullyLocked,
+  guardReleaseLinkableForRelatedCreate,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
       }),
       prisma.release.findUnique({
         where: { id: body.dependsOnReleaseId },
-        select: { id: true },
+        select: { id: true, status: true, lifecycleConfigVersionId: true },
       }),
     ]);
     if (!release || !dependsOn) {
@@ -142,8 +142,21 @@ export async function POST(req: Request) {
       user!.id,
       release.lifecycleConfigVersionId
     );
-    const cancelledLock = guardReleaseFullyLocked(release.status, releaseConfig);
-    if (!cancelledLock.ok) return cancelledLock.response;
+    const dependsOnConfig = await loadGuardReleaseConfig(
+      user!.id,
+      dependsOn.lifecycleConfigVersionId
+    );
+    // RD-168: both dropdowns omit Cancelled/Blocked — same rule on POST.
+    const fromLinkable = guardReleaseLinkableForRelatedCreate(
+      release.status,
+      releaseConfig
+    );
+    if (!fromLinkable.ok) return fromLinkable.response;
+    const ontoLinkable = guardReleaseLinkableForRelatedCreate(
+      dependsOn.status,
+      dependsOnConfig
+    );
+    if (!ontoLinkable.ok) return ontoLinkable.response;
     const frozen = guardDependencyGraphMutation(release.status, releaseConfig);
     if (!frozen.ok) return frozen.response;
 

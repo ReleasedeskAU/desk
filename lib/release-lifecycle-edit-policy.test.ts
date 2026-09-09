@@ -97,6 +97,20 @@ describe("deniedReleaseEditFields", () => {
     ]);
     assert.deepEqual(denied, ["name"]);
   });
+
+  it("treats sheet schedule/ownership extras as scope under limited edit", () => {
+    for (const field of [
+      "goLiveDate",
+      "deployDate",
+      "releaseType",
+      "backupOwner",
+      "technicalLead",
+      "businessOwner",
+      "scopeDescription",
+    ]) {
+      assert.equal(isReleaseFieldEditable("limited", field), false, field);
+    }
+  });
 });
 
 const editor: SessionUser = {

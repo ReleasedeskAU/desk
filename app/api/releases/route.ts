@@ -27,6 +27,7 @@ import {
   UX_NOTICE_HEADER,
   type UxNotice,
 } from "@/lib/ux-notice";
+import { parseGoLiveChecklistPercent } from "@/lib/release-form-matrix";
 import {
   validateReleaseDateOrder,
   validateReleaseNameAndApplications,
@@ -152,6 +153,14 @@ export async function POST(req: Request) {
         "weightedRiskScore",
         "weightedRiskLevel",
         "lifecycleConfigVersionId",
+        "previousStatus",
+        "blockerCount",
+        "conflictCount",
+        "createdBy",
+        "lastModifiedBy",
+        "durationDays",
+        "raiseConflicts",
+        "conflictNotes",
       ].includes(key)
   );
   const createLock = await validateReleaseFieldUpdate(
@@ -180,6 +189,10 @@ export async function POST(req: Request) {
   }
 
   const actorName = user!.name?.trim() || user!.id;
+  const checklist = parseGoLiveChecklistPercent(body.goLiveChecklistPercent);
+  if (!checklist.ok) {
+    return NextResponse.json({ error: checklist.error, field: "goLiveChecklistPercent" }, { status: 400 });
+  }
   const applicationIds: string[] = Array.isArray(body.applicationIds)
     ? body.applicationIds.filter(
         (id: unknown): id is string => typeof id === "string" && id.trim().length > 0
@@ -234,7 +247,7 @@ export async function POST(req: Request) {
       hypercarePlan: optionalString(body.hypercarePlan) ?? null,
       commsPlan: optionalString(body.commsPlan) ?? null,
       trainingStatus: optionalString(body.trainingStatus) ?? null,
-      goLiveChecklistPercent: optionalFloat(body.goLiveChecklistPercent) ?? null,
+      goLiveChecklistPercent: checklist.value,
       deploymentWindow: optionalString(body.deploymentWindow) ?? null,
       releaseOwnerId: optionalString(body.releaseOwnerId) ?? null,
       lifecycleConfigVersionId,
@@ -249,6 +262,13 @@ export async function POST(req: Request) {
       deployDate: optionalDate(body.deployDate) ?? null,
       createdBy: actorName,
       lastModifiedBy: actorName,
+      dressRehearsal: optionalString(body.dressRehearsal) ?? null,
+      devSignoff: optionalString(body.devSignoff) ?? null,
+      testSignoff: optionalString(body.testSignoff) ?? null,
+      uatSignoff: optionalString(body.uatSignoff) ?? null,
+      securityClearance: optionalString(body.securityClearance) ?? null,
+      businessSignoff: optionalString(body.businessSignoff) ?? null,
+      opsSignoff: optionalString(body.opsSignoff) ?? null,
     });
   await Promise.all([
     body.applicationIds?.length

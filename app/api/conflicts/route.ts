@@ -11,7 +11,7 @@ import { zodErrorResponse } from "@/lib/api-errors";
 import { createConflictSchema } from "@/lib/validation/conflict";
 import { nextConflictCode } from "@/lib/conflict-record";
 import {
-  guardReleaseFullyLocked,
+  guardReleaseLinkableForRelatedCreate,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
 
@@ -138,8 +138,11 @@ export async function POST(req: Request) {
       user!.id,
       linked.lifecycleConfigVersionId
     );
-    const cancelledLock = guardReleaseFullyLocked(linked.status, linkedConfig);
-    if (!cancelledLock.ok) return cancelledLock.response;
+    const linkable = guardReleaseLinkableForRelatedCreate(
+      linked.status,
+      linkedConfig
+    );
+    if (!linkable.ok) return linkable.response;
   }
 
   const row = await prisma.environmentConflict.create({

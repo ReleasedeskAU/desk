@@ -28,6 +28,10 @@ import {
 } from "@/lib/release-lifecycle-config";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 import { isReleaseFullyLocked } from "@/lib/release-lifecycle-edit-policy";
+import {
+  RELEASE_BLOCKED_NOT_LINKABLE_CODE,
+  isReleaseBlockedForRelatedLink,
+} from "@/lib/release-related-link-eligibility";
 
 /**
  * Live or pinned release graph for VR-35 / VR-36 / §3-06.
@@ -171,6 +175,34 @@ export function guardReleaseFullyLocked(
       {
         error: `This release is ${label}. It is locked — nothing can be edited.`,
         code: RELEASE_CANCELLED_LOCKED_CODE,
+      },
+      { status: 409 }
+    ),
+  };
+}
+
+/**
+ * Deny linking a Cancelled or Blocked release on dependency/conflict create.
+ * Cancelled uses the full-lock message. Blocked uses the tenant label + key `blocked`.
+ *
+ * @param releaseStatus - Candidate release status label or key
+ * @param config - Live or pinned release lifecycle graph
+ */
+export function guardReleaseLinkableForRelatedCreate(
+  releaseStatus: string,
+  config: ReleaseLifecycleConfig = createDefaultReleaseLifecycleConfig()
+): RelatedEntityGuardOk | RelatedEntityGuardDenial {
+  const cancelled = guardReleaseFullyLocked(releaseStatus, config);
+  if (!cancelled.ok) return cancelled;
+  if (!isReleaseBlockedForRelatedLink(config, releaseStatus)) return { ok: true };
+  const label =
+    resolveLifecycleStatusRef(config, releaseStatus)?.label ?? releaseStatus.trim();
+  return {
+    ok: false,
+    response: NextResponse.json(
+      {
+        error: `This release is ${label}. It can’t be selected here.`,
+        code: RELEASE_BLOCKED_NOT_LINKABLE_CODE,
       },
       { status: 409 }
     ),

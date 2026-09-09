@@ -18,9 +18,11 @@ import {
   isReleaseCancelled,
   isReleaseDeploying,
   guardReleaseFullyLocked,
+  guardReleaseLinkableForRelatedCreate,
   RELEASE_CANCELLED_LOCKED_CODE,
 } from "@/lib/release-related-entity-guards";
 import { createDefaultApprovalLifecycleConfig } from "@/lib/approval-lifecycle-config";
+import { RELEASE_BLOCKED_NOT_LINKABLE_CODE } from "@/lib/release-related-link-eligibility";
 
 const skipDb = process.env.FIELD_LOCK_WIRING_SKIP_DB === "1";
 
@@ -145,6 +147,26 @@ describe("guardReleaseFullyLocked", () => {
     const body = (await denied.response.json()) as { code?: string; error?: string };
     assert.equal(body.code, RELEASE_CANCELLED_LOCKED_CODE);
     assert.match(body.error ?? "", /locked/i);
+  });
+});
+
+describe("guardReleaseLinkableForRelatedCreate (RD-168 / RD-193)", () => {
+  it("allows Planning and denies Blocked with a client-safe code", async () => {
+    assert.equal(guardReleaseLinkableForRelatedCreate("Planning").ok, true);
+    const denied = guardReleaseLinkableForRelatedCreate("Blocked");
+    assert.equal(denied.ok, false);
+    if (denied.ok) return;
+    assert.equal(denied.response.status, 409);
+    const body = (await denied.response.json()) as { code?: string };
+    assert.equal(body.code, RELEASE_BLOCKED_NOT_LINKABLE_CODE);
+  });
+
+  it("still denies Cancelled with the existing full-lock code", async () => {
+    const denied = guardReleaseLinkableForRelatedCreate("Cancelled");
+    assert.equal(denied.ok, false);
+    if (denied.ok) return;
+    const body = (await denied.response.json()) as { code?: string };
+    assert.equal(body.code, RELEASE_CANCELLED_LOCKED_CODE);
   });
 });
 

@@ -47,6 +47,12 @@ import {
   selectOptionsWithCurrent,
 } from "@/lib/release-checklist-options";
 import {
+  durationDaysLabel,
+  formatReleaseAuditInstant,
+  parseGoLiveChecklistPercent,
+  RELEASE_SHEET_SIGNOFF_LABELS,
+} from "@/lib/release-form-matrix";
+import {
   createDefaultSignoffLifecycleConfig,
   type SignoffLifecycleConfig,
 } from "@/lib/signoff-lifecycle-config";
@@ -127,6 +133,18 @@ export type ReleaseFormData = {
   securityClearance: string;
   businessSignoff: string;
   opsSignoff: string;
+  releaseType: string;
+  backupOwner: string;
+  technicalLead: string;
+  businessOwner: string;
+  scopeDescription: string;
+  changeDescription: string;
+  justification: string;
+  goLiveDate: string;
+  deployDate: string;
+  deploymentWindow: string;
+  goLiveChecklistPercent: string;
+  dressRehearsal: string;
 };
 
 type Option = { value: string; label: string };
@@ -141,7 +159,7 @@ const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
   status: "Status",
   releaseDate: "End date",
   priority: "Priority",
-  impact: "Impact",
+  impact: "Impact Assessment",
   departmentId: "Department",
   applicationIds: "Applications",
   dependsOnReleaseIds: "Depends on",
@@ -158,12 +176,24 @@ const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
   commsPlan: "Comms plan",
   trainingStatus: "Training status",
   stakeholderIds: "Stakeholders",
-  devSignoff: "Tech Review",
-  testSignoff: "QA Sign-Off — Test Phase",
-  uatSignoff: "QA Sign-Off — UAT Phase",
-  securityClearance: "Security Review",
-  businessSignoff: "Business Review",
-  opsSignoff: "Operations Review",
+  devSignoff: "Dev Sign-Off",
+  testSignoff: "Test Sign-Off",
+  uatSignoff: "UAT Sign-Off",
+  securityClearance: "Security Sign-Off",
+  businessSignoff: "Business Sign-Off",
+  opsSignoff: "Ops Sign-Off",
+  releaseType: "Release Type",
+  backupOwner: "Backup Owner",
+  technicalLead: "Technical Lead",
+  businessOwner: "Business Owner",
+  scopeDescription: "Scope Description",
+  changeDescription: "Change Description",
+  justification: "Justification",
+  goLiveDate: "Go-Live Date",
+  deployDate: "Deploy Date",
+  deploymentWindow: "Deployment Window",
+  goLiveChecklistPercent: "Deployment Checklist",
+  dressRehearsal: "Dress Rehearsal",
 };
 
 type CreatedSummary = {
@@ -222,6 +252,18 @@ const EMPTY_FORM: ReleaseFormData = {
   securityClearance: "",
   businessSignoff: "",
   opsSignoff: "",
+  releaseType: "",
+  backupOwner: "",
+  technicalLead: "",
+  businessOwner: "",
+  scopeDescription: "",
+  changeDescription: "",
+  justification: "",
+  goLiveDate: "",
+  deployDate: "",
+  deploymentWindow: "",
+  goLiveChecklistPercent: "",
+  dressRehearsal: "",
 };
 
 function dateInput(value?: string | Date | null) {
@@ -264,6 +306,28 @@ export type ReleaseFormSource = {
   securityClearance?: string | null;
   businessSignoff?: string | null;
   opsSignoff?: string | null;
+  releaseType?: string | null;
+  backupOwner?: string | null;
+  technicalLead?: string | null;
+  businessOwner?: string | null;
+  scopeDescription?: string | null;
+  changeDescription?: string | null;
+  justification?: string | null;
+  goLiveDate?: string | Date | null;
+  deployDate?: string | Date | null;
+  deploymentWindow?: string | null;
+  goLiveChecklistPercent?: number | null;
+  dressRehearsal?: string | null;
+  releaseHealth?: string | null;
+  readinessPercent?: number | null;
+  weightedRiskScore?: number | null;
+  createdAt?: string | Date | null;
+  createdBy?: string | null;
+  updatedAt?: string | Date | null;
+  lastModifiedBy?: string | null;
+  previousStatus?: string | null;
+  blockerCount?: number | null;
+  conflictCount?: number | null;
 };
 
 /**
@@ -272,7 +336,7 @@ export type ReleaseFormSource = {
  * @param release - Release API or detail payload.
  * @returns Partial form used by `ReleaseFormModal` in edit mode.
  */
-export function releaseRowToFormInitial(release: ReleaseFormSource): Partial<ReleaseFormData> {
+export function releaseRowToFormInitial(release: ReleaseFormSource): ReleaseFormInitial {
   return {
     id: release.id,
     releaseCode: release.releaseCode,
@@ -305,8 +369,51 @@ export function releaseRowToFormInitial(release: ReleaseFormSource): Partial<Rel
     securityClearance: release.securityClearance ?? "",
     businessSignoff: release.businessSignoff ?? "",
     opsSignoff: release.opsSignoff ?? "",
+    releaseType: release.releaseType ?? "",
+    backupOwner: release.backupOwner ?? "",
+    technicalLead: release.technicalLead ?? "",
+    businessOwner: release.businessOwner ?? "",
+    scopeDescription: release.scopeDescription ?? "",
+    changeDescription: release.changeDescription ?? "",
+    justification: release.justification ?? "",
+    goLiveDate: dateInput(release.goLiveDate),
+    deployDate: dateInput(release.deployDate),
+    deploymentWindow: release.deploymentWindow ?? "",
+    goLiveChecklistPercent:
+      release.goLiveChecklistPercent != null && Number.isFinite(release.goLiveChecklistPercent)
+        ? String(release.goLiveChecklistPercent)
+        : "",
+    dressRehearsal: release.dressRehearsal ?? "",
+    matrix: {
+      releaseHealth: release.releaseHealth ?? "",
+      readinessPercent: release.readinessPercent ?? null,
+      weightedRiskScore: release.weightedRiskScore ?? null,
+      createdAt: release.createdAt ?? null,
+      createdBy: release.createdBy ?? "",
+      updatedAt: release.updatedAt ?? null,
+      lastModifiedBy: release.lastModifiedBy ?? "",
+      previousStatus: release.previousStatus ?? "",
+      blockerCount: release.blockerCount ?? null,
+      conflictCount: release.conflictCount ?? null,
+    },
   };
 }
+
+/** Create/edit initial values plus always-locked sheet computed/audit fields. */
+export type ReleaseFormInitial = Partial<ReleaseFormData> & {
+  matrix?: {
+    releaseHealth: string;
+    readinessPercent: number | null;
+    weightedRiskScore: number | null;
+    createdAt: string | Date | null;
+    createdBy: string;
+    updatedAt: string | Date | null;
+    lastModifiedBy: string;
+    previousStatus: string;
+    blockerCount: number | null;
+    conflictCount: number | null;
+  };
+};
 
 function RequiredMark() {
   return <span className="text-rose-500"> *</span>;
@@ -325,7 +432,7 @@ export function ReleaseFormModal({
   onSaved,
 }: {
   open: boolean;
-  initial?: Partial<ReleaseFormData> | null;
+  initial?: ReleaseFormInitial | null;
   existingReleaseCodes: string[];
   departments: Option[];
   applications: AppOption[];
@@ -639,6 +746,18 @@ export function ReleaseFormModal({
       securityClearance: initial?.securityClearance ?? "",
       businessSignoff: initial?.businessSignoff ?? "",
       opsSignoff: initial?.opsSignoff ?? "",
+      releaseType: initial?.releaseType ?? "",
+      backupOwner: initial?.backupOwner ?? "",
+      technicalLead: initial?.technicalLead ?? "",
+      businessOwner: initial?.businessOwner ?? "",
+      scopeDescription: initial?.scopeDescription ?? "",
+      changeDescription: initial?.changeDescription ?? "",
+      justification: initial?.justification ?? "",
+      goLiveDate: dateInput(initial?.goLiveDate),
+      deployDate: dateInput(initial?.deployDate),
+      deploymentWindow: initial?.deploymentWindow ?? "",
+      goLiveChecklistPercent: initial?.goLiveChecklistPercent ?? "",
+      dressRehearsal: initial?.dressRehearsal ?? "",
     };
     if (initial?.id) next.id = initial.id;
     setForm(next);
@@ -693,9 +812,30 @@ export function ReleaseFormModal({
   );
 
   const signoffDecisionTypes = useMemo(
-    () => signoffDecisionTypesForForm(signoffConfig),
+    () =>
+      signoffDecisionTypesForForm(signoffConfig).map((type) => ({
+        ...type,
+        label:
+          RELEASE_SHEET_SIGNOFF_LABELS[type.field] ?? type.label,
+      })),
     [signoffConfig]
   );
+
+  const dressRehearsalType = useMemo(() => {
+    const type = signoffConfig.types.find((t) => t.releaseField === "dressRehearsal");
+    return {
+      field: "dressRehearsal" as const,
+      label: RELEASE_SHEET_SIGNOFF_LABELS.dressRehearsal,
+      enabled: type?.enabled ?? true,
+      mandatory: type?.mandatory ?? false,
+    };
+  }, [signoffConfig]);
+
+  const peopleOptions = (current: string) => {
+    if (!current.trim()) return ownerOptions;
+    if (ownerOptions.some((o) => o.value === current)) return ownerOptions;
+    return [{ value: current, label: current }, ...ownerOptions];
+  };
 
   if (!open) return null;
 
@@ -742,6 +882,8 @@ export function ReleaseFormModal({
     if (!form.applicationIds.length) errors.applicationIds = "Select at least one application";
     if (!form.releaseDate) errors.releaseDate = "End date is required";
     if (!form.status) errors.status = "Status is required";
+    const checklist = parseGoLiveChecklistPercent(form.goLiveChecklistPercent);
+    if (!checklist.ok) errors.goLiveChecklistPercent = checklist.error;
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setFormAlert({
@@ -781,12 +923,19 @@ export function ReleaseFormModal({
     const ownerName = ownerLabel?.includes(" — ")
       ? ownerLabel.split(" — ").slice(1).join(" — ")
       : form.owner;
+    const checklist = parseGoLiveChecklistPercent(form.goLiveChecklistPercent);
+    if (!checklist.ok) {
+      setFieldErrors((prev) => ({ ...prev, goLiveChecklistPercent: checklist.error }));
+      return;
+    }
     const full: Record<string, unknown> = {
       ...form,
       programProject: normalizeProgramProject(form.programProject) ?? "N/A",
       owner: ownerName || form.owner || "Unknown",
       cabDate: form.cabDate || null,
       startDate: form.startDate || null,
+      goLiveDate: form.goLiveDate || null,
+      deployDate: form.deployDate || null,
       releaseOwnerId: form.releaseOwnerId || null,
       notes: form.notes.trim() || null,
       testEnvRequired: form.testEnvRequired.trim() || null,
@@ -804,6 +953,16 @@ export function ReleaseFormModal({
       securityClearance: form.securityClearance.trim() || null,
       businessSignoff: form.businessSignoff.trim() || null,
       opsSignoff: form.opsSignoff.trim() || null,
+      releaseType: form.releaseType.trim() || null,
+      backupOwner: form.backupOwner.trim() || null,
+      technicalLead: form.technicalLead.trim() || null,
+      businessOwner: form.businessOwner.trim() || null,
+      scopeDescription: form.scopeDescription.trim() || null,
+      changeDescription: form.changeDescription.trim() || null,
+      justification: form.justification.trim() || null,
+      deploymentWindow: form.deploymentWindow.trim() || null,
+      goLiveChecklistPercent: checklist.value,
+      dressRehearsal: form.dressRehearsal.trim() || null,
     };
     // Edit Release must not echo unchanged fields — Limited/Locked statuses
     // (Blocked, CAB Approved) reject owner/programProject rewrites and mask
@@ -1113,6 +1272,13 @@ export function ReleaseFormModal({
             onChange={(v) => set("programProject", v)}
             placeholder="N/A for hotfixes, infra, security…"
           />
+          <Field
+            label="Release Type"
+            value={form.releaseType}
+            onChange={(v) => set("releaseType", v)}
+            disabled={fieldLocked("releaseType")}
+            placeholder="e.g. Major, Minor, Hotfix"
+          />
 
           <div>
             <label className="text-xs font-medium text-gray-500">
@@ -1151,11 +1317,56 @@ export function ReleaseFormModal({
             <FieldError message={fieldErrors.releaseOwnerId} />
           </div>
 
+          <div>
+            <label className="text-xs font-medium text-gray-500">Backup Owner</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.backupOwner}
+                onChange={(v) => set("backupOwner", v)}
+                options={peopleOptions(form.backupOwner)}
+                placeholder="Select backup owner…"
+                searchPlaceholder="Search users…"
+                disabled={fieldLocked("backupOwner")}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Technical Lead</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.technicalLead}
+                onChange={(v) => set("technicalLead", v)}
+                options={peopleOptions(form.technicalLead)}
+                placeholder="Select technical lead…"
+                searchPlaceholder="Search users…"
+                disabled={fieldLocked("technicalLead")}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Business Owner</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.businessOwner}
+                onChange={(v) => set("businessOwner", v)}
+                options={peopleOptions(form.businessOwner)}
+                placeholder="Select business owner…"
+                searchPlaceholder="Search users…"
+                disabled={fieldLocked("businessOwner")}
+              />
+            </div>
+          </div>
+
           <div className="sm:col-span-2">
             <label className="text-xs font-medium text-gray-500">
               Application/s
               <RequiredMark />
             </label>
+            <p className="mt-0.5 text-[11px] text-gray-400">
+              The field-lock matrix also lists this as Affected Systems (no separate column).
+            </p>
             <div className="mt-1">
               <SearchableMultiSelect
                 values={form.applicationIds}
@@ -1231,6 +1442,15 @@ export function ReleaseFormModal({
             <FieldError message={fieldErrors.status} />
           </div>
 
+          <LockedReadOnlyField
+            label="Previous Status"
+            value={
+              isEdit
+                ? initial?.matrix?.previousStatus?.trim() || "—"
+                : "—"
+            }
+          />
+
           {selectedNext && selectedNext.outcome !== "allowed" ? (
             <div className="sm:col-span-2">
               <LifecycleExceptionConfirm
@@ -1300,7 +1520,7 @@ export function ReleaseFormModal({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-500">Impact</label>
+            <label className="text-xs font-medium text-gray-500">Impact Assessment</label>
             <select
               className={cn(taInput, fieldLocked("impact") && "bg-gray-50")}
               value={form.impact}
@@ -1314,6 +1534,21 @@ export function ReleaseFormModal({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium text-gray-500">Scope Description</label>
+            <textarea
+              className={cn(
+                taInput,
+                "min-h-[72px] mt-1",
+                fieldLocked("scopeDescription") && "bg-gray-50"
+              )}
+              value={form.scopeDescription}
+              disabled={fieldLocked("scopeDescription")}
+              title={fieldLocked("scopeDescription") ? FIELD_LOCK_HINT : undefined}
+              onChange={(e) => set("scopeDescription", e.target.value)}
+            />
           </div>
 
           <div>
@@ -1362,7 +1597,35 @@ export function ReleaseFormModal({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-500">Test Env Required</label>
+            <label className="text-xs font-medium text-gray-500">Go-Live Date</label>
+            <input
+              type="date"
+              className={cn(taInput, fieldLocked("goLiveDate") && "bg-gray-50")}
+              value={form.goLiveDate}
+              disabled={fieldLocked("goLiveDate")}
+              title={fieldLocked("goLiveDate") ? FIELD_LOCK_HINT : undefined}
+              onChange={(e) => set("goLiveDate", e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Deploy Date</label>
+            <input
+              type="date"
+              className={cn(taInput, fieldLocked("deployDate") && "bg-gray-50")}
+              value={form.deployDate}
+              disabled={fieldLocked("deployDate")}
+              title={fieldLocked("deployDate") ? FIELD_LOCK_HINT : undefined}
+              onChange={(e) => set("deployDate", e.target.value)}
+            />
+          </div>
+
+          <LockedReadOnlyField
+            label="Duration (Days)"
+            value={durationDaysLabel(form.startDate, form.releaseDate)}
+          />
+
+          <div>
             <select
               className={cn(taInput, fieldLocked("testEnvRequired") && "bg-gray-50")}
               value={form.testEnvRequired}
@@ -1407,6 +1670,46 @@ export function ReleaseFormModal({
                 </option>
               ))}
             </select>
+          </div>
+
+          <Field
+            label="Deployment Window"
+            value={form.deploymentWindow}
+            onChange={(v) => set("deploymentWindow", v)}
+            disabled={fieldLocked("deploymentWindow")}
+            placeholder="e.g. Sat 22:00–02:00"
+          />
+
+          <div>
+            <label className="text-xs font-medium text-gray-500">Deployment Checklist</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              className={cn(
+                taInput,
+                fieldErrors.goLiveChecklistPercent && "border-rose-400",
+                fieldLocked("goLiveChecklistPercent") && "bg-gray-50"
+              )}
+              value={form.goLiveChecklistPercent}
+              disabled={fieldLocked("goLiveChecklistPercent")}
+              title={fieldLocked("goLiveChecklistPercent") ? FIELD_LOCK_HINT : undefined}
+              placeholder="0–100"
+              onChange={(e) => set("goLiveChecklistPercent", e.target.value)}
+            />
+            <FieldError message={fieldErrors.goLiveChecklistPercent} />
+          </div>
+
+          <div>
+            <SignoffDecisionSelect
+              type={dressRehearsalType}
+              value={form.dressRehearsal}
+              error={fieldErrors.dressRehearsal}
+              config={signoffConfig}
+              disabled={!dressRehearsalType.enabled || fieldLocked("dressRehearsal")}
+              onChange={(next) => set("dressRehearsal", next)}
+            />
           </div>
 
           <div className="sm:col-span-2">
@@ -1520,28 +1823,26 @@ export function ReleaseFormModal({
             </select>
           </div>
 
-          {isEdit ? (
-            <div className="sm:col-span-2">
-              <p className="text-xs font-medium text-gray-500">Sign-offs</p>
-              <p className="mt-0.5 text-[11px] text-gray-400">
-                Record Approved, Rejected, or Approved with Conditions. Once recorded, a
-                decision can’t be flipped — a new request is required.
-              </p>
-              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {signoffDecisionTypes.map((type) => (
-                  <SignoffDecisionSelect
-                    key={type.field}
-                    type={type}
-                    value={form[type.field]}
-                    error={fieldErrors[type.field]}
-                    config={signoffConfig}
-                    disabled={!type.enabled || fieldLocked(type.field)}
-                    onChange={(next) => set(type.field, next)}
-                  />
-                ))}
-              </div>
+          <div className="sm:col-span-2">
+            <p className="text-xs font-medium text-gray-500">Sign-offs</p>
+            <p className="mt-0.5 text-[11px] text-gray-400">
+              Record Approved, Rejected, or Approved with Conditions. Once recorded, a
+              decision can’t be flipped — a new request is required.
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {signoffDecisionTypes.map((type) => (
+                <SignoffDecisionSelect
+                  key={type.field}
+                  type={type}
+                  value={form[type.field]}
+                  error={fieldErrors[type.field]}
+                  config={signoffConfig}
+                  disabled={!type.enabled || fieldLocked(type.field)}
+                  onChange={(next) => set(type.field, next)}
+                />
+              ))}
             </div>
-          ) : null}
+          </div>
 
           <div className="sm:col-span-2">
             <label className="text-xs font-medium text-gray-500">Stakeholders</label>
@@ -1559,13 +1860,98 @@ export function ReleaseFormModal({
         </div>
 
         <div className="mt-4">
-          <label className="text-xs font-medium text-gray-500">Notes</label>
+          <label className="text-xs font-medium text-gray-500">Release Notes</label>
           <textarea
             className={cn(taInput, "min-h-[72px] mt-1", fieldLocked("notes") && "bg-gray-50")}
             value={form.notes}
             disabled={fieldLocked("notes")}
             title={fieldLocked("notes") ? FIELD_LOCK_HINT : undefined}
             onChange={(e) => set("notes", e.target.value)}
+          />
+        </div>
+
+        <div className="mt-4">
+          <label className="text-xs font-medium text-gray-500">Change Description</label>
+          <textarea
+            className={cn(
+              taInput,
+              "min-h-[72px] mt-1",
+              fieldLocked("changeDescription") && "bg-gray-50"
+            )}
+            value={form.changeDescription}
+            disabled={fieldLocked("changeDescription")}
+            title={fieldLocked("changeDescription") ? FIELD_LOCK_HINT : undefined}
+            onChange={(e) => set("changeDescription", e.target.value)}
+          />
+        </div>
+
+        <div className="mt-4">
+          <label className="text-xs font-medium text-gray-500">Justification</label>
+          <textarea
+            className={cn(
+              taInput,
+              "min-h-[72px] mt-1",
+              fieldLocked("justification") && "bg-gray-50"
+            )}
+            value={form.justification}
+            disabled={fieldLocked("justification")}
+            title={fieldLocked("justification") ? FIELD_LOCK_HINT : undefined}
+            onChange={(e) => set("justification", e.target.value)}
+          />
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <LockedReadOnlyField
+            label="Release Health"
+            value={isEdit ? initial?.matrix?.releaseHealth?.trim() || "—" : "—"}
+          />
+          <LockedReadOnlyField
+            label="Readiness %"
+            value={
+              isEdit && initial?.matrix?.readinessPercent != null
+                ? `${initial.matrix.readinessPercent}%`
+                : "—"
+            }
+          />
+          <LockedReadOnlyField
+            label="Blocker Count"
+            value={
+              isEdit && initial?.matrix?.blockerCount != null
+                ? String(initial.matrix.blockerCount)
+                : "—"
+            }
+          />
+          <LockedReadOnlyField
+            label="Risk Score"
+            value={
+              isEdit && initial?.matrix?.weightedRiskScore != null
+                ? String(initial.matrix.weightedRiskScore)
+                : "—"
+            }
+          />
+          <LockedReadOnlyField
+            label="Conflict Count"
+            value={
+              isEdit && initial?.matrix?.conflictCount != null
+                ? String(initial.matrix.conflictCount)
+                : "—"
+            }
+          />
+          <LockedReadOnlyField
+            label="Created Date"
+            value={isEdit ? formatReleaseAuditInstant(initial?.matrix?.createdAt) : "—"}
+          />
+          <LockedReadOnlyField
+            label="Created By"
+            value={isEdit ? initial?.matrix?.createdBy?.trim() || "—" : "—"}
+          />
+          <LockedReadOnlyField
+            label="Last Modified Date"
+            value={isEdit ? formatReleaseAuditInstant(initial?.matrix?.updatedAt) : "—"}
+          />
+          <LockedReadOnlyField
+            label="Last Modified By"
+            value={isEdit ? initial?.matrix?.lastModifiedBy?.trim() || "—" : "—"}
           />
         </div>
 
@@ -1602,7 +1988,7 @@ function SignoffDecisionSelect({
   disabled,
   onChange,
 }: {
-  type: ReturnType<typeof signoffDecisionTypesForForm>[number];
+  type: { field: string; label: string; enabled: boolean; mandatory: boolean };
   value: string;
   error?: string;
   config: SignoffLifecycleConfig;
@@ -1664,6 +2050,20 @@ function SummaryRow({
       <dd className={cn("text-right font-medium text-gray-900 dark:text-white", mono && "font-mono text-xs")}>
         {value}
       </dd>
+    </div>
+  );
+}
+
+function LockedReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-gray-500">{label}</label>
+      <input
+        className={cn(taInput, "mt-1 bg-gray-50")}
+        value={value}
+        readOnly
+        title="Locked for this release’s current status"
+      />
     </div>
   );
 }

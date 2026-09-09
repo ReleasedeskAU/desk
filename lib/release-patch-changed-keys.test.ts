@@ -125,4 +125,17 @@ describe("keysWithActualReleasePatchChanges", () => {
     });
     assert.deepEqual(changed, ["stakeholderIds"]);
   });
+
+  it("ignores sheet computed/audit keys echoed on save", () => {
+    const keys = keysWithActualReleasePatchChanges({
+      existing,
+      body: {
+        status: "Pending CAB",
+        blockerCount: 3,
+        previousStatus: "Planning",
+        createdBy: "someone",
+      },
+    });
+    assert.deepEqual(keys, ["status"]);
+  });
 });

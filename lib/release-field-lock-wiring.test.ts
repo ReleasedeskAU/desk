@@ -88,7 +88,19 @@ describe("field-lock write-path inventory (source wiring)", () => {
     const src = readSrc("components/releases/ReleaseFormModal.tsx");
     assert.match(src, /isReleaseBodyKeyLocked/);
     assert.match(src, /fieldLocked\("applicationIds"\)/);
+    assert.match(src, /fieldLocked\("releaseType"\)/);
+    assert.match(src, /fieldLocked\("goLiveDate"\)/);
+    assert.match(src, /fieldLocked\("deployDate"\)/);
+    assert.match(src, /fieldLocked\("deploymentWindow"\)/);
+    assert.match(src, /fieldLocked\("dressRehearsal"\)/);
+    assert.match(src, /Duration \(Days\)/);
+    assert.match(src, /Affected Systems/);
     assert.match(src, /\/api\/release-field-lock-config/);
+  });
+
+  it("GET /api/releases/[id] attaches sheet computed fields", () => {
+    const src = readSrc("app/api/releases/[id]/route.ts");
+    assert.match(src, /loadReleaseSheetComputed/);
   });
 
   it("PUT /api/release-field-lock-config routes through saveReleaseFieldLockConfig", () => {

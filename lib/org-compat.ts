@@ -521,6 +521,13 @@ export type CreateReleaseInput = {
   deployDate?: Date | null;
   createdBy?: string | null;
   lastModifiedBy?: string | null;
+  dressRehearsal?: string | null;
+  devSignoff?: string | null;
+  testSignoff?: string | null;
+  uatSignoff?: string | null;
+  securityClearance?: string | null;
+  businessSignoff?: string | null;
+  opsSignoff?: string | null;
 };
 
 /** Creates a Release in both local v1 and organization-aware live v2 schemas. */
@@ -557,6 +564,33 @@ export async function createReleaseRow(data: CreateReleaseInput) {
           ${now}, ${now}
         )
       `;
+      // Org insert predates Tranche 3 / checklist columns — write the rest via Prisma.
+      await prisma.release.update({
+        where: { id },
+        data: {
+          hypercarePlan: data.hypercarePlan ?? undefined,
+          commsPlan: data.commsPlan ?? undefined,
+          trainingStatus: data.trainingStatus ?? undefined,
+          releaseType: data.releaseType ?? undefined,
+          backupOwner: data.backupOwner ?? undefined,
+          technicalLead: data.technicalLead ?? undefined,
+          businessOwner: data.businessOwner ?? undefined,
+          scopeDescription: data.scopeDescription ?? undefined,
+          changeDescription: data.changeDescription ?? undefined,
+          justification: data.justification ?? undefined,
+          goLiveDate: data.goLiveDate ?? undefined,
+          deployDate: data.deployDate ?? undefined,
+          createdBy: data.createdBy ?? undefined,
+          lastModifiedBy: data.lastModifiedBy ?? undefined,
+          dressRehearsal: data.dressRehearsal ?? undefined,
+          devSignoff: data.devSignoff ?? undefined,
+          testSignoff: data.testSignoff ?? undefined,
+          uatSignoff: data.uatSignoff ?? undefined,
+          securityClearance: data.securityClearance ?? undefined,
+          businessSignoff: data.businessSignoff ?? undefined,
+          opsSignoff: data.opsSignoff ?? undefined,
+        },
+      });
       return prisma.release.findUniqueOrThrow({ where: { id } });
     }
   );

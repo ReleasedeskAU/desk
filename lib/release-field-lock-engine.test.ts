@@ -229,6 +229,24 @@ describe("RD-139 sheet matrix", () => {
     assert.equal(result.sideEffects[0]?.effect, "revert_to_pending_cab");
   });
 
+  it("locks Go-Live Date from Pending CAB and Deploy Date from Deploying", () => {
+    assert.equal(
+      getFieldLockStateFromRows(rows, "goLiveDate", "uat"),
+      "editable"
+    );
+    assert.equal(
+      getFieldLockStateFromRows(rows, "goLiveDate", "pending_cab"),
+      "locked"
+    );
+    assert.equal(
+      getFieldLockStateFromRows(rows, "deployDate", "ready_to_deploy"),
+      "editable"
+    );
+    assert.equal(
+      getFieldLockStateFromRows(rows, "deployDate", "deploying"),
+      "locked"
+    );
+  });
   it("does not invent columns for sheet fields without a stored counterpart", () => {
     const labels = RELEASE_FIELD_LOCK_SKIPPED_SHEET_FIELDS.map((s) => s.sheetLabel);
     assert.ok(labels.includes("Affected Systems"));

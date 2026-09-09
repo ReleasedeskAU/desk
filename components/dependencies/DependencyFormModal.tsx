@@ -16,9 +16,11 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import { filterReleasesForRelatedCreate } from "@/lib/release-related-link-eligibility";
 import { DEPENDENCY_IMPACTS, DEPENDENCY_TYPES } from "@/lib/validation/dependency";
 
-type ReleaseOption = { id: string; releaseCode: string; name: string };
+type ReleaseOption = { id: string; releaseCode: string; name: string; status: string };
 
 export type DependencyFormValues = {
   releaseId: string;
@@ -78,6 +80,8 @@ export function DependencyFormModal({
 }: Props) {
   const isEdit = Boolean(editId);
   const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
+  const releaseLifecycle = useEntityLifecycleStatuses("/api/release-lifecycle-config");
+  const releaseConfig = (releaseLifecycle.config ?? null) as ReleaseLifecycleConfig | null;
   const createOptions =
     statusOptionsProp && statusOptionsProp.length > 0
       ? statusOptionsProp
@@ -125,10 +129,9 @@ export function DependencyFormModal({
     setLoadingReleases(true);
     const ac = new AbortController();
     void (async () => {
-      const result = await safeFetchJson<{ id: string; releaseCode: string; name: string }[]>(
-        "/api/releases",
-        { signal: ac.signal, label: "dep-form-releases" }
-      );
+      const result = await safeFetchJson<
+        { id: string; releaseCode: string; name: string; status: string }[]
+      >("/api/releases", { signal: ac.signal, label: "dep-form-releases" });
       if (ac.signal.aborted) return;
       setLoadingReleases(false);
       if (!result.ok) {
@@ -136,7 +139,12 @@ export function DependencyFormModal({
         return;
       }
       const list = (result.data ?? [])
-        .map((r) => ({ id: r.id, releaseCode: r.releaseCode, name: r.name }))
+        .map((r) => ({
+          id: r.id,
+          releaseCode: r.releaseCode,
+          name: r.name,
+          status: r.status,
+        }))
         .sort((a, b) => a.releaseCode.localeCompare(b.releaseCode));
       setReleases(list);
     })();
@@ -151,16 +159,21 @@ export function DependencyFormModal({
     });
   }, [open, isEdit, createOptions, defaultStatus]);
 
-  const lockedRelease = releases.find((item) => item.id === form.releaseId);
+  const linkableReleases = useMemo(
+    () => filterReleasesForRelatedCreate(releases, releaseConfig),
+    [releases, releaseConfig]
+  );
+  const lockedRelease = linkableReleases.find((item) => item.id === form.releaseId)
+    ?? releases.find((item) => item.id === form.releaseId);
   const upstreamOptions = useMemo(
     () =>
-      releases
+      linkableReleases
         .filter((item) => item.id !== form.releaseId)
         .map((item) => ({
           value: item.id,
           label: `${item.releaseCode} — ${item.name}`,
         })),
-    [releases, form.releaseId]
+    [linkableReleases, form.releaseId]
   );
 
   if (!open) return null;
@@ -324,12 +337,16 @@ export function DependencyFormModal({
                       dependsOnReleaseId: prev.dependsOnReleaseId === value ? "" : prev.dependsOnReleaseId,
                     }));
                   }}
-                  options={releases.map((item) => ({
+                  options={linkableReleases.map((item) => ({
                     value: item.id,
                     label: `${item.releaseCode} — ${item.name}`,
                   }))}
-                  placeholder={loadingReleases ? "Loading…" : "Select release…"}
-                  disabled={loadingReleases}
+                  placeholder={
+                    loadingReleases || !releaseConfig
+                      ? "Loading…"
+                      : "Select release…"
+                  }
+                  disabled={loadingReleases || !releaseConfig}
                   allowClear={false}
                 />
               </div>
@@ -344,8 +361,16 @@ export function DependencyFormModal({
                 value={form.dependsOnReleaseId}
                 onChange={set("dependsOnReleaseId")}
                 options={upstreamOptions}
-                placeholder={loadingReleases ? "Loading…" : "Select upstream release…"}
-                disabled={loadingReleases || (!scoped && !form.releaseId)}
+                placeholder={
+                  loadingReleases || !releaseConfig
+                    ? "Loading…"
+                    : "Select upstream release…"
+                }
+                disabled={
+                  loadingReleases ||
+                  !releaseConfig ||
+                  (!scoped && !form.releaseId)
+                }
                 allowClear={false}
               />
             </div>

@@ -11,6 +11,11 @@ import {
 } from "@/lib/conflict-lifecycle-transition";
 import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
 import { keysWithActualPatchChanges } from "@/lib/patch-changed-keys";
+import {
+  guardReleaseFullyLocked,
+  guardReleaseLinkableForRelatedCreate,
+  loadGuardReleaseConfig,
+} from "@/lib/release-related-entity-guards";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -33,7 +38,7 @@ export async function GET(_req: Request, { params }: Params) {
   const [releases, bookings] = await Promise.all([
     prisma.release.findMany({
       where: { releaseCode: { in: [row.release1Code, row.release2Code] } },
-      select: { id: true, releaseCode: true, name: true },
+      select: { id: true, releaseCode: true, name: true, status: true },
     }),
     prisma.envBooking.findMany({
       where: {
@@ -103,6 +108,55 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
+  }
+
+  const nextRelease1Code =
+    body.release1Code !== undefined ? String(body.release1Code) : existing.release1Code;
+  const nextRelease2Code =
+    body.release2Code !== undefined ? String(body.release2Code) : existing.release2Code;
+  const linkedReleases = await prisma.release.findMany({
+    where: {
+      releaseCode: {
+        in: [
+          existing.release1Code,
+          existing.release2Code,
+          nextRelease1Code,
+          nextRelease2Code,
+        ],
+      },
+    },
+    select: {
+      releaseCode: true,
+      status: true,
+      lifecycleConfigVersionId: true,
+    },
+  });
+  const linkedByCode = new Map(linkedReleases.map((row) => [row.releaseCode, row]));
+  // RD-194: a Cancelled linked release locks the whole conflict.
+  for (const code of [existing.release1Code, existing.release2Code]) {
+    const linked = linkedByCode.get(code);
+    if (!linked) continue;
+    const linkedConfig = await loadGuardReleaseConfig(
+      user!.id,
+      linked.lifecycleConfigVersionId
+    );
+    const cancelledLock = guardReleaseFullyLocked(linked.status, linkedConfig);
+    if (!cancelledLock.ok) return cancelledLock.response;
+  }
+  // RD-193 on edit: newly picked releases cannot be Cancelled or Blocked.
+  for (const code of [nextRelease1Code, nextRelease2Code]) {
+    if (code === existing.release1Code || code === existing.release2Code) continue;
+    const linked = linkedByCode.get(code);
+    if (!linked) continue;
+    const linkedConfig = await loadGuardReleaseConfig(
+      user!.id,
+      linked.lifecycleConfigVersionId
+    );
+    const linkable = guardReleaseLinkableForRelatedCreate(
+      linked.status,
+      linkedConfig
+    );
+    if (!linkable.ok) return linkable.response;
   }
 
   // Full-form detail saves echo every field — edit policy must only see real edits.

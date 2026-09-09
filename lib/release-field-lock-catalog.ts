@@ -274,7 +274,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "devSignoff",
-    label: "Tech Review",
+    label: "Dev Sign-Off",
     category: "Sign-Off",
     lockRuleRef: "§3-05",
     isConfigurable: true,
@@ -282,7 +282,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "testSignoff",
-    label: "QA Sign-Off — Test Phase",
+    label: "Test Sign-Off",
     category: "Sign-Off",
     lockRuleRef: "§3-05",
     isConfigurable: true,
@@ -290,7 +290,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "uatSignoff",
-    label: "QA Sign-Off — UAT Phase",
+    label: "UAT Sign-Off",
     category: "Sign-Off",
     lockRuleRef: "§3-05",
     isConfigurable: true,
@@ -298,7 +298,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "securityClearance",
-    label: "Security Review",
+    label: "Security Sign-Off",
     category: "Sign-Off",
     lockRuleRef: "§3-05",
     isConfigurable: true,
@@ -306,7 +306,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "businessSignoff",
-    label: "Business Review",
+    label: "Business Sign-Off",
     category: "Sign-Off",
     lockRuleRef: "§3-05",
     isConfigurable: true,
@@ -314,7 +314,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
   },
   {
     fieldKey: "opsSignoff",
-    label: "Operations Review",
+    label: "Ops Sign-Off",
     category: "Sign-Off",
     lockRuleRef: "VR-31",
     isConfigurable: true,
@@ -523,7 +523,8 @@ export const RELEASE_FIELD_LOCK_SKIPPED_SHEET_FIELDS = [
   },
   {
     sheetLabel: "Duration Days",
-    reason: "Computed from start/end dates on the detail page, not stored",
+    reason:
+      "Computed from start/end dates (shown read-only on the Release form); not stored",
   },
 ] as const;
 

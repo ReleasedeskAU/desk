@@ -23,6 +23,8 @@ import {
   writeSignoffIntakeAt,
 } from "@/lib/signoff-intake-at";
 import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
+import { parseGoLiveChecklistPercent } from "@/lib/release-form-matrix";
+import { loadReleaseSheetComputed } from "@/lib/release-sheet-computed";
 import {
   cascadeWithdrawApprovalsOnReleaseCancelled,
   guardDependencyGraphMutation,
@@ -79,7 +81,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     include: releaseInclude,
   });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(row);
+  try {
+    const computed = await loadReleaseSheetComputed(row);
+    return NextResponse.json({ ...row, ...computed });
+  } catch (err) {
+    console.error("[releases GET] sheet computed fields failed", {
+      releaseId: row.id,
+      message: err instanceof Error ? err.message : "unknown",
+    });
+    return NextResponse.json({
+      ...row,
+      previousStatus: null,
+      blockerCount: null,
+      conflictCount: null,
+    });
+  }
 }
 
 function optionalString(value: unknown): string | null | undefined {
@@ -440,6 +456,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   for (const key of ["readinessPercent", "goLiveChecklistPercent"] as const) {
     if (!proposed.has(key)) continue;
+    if (key === "goLiveChecklistPercent") {
+      const parsed = parseGoLiveChecklistPercent(body[key]);
+      if (!parsed.ok) {
+        return NextResponse.json(
+          { error: parsed.error, field: "goLiveChecklistPercent" },
+          { status: 400 }
+        );
+      }
+      data[key] = parsed.value;
+      continue;
+    }
     const v = optionalFloat(body[key]);
     if (v !== undefined) data[key] = v;
   }

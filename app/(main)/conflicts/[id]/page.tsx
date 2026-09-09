@@ -43,6 +43,12 @@ import {
 import { legalNextConflictStatuses } from "@/lib/conflict-lifecycle-transition";
 import { conflictTypeOptions } from "@/lib/conflict-types";
 import { conflictEditReleaseOptions } from "@/lib/conflict-edit-release-options";
+import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
+import {
+  cancelledLinkedReleaseLockMessage,
+  filterReleasesForRelatedCreate,
+  isConflictEditLockedByCancelledRelease,
+} from "@/lib/release-related-link-eligibility";
 
 type ConflictDetail = {
   id: string;
@@ -52,8 +58,8 @@ type ConflictDetail = {
   assignedTo: string;
   release1Code: string;
   release2Code: string;
-  release1: { id: string; releaseCode: string; name: string } | null;
-  release2: { id: string; releaseCode: string; name: string } | null;
+  release1: { id: string; releaseCode: string; name: string; status?: string } | null;
+  release2: { id: string; releaseCode: string; name: string; status?: string } | null;
   application: string;
   department: string;
   conflictingEnvironment: string;
@@ -73,7 +79,7 @@ type RelatedBooking = {
 };
 
 type ConflictOption = { id: string; conflictCode: string };
-type ReleaseLookup = { id: string; releaseCode: string; name: string };
+type ReleaseLookup = { id: string; releaseCode: string; name: string; status: string };
 
 type ConflictDraft = {
   status: string;
@@ -148,6 +154,8 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
     "/api/conflict-lifecycle-config",
     (status) => Boolean(status.blocksReleaseReady)
   );
+  const releaseLifecycle = useEntityLifecycleStatuses("/api/release-lifecycle-config");
+  const releaseConfig = (releaseLifecycle.config ?? null) as ReleaseLifecycleConfig | null;
   const [row, setRow] = useState<ConflictDetail | null>(null);
   const [options, setOptions] = useState<ConflictOption[]>([]);
   const [releases, setReleases] = useState<ReleaseLookup[]>([]);
@@ -177,6 +185,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
             id: r.id,
             releaseCode: r.releaseCode,
             name: r.name,
+            status: r.status,
           }))
         : []
     );
@@ -193,7 +202,24 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
 
   const source = useMemo(() => (row ? toDraft(row) : null), [row]);
   const edit = useEditableDetail(source);
-  const canEdit = sessionCanEdit(user);
+  const linkedCancelled = isConflictEditLockedByCancelledRelease(releaseConfig, [
+    row?.release1?.status,
+    row?.release2?.status,
+  ]);
+  const cancelledLockMessage = useMemo(() => {
+    if (!releaseConfig || !row) return "";
+    const cancelledStatus = [row.release1?.status, row.release2?.status].find((status) =>
+      isConflictEditLockedByCancelledRelease(releaseConfig, [status])
+    );
+    return cancelledStatus
+      ? cancelledLinkedReleaseLockMessage(releaseConfig, cancelledStatus)
+      : "";
+  }, [releaseConfig, row]);
+  const canEdit = sessionCanEdit(user) && !linkedCancelled;
+  const linkableReleases = useMemo(
+    () => filterReleasesForRelatedCreate(releases, releaseConfig),
+    [releases, releaseConfig]
+  );
   const v = edit.values;
   const d = edit.draft;
   /** True when exception panel was opened from modal save (retry should completeSaveSuccess). */
@@ -256,21 +282,21 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const release1Options = useMemo(
     () =>
       conflictEditReleaseOptions({
-        releases,
+        releases: linkableReleases,
         currentCode: d?.release1Code ?? row?.release1Code,
         currentName: row?.release1?.name,
       }),
-    [releases, d?.release1Code, row?.release1Code, row?.release1?.name]
+    [linkableReleases, d?.release1Code, row?.release1Code, row?.release1?.name]
   );
   const release2Options = useMemo(
     () =>
       conflictEditReleaseOptions({
-        releases,
+        releases: linkableReleases,
         currentCode: d?.release2Code ?? row?.release2Code,
         currentName: row?.release2?.name,
         excludeCodes: [d?.release1Code ?? row?.release1Code ?? ""],
       }),
-    [releases, d?.release2Code, d?.release1Code, row?.release2Code, row?.release1Code, row?.release2?.name]
+    [linkableReleases, d?.release2Code, d?.release1Code, row?.release2Code, row?.release1Code, row?.release2?.name]
   );
 
   const save = async () => {
@@ -596,6 +622,9 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
         </>
       }
     >
+      {linkedCancelled && cancelledLockMessage ? (
+        <TintedCallout tone="rose">{cancelledLockMessage}</TintedCallout>
+      ) : null}
       <DetailDecisionHeader
         identity={[
           { label: "Assigned to", value: v.assignedTo || "Unassigned" },

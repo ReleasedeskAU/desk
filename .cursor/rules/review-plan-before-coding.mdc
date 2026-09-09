@@ -1,0 +1,20 @@
+---
+description: Review prompts and plans for logical/architectural mistakes before writing any code.
+alwaysApply: true
+---
+
+# Review the plan before coding
+
+Do not implement, patch, or "just start coding" because a prompt says implement now.
+
+First, check the prompt/plan for logical and architectural mistakes. Tell the user what is wrong. Wait for a corrected plan (or an explicit "ignore the gaps, build anyway") before touching code.
+
+Check at least:
+
+- Does the design match how the data actually works (stored fields vs invented fields)?
+- Are operations general (get/find/count) or one-off rules per question/phrasing?
+- Safety: allow-lists, PII, exact vs contains match, failure mode (guess vs refuse)
+- Hidden gaps: the plan claims a test that existing operations cannot perform (e.g. AND filters, date ranges)
+- LLM vs code: language mapping stays in the LLM; code runs governed reads — no synonym tables, no raw SQL from the model
+
+If the plan is sound, say so briefly, then implement. If it is not, stop and list the mistakes. Do not silently "fix while coding."
