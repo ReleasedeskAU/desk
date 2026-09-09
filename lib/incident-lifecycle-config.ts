@@ -122,7 +122,8 @@ export const DEFAULT_INCIDENT_LIFECYCLE_STATUSES: readonly IncidentLifecycleStat
       label: "Resolving",
       sortOrder: 40,
       terminal: false,
-      enabled: true,
+      // Optional stage — not on LC_Incidents. Admins can turn it On in Settings.
+      enabled: false,
       isSystem: true,
       editMode: "full",
       cascadeEffect: "May block linked release",
@@ -152,7 +153,8 @@ export const DEFAULT_INCIDENT_LIFECYCLE_STATUSES: readonly IncidentLifecycleStat
       label: "Reopened",
       sortOrder: 70,
       terminal: false,
-      enabled: true,
+      // Optional stage — not on LC_Incidents. Admins can turn it On in Settings.
+      enabled: false,
       isSystem: true,
       editMode: "full",
       cascadeEffect: "May re-trigger release blocks",
