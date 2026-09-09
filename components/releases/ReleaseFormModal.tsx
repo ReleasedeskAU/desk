@@ -24,9 +24,8 @@ import {
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
 import {
-  defaultReleaseStatusLabel,
   editReleaseStatusOptions,
-  enabledReleaseStatusLabels,
+  intakeReleaseStatusLabel,
   previewEditLegalNext,
 } from "@/lib/release-lifecycle-status-ui";
 import {
@@ -307,7 +306,7 @@ export function ReleaseFormModal({
   applications,
   environments = [],
   releases,
-  statusOptions: statusOptionsProp,
+  statusOptions: _statusOptionsProp,
   onClose,
   onSaved,
 }: {
@@ -318,7 +317,7 @@ export function ReleaseFormModal({
   applications: AppOption[];
   environments?: EnvOption[];
   releases: Option[];
-  /** Enabled lifecycle status labels from parent (SSOT). */
+  /** Callers may still pass enabled labels; create ignores this and locks status to intake. */
   statusOptions?: string[];
   onClose: () => void;
   onSaved: () => void;
@@ -327,14 +326,13 @@ export function ReleaseFormModal({
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [loadedEnvs, setLoadedEnvs] = useState<EnvOption[]>([]);
-  const [lifecycleStatusOptions, setLifecycleStatusOptions] = useState<string[]>(
-    []
-  );
   const [editLegalNext, setEditLegalNext] = useState<LegalNextStatusView[]>([]);
   const [legalNextLoading, setLegalNextLoading] = useState(false);
   const [currentIsTerminal, setCurrentIsTerminal] = useState<boolean | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
-  const [defaultStatusLabel, setDefaultStatusLabel] = useState("Draft");
+  const [defaultStatusLabel, setDefaultStatusLabel] = useState(() =>
+    intakeReleaseStatusLabel(createDefaultReleaseLifecycleConfig())
+  );
   const [signoffConfig, setSignoffConfig] = useState<SignoffLifecycleConfig>(
     createDefaultSignoffLifecycleConfig
   );
@@ -432,27 +430,6 @@ export function ReleaseFormModal({
     );
   }, [editLegalNext, form.status, initial?.status, isEdit]);
 
-  const statusOptions = useMemo(() => {
-    if (isEdit) {
-      const labels = editStatusChoices.map((o) => o.label);
-      if (form.status && !labels.some((l) => l === form.status)) {
-        return [...labels, form.status];
-      }
-      return labels;
-    }
-    const base =
-      statusOptionsProp && statusOptionsProp.length > 0
-        ? statusOptionsProp
-        : lifecycleStatusOptions;
-    return [...new Set([...base, form.status].filter(Boolean))];
-  }, [
-    editStatusChoices,
-    form.status,
-    isEdit,
-    lifecycleStatusOptions,
-    statusOptionsProp,
-  ]);
-
   useEffect(() => {
     if (!open) return;
     return loadJsonEffect<{ id: string; userId: string; name: string }[]>(
@@ -516,22 +493,14 @@ export function ReleaseFormModal({
         setLegalNextLoading(false);
       };
     }
-    if (statusOptionsProp && statusOptionsProp.length > 0) {
-      setDefaultStatusLabel(statusOptionsProp[0] ?? "Draft");
-      return;
-    }
     return loadJsonEffect<{ config: ReleaseLifecycleConfig }>(
       "/api/release-lifecycle-config",
       (payload) => {
-        setLifecycleStatusOptions(enabledReleaseStatusLabels(payload.config));
-        setDefaultStatusLabel(
-          defaultReleaseStatusLabel(payload.config) || "Draft"
-        );
+        setDefaultStatusLabel(intakeReleaseStatusLabel(payload.config));
       },
       { label: "release-form-lifecycle-statuses" }
     );
-    // Create-mode labels: length/[0] avoid aborting the edit fetch on parent rerenders.
-  }, [initial?.id, initial?.status, isEdit, open, statusOptionsProp?.length, statusOptionsProp?.[0]]);
+  }, [initial?.id, initial?.status, isEdit, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -589,7 +558,7 @@ export function ReleaseFormModal({
       name: initial?.name ?? "",
       programProject: initial?.programProject ?? "",
       owner: initial?.owner ?? "",
-      status: initial?.status ?? defaultStatusLabel,
+      status: initial?.id ? (initial.status ?? defaultStatusLabel) : defaultStatusLabel,
       releaseDate: dateInput(initial?.releaseDate),
       priority: initial?.priority ?? "P3 - Medium",
       impact: initial?.impact ?? "Medium",
@@ -1175,17 +1144,16 @@ export function ReleaseFormModal({
                 }))}
               />
             ) : (
-              <select
-                className={cn(taInput, fieldErrors.status && "border-rose-400")}
+              <input
+                aria-label="Status"
+                className={cn(
+                  taInput,
+                  "bg-gray-50",
+                  fieldErrors.status && "border-rose-400"
+                )}
                 value={form.status}
-                onChange={(e) => set("status", e.target.value)}
-              >
-                {statusOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                readOnly
+              />
             )}
             {isEdit ? (
               showTerminalStatusNotice ? (
