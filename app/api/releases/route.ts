@@ -9,8 +9,8 @@ import {
   loadReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config-db";
 import {
-  defaultReleaseStatusLabel,
   isEnabledReleaseStatusLabel,
+  resolveCreateReleaseStatus,
 } from "@/lib/release-lifecycle-status-ui";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 import { validateReleaseFieldUpdate } from "@/lib/release-field-lock-engine";
@@ -105,15 +105,15 @@ export async function POST(req: Request) {
 
   // Pin new releases to the creator's latest lifecycle snapshot so mid-flight
   // config edits cannot re-route them. Existing rows stay unpinned until backfill.
-  // Status must be an enabled label in the creator's lifecycle config (SSOT).
+  // Create always starts at the enabled intake status (RD-110). Ignore body.status
+  // so a crafted POST cannot pick Planning/Cancelled/etc.
   let lifecycleConfigVersionId: string | null = null;
-  let status = String(body.status ?? "").trim();
+  let status = "";
   let statusKey: string | undefined;
   try {
     const loaded = await loadReleaseLifecycleConfig(user!.id);
-    const defaultStatus = defaultReleaseStatusLabel(loaded.config) || "Draft";
-    if (!status) status = defaultStatus;
-    if (!isEnabledReleaseStatusLabel(loaded.config, status)) {
+    status = resolveCreateReleaseStatus(loaded.config, body.status);
+    if (!status || !isEnabledReleaseStatusLabel(loaded.config, status)) {
       return NextResponse.json(
         { error: "Status is not enabled in the release lifecycle configuration" },
         { status: 400 }
