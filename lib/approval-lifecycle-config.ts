@@ -114,7 +114,9 @@ export const DEFAULT_APPROVAL_LIFECYCLE_STATUSES: readonly Omit<
     label: "Deferred",
     sortOrder: 40,
     terminal: false,
-    enabled: true,
+    // LC_Approvals sheet statuses stay On. Deferred is a release stage
+    // (LC_Releases); keep it Off unless a tenant enables it.
+    enabled: false,
     isSystem: true,
     editMode: "full",
     cascadeEffect: "Release status = Deferred (informational); Flexible — not terminal",
@@ -193,25 +195,27 @@ function edge(
   fromKey: string,
   toKey: string,
   sortOrder: number,
-  enforcement: ApprovalLifecycleEnforcement = "flexible"
+  enforcement: ApprovalLifecycleEnforcement = "flexible",
+  /** Sheet decisions On; Deferred (release stage) stays Off by default. */
+  enabled = true
 ): ApprovalLifecycleTransitionConfig {
   return {
     fromKey,
     toKey,
-    enabled: true,
+    enabled,
     enforcement,
     isSystem: true,
     sortOrder,
   };
 }
 
-/** Default graph: Pending → Approved / Approved with Conditions / Rejected / Deferred / Withdrawn. */
+/** Default graph: Pending → Approved / Approved with Conditions / Rejected / Withdrawn. Deferred stays Off. */
 export const DEFAULT_APPROVAL_LIFECYCLE_TRANSITIONS: readonly ApprovalLifecycleTransitionConfig[] =
   [
     edge("pending", "approved", 10),
     edge("pending", "approved_with_conditions", 15),
     edge("pending", "rejected", 20),
-    edge("pending", "deferred", 30),
+    edge("pending", "deferred", 30, "flexible", false),
     edge("pending", "withdrawn", 40),
     // Auto-expiry path (AV-22): unique Required exit from a status with expiryDays.
     edge("approved", "expired", 10, "required"),
