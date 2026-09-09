@@ -210,8 +210,88 @@ const EMPTY_FORM: ReleaseFormData = {
   opsSignoff: "",
 };
 
-function dateInput(value?: string | null) {
-  return value ? value.slice(0, 10) : "";
+function dateInput(value?: string | Date | null) {
+  if (!value) return "";
+  const raw = typeof value === "string" ? value : value.toISOString();
+  return raw.slice(0, 10);
+}
+
+/** API / detail release shape used to open Edit Release. */
+export type ReleaseFormSource = {
+  id: string;
+  releaseCode: string;
+  name: string;
+  programProject?: string | null;
+  owner: string;
+  status: string;
+  releaseDate?: string | Date | null;
+  priority: string;
+  impact: string;
+  departmentId: string;
+  applications?: { application: { id: string } }[];
+  dependsOn?: { dependsOnRelease: { id: string } }[];
+  notes?: string | null;
+  releaseSize?: string | null;
+  cabDate?: string | Date | null;
+  startDate?: string | Date | null;
+  testEnvRequired?: string | null;
+  uatEnvRequired?: string | null;
+  releaseOwner?: { id?: string | null } | null;
+  releaseOwnerId?: string | null;
+  approvalStatus?: string | null;
+  rollbackPlan?: string | null;
+  hypercarePlan?: string | null;
+  commsPlan?: string | null;
+  trainingStatus?: string | null;
+  stakeholders?: { user: { id: string } }[];
+  devSignoff?: string | null;
+  testSignoff?: string | null;
+  uatSignoff?: string | null;
+  securityClearance?: string | null;
+  businessSignoff?: string | null;
+  opsSignoff?: string | null;
+};
+
+/**
+ * Map a persisted release row onto Edit Release form initial values.
+ *
+ * @param release - Release API or detail payload.
+ * @returns Partial form used by `ReleaseFormModal` in edit mode.
+ */
+export function releaseRowToFormInitial(release: ReleaseFormSource): Partial<ReleaseFormData> {
+  return {
+    id: release.id,
+    releaseCode: release.releaseCode,
+    name: release.name,
+    programProject: release.programProject ?? "",
+    owner: release.owner,
+    status: release.status,
+    releaseDate: dateInput(release.releaseDate),
+    priority: release.priority,
+    impact: release.impact,
+    departmentId: release.departmentId,
+    applicationIds: (release.applications ?? []).map((a) => a.application.id),
+    dependsOnReleaseIds: (release.dependsOn ?? []).map((d) => d.dependsOnRelease.id),
+    notes: release.notes ?? "",
+    releaseSize: release.releaseSize ?? "",
+    cabDate: dateInput(release.cabDate),
+    startDate: dateInput(release.startDate),
+    testEnvRequired: release.testEnvRequired ?? "",
+    uatEnvRequired: release.uatEnvRequired ?? "",
+    releaseOwnerId: release.releaseOwner?.id ?? release.releaseOwnerId ?? "",
+    approvalStatus: release.approvalStatus ?? "",
+    rollbackPlan: release.rollbackPlan ?? "",
+    hypercarePlan: release.hypercarePlan ?? "",
+    commsPlan: release.commsPlan ?? "",
+    trainingStatus: release.trainingStatus ?? "",
+    stakeholderIds: (release.stakeholders ?? []).map((s) => s.user.id),
+    devSignoff: release.devSignoff ?? "",
+    testSignoff: release.testSignoff ?? "",
+    uatSignoff: release.uatSignoff ?? "",
+    securityClearance: release.securityClearance ?? "",
+    businessSignoff: release.businessSignoff ?? "",
+    opsSignoff: release.opsSignoff ?? "",
+  };
 }
 
 function RequiredMark() {

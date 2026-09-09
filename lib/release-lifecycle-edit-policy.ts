@@ -2,8 +2,10 @@
  * Field-edit policy by release status (lifecycle “Editable?” column).
  * Status transitions stay in the transition engine; this gates non-status PATCH fields.
  */
+import { canEdit, type SessionUser } from "@/lib/auth/roles";
 import {
   defaultReleaseEditModeForStatusKey,
+  isReleaseEditMode,
   type ReleaseEditMode,
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
@@ -139,4 +141,43 @@ export function deniedReleaseEditFields(
   }
   const denied = proposedKeys.filter((key) => !isReleaseFieldEditable(mode, key));
   return { mode, denied };
+}
+
+/**
+ * Whether the Release list may show Edit for this status.
+ * Fail closed when the status is unknown or `editMode` is missing — do not guess.
+ * Cancelled stays hidden; other configured modes open the existing modal (field locks apply there).
+ *
+ * @param config - Active release lifecycle config.
+ * @param status - Current release status label or key.
+ * @returns true only when config explicitly has an edit mode and the release is not fully locked.
+ */
+export function canOfferReleaseEditAction(
+  config: ReleaseLifecycleConfig,
+  status: string | null | undefined
+): boolean {
+  const raw = String(status ?? "").trim();
+  if (!raw) return false;
+  if (isReleaseFullyLocked(config, raw)) return false;
+  const resolved = resolveLifecycleStatusRef(config, raw);
+  if (!resolved || !isReleaseEditMode(resolved.editMode)) return false;
+  return true;
+}
+
+/**
+ * Role + lifecycle gate for offering Release Edit. Default deny.
+ *
+ * @param args.user - Session user; editor+ required.
+ * @param args.config - Lifecycle config; missing config hides Edit.
+ * @param args.status - Current release status.
+ * @returns true when the Edit control may be shown.
+ */
+export function shouldOfferReleaseEdit(args: {
+  user: SessionUser | null;
+  config: ReleaseLifecycleConfig | null;
+  status: string | null | undefined;
+}): boolean {
+  if (!canEdit(args.user)) return false;
+  if (!args.config) return false;
+  return canOfferReleaseEditAction(args.config, args.status);
 }
