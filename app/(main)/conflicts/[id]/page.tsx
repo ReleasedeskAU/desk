@@ -42,6 +42,7 @@ import {
 } from "@/lib/conflict-lifecycle-config";
 import { legalNextConflictStatuses } from "@/lib/conflict-lifecycle-transition";
 import { conflictTypeOptions } from "@/lib/conflict-types";
+import { conflictEditReleaseOptions } from "@/lib/conflict-edit-release-options";
 
 type ConflictDetail = {
   id: string;
@@ -72,6 +73,7 @@ type RelatedBooking = {
 };
 
 type ConflictOption = { id: string; conflictCode: string };
+type ReleaseLookup = { id: string; releaseCode: string; name: string };
 
 type ConflictDraft = {
   status: string;
@@ -148,6 +150,7 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   );
   const [row, setRow] = useState<ConflictDetail | null>(null);
   const [options, setOptions] = useState<ConflictOption[]>([]);
+  const [releases, setReleases] = useState<ReleaseLookup[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(() => new Date());
@@ -155,18 +158,28 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const [pendingStep, setPendingStep] = useState<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const [detail, list, me] = await Promise.all([
+    const [detail, list, releaseList, me] = await Promise.all([
       safeFetchJson<ConflictDetail>(`/api/conflicts/${id}`, {
         signal,
         label: "conflict-detail",
         rejectHttpErrors: false,
       }),
       safeFetchJson<ConflictOption[]>("/api/conflicts", { signal, label: "conflicts-list" }),
+      safeFetchJson<ReleaseLookup[]>("/api/releases", { signal, label: "releases-list" }),
       safeFetchJson<{ user: SessionUser }>("/api/auth/me", { signal, label: "auth-me" }),
     ]);
     if (signal?.aborted) return;
     setRow(detail.ok && detail.status < 300 ? detail.data : null);
     setOptions(list.ok ? list.data.map((c) => ({ id: c.id, conflictCode: c.conflictCode })) : []);
+    setReleases(
+      releaseList.ok
+        ? releaseList.data.map((r) => ({
+            id: r.id,
+            releaseCode: r.releaseCode,
+            name: r.name,
+          }))
+        : []
+    );
     if (me.ok) setUser(me.data.user);
     setLastRefresh(new Date());
     setLoading(false);
@@ -238,6 +251,26 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
   const typeOptions = useMemo(
     () => conflictTypeOptions(row?.environmentConflictType ?? d?.environmentConflictType),
     [row?.environmentConflictType, d?.environmentConflictType]
+  );
+
+  const release1Options = useMemo(
+    () =>
+      conflictEditReleaseOptions({
+        releases,
+        currentCode: d?.release1Code ?? row?.release1Code,
+        currentName: row?.release1?.name,
+      }),
+    [releases, d?.release1Code, row?.release1Code, row?.release1?.name]
+  );
+  const release2Options = useMemo(
+    () =>
+      conflictEditReleaseOptions({
+        releases,
+        currentCode: d?.release2Code ?? row?.release2Code,
+        currentName: row?.release2?.name,
+        excludeCodes: [d?.release1Code ?? row?.release1Code ?? ""],
+      }),
+    [releases, d?.release2Code, d?.release1Code, row?.release2Code, row?.release1Code, row?.release2?.name]
   );
 
   const save = async () => {
@@ -481,6 +514,8 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
               label="Release 1"
               value={d.release1Code}
               editing
+              kind="select"
+              options={release1Options}
               mono
               onChange={(n) => edit.setField("release1Code", n)}
             />
@@ -488,6 +523,8 @@ export default function ConflictDetailPage({ params }: { params: Promise<{ id: s
               label="Release 2"
               value={d.release2Code}
               editing
+              kind="select"
+              options={release2Options}
               mono
               onChange={(n) => edit.setField("release2Code", n)}
             />

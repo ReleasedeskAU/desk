@@ -4,6 +4,8 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createDefaultReleaseLifecycleConfig, withReleaseStatusRoles } from "./release-lifecycle-config";
 import {
   attentionStatusLabels,
@@ -11,12 +13,16 @@ import {
   defaultReleaseStatusLabel,
   editReleaseStatusOptions,
   enabledReleaseStatusLabels,
+  intakeReleaseStatusLabel,
   isEnabledReleaseStatusLabel,
   previewEditLegalNext,
   releaseStatusFilterOptions,
+  resolveCreateReleaseStatus,
   resolveReleaseStatusDisplay,
   toneForLifecycleKind,
 } from "./release-lifecycle-status-ui";
+
+const ROOT = join(__dirname, "..");
 
 describe("enabledReleaseStatusLabels / filter options", () => {
   it("lists enabled labels in sort order and includes custom enabled unused", () => {
@@ -88,6 +94,25 @@ describe("defaults and buckets", () => {
     assert.equal(defaultReleaseStatusLabel(config), "Planning");
   });
 
+  it("intake label prefers enabled isIntake over first mainline", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    assert.equal(intakeReleaseStatusLabel(config), "Draft");
+    const draft = config.statuses.find((s) => s.key === "draft")!;
+    const planning = config.statuses.find((s) => s.key === "planning")!;
+    draft.isIntake = false;
+    planning.isIntake = true;
+    planning.label = "Ready to plan";
+    assert.equal(intakeReleaseStatusLabel(config), "Ready to plan");
+  });
+
+  it("intake label falls back to defaultReleaseStatusLabel when no isIntake", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    for (const status of config.statuses) status.isIntake = false;
+    config.statuses.find((s) => s.key === "draft")!.enabled = false;
+    assert.equal(intakeReleaseStatusLabel(config), defaultReleaseStatusLabel(config));
+    assert.equal(intakeReleaseStatusLabel(config), "Planning");
+  });
+
   it("isEnabledReleaseStatusLabel rejects Off and unknown", () => {
     const config = createDefaultReleaseLifecycleConfig();
     config.statuses.find((s) => s.key === "planning")!.enabled = false;
@@ -135,6 +160,47 @@ describe("editReleaseStatusOptions", () => {
       options.find((o) => o.label === "Blocked")?.hint ?? "",
       /1 open blocker remains/
     );
+  });
+});
+
+describe("resolveCreateReleaseStatus (RD-110)", () => {
+  it("create path uses the intake status", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    assert.equal(resolveCreateReleaseStatus(config), "Draft");
+    assert.equal(resolveCreateReleaseStatus(config, ""), "Draft");
+  });
+
+  it("posting a different status does not persist that other status", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    assert.equal(resolveCreateReleaseStatus(config, "Planning"), "Draft");
+    assert.equal(resolveCreateReleaseStatus(config, "Cancelled"), "Draft");
+    assert.equal(resolveCreateReleaseStatus(config, "Deployed"), "Draft");
+  });
+
+  it("uses the tenant intake label, not a hardcoded Draft", () => {
+    const config = createDefaultReleaseLifecycleConfig();
+    const draft = config.statuses.find((s) => s.key === "draft")!;
+    draft.label = "New request";
+    assert.equal(resolveCreateReleaseStatus(config, "Planning"), "New request");
+  });
+});
+
+describe("RD-110 create-status wiring", () => {
+  it("POST /api/releases forces intake via resolveCreateReleaseStatus", () => {
+    const src = readFileSync(join(ROOT, "app/api/releases/route.ts"), "utf8");
+    assert.match(src, /resolveCreateReleaseStatus\(/);
+    assert.doesNotMatch(src, /if \(!status\) status = defaultStatus/);
+    assert.match(src, /Ignore body\.status|body\.status is ignored|crafted POST/i);
+  });
+
+  it("create form locks Status to a read-only intake field", () => {
+    const src = readFileSync(
+      join(ROOT, "components/releases/ReleaseFormModal.tsx"),
+      "utf8"
+    );
+    assert.match(src, /intakeReleaseStatusLabel\(/);
+    assert.doesNotMatch(src, /statusOptions\.map\(\(s\) =>/);
+    assert.match(src, /readOnly/);
   });
 });
 
