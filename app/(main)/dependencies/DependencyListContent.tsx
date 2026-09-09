@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
-import { FilterPills, FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
+import { FilterSelect, FilterTextInput, TableFilterBar } from "@/components/filters/TableFilterBar";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import {
   DEPENDENCY_COLUMNS,
@@ -254,11 +254,14 @@ export default function DependencyListContent() {
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>
           {isFilterVisible("status") && (
-            <FilterPills
-              options={statusOptions.map((s) => ({ value: s, label: s }))}
-              value={values.status || ""}
-              onChange={(v) => setFilter("status", v)}
-            />
+            <FilterSelect value={values.status} onChange={(v) => setFilter("status", v)}>
+              <option value="">All statuses</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </FilterSelect>
           )}
           {isFilterVisible("dependencyType") && (
             <FilterSelect value={values.dependencyType} onChange={(v) => setFilter("dependencyType", v)}>

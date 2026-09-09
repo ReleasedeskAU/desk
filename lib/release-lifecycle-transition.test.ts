@@ -5,6 +5,7 @@ import { reconcileLifecycleSpecDefaults } from "@/lib/release-lifecycle-spec-rec
 import {
   buildLifecycleStepperModel,
   emptyLifecycleGateFacts,
+  evaluateLifecycleGate,
   listLegalNextStatuses,
   resolveLifecycleStatusRef,
   validateReleaseTransition,
@@ -332,11 +333,58 @@ describe("listLegalNextStatuses / stepper", () => {
     assert.equal(ok.allowed, true);
   });
 
-  it("Wave A: Ready → Deploying needs override when VR-19/VR-18 facts fail (flexible)", () => {
+  it("RD-129: a deploy-milestone transition is not blocked when no environment booking exists", () => {
+    const deploying = config.statuses.find((s) => s.deployingMilestone);
+    assert.ok(deploying, "default config should mark a deploying milestone");
+    const intoDeploying = config.transitions.find(
+      (t) => t.enabled && t.toKey === deploying.key && !t.isPreviousStatus
+    );
+    assert.ok(intoDeploying, "default config should have an edge into Deploying");
+
+    const result = validateReleaseTransition({
+      config,
+      fromStatus: intoDeploying.fromKey,
+      toStatus: deploying.key,
+      gateFacts: emptyLifecycleGateFacts({
+        hasDeployBooking: false,
+        hardDependenciesMet: true,
+      }),
+    });
+    assert.equal(result.allowed, true);
+    if (result.allowed) {
+      assert.equal(result.overridden, false);
+    }
+  });
+
+  it("RD-129: a missing booking no longer produces the booking error", () => {
+    const deployingEdge = config.transitions.find((t) =>
+      t.gates.some((g) => g.gateType === "environment_booked_for_deploy" && g.enabled)
+    );
+    assert.ok(deployingEdge);
+    const bookingGate = deployingEdge.gates.find(
+      (g) => g.gateType === "environment_booked_for_deploy"
+    )!;
+    const evalResult = evaluateLifecycleGate(
+      bookingGate,
+      emptyLifecycleGateFacts({ hasDeployBooking: false }),
+      deployingEdge
+    );
+    assert.equal(evalResult.passed, true);
+    assert.doesNotMatch(evalResult.reason, /no deployment environment booking/i);
+  });
+
+  it("RD-129: hard dependencies still reject a deploy-milestone transition", () => {
+    const deploying = config.statuses.find((s) => s.deployingMilestone);
+    assert.ok(deploying);
+    const intoDeploying = config.transitions.find(
+      (t) => t.enabled && t.toKey === deploying.key && !t.isPreviousStatus
+    );
+    assert.ok(intoDeploying);
+
     const denied = validateReleaseTransition({
       config,
-      fromStatus: "Ready to deploy",
-      toStatus: "Deploying",
+      fromStatus: intoDeploying.fromKey,
+      toStatus: deploying.key,
       gateFacts: emptyLifecycleGateFacts({
         hasDeployBooking: false,
         hardDependenciesMet: false,
@@ -345,45 +393,115 @@ describe("listLegalNextStatuses / stepper", () => {
     assert.equal(denied.allowed, false);
     if (!denied.allowed) {
       assert.equal(denied.code, "TRANSITION_NEEDS_OVERRIDE");
+      assert.ok(
+        (denied.unmetReasons ?? []).some((r) => /hard dependenc/i.test(r)),
+        denied.unmetReasons?.join("; ")
+      );
+      assert.equal(
+        (denied.unmetReasons ?? []).some((r) =>
+          /no deployment environment booking/i.test(r)
+        ),
+        false
+      );
     }
-
-    const overridden = validateReleaseTransition({
-      config,
-      fromStatus: "Ready to deploy",
-      toStatus: "Deploying",
-      overrideReason: "emergency deploy window",
-      gateFacts: emptyLifecycleGateFacts({
-        hasDeployBooking: false,
-        hardDependenciesMet: false,
-      }),
-    });
-    assert.equal(overridden.allowed, true);
   });
 
-  it("hard-blocks Deploying → Deployed when deployment outcome is unconfirmed (§4-08 / CFG-06)", () => {
-    const denied = validateReleaseTransition({
+  it("RD-111: deployed-milestone transition is allowed with no blockers, conflicts, or booking", () => {
+    const deployed = config.statuses.find((s) => s.deployedMilestone);
+    assert.ok(deployed, "default config should mark a deployed milestone");
+    const intoDeployed = config.transitions.find(
+      (t) => t.enabled && t.toKey === deployed.key && !t.isPreviousStatus
+    );
+    assert.ok(intoDeployed, "default config should have an edge into Deployed");
+
+    const result = validateReleaseTransition({
       config,
-      fromStatus: "Deploying",
-      toStatus: "Deployed",
+      fromStatus: intoDeployed.fromKey,
+      toStatus: deployed.key,
+      gateFacts: emptyLifecycleGateFacts({
+        openBlockerCount: 0,
+        openEnvironmentConflictCount: 0,
+        hasDeployBooking: false,
+        deploymentOutcomeConfirmed: false,
+        hardDependenciesMet: true,
+        signoffsComplete: true,
+      }),
+    });
+    assert.equal(result.allowed, true);
+    if (result.allowed) {
+      assert.equal(result.overridden, false);
+    }
+  });
+
+  it("RD-111: a missing booking on a custom deployed-milestone edge does not block", () => {
+    const deployed = config.statuses.find((s) => s.deployedMilestone);
+    assert.ok(deployed);
+    const custom = createDefaultReleaseLifecycleConfig();
+    const edge = custom.transitions.find(
+      (t) => t.enabled && t.toKey === deployed.key && !t.isPreviousStatus
+    );
+    assert.ok(edge);
+    edge.gates = [
+      ...edge.gates,
+      {
+        gateType: "environment_booked_for_deploy",
+        enabled: true,
+        enforcement: "inherit",
+        sortOrder: 20,
+      },
+    ];
+
+    const result = validateReleaseTransition({
+      config: custom,
+      fromStatus: edge.fromKey,
+      toStatus: deployed.key,
+      gateFacts: emptyLifecycleGateFacts({
+        openBlockerCount: 0,
+        openEnvironmentConflictCount: 0,
+        hasDeployBooking: false,
+        deploymentOutcomeConfirmed: false,
+      }),
+    });
+    assert.equal(result.allowed, true);
+  });
+
+  it("RD-111: an open blocker on the deployed-milestone edge is still rejected", () => {
+    const deployed = config.statuses.find((s) => s.deployedMilestone);
+    assert.ok(deployed);
+    const custom = createDefaultReleaseLifecycleConfig();
+    const edge = custom.transitions.find(
+      (t) => t.enabled && t.toKey === deployed.key && !t.isPreviousStatus
+    );
+    assert.ok(edge);
+    edge.gates = [
+      {
+        gateType: "no_open_blockers",
+        enabled: true,
+        enforcement: "inherit",
+        sortOrder: 10,
+      },
+    ];
+
+    const denied = validateReleaseTransition({
+      config: custom,
+      fromStatus: edge.fromKey,
+      toStatus: deployed.key,
       overrideReason: "please let me through",
       gateFacts: emptyLifecycleGateFacts({
+        openBlockerCount: 1,
+        openEnvironmentConflictCount: 0,
+        hasDeployBooking: false,
         deploymentOutcomeConfirmed: false,
       }),
     });
     assert.equal(denied.allowed, false);
     if (!denied.allowed) {
       assert.equal(denied.code, "TRANSITION_BLOCKED");
+      assert.ok(
+        (denied.unmetReasons ?? []).some((r) => /open blocker/i.test(r)),
+        denied.unmetReasons?.join("; ")
+      );
     }
-
-    const ok = validateReleaseTransition({
-      config,
-      fromStatus: "Deploying",
-      toStatus: "Deployed",
-      gateFacts: emptyLifecycleGateFacts({
-        deploymentOutcomeConfirmed: true,
-      }),
-    });
-    assert.equal(ok.allowed, true);
   });
 
   it("requires notes for Deferred → Pending CAB and Rejected → Planning", () => {

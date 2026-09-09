@@ -6,7 +6,13 @@ import { Plus, Package } from "lucide-react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { TopBar } from "@/components/layout/TopBar";
 import { NeedsAttentionPanel } from "@/components/dashboard/NeedsAttentionPanel";
-import { ReleaseFormModal, type ReleaseFormData } from "@/components/releases/ReleaseFormModal";
+import {
+  ReleaseFormModal,
+  releaseRowToFormInitial,
+  type ReleaseFormData,
+  type ReleaseFormSource,
+} from "@/components/releases/ReleaseFormModal";
+import { RowEditButton } from "@/components/ui/RowEditButton";
 import { ReleaseStatusBadge } from "@/components/releases/ReleaseStatusBadge";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import {
@@ -45,7 +51,8 @@ import { readSortFromValues, sortRows } from "@/lib/table-sort";
 import { taBtnPrimary } from "@/lib/styles";
 import type { SessionUser } from "@/lib/auth/roles";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
-import { loadJsonEffect } from "@/lib/safe-fetch";
+import { shouldOfferReleaseEdit } from "@/lib/release-lifecycle-edit-policy";
+import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 
 
 
@@ -119,6 +126,7 @@ export default function ReleasesPageContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [formPrefill, setFormPrefill] = useState<Partial<ReleaseFormData> | null>(null);
+  const [editingReleaseId, setEditingReleaseId] = useState<string | null>(null);
   const [attentionItems, setAttentionItems] = useState<NeedsAttentionItem[]>([]);
   type FilterOptionsState = {
     statuses: string[];
@@ -384,7 +392,7 @@ export default function ReleasesPageContent() {
     RELEASE_COLUMNS,
     RELEASE_FILTER_FIELDS,
     {
-      lockedKeys: ["releaseCode"],
+      lockedKeys: ["releaseCode", "actions"],
       defaultHiddenFilters: RELEASE_DEFAULT_HIDDEN_FILTER_KEYS,
       defaultHiddenColumns: RELEASE_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
@@ -393,6 +401,18 @@ export default function ReleasesPageContent() {
   const tablePending = useTablePageLoading(filtersLoading, prefsLoaded);
 
   const dbRowById = (id: string) => (dbRows as ReleaseRow[]).find((r) => r.id === id);
+
+  const openReleaseEdit = async (releaseId: string) => {
+    setEditingReleaseId(releaseId);
+    const result = await safeFetchJson<ReleaseFormSource>(
+      `/api/releases/${encodeURIComponent(releaseId)}`,
+      { label: "release-edit" }
+    );
+    setEditingReleaseId(null);
+    if (!result.ok) return;
+    setFormPrefill(releaseRowToFormInitial(result.data));
+    setModalOpen(true);
+  };
 
   const releaseCodes = useMemo(
     () => (dbRows as ReleaseRow[]).map((r) => r.releaseCode),
@@ -532,6 +552,13 @@ export default function ReleasesPageContent() {
                   dbRow={dbRowById(r.id)}
                   isColumnVisible={isColumnVisible}
                   lifecycleConfig={lifecycleConfig}
+                  offerEdit={shouldOfferReleaseEdit({
+                    user,
+                    config: lifecycleConfig,
+                    status: r.status,
+                  })}
+                  editBusy={editingReleaseId === r.id}
+                  onEdit={() => void openReleaseEdit(r.id)}
                 />
               ))
             )}
@@ -572,11 +599,17 @@ function UnifiedRow({
   dbRow,
   isColumnVisible,
   lifecycleConfig,
+  offerEdit,
+  editBusy,
+  onEdit,
 }: {
   row: UnifiedRelease;
   dbRow?: ReleaseRow;
   isColumnVisible: (key: string) => boolean;
   lifecycleConfig: ReleaseLifecycleConfig | null;
+  offerEdit: boolean;
+  editBusy: boolean;
+  onEdit: () => void;
 }) {
   const priority = dbRow?.priority ?? row.priority ?? "—";
   const impact = dbRow?.impact ?? row.impact ?? "—";
@@ -681,6 +714,15 @@ function UnifiedRow({
       {isColumnVisible("hypercarePlan") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.hypercarePlan ?? "—"}</td>}
       {isColumnVisible("commsPlan") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.commsPlan ?? "—"}</td>}
       {isColumnVisible("trainingStatus") && <td className={`${tableCell} whitespace-nowrap text-gray-600`}>{row.trainingStatus ?? "—"}</td>}
+      {isColumnVisible("actions") && (
+        <td className={`${tableCell} whitespace-nowrap`}>
+          {offerEdit ? (
+            <RowEditButton recordLabel={row.code} onClick={onEdit} disabled={editBusy} />
+          ) : (
+            <span className="text-xs text-gray-400 dark:text-white/40">—</span>
+          )}
+        </td>
+      )}
     </tr>
   );
 }
