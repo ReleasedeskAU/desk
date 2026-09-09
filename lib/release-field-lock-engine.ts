@@ -4,6 +4,7 @@
  */
 import {
   catalogEntryForBodyKey,
+  fieldLockStateAtStatus,
   type FieldLockState,
 } from "@/lib/release-field-lock-catalog";
 import {
@@ -37,15 +38,6 @@ function statusLabelForLockKey(key: string): string {
     .join(" ");
 }
 
-function stateAtStatus(
-  row: ReleaseFieldLockRow,
-  statusKey: string
-): FieldLockState {
-  const state = row.statusRules[statusKey];
-  // Missing / orphan status key → fail closed to locked (prompt requirement).
-  return state ?? "locked";
-}
-
 /**
  * Resolve lock state for one matrix field at a status key.
  * @param rows - Loaded matrix rows.
@@ -57,9 +49,7 @@ export function getFieldLockStateFromRows(
   fieldKey: string,
   currentStatusKey: string
 ): FieldLockState {
-  const row = rows.find((r) => r.fieldKey === fieldKey);
-  if (!row) return "locked";
-  return stateAtStatus(row, currentStatusKey);
+  return fieldLockStateAtStatus(rows, fieldKey, currentStatusKey);
 }
 
 /**

@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Release field locks (RD-139):** Editability follows the Release Fields sheet via the existing field-lock catalog (lifecycle status keys, not tenant labels). Locked fields are disabled in Edit Release up front and rejected on PATCH (`FIELD_LOCK_DENIED`). Application locks from Testing onward. Editable* (Size/Priority/Scope at CAB Approved) still writes and may revert status (VR-21)—not treated as Locked. Unknown status keys fail closed. Auth unchanged (editor). No secrets or stack traces in client errors.
 - **Sign-offs (RD-138):** The Record sign-off modal **Decision** select (second field) is enabled for new/pending requests. Sign-offs list has Add New Sign-off (editor+). Detail Edit records a still-editable decision; Delete withdraws a pending request (no hard-delete of a recorded decision). Readonly and terminal/immutable statuses get neither control.
 - **Conflict edit Release picker (RD-136):** Edit now lists releases from the same `GET /api/releases` lookup as create. The currently linked release stays in the list if it is missing from that lookup. An empty lookup shows “No releases available” instead of a blank control.
 - **RD-111 — Deployed status change:** Entering the `deployedMilestone` status is no longer hard-blocked by a missing environment booking (VR-19) or an unconfirmed DeploymentState outcome. Open blockers, conflicts, sign-offs, and hard dependencies still apply when those gates are attached. Combined with RD-129, a missing booking also does not block Deploying. Bookings are not deleted.
@@ -20,9 +21,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **RD-115 Sign-off / Release Edit:** The Sign-offs list and Releases list now show an Edit action on each record. Sign-off Edit is offered only when the caller is editor+ and the decision’s lifecycle `editMode` is still editable (Pending / non-immutable). Immutable terminal decisions stay view-only. Release Edit opens the existing Edit Release modal and is hidden for readonly users, unknown statuses, missing `editMode`, and Cancelled (fully locked). Field locks in the modal are unchanged.
 - **RD-113 Approval create:** Creating an Approval Queue row now persists a valid payload (lifecycle decision, not a hardcoded status list). Validation and persist failures return a client-safe `error` (no stack traces). The create modal shows that error inside the create shell — the previous sibling dialog sat under the modal (`z-60` vs `z-200`) so Create looked like a no-op. Auth is unchanged (`requireRole("editor")`).
 - **RD-110 New release status:** Create defaults to the tenant lifecycle intake status (`isIntake`, else the existing default helper) and the Status field is read-only. The create API ignores a posted status so a crafted request cannot skip intake. Edit-release transitions are unchanged.
-
-
 - **Connector delete:** Trash uses this pair’s credential id (not every credential on the connector). Digit-string ids are accepted. A scheduled delete no longer greys out trash — retry re-queues StaffLess. The list polls while status is Deleting. 403/404 from StaffLess use a plain message.
+
 
 - **Connectors sync logs:** The History action now shows live StaffLess indexing-status (indexed docs, this run, last result, unresolved errors) plus index attempts. It looks up by StaffLess connector id or `cc_pair_id`, not Prisma. The drawer auto-refreshes while a run is queued or in progress. StaffLess does not expose separate “records found” vs “fetched” counts, so those are omitted. Stack traces stay off the payload.
 

@@ -162,6 +162,76 @@ export function reconcileRejectedReworkUnlock(rows: ReleaseFieldLockRow[]): {
   return { rows: next, changedFieldKeys };
 }
 
+/**
+ * Tighten stored matrices to the RD-139 sheet floor.
+ * Never unlocks a stored locked cell. Fills missing status keys from catalog.
+ * Editable* (side-effect) replaces a stored plain editable cell.
+ *
+ * @param rows - Stored matrix rows.
+ * @param lifecycle - Live lifecycle graph (for key remapping).
+ * @returns Rows plus field keys that need a persist.
+ */
+export function reconcileSheetLockFloor(
+  rows: ReleaseFieldLockRow[],
+  lifecycle: ReleaseLifecycleConfig
+): { rows: ReleaseFieldLockRow[]; changedFieldKeys: string[] } {
+  const changedFieldKeys: string[] = [];
+  const next = rows.map((row) => {
+    const catalog = RELEASE_FIELD_LOCK_CATALOG.find((e) => e.fieldKey === row.fieldKey);
+    if (!catalog || catalog.unavailable) return row;
+    const catalogRules = remapDefaultRulesToLiveKeys(
+      catalog.defaultRules,
+      lifecycle
+    );
+    let changed = false;
+    const statusRules: FieldLockStatusRules = { ...row.statusRules };
+    for (const [statusKey, catalogState] of Object.entries(catalogRules)) {
+      const stored = statusRules[statusKey];
+      if (stored == null) {
+        statusRules[statusKey] = catalogState;
+        changed = true;
+        continue;
+      }
+      if (catalogState === "locked" && stored !== "locked") {
+        statusRules[statusKey] = "locked";
+        changed = true;
+        continue;
+      }
+      if (
+        catalogState === "editable_with_side_effect" &&
+        stored === "editable"
+      ) {
+        statusRules[statusKey] = "editable_with_side_effect";
+        changed = true;
+      }
+    }
+    if (!changed) return row;
+    changedFieldKeys.push(row.fieldKey);
+    return { ...row, statusRules };
+  });
+  return { rows: next, changedFieldKeys };
+}
+
+async function persistChangedLockRows(
+  clerkUserId: string,
+  rows: ReleaseFieldLockRow[],
+  changedFieldKeys: string[]
+): Promise<void> {
+  if (changedFieldKeys.length === 0) return;
+  await Promise.all(
+    changedFieldKeys.map((fieldKey) => {
+      const row = rows.find((r) => r.fieldKey === fieldKey);
+      if (!row) return Promise.resolve();
+      return prisma.userReleaseFieldLockConfig.updateMany({
+        where: { clerkUserId, fieldKey },
+        data: {
+          statusRules: row.statusRules as unknown as Prisma.InputJsonValue,
+        },
+      });
+    })
+  );
+}
+
 async function seedDefaults(
   clerkUserId: string,
   lifecycle: ReleaseLifecycleConfig
@@ -256,17 +326,19 @@ export async function loadReleaseFieldLockConfig(
         const unlocked = reconcileRejectedReworkUnlock(rows);
         if (unlocked.changedFieldKeys.length > 0) {
           rows = unlocked.rows;
-          await Promise.all(
-            unlocked.changedFieldKeys.map((fieldKey) => {
-              const row = rows.find((r) => r.fieldKey === fieldKey);
-              if (!row) return Promise.resolve();
-              return prisma.userReleaseFieldLockConfig.updateMany({
-                where: { clerkUserId, fieldKey },
-                data: {
-                  statusRules: row.statusRules as unknown as Prisma.InputJsonValue,
-                },
-              });
-            })
+          await persistChangedLockRows(
+            clerkUserId,
+            rows,
+            unlocked.changedFieldKeys
+          );
+        }
+        const sheetFloor = reconcileSheetLockFloor(rows, lifecycleConfig);
+        if (sheetFloor.changedFieldKeys.length > 0) {
+          rows = sheetFloor.rows;
+          await persistChangedLockRows(
+            clerkUserId,
+            rows,
+            sheetFloor.changedFieldKeys
           );
         }
       }

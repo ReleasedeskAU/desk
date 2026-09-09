@@ -7,7 +7,11 @@ import {
   summarizeReleaseFieldEdits,
 } from "@/lib/release-audit";
 import { normalizeProgramProject } from "@/lib/release-id";
-import { deniedReleaseEditFields } from "@/lib/release-lifecycle-edit-policy";
+import {
+  deniedReleaseEditFields,
+  isReleaseFullyLocked,
+} from "@/lib/release-lifecycle-edit-policy";
+import { catalogEntryForBodyKey } from "@/lib/release-field-lock-catalog";
 import { resolveLifecycleConfigForRelease } from "@/lib/release-lifecycle-config-db";
 import { enforceReleaseStatusChange } from "@/lib/release-lifecycle-status-patch";
 import { loadSignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config-db";
@@ -156,11 +160,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { config } = resolved;
     const fullyLocked = guardReleaseFullyLocked(existing.status, config);
     if (!fullyLocked.ok) return fullyLocked.response;
-    const { mode, denied } = deniedReleaseEditFields(
+    const { mode, denied: editPolicyDenied } = deniedReleaseEditFields(
       config,
       existing.status,
       proposedKeys
     );
+    // Field-lock matrix is SSOT for catalogued fields (e.g. VR-21 Editable* at
+    // CAB Approved). Coarse edit-mode still covers Cancelled (fully locked) and
+    // uncatalogued keys like programProject / departmentId.
+    const denied = isReleaseFullyLocked(config, existing.status)
+      ? editPolicyDenied
+      : editPolicyDenied.filter((key) => !catalogEntryForBodyKey(key));
     if (denied.length > 0) {
       return NextResponse.json(
         {

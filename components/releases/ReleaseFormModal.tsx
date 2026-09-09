@@ -24,6 +24,12 @@ import {
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
 import {
+  catalogDefaultLockRows,
+  isReleaseBodyKeyLocked,
+  resolveFieldLockStatusKey,
+  type FieldLockRowLike,
+} from "@/lib/release-field-lock-catalog";
+import {
   editReleaseStatusOptions,
   intakeReleaseStatusLabel,
   previewEditLegalNext,
@@ -176,6 +182,14 @@ type CreatedSummary = {
 const PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium", "P4 - Low"];
 const IMPACTS = ["High", "Medium", "Low"];
 const RELEASE_SIZES = ["Small", "Medium", "Large"];
+const FIELD_LOCK_HINT = "Locked for this release’s current status";
+
+function defaultFieldLockStatuses(): { key: string; label: string }[] {
+  return createDefaultReleaseLifecycleConfig().statuses.map((s) => ({
+    key: s.key,
+    label: s.label,
+  }));
+}
 
 const EMPTY_FORM: ReleaseFormData = {
   releaseCode: "",
@@ -336,6 +350,12 @@ export function ReleaseFormModal({
   const [signoffConfig, setSignoffConfig] = useState<SignoffLifecycleConfig>(
     createDefaultSignoffLifecycleConfig
   );
+  const [fieldLockRows, setFieldLockRows] = useState<FieldLockRowLike[]>(
+    catalogDefaultLockRows
+  );
+  const [fieldLockStatuses, setFieldLockStatuses] = useState(
+    defaultFieldLockStatuses
+  );
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof ReleaseFormData, string>>>({});
   const [formAlert, setFormAlert] = useState<ReleaseFormAlert | null>(null);
   const [pendingConflicts, setPendingConflicts] = useState<ConflictFinding[]>([]);
@@ -418,6 +438,22 @@ export function ReleaseFormModal({
       isTerminal: currentIsTerminal,
     });
   }, [currentIsTerminal, editLegalNext.length, form.status, initial?.status, isEdit]);
+
+  const lockStatusKey = useMemo(() => {
+    const current = isEdit
+      ? initial?.status ?? ""
+      : form.status || defaultStatusLabel;
+    return resolveFieldLockStatusKey(fieldLockStatuses, current);
+  }, [
+    defaultStatusLabel,
+    fieldLockStatuses,
+    form.status,
+    initial?.status,
+    isEdit,
+  ]);
+
+  const fieldLocked = (bodyKey: string) =>
+    isReleaseBodyKeyLocked(fieldLockRows, lockStatusKey, bodyKey);
 
   const selectedNext = useMemo(() => {
     if (!isEdit) return null;
@@ -510,6 +546,25 @@ export function ReleaseFormModal({
         if (payload.config) setSignoffConfig(payload.config);
       },
       { label: "release-form-signoff-config" }
+    );
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    return loadJsonEffect<{
+      rows?: FieldLockRowLike[];
+      statuses?: { key: string; label: string }[];
+    }>(
+      "/api/release-field-lock-config",
+      (payload) => {
+        if (Array.isArray(payload.rows) && payload.rows.length > 0) {
+          setFieldLockRows(payload.rows);
+        }
+        if (Array.isArray(payload.statuses) && payload.statuses.length > 0) {
+          setFieldLockStatuses(payload.statuses);
+        }
+      },
+      { label: "release-form-field-locks" }
     );
   }, [open]);
 
@@ -1050,6 +1105,7 @@ export function ReleaseFormModal({
             value={form.name}
             onChange={(v) => set("name", v)}
             error={fieldErrors.name}
+            disabled={fieldLocked("name")}
           />
           <Field
             label="Program / Project"
@@ -1088,6 +1144,7 @@ export function ReleaseFormModal({
                 options={ownerOptions}
                 placeholder="Select owner…"
                 searchPlaceholder="Search users…"
+                disabled={fieldLocked("releaseOwnerId")}
                 className={fieldErrors.releaseOwnerId ? "[&_button]:border-rose-400" : undefined}
               />
             </div>
@@ -1108,7 +1165,7 @@ export function ReleaseFormModal({
                   form.departmentId ? "Select applications…" : "Select department first…"
                 }
                 searchPlaceholder="Search applications…"
-                disabled={!form.departmentId}
+                disabled={!form.departmentId || fieldLocked("applicationIds")}
                 className={fieldErrors.applicationIds ? "[&_button]:border-rose-400" : undefined}
               />
             </div>
@@ -1125,6 +1182,7 @@ export function ReleaseFormModal({
                 aria-label="Status"
                 className={cn(fieldErrors.status && "[&_button]:border-rose-400")}
                 value={form.status}
+                disabled={showTerminalStatusNotice}
                 onChange={(next) => {
                   set("status", next);
                   setOverrideReason("");
@@ -1210,8 +1268,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Release Size</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("releaseSize") && "bg-gray-50")}
               value={form.releaseSize}
+              disabled={fieldLocked("releaseSize")}
+              title={fieldLocked("releaseSize") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("releaseSize", e.target.value)}
             >
               {RELEASE_SIZES.map((s) => (
@@ -1225,8 +1285,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Priority</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("priority") && "bg-gray-50")}
               value={form.priority}
+              disabled={fieldLocked("priority")}
+              title={fieldLocked("priority") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("priority", e.target.value)}
             >
               {[...new Set([...PRIORITIES, form.priority].filter(Boolean))].map((p) => (
@@ -1240,8 +1302,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Impact</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("impact") && "bg-gray-50")}
               value={form.impact}
+              disabled={fieldLocked("impact")}
+              title={fieldLocked("impact") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("impact", e.target.value)}
             >
               {IMPACTS.map((p) => (
@@ -1256,8 +1320,10 @@ export function ReleaseFormModal({
             <label className="text-xs font-medium text-gray-500">CAB Date</label>
             <input
               type="date"
-              className={taInput}
+              className={cn(taInput, fieldLocked("cabDate") && "bg-gray-50")}
               value={form.cabDate}
+              disabled={fieldLocked("cabDate")}
+              title={fieldLocked("cabDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("cabDate", e.target.value)}
             />
           </div>
@@ -1266,8 +1332,10 @@ export function ReleaseFormModal({
             <label className="text-xs font-medium text-gray-500">Start Date</label>
             <input
               type="date"
-              className={taInput}
+              className={cn(taInput, fieldLocked("startDate") && "bg-gray-50")}
               value={form.startDate}
+              disabled={fieldLocked("startDate")}
+              title={fieldLocked("startDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("startDate", e.target.value)}
             />
           </div>
@@ -1282,9 +1350,12 @@ export function ReleaseFormModal({
               className={cn(
                 taInput,
                 fieldErrors.releaseDate && "border-rose-400",
-                highlightReleaseDate && "border-amber-400 ring-2 ring-amber-300"
+                highlightReleaseDate && "border-amber-400 ring-2 ring-amber-300",
+                fieldLocked("releaseDate") && "bg-gray-50"
               )}
               value={form.releaseDate}
+              disabled={fieldLocked("releaseDate")}
+              title={fieldLocked("releaseDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("releaseDate", e.target.value)}
             />
             <FieldError message={fieldErrors.releaseDate} />
@@ -1293,10 +1364,11 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Test Env Required</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("testEnvRequired") && "bg-gray-50")}
               value={form.testEnvRequired}
               onChange={(e) => set("testEnvRequired", e.target.value)}
-              disabled={!form.departmentId}
+              disabled={!form.departmentId || fieldLocked("testEnvRequired")}
+              title={fieldLocked("testEnvRequired") ? FIELD_LOCK_HINT : undefined}
             >
               <option value="">
                 {form.departmentId ? "Select test env…" : "Select department first…"}
@@ -1316,10 +1388,11 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">UAT Env Required</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("uatEnvRequired") && "bg-gray-50")}
               value={form.uatEnvRequired}
               onChange={(e) => set("uatEnvRequired", e.target.value)}
-              disabled={!form.departmentId}
+              disabled={!form.departmentId || fieldLocked("uatEnvRequired")}
+              title={fieldLocked("uatEnvRequired") ? FIELD_LOCK_HINT : undefined}
             >
               <option value="">
                 {form.departmentId ? "Select UAT env…" : "Select department first…"}
@@ -1352,8 +1425,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Approval Status</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("approvalStatus") && "bg-gray-50")}
               value={form.approvalStatus}
+              disabled={fieldLocked("approvalStatus")}
+              title={fieldLocked("approvalStatus") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("approvalStatus", e.target.value)}
             >
               <option value="">Not set</option>
@@ -1370,8 +1445,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Rollback Plan</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("rollbackPlan") && "bg-gray-50")}
               value={form.rollbackPlan}
+              disabled={fieldLocked("rollbackPlan")}
+              title={fieldLocked("rollbackPlan") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("rollbackPlan", e.target.value)}
             >
               <option value="">Not set</option>
@@ -1388,8 +1465,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Hypercare Plan</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("hypercarePlan") && "bg-gray-50")}
               value={form.hypercarePlan}
+              disabled={fieldLocked("hypercarePlan")}
+              title={fieldLocked("hypercarePlan") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("hypercarePlan", e.target.value)}
             >
               <option value="">Not set</option>
@@ -1406,8 +1485,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Comms Plan</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("commsPlan") && "bg-gray-50")}
               value={form.commsPlan}
+              disabled={fieldLocked("commsPlan")}
+              title={fieldLocked("commsPlan") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("commsPlan", e.target.value)}
             >
               <option value="">Not set</option>
@@ -1422,8 +1503,10 @@ export function ReleaseFormModal({
           <div>
             <label className="text-xs font-medium text-gray-500">Training Status</label>
             <select
-              className={taInput}
+              className={cn(taInput, fieldLocked("trainingStatus") && "bg-gray-50")}
               value={form.trainingStatus}
+              disabled={fieldLocked("trainingStatus")}
+              title={fieldLocked("trainingStatus") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("trainingStatus", e.target.value)}
             >
               <option value="">Not set</option>
@@ -1452,7 +1535,7 @@ export function ReleaseFormModal({
                     value={form[type.field]}
                     error={fieldErrors[type.field]}
                     config={signoffConfig}
-                    disabled={!type.enabled}
+                    disabled={!type.enabled || fieldLocked(type.field)}
                     onChange={(next) => set(type.field, next)}
                   />
                 ))}
@@ -1469,6 +1552,7 @@ export function ReleaseFormModal({
                 options={ownerOptions}
                 placeholder="Select people to keep informed…"
                 searchPlaceholder="Search people…"
+                disabled={fieldLocked("stakeholderIds")}
               />
             </div>
           </div>
@@ -1477,8 +1561,10 @@ export function ReleaseFormModal({
         <div className="mt-4">
           <label className="text-xs font-medium text-gray-500">Notes</label>
           <textarea
-            className={`${taInput} min-h-[72px] mt-1`}
+            className={cn(taInput, "min-h-[72px] mt-1", fieldLocked("notes") && "bg-gray-50")}
             value={form.notes}
+            disabled={fieldLocked("notes")}
+            title={fieldLocked("notes") ? FIELD_LOCK_HINT : undefined}
             onChange={(e) => set("notes", e.target.value)}
           />
         </div>
@@ -1589,6 +1675,7 @@ function Field({
   placeholder,
   required,
   error,
+  disabled,
 }: {
   label: string;
   value: string;
@@ -1596,6 +1683,7 @@ function Field({
   placeholder?: string;
   required?: boolean;
   error?: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -1604,9 +1692,11 @@ function Field({
         {required ? <RequiredMark /> : null}
       </label>
       <input
-        className={cn(taInput, error && "border-rose-400")}
+        className={cn(taInput, error && "border-rose-400", disabled && "bg-gray-50")}
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
+        title={disabled ? FIELD_LOCK_HINT : undefined}
         onChange={(e) => onChange(e.target.value)}
       />
       <FieldError message={error} />
