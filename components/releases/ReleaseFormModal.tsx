@@ -24,9 +24,8 @@ import {
   type ReleaseLifecycleConfig,
 } from "@/lib/release-lifecycle-config";
 import {
-  defaultReleaseStatusLabel,
   editReleaseStatusOptions,
-  enabledReleaseStatusLabels,
+  intakeReleaseStatusLabel,
   previewEditLegalNext,
 } from "@/lib/release-lifecycle-status-ui";
 import {
@@ -211,8 +210,88 @@ const EMPTY_FORM: ReleaseFormData = {
   opsSignoff: "",
 };
 
-function dateInput(value?: string | null) {
-  return value ? value.slice(0, 10) : "";
+function dateInput(value?: string | Date | null) {
+  if (!value) return "";
+  const raw = typeof value === "string" ? value : value.toISOString();
+  return raw.slice(0, 10);
+}
+
+/** API / detail release shape used to open Edit Release. */
+export type ReleaseFormSource = {
+  id: string;
+  releaseCode: string;
+  name: string;
+  programProject?: string | null;
+  owner: string;
+  status: string;
+  releaseDate?: string | Date | null;
+  priority: string;
+  impact: string;
+  departmentId: string;
+  applications?: { application: { id: string } }[];
+  dependsOn?: { dependsOnRelease: { id: string } }[];
+  notes?: string | null;
+  releaseSize?: string | null;
+  cabDate?: string | Date | null;
+  startDate?: string | Date | null;
+  testEnvRequired?: string | null;
+  uatEnvRequired?: string | null;
+  releaseOwner?: { id?: string | null } | null;
+  releaseOwnerId?: string | null;
+  approvalStatus?: string | null;
+  rollbackPlan?: string | null;
+  hypercarePlan?: string | null;
+  commsPlan?: string | null;
+  trainingStatus?: string | null;
+  stakeholders?: { user: { id: string } }[];
+  devSignoff?: string | null;
+  testSignoff?: string | null;
+  uatSignoff?: string | null;
+  securityClearance?: string | null;
+  businessSignoff?: string | null;
+  opsSignoff?: string | null;
+};
+
+/**
+ * Map a persisted release row onto Edit Release form initial values.
+ *
+ * @param release - Release API or detail payload.
+ * @returns Partial form used by `ReleaseFormModal` in edit mode.
+ */
+export function releaseRowToFormInitial(release: ReleaseFormSource): Partial<ReleaseFormData> {
+  return {
+    id: release.id,
+    releaseCode: release.releaseCode,
+    name: release.name,
+    programProject: release.programProject ?? "",
+    owner: release.owner,
+    status: release.status,
+    releaseDate: dateInput(release.releaseDate),
+    priority: release.priority,
+    impact: release.impact,
+    departmentId: release.departmentId,
+    applicationIds: (release.applications ?? []).map((a) => a.application.id),
+    dependsOnReleaseIds: (release.dependsOn ?? []).map((d) => d.dependsOnRelease.id),
+    notes: release.notes ?? "",
+    releaseSize: release.releaseSize ?? "",
+    cabDate: dateInput(release.cabDate),
+    startDate: dateInput(release.startDate),
+    testEnvRequired: release.testEnvRequired ?? "",
+    uatEnvRequired: release.uatEnvRequired ?? "",
+    releaseOwnerId: release.releaseOwner?.id ?? release.releaseOwnerId ?? "",
+    approvalStatus: release.approvalStatus ?? "",
+    rollbackPlan: release.rollbackPlan ?? "",
+    hypercarePlan: release.hypercarePlan ?? "",
+    commsPlan: release.commsPlan ?? "",
+    trainingStatus: release.trainingStatus ?? "",
+    stakeholderIds: (release.stakeholders ?? []).map((s) => s.user.id),
+    devSignoff: release.devSignoff ?? "",
+    testSignoff: release.testSignoff ?? "",
+    uatSignoff: release.uatSignoff ?? "",
+    securityClearance: release.securityClearance ?? "",
+    businessSignoff: release.businessSignoff ?? "",
+    opsSignoff: release.opsSignoff ?? "",
+  };
 }
 
 function RequiredMark() {
@@ -227,7 +306,7 @@ export function ReleaseFormModal({
   applications,
   environments = [],
   releases,
-  statusOptions: statusOptionsProp,
+  statusOptions: _statusOptionsProp,
   onClose,
   onSaved,
 }: {
@@ -238,7 +317,7 @@ export function ReleaseFormModal({
   applications: AppOption[];
   environments?: EnvOption[];
   releases: Option[];
-  /** Enabled lifecycle status labels from parent (SSOT). */
+  /** Callers may still pass enabled labels; create ignores this and locks status to intake. */
   statusOptions?: string[];
   onClose: () => void;
   onSaved: () => void;
@@ -247,14 +326,13 @@ export function ReleaseFormModal({
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [loadedEnvs, setLoadedEnvs] = useState<EnvOption[]>([]);
-  const [lifecycleStatusOptions, setLifecycleStatusOptions] = useState<string[]>(
-    []
-  );
   const [editLegalNext, setEditLegalNext] = useState<LegalNextStatusView[]>([]);
   const [legalNextLoading, setLegalNextLoading] = useState(false);
   const [currentIsTerminal, setCurrentIsTerminal] = useState<boolean | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
-  const [defaultStatusLabel, setDefaultStatusLabel] = useState("Draft");
+  const [defaultStatusLabel, setDefaultStatusLabel] = useState(() =>
+    intakeReleaseStatusLabel(createDefaultReleaseLifecycleConfig())
+  );
   const [signoffConfig, setSignoffConfig] = useState<SignoffLifecycleConfig>(
     createDefaultSignoffLifecycleConfig
   );
@@ -352,27 +430,6 @@ export function ReleaseFormModal({
     );
   }, [editLegalNext, form.status, initial?.status, isEdit]);
 
-  const statusOptions = useMemo(() => {
-    if (isEdit) {
-      const labels = editStatusChoices.map((o) => o.label);
-      if (form.status && !labels.some((l) => l === form.status)) {
-        return [...labels, form.status];
-      }
-      return labels;
-    }
-    const base =
-      statusOptionsProp && statusOptionsProp.length > 0
-        ? statusOptionsProp
-        : lifecycleStatusOptions;
-    return [...new Set([...base, form.status].filter(Boolean))];
-  }, [
-    editStatusChoices,
-    form.status,
-    isEdit,
-    lifecycleStatusOptions,
-    statusOptionsProp,
-  ]);
-
   useEffect(() => {
     if (!open) return;
     return loadJsonEffect<{ id: string; userId: string; name: string }[]>(
@@ -436,22 +493,14 @@ export function ReleaseFormModal({
         setLegalNextLoading(false);
       };
     }
-    if (statusOptionsProp && statusOptionsProp.length > 0) {
-      setDefaultStatusLabel(statusOptionsProp[0] ?? "Draft");
-      return;
-    }
     return loadJsonEffect<{ config: ReleaseLifecycleConfig }>(
       "/api/release-lifecycle-config",
       (payload) => {
-        setLifecycleStatusOptions(enabledReleaseStatusLabels(payload.config));
-        setDefaultStatusLabel(
-          defaultReleaseStatusLabel(payload.config) || "Draft"
-        );
+        setDefaultStatusLabel(intakeReleaseStatusLabel(payload.config));
       },
       { label: "release-form-lifecycle-statuses" }
     );
-    // Create-mode labels: length/[0] avoid aborting the edit fetch on parent rerenders.
-  }, [initial?.id, initial?.status, isEdit, open, statusOptionsProp?.length, statusOptionsProp?.[0]]);
+  }, [initial?.id, initial?.status, isEdit, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -509,7 +558,7 @@ export function ReleaseFormModal({
       name: initial?.name ?? "",
       programProject: initial?.programProject ?? "",
       owner: initial?.owner ?? "",
-      status: initial?.status ?? defaultStatusLabel,
+      status: initial?.id ? (initial.status ?? defaultStatusLabel) : defaultStatusLabel,
       releaseDate: dateInput(initial?.releaseDate),
       priority: initial?.priority ?? "P3 - Medium",
       impact: initial?.impact ?? "Medium",
@@ -1095,17 +1144,16 @@ export function ReleaseFormModal({
                 }))}
               />
             ) : (
-              <select
-                className={cn(taInput, fieldErrors.status && "border-rose-400")}
+              <input
+                aria-label="Status"
+                className={cn(
+                  taInput,
+                  "bg-gray-50",
+                  fieldErrors.status && "border-rose-400"
+                )}
                 value={form.status}
-                onChange={(e) => set("status", e.target.value)}
-              >
-                {statusOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                readOnly
+              />
             )}
             {isEdit ? (
               showTerminalStatusNotice ? (
