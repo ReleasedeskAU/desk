@@ -48,6 +48,22 @@ type CreatedIncident = {
   relatedRelease: { id: string; releaseCode: string; name: string } | null;
 };
 
+type CreateIncidentApiError = {
+  error?: string;
+  issues?: { path?: string; message?: string }[];
+};
+
+/**
+ * Prefer the first field issue so a crafted POST missing Related Release
+ * shows that message instead of the generic "Validation failed".
+ */
+function incidentCreateErrorMessage(data: CreateIncidentApiError | undefined): string {
+  const issue = data?.issues?.find((item) => item.message?.trim())?.message?.trim();
+  if (issue) return issue;
+  if (data?.error?.trim()) return data.error.trim();
+  return "Failed to create incident. Check the form and try again.";
+}
+
 const nowLocal = () => {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -172,6 +188,9 @@ export function IncidentFormModal({
     if (!form.title.trim()) errors.title = "Title is required";
     if (!form.status) errors.status = "Status is required";
     if (!form.impact) errors.impact = "Impact is required";
+    if (!form.relatedReleaseCode.trim()) {
+      errors.relatedReleaseCode = "Related Release is required";
+    }
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setFormError("Please fill in the required fields highlighted below.");
@@ -186,7 +205,7 @@ export function IncidentFormModal({
     if (!validate()) return;
     setSaving(true);
     setFormError(null);
-    const result = await safeFetchJson<CreatedIncident & { error?: string }>("/api/incidents", {
+    const result = await safeFetchJson<CreatedIncident & CreateIncidentApiError>("/api/incidents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -197,7 +216,7 @@ export function IncidentFormModal({
         title: form.title.trim(),
         status: form.status,
         impact: form.impact,
-        relatedReleaseCode: form.relatedReleaseCode.trim() || null,
+        relatedReleaseCode: form.relatedReleaseCode.trim(),
         assignedTo: form.assignedTo.trim() || null,
       }),
       label: "create-incident",
@@ -205,9 +224,7 @@ export function IncidentFormModal({
     });
     setSaving(false);
     if (!result.ok || result.status >= 300) {
-      setFormError(
-        result.ok && result.data?.error ? result.data.error : "Failed to create incident. Check the form and try again."
-      );
+      setFormError(result.ok ? incidentCreateErrorMessage(result.data) : "Failed to create incident. Check the form and try again.");
       return;
     }
     onCreated();
@@ -368,11 +385,14 @@ export function IncidentFormModal({
         </SelectField>
         {scoped ? null : (
           <SelectField
-            label="Related release"
+            label="Related Release"
+            required
             value={form.relatedReleaseCode}
+            error={fieldErrors.relatedReleaseCode}
+            disabled={loadingLookups}
             onChange={(event) => set("relatedReleaseCode", event.target.value)}
           >
-            <option value="">None</option>
+            <option value="">{loadingLookups ? "Loading…" : "Select related release…"}</option>
             {releases.map((item) => (
               <option key={item.id} value={item.releaseCode}>
                 {item.releaseCode} — {item.name}

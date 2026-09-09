@@ -11,6 +11,19 @@ export type SignoffLifecycleEnforcement =
 export const SIGNOFF_EDIT_MODES = ["full", "limited", "read_only", "immutable"] as const;
 export type SignoffEditMode = (typeof SIGNOFF_EDIT_MODES)[number];
 
+/**
+ * True when a value is a known Sign-off edit-mode token.
+ *
+ * @param value - Candidate from stored config.
+ * @returns Whether the value is a `SignoffEditMode`.
+ */
+export function isSignoffEditMode(value: unknown): value is SignoffEditMode {
+  return (
+    typeof value === "string" &&
+    (SIGNOFF_EDIT_MODES as readonly string[]).includes(value)
+  );
+}
+
 /** Release columns that can hold a sign-off decision value. */
 export const SIGNOFF_RELEASE_FIELDS = [
   "devSignoff",
