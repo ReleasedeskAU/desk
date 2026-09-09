@@ -7,6 +7,10 @@ import {
   validateApprovalLifecycleConfig,
 } from "@/lib/approval-lifecycle-config";
 import {
+  enabledEntityStatusLabels,
+  entityStatusFilterOptions,
+} from "@/lib/entity-lifecycle-status-ui";
+import {
   approvalDecisionRevertsLinkedRelease,
   expectedFlexibleApprovalToKey,
   legalNextApprovalDecisions,
@@ -24,6 +28,40 @@ const config = createDefaultApprovalLifecycleConfig();
 describe("default approval lifecycle", () => {
   it("validates the enterprise default graph", () => {
     assert.equal(validateApprovalLifecycleConfig(config), null);
+  });
+
+  it("exposes only LC_Approvals statuses on the default filter (Deferred Off)", () => {
+    assert.deepEqual(enabledEntityStatusLabels(config), [
+      "Pending",
+      "Approved",
+      "Approved with Conditions",
+      "Rejected",
+      "Expired",
+      "Withdrawn",
+    ]);
+    assert.equal(enabledEntityStatusLabels(config).includes("Deferred"), false);
+    assert.equal(
+      entityStatusFilterOptions(config, ["Pending", "Approved"]).includes("Deferred"),
+      false
+    );
+  });
+
+  it("uses the tenant's enabled label on the filter, not a hardcoded name", () => {
+    const renamed = {
+      ...config,
+      statuses: config.statuses.map((s) =>
+        s.key === "pending" ? { ...s, label: "Awaiting CAB" } : s
+      ),
+    };
+    const options = entityStatusFilterOptions(renamed, []);
+    assert.ok(options.includes("Awaiting CAB"));
+    assert.equal(options.includes("Pending"), false);
+    assert.equal(options.includes("Deferred"), false);
+  });
+
+  it("keeps an Off Deferred value in the filter when a stored row still has it", () => {
+    const options = entityStatusFilterOptions(config, ["Deferred"]);
+    assert.ok(options.includes("Deferred"));
   });
 
   it("treats Approved with Conditions as its own terminal status", () => {
@@ -177,7 +215,7 @@ describe("legal next approval decisions", () => {
     assert.ok(next.includes("Approved"));
     assert.ok(next.includes("Approved with Conditions"));
     assert.ok(next.includes("Rejected"));
-    assert.ok(next.includes("Deferred"));
+    assert.equal(next.includes("Deferred"), false);
     assert.ok(next.includes("Withdrawn"));
   });
 

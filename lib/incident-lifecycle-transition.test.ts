@@ -4,6 +4,7 @@ import {
   createDefaultIncidentLifecycleConfig,
   validateIncidentLifecycleConfig,
 } from "@/lib/incident-lifecycle-config";
+import { enabledEntityStatusLabels } from "@/lib/entity-lifecycle-status-ui";
 import { reconcileIncidentLifecycleSpec } from "@/lib/incident-lifecycle-spec-reconcile";
 import {
   evaluateIncidentGate,
@@ -42,6 +43,32 @@ describe("default incident lifecycle", () => {
   it("lists only sheet next steps from Active (extras default Off)", () => {
     const next = legalNextIncidentStatuses(config, "Active").map((s) => s.key);
     assert.deepEqual(next, ["acknowledged", "investigating"]);
+  });
+
+  it("exposes only LC_Incidents statuses in the default filter list", () => {
+    const options = enabledEntityStatusLabels(config);
+    assert.deepEqual(options, [
+      "Active",
+      "Acknowledged",
+      "Investigating",
+      "Escalated",
+      "Resolved",
+      "Closed",
+    ]);
+    assert.equal(options.includes("Resolving"), false);
+    assert.equal(options.includes("Reopened"), false);
+  });
+
+  it("uses a renamed tenant status label as the filter source", () => {
+    const renamed = createDefaultIncidentLifecycleConfig();
+    const investigating = renamed.statuses.find((s) => s.key === "investigating");
+    assert.ok(investigating);
+    investigating!.label = "Looking Into It";
+    const options = enabledEntityStatusLabels(renamed);
+    assert.ok(options.includes("Looking Into It"));
+    assert.equal(options.includes("Investigating"), false);
+    assert.equal(options.includes("Resolving"), false);
+    assert.equal(options.includes("Reopened"), false);
   });
 });
 
@@ -99,6 +126,42 @@ describe("reconcileIncidentLifecycleSpec", () => {
     const next = reconcileIncidentLifecycleSpec(old);
     assert.ok(next.statuses.some((s) => s.key === "acknowledged"));
     assert.equal(next.statuses.find((s) => s.key === "open")?.label, "Active");
+  });
+
+  it("turns unused optional Resolving/Reopened Off on an old all-On snapshot", () => {
+    const old = createDefaultIncidentLifecycleConfig();
+    for (const status of old.statuses) {
+      if (status.key === "resolving" || status.key === "reopened") {
+        status.enabled = true;
+      }
+    }
+    const next = reconcileIncidentLifecycleSpec(old);
+    assert.equal(next.statuses.find((s) => s.key === "resolving")?.enabled, false);
+    assert.equal(next.statuses.find((s) => s.key === "reopened")?.enabled, false);
+    assert.deepEqual(enabledEntityStatusLabels(next), [
+      "Active",
+      "Acknowledged",
+      "Investigating",
+      "Escalated",
+      "Resolved",
+      "Closed",
+    ]);
+  });
+
+  it("keeps Resolving when the tenant enabled a path into it", () => {
+    const custom = createDefaultIncidentLifecycleConfig();
+    const resolving = custom.statuses.find((s) => s.key === "resolving");
+    assert.ok(resolving);
+    resolving!.enabled = true;
+    const edge = custom.transitions.find(
+      (t) => t.fromKey === "investigating" && t.toKey === "resolving"
+    );
+    assert.ok(edge);
+    edge!.enabled = true;
+    const next = reconcileIncidentLifecycleSpec(custom);
+    assert.equal(next.statuses.find((s) => s.key === "resolving")?.enabled, true);
+    assert.ok(enabledEntityStatusLabels(next).includes("Resolving"));
+    assert.equal(enabledEntityStatusLabels(next).includes("Reopened"), false);
   });
 });
 
@@ -214,6 +277,9 @@ describe("validateIncidentTransition", () => {
 
   it("allows Resolved → Reopened when an admin turns the edge On", () => {
     const withReopen = createDefaultIncidentLifecycleConfig();
+    const reopened = withReopen.statuses.find((s) => s.key === "reopened");
+    assert.ok(reopened);
+    reopened!.enabled = true;
     const edge = withReopen.transitions.find(
       (t) => t.fromKey === "resolved" && t.toKey === "reopened"
     );
