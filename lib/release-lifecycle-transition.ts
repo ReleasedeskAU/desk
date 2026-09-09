@@ -180,11 +180,21 @@ type GateEval = {
 /**
  * Evaluate one catalog gate against provided facts.
  * Missing/partial reliability still evaluates best-effort — unmet when unproven.
+ *
+ * @param gate - Attached catalog gate (type, enforcement, enabled).
+ * @param facts - Caller-supplied checklist facts (no I/O here).
+ * @param transition - Edge whose enforcement the gate may inherit.
+ * @param target - Destination status when known. RD-111 uses
+ *   `deployedMilestone` so a renamed Deployed label still relaxes the
+ *   booking / outcome gates on that path only.
+ * @returns Pass/fail evaluation with rule ids and effective enforcement.
+ * @throws Never — unknown gate types fail closed.
  */
 export function evaluateLifecycleGate(
   gate: ReleaseLifecycleGateAttachment,
   facts: ReleaseLifecycleGateFacts,
-  transition: ReleaseLifecycleTransitionConfig
+  transition: ReleaseLifecycleTransitionConfig,
+  target?: Pick<ReleaseLifecycleStatusConfig, "deployedMilestone"> | null
 ): GateEval {
   const def = RELEASE_LIFECYCLE_GATE_CATALOG[gate.gateType];
   const enforcement = effectiveGateEnforcement(transition, gate);
@@ -275,9 +285,9 @@ export function evaluateLifecycleGate(
         ? pass()
         : fail("No UAT environment booking on record");
     case "environment_booked_for_deploy":
-      // RD-129: Release Desk tracks Prod only. Prod is always available and
-      // does not need a booking; a missing booking must not block Deploying.
-      // Bookings stay on the record; this gate no longer treats absence as unmet.
+      // RD-129: Prod does not need a booking; a missing booking must not
+      // block Deploying. RD-111 also requires this gate not to block entry
+      // to the deployed milestone. Bookings stay on the record.
       return pass();
     case "no_expired_env_bookings":
       return facts.expiredEnvBookingCount === 0
@@ -298,6 +308,11 @@ export function evaluateLifecycleGate(
         ? pass()
         : fail("Required sign-offs are incomplete");
     case "deployment_outcome_confirmed":
+      // RD-111: this is the gate that actually hard-blocks Deploying →
+      // deployed milestone when blockers and conflicts are already clear.
+      // It is not an open-blocker or open-conflict check. Catalog row stays
+      // attached; a missing Verified DeploymentState must not block.
+      if (target?.deployedMilestone) return pass();
       return facts.deploymentOutcomeConfirmed
         ? pass()
         : fail("Deployment outcome must be Verified before Deployed");
@@ -495,7 +510,7 @@ export function validateReleaseTransition(args: {
 
   const enabledGates = transition.gates.filter((g) => g.enabled);
   const evaluations = enabledGates.map((gate) =>
-    evaluateLifecycleGate(gate, args.gateFacts, transition)
+    evaluateLifecycleGate(gate, args.gateFacts, transition, toRequested)
   );
   const unmet = evaluations.filter((e) => !e.passed);
   if (unmet.length === 0) {
@@ -640,7 +655,7 @@ export function listLegalNextStatuses(args: {
   ) => {
     const evaluations = edge.gates
       .filter((g) => g.enabled)
-      .map((gate) => evaluateLifecycleGate(gate, args.gateFacts, edge));
+      .map((gate) => evaluateLifecycleGate(gate, args.gateFacts, edge, to));
     const gates: LegalNextGateView[] = evaluations.map((e) => ({
       gateType: e.gateType,
       label: RELEASE_LIFECYCLE_GATE_CATALOG[e.gateType].label,

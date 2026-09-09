@@ -382,7 +382,9 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
   transition("ready_to_deploy", "blocked", 20),
   transition("ready_to_deploy", "cancelled", 30),
   // CFG-06: Deploying / Deployed exits are Required (no override).
-  // §4-08: outcome must be Verified (DeploymentState) before Deployed.
+  // RD-111: `deployment_outcome_confirmed` stays attached so stored graphs
+  // keep the catalog row, but the evaluator passes on the deployed milestone
+  // — a missing Verified DeploymentState must not block that transition.
   transition(
     "deploying",
     "deployed",
