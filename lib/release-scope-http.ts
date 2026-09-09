@@ -1,7 +1,6 @@
 /**
  * Shared loaders for native scope routes. Default deny; tenant from session.
  */
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/api";
 import type { SessionUser } from "@/lib/auth/roles";
@@ -17,7 +16,10 @@ import {
   type LoadedScope,
 } from "@/lib/release-scope-service";
 import { loadScopeSectionConfig } from "@/lib/release-scope-config-db";
-import { tenantKeyFromSession } from "@/lib/release-scope-files";
+import {
+  lookupReleaseForSessionTenant,
+  type ScopeTenantContext,
+} from "@/lib/release-scope-tenant";
 import type { DirectoryUserRef } from "@/lib/release-seats";
 import type { SeatDecision } from "@/lib/release-seats";
 import type { ScopeSectionConfig } from "@/lib/release-scope-status";
@@ -33,19 +35,6 @@ export type LoadedReleaseForScope = {
 };
 
 /**
- * Session tenant key. Clerk org when present; otherwise a stable default.
- * Never read from the client.
- */
-export async function sessionTenantKey(): Promise<string> {
-  try {
-    const { orgId } = await auth();
-    return tenantKeyFromSession(orgId);
-  } catch {
-    return tenantKeyFromSession(null);
-  }
-}
-
-/**
  * Authenticate and load the release + seat decision + scope.
  *
  * @param idParam - URL id (uuid or releaseCode).
@@ -59,6 +48,7 @@ export async function loadScopeRouteContext(idParam: string): Promise<
       scope: LoadedScope;
       decision: SeatDecision;
       config: ScopeSectionConfig;
+      tenant: ScopeTenantContext;
     }
   | { ok: false; response: NextResponse }
 > {
@@ -67,8 +57,13 @@ export async function loadScopeRouteContext(idParam: string): Promise<
     return { ok: false, response: error ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const release = await prisma.release.findFirst({
-    where: { OR: [{ id: idParam }, { releaseCode: idParam }] },
+  const looked = await lookupReleaseForSessionTenant(idParam, user);
+  if (!looked.ok) {
+    return { ok: false, response: tenantReleaseLookupError(looked)! };
+  }
+
+  const release = await prisma.release.findUnique({
+    where: { id: looked.releaseId },
     select: {
       id: true,
       status: true,
@@ -114,7 +109,7 @@ export async function loadScopeRouteContext(idParam: string): Promise<
   });
   const scope = await ensureReleaseScope(release.id);
   const config = await loadScopeSectionConfig(user.id);
-  return { ok: true, user, directoryUser, release, scope, decision, config };
+  return { ok: true, user, directoryUser, release, scope, decision, config, tenant: looked.tenant };
 }
 
 /**
@@ -136,6 +131,19 @@ export function scopeDenied(
   code: string
 ): NextResponse {
   return NextResponse.json({ error, code }, { status });
+}
+
+/**
+ * HTTP response for a failed tenant-scoped release lookup. Null when the lookup succeeded.
+ */
+export function tenantReleaseLookupError(
+  looked: { ok: true } | { ok: false; code: "TENANT_REQUIRED" | "NOT_FOUND" }
+): NextResponse | null {
+  if (looked.ok) return null;
+  if (looked.code === "TENANT_REQUIRED") {
+    return NextResponse.json({ error: "Tenant required", code: "TENANT_REQUIRED" }, { status: 403 });
+  }
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
 export { buildScopeCapabilities };

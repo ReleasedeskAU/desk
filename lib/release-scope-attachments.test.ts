@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   validateScopeAttachment,
   safeAttachmentDownloadName,
+  scopeAttachmentDownloadHeaders,
 } from "@/lib/release-scope-attachments";
 
 describe("scope attachments", () => {
@@ -25,5 +26,16 @@ describe("scope attachments", () => {
 
   it("strips path from download names", () => {
     assert.equal(safeAttachmentDownloadName("../../etc/passwd.pdf"), "passwd.pdf");
+  });
+
+  it("sets X-Content-Type-Options nosniff on every attachment GET", () => {
+    const headers = scopeAttachmentDownloadHeaders({
+      mimeType: "application/pdf",
+      fileName: "plan.pdf",
+    });
+    assert.equal(headers["X-Content-Type-Options"], "nosniff");
+    assert.equal(headers["Content-Type"], "application/pdf");
+    assert.match(headers["Content-Disposition"], /attachment;/);
+    assert.equal(headers["Cache-Control"], "private, no-store");
   });
 });

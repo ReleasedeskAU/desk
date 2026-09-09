@@ -5,6 +5,8 @@ import {
   listDirectoryUsersForAssignment,
   resolveDirectoryUser,
 } from "@/lib/release-directory-user";
+import { lookupReleaseForSessionTenant } from "@/lib/release-scope-tenant";
+import { tenantReleaseLookupError } from "@/lib/release-scope-http";
 import { loadScopeSectionConfig } from "@/lib/release-scope-config-db";
 import {
   buildScopeCapabilities,
@@ -97,9 +99,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { user, error } = await requireRole("readonly");
   if (error) return error;
 
-  // Accept both UUID primary key and releaseCode (e.g. REL-0002)
-  const row = await prisma.release.findFirst({
-    where: { OR: [{ id }, { releaseCode: id }] },
+  const looked = await lookupReleaseForSessionTenant(id, user!);
+  if (!looked.ok) return tenantReleaseLookupError(looked)!;
+
+  const row = await prisma.release.findUnique({
+    where: { id: looked.releaseId },
     include: releaseInclude,
   });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -125,7 +129,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const caps = buildScopeCapabilities(decision, scope);
     capabilities = caps;
     scopePayload = toScopeClientPayload(scope, row.scopeDescription, scopeConfig, caps);
-    assignmentOptions = pickerPayload(await listDirectoryUsersForAssignment());
+    assignmentOptions = pickerPayload(
+      await listDirectoryUsersForAssignment(looked.tenant.organizationId)
+    );
   } catch (err) {
     console.error("[releases GET] scope payload failed", {
       releaseId: row.id,
@@ -186,8 +192,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (error) return error;
 
   const body = await req.json();
-  // Resolve actual record — accept UUID or releaseCode
-  const existing = await prisma.release.findFirst({ where: { OR: [{ id }, { releaseCode: id }] } });
+  const looked = await lookupReleaseForSessionTenant(id, user!);
+  if (!looked.ok) return tenantReleaseLookupError(looked)!;
+
+  const existing = await prisma.release.findUnique({ where: { id: looked.releaseId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const realId = existing.id;
 
@@ -317,7 +325,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (assignmentIntent.releaseOwnerId) {
-    const owners = await listDirectoryUsersForAssignment();
+    const owners = await listDirectoryUsersForAssignment(looked.tenant.organizationId);
     const nextOwner = owners.find((u) => u.id === assignmentIntent.releaseOwnerId);
     if (!nextOwner || !isAssignableOwnerDirectoryUser(nextOwner)) {
       return NextResponse.json(
@@ -329,7 +337,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (Object.prototype.hasOwnProperty.call(assignmentIntent, "releaseManagerId")) {
     const managerId = assignmentIntent.releaseManagerId;
     if (managerId) {
-      const people = await listDirectoryUsersForAssignment();
+      const people = await listDirectoryUsersForAssignment(looked.tenant.organizationId);
       const nextManager = people.find((u) => u.id === managerId);
       if (!nextManager || !isExactEditorDirectoryUser(nextManager)) {
         return NextResponse.json(

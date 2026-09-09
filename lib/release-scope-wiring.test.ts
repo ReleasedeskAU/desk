@@ -37,4 +37,30 @@ describe("native scope write-path wiring", () => {
     assert.match(routes, /isAssignableScopeSectionEditor/);
     assert.doesNotMatch(routes, /isExactEditorDirectoryUser/);
   });
+
+  it("scopes release loads, pickers, grants, and downloads to the session tenant", () => {
+    const http = readSrc("lib/release-scope-http.ts");
+    assert.match(http, /lookupReleaseForSessionTenant/);
+    assert.doesNotMatch(http, /tenantKeyFromSession\(null\)/);
+
+    const directory = readSrc("lib/release-directory-user.ts");
+    assert.match(directory, /WHERE "organizationId" = \$\{orgId\}/);
+    assert.doesNotMatch(directory, /prisma\.user\.findMany/);
+
+    const routes = readSrc("lib/release-scope-routes.ts");
+    assert.match(routes, /listDirectoryUsersForAssignment\(ctx\.tenant\.organizationId\)/);
+    assert.match(routes, /scopeAttachmentDownloadHeaders/);
+    assert.match(routes, /X-Content-Type-Options|scopeAttachmentDownloadHeaders/);
+
+    const releaseRoute = readSrc("app/api/releases/[id]/route.ts");
+    assert.match(releaseRoute, /lookupReleaseForSessionTenant/);
+    assert.match(releaseRoute, /listDirectoryUsersForAssignment\(looked\.tenant\.organizationId\)/);
+    assert.doesNotMatch(releaseRoute, /listDirectoryUsersForAssignment\(\)/);
+  });
+
+  it("approves a change request only when requestId and scopeId both match", () => {
+    const service = readSrc("lib/release-scope-service.ts");
+    assert.match(service, /scopeChangeRequestApproveWhere/);
+    assert.match(service, /findFirst\(\s*\{\s*where: \{ id: args\.requestId, scopeId: args\.scopeId \}/);
+  });
 });

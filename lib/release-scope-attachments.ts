@@ -128,3 +128,22 @@ export function safeAttachmentDownloadName(fileName: string): string {
   const base = fileName.replace(/\\/g, "/").split("/").pop() ?? "attachment";
   return base.replace(/[^\w.\- ()[\]]+/g, "_") || "attachment";
 }
+
+/**
+ * Headers for every scope / change-request attachment GET.
+ * nosniff prevents the browser from treating a PDF/Word download as executable HTML.
+ *
+ * @param mimeType - Canonical MIME from validation (never the client-supplied type).
+ * @param fileName - Stored original name.
+ */
+export function scopeAttachmentDownloadHeaders(args: {
+  mimeType: string;
+  fileName: string;
+}): Record<string, string> {
+  return {
+    "Content-Type": args.mimeType,
+    "Content-Disposition": `attachment; filename="${safeAttachmentDownloadName(args.fileName)}"`,
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+}

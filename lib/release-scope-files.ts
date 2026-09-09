@@ -9,14 +9,15 @@ import { dirname, join, resolve } from "node:path";
 const DEFAULT_ROOT = ".data/release-scope-files";
 
 /**
- * Tenant key from the session org, or a stable default.
- * Never accepted from the client.
+ * Tenant key from the session organization id.
+ * Never accepted from the client. No single-tenant fallback.
  *
- * @param orgId - Clerk org id when present.
+ * @param organizationId - Resolved session organization id.
+ * @returns The organization id, or null when missing (caller must deny).
  */
-export function tenantKeyFromSession(orgId: string | null | undefined): string {
-  const trimmed = (orgId ?? "").trim();
-  return trimmed || "default";
+export function tenantKeyFromSession(organizationId: string | null | undefined): string | null {
+  const trimmed = (organizationId ?? "").trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**

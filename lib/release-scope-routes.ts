@@ -10,7 +10,6 @@ import {
   loadScopeRouteContext,
   routeActor,
   scopeDenied,
-  sessionTenantKey,
 } from "@/lib/release-scope-http";
 import {
   approveDraftScope,
@@ -25,12 +24,14 @@ import {
 import {
   SCOPE_ATTACHMENT_MAX_BYTES,
   safeAttachmentDownloadName,
+  scopeAttachmentDownloadHeaders,
   validateScopeAttachment,
 } from "@/lib/release-scope-attachments";
 import { canGrantDraftSection } from "@/lib/release-scope-permissions";
 import { isAssignableScopeSectionEditor } from "@/lib/release-seats";
 import { isScopeDraft } from "@/lib/release-scope-status";
 import { readScopeFile, writeScopeFile } from "@/lib/release-scope-files";
+import { assertSameTenantFile } from "@/lib/release-scope-tenant";
 import { auditActorName } from "@/lib/release-audit";
 
 const draftScopeSchema = z
@@ -283,7 +284,7 @@ async function persistAttachment(args: {
     return scopeDenied(400, validated.error, "FILE_TYPE_DENIED");
   }
 
-  const tenantKey = await sessionTenantKey();
+  const tenantKey = ctx.tenant.organizationId;
   const stored = await writeScopeFile(tenantKey, bytes);
   const actor = routeActor(ctx.user, ctx.directoryUser);
   await prisma.releaseScopeFile.create({
@@ -333,7 +334,7 @@ export async function handleDownloadAttachment(args: {
 }): Promise<NextResponse> {
   const ctx = await loadScopeRouteContext(args.idParam);
   if (!ctx.ok) return ctx.response;
-  const tenantKey = await sessionTenantKey();
+  const tenantKey = ctx.tenant.organizationId;
   const row = await prisma.releaseScopeFile.findFirst({
     where: {
       id: args.fileId,
@@ -343,17 +344,16 @@ export async function handleDownloadAttachment(args: {
         : { scopeId: ctx.scope.id, changeRequestId: null }),
     },
   });
-  if (!row) {
+  if (!row || !assertSameTenantFile(row.tenantKey, tenantKey)) {
     return scopeDenied(404, "Attachment was not found.", "NOT_FOUND");
   }
   try {
     const bytes = await readScopeFile(row.storageKey, tenantKey);
     return new NextResponse(new Uint8Array(bytes), {
-      headers: {
-        "Content-Type": row.mimeType,
-        "Content-Disposition": `attachment; filename="${safeAttachmentDownloadName(row.originalName)}"`,
-        "Cache-Control": "private, no-store",
-      },
+      headers: scopeAttachmentDownloadHeaders({
+        mimeType: row.mimeType,
+        fileName: row.originalName,
+      }),
     });
   } catch (err) {
     console.error("[scope-file] read failed", {
@@ -377,7 +377,7 @@ async function addGrant(args: {
   if (!statusKey || !canGrantDraftSection(ctx.decision, statusKey)) {
     return scopeDenied(403, "You cannot add people to this section.", "SCOPE_GRANT_DENIED");
   }
-  const users = await listDirectoryUsersForAssignment();
+  const users = await listDirectoryUsersForAssignment(ctx.tenant.organizationId);
   const grantee = users.find((u) => u.id === args.granteeUserId);
   // Section editor = any existing same-tenant user, not account-role editors only.
   if (!grantee || !isAssignableScopeSectionEditor(grantee)) {

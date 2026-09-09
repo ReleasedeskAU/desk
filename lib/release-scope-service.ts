@@ -547,9 +547,31 @@ export async function updateDraftChangeRequest(args: {
 }
 
 /**
+ * Approve write must match both the request and the scope it belongs to.
+ * A missed capability check must not be able to write another release’s text.
+ *
+ * @param input.requestId - Change request id.
+ * @param input.scopeId - Scope that owns the request.
+ * @param input.lockVersion - Expected lock version.
+ */
+export function scopeChangeRequestApproveWhere(input: {
+  requestId: string;
+  scopeId: string;
+  lockVersion: number;
+}): Prisma.ReleaseScopeChangeRequestWhereInput {
+  return {
+    id: input.requestId,
+    scopeId: input.scopeId,
+    statusKey: SCOPE_STATUS_DRAFT,
+    lockVersion: input.lockVersion,
+  };
+}
+
+/**
  * Approve a change request: require saved why, write text onto current scope,
  * append scope history. Does not touch cabScopeSnapshot, CAB, or copy files.
  */
+
 export async function approveScopeChangeRequest(args: {
   requestId: string;
   releaseId: string;
@@ -557,8 +579,8 @@ export async function approveScopeChangeRequest(args: {
   expectedLockVersion: number;
   actor: ActorSnap;
 }): Promise<{ ok: true } | { ok: false; code: string; error: string }> {
-  const current = await prisma.releaseScopeChangeRequest.findUnique({
-    where: { id: args.requestId },
+  const current = await prisma.releaseScopeChangeRequest.findFirst({
+    where: { id: args.requestId, scopeId: args.scopeId },
   });
   if (!current) return { ok: false, code: "NOT_FOUND", error: "Change request was not found." };
   if (!isScopeDraft(current.statusKey)) {
@@ -591,11 +613,11 @@ export async function approveScopeChangeRequest(args: {
 
   const ok = await prisma.$transaction(async (tx) => {
     const bumped = await tx.releaseScopeChangeRequest.updateMany({
-      where: {
-        id: args.requestId,
-        statusKey: SCOPE_STATUS_DRAFT,
+      where: scopeChangeRequestApproveWhere({
+        requestId: args.requestId,
+        scopeId: args.scopeId,
         lockVersion: args.expectedLockVersion,
-      },
+      }),
       data: {
         statusKey: SCOPE_STATUS_APPROVED,
         approvedAt: now,
