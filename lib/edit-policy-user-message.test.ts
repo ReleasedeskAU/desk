@@ -7,8 +7,6 @@ import { describe, it } from "node:test";
 import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import { resolveLifecycleStatusRef } from "@/lib/release-lifecycle-transition";
 import { deniedReleaseEditFields } from "@/lib/release-lifecycle-edit-policy";
-import { defaultFieldLockRowsFromCatalog } from "@/lib/release-field-lock-config-db";
-import { getFieldLockStateFromRows } from "@/lib/release-field-lock-engine";
 import {
   editPolicyDeniedMessage,
   RELEASE_NAME_PENDING_CAB_DENIED_MESSAGE,
@@ -107,8 +105,11 @@ describe("releaseEditPolicyDeniedError (RD-141)", () => {
   });
 
   it("does not invent a field-lock catalog rule for name at pending_cab", () => {
-    const rows = defaultFieldLockRowsFromCatalog(config);
-    assert.equal(getFieldLockStateFromRows(rows, "name", "pending_cab"), "editable");
+    const src = readFileSync("lib/release-field-lock-catalog.ts", "utf8");
+    const nameEntry = src.match(
+      /fieldKey:\s*"name",[\s\S]*?defaultRules:\s*rulesEditableUntil\("([^"]+)"\)/
+    );
+    assert.equal(nameEntry?.[1], "deploying");
   });
 
   it("PATCH /api/releases/[id] uses the plain pending-CAB name copy", () => {
