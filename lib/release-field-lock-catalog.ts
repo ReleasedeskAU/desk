@@ -1,7 +1,8 @@
 /**
- * Field-lock matrix catalog for Release (Phase 1 + Tranche 3 gap closure).
+ * Field-lock matrix catalog for Release (RD-139 sheet alignment).
  * fieldKey values are Prisma fields or virtual keys (applications, environment).
  * Computed keys (previousStatus, blockerCount, conflictCount) are lock-matrix only.
+ * Status keys are lifecycle keys — never tenant display labels.
  */
 
 export const FIELD_LOCK_STATES = [
@@ -123,16 +124,18 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Identity",
     lockRuleRef: "§3-02",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("deploying"),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
+    // Sheet also lists Affected Systems separately; there is no second stored
+    // column — skip that sheet row rather than invent a schema.
     fieldKey: "applications",
-    label: "Application / Affected Systems",
+    label: "Application",
     category: "Identity",
-    lockRuleRef: "§3-03",
+    lockRuleRef: "§3-12",
     isConfigurable: true,
     bodyKeys: ["applicationIds", "applications"],
-    defaultRules: rulesEditableUntil("pending_cab"),
+    defaultRules: rulesEditableUntil("testing"),
   },
   {
     fieldKey: "releaseOwnerId",
@@ -141,7 +144,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     lockRuleRef: "§3-04",
     isConfigurable: true,
     bodyKeys: ["releaseOwnerId", "owner"],
-    defaultRules: rulesEditableUntil("pending_cab"),
+    defaultRules: rulesEditableUntil("ready_to_deploy"),
   },
   {
     fieldKey: "releaseSize",
@@ -149,7 +152,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Scope",
     lockRuleRef: "VR-21",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("ready_to_deploy", {
+    defaultRules: rulesEditableUntil("pending_cab", {
       sideEffectAt: "cab_approved",
     }),
   },
@@ -159,7 +162,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Scope",
     lockRuleRef: "VR-21",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("ready_to_deploy", {
+    defaultRules: rulesEditableUntil("pending_cab", {
       sideEffectAt: "cab_approved",
     }),
   },
@@ -169,7 +172,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Scope",
     lockRuleRef: "VR-21",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("ready_to_deploy", {
+    defaultRules: rulesEditableUntil("pending_cab", {
       sideEffectAt: "cab_approved",
     }),
   },
@@ -177,9 +180,9 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     fieldKey: "releaseType",
     label: "Release Type",
     category: "Scope",
-    lockRuleRef: null,
+    lockRuleRef: "§3-13",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("pending_cab"),
+    defaultRules: rulesEditableUntil("uat"),
   },
   {
     fieldKey: "changeDescription",
@@ -209,9 +212,9 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     fieldKey: "backupOwner",
     label: "Backup Owner",
     category: "Ownership",
-    lockRuleRef: null,
+    lockRuleRef: "§3-14",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("pending_cab"),
+    defaultRules: rulesEditableUntil("deploying"),
   },
   {
     fieldKey: "technicalLead",
@@ -235,7 +238,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Schedule",
     lockRuleRef: "§3-09",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("deploying"),
+    defaultRules: rulesEditableUntil("ready_to_deploy"),
   },
   {
     fieldKey: "releaseDate",
@@ -243,23 +246,23 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Schedule",
     lockRuleRef: "§3-10",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("deploying"),
+    defaultRules: rulesEditableUntil("ready_to_deploy"),
   },
   {
     fieldKey: "goLiveDate",
     label: "Go-Live Date",
     category: "Schedule",
-    lockRuleRef: null,
+    lockRuleRef: "§3-03",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("deploying"),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "deployDate",
     label: "Deploy Date",
     category: "Schedule",
-    lockRuleRef: null,
+    lockRuleRef: "§3-03",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("deployed"),
+    defaultRules: rulesEditableUntil("deploying"),
   },
   {
     fieldKey: "cabDate",
@@ -267,47 +270,47 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Schedule",
     lockRuleRef: "§3-11",
     isConfigurable: true,
-    defaultRules: rulesEditableUntil("cab_approved"),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "devSignoff",
     label: "Tech Review",
     category: "Sign-Off",
-    lockRuleRef: null,
+    lockRuleRef: "§3-05",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "testSignoff",
     label: "QA Sign-Off — Test Phase",
     category: "Sign-Off",
-    lockRuleRef: null,
+    lockRuleRef: "§3-05",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "uatSignoff",
     label: "QA Sign-Off — UAT Phase",
     category: "Sign-Off",
-    lockRuleRef: null,
+    lockRuleRef: "§3-05",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "securityClearance",
     label: "Security Review",
     category: "Sign-Off",
-    lockRuleRef: null,
+    lockRuleRef: "§3-05",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "businessSignoff",
     label: "Business Review",
     category: "Sign-Off",
-    lockRuleRef: null,
+    lockRuleRef: "§3-05",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "opsSignoff",
@@ -315,7 +318,7 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     category: "Sign-Off",
     lockRuleRef: "VR-31",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("ready_to_deploy"),
   },
   {
     fieldKey: "postImplementationReviewCompleted",
@@ -329,10 +332,10 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     fieldKey: "environment",
     label: "Environment",
     category: "Deployment",
-    lockRuleRef: null,
+    lockRuleRef: "§3-06",
     isConfigurable: true,
     bodyKeys: ["testEnvRequired", "uatEnvRequired"],
-    defaultRules: rulesEditableUntil("ready_to_deploy"),
+    defaultRules: rulesEditableUntil("deploying"),
   },
   {
     fieldKey: "deploymentWindow",
@@ -387,25 +390,25 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     fieldKey: "goLiveChecklistPercent",
     label: "Deployment Checklist",
     category: "Deployment",
-    lockRuleRef: null,
+    lockRuleRef: "§3-18",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled"]),
+    defaultRules: rulesEditableUntil("deploying"),
   },
   {
     fieldKey: "dressRehearsal",
     label: "Dress Rehearsal",
     category: "Deployment",
-    lockRuleRef: null,
+    lockRuleRef: "§3-18",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled", "deployed"]),
+    defaultRules: rulesEditableUntil("deploying"),
   },
   {
     fieldKey: "notes",
     label: "Release Notes",
     category: "Documentation",
-    lockRuleRef: null,
+    lockRuleRef: "§3-19",
     isConfigurable: true,
-    defaultRules: rulesMostlyEditable(["closed", "cancelled"]),
+    defaultRules: rulesEditableUntil("pending_cab"),
   },
   {
     fieldKey: "commsPlan",
@@ -500,12 +503,29 @@ export const RELEASE_FIELD_LOCK_CATALOG: readonly ReleaseFieldLockCatalogEntry[]
     fieldKey: "status",
     label: "Status",
     category: "Workflow",
-    lockRuleRef: null,
+    lockRuleRef: "§4",
     isConfigurable: false,
     infoOnly: true,
-    defaultRules: rulesAlwaysLocked(),
+    // Display-only: the transition engine still owns writes. Closed/Cancelled
+    // lock the picker in the UI; other stages stay gated by legal-next.
+    defaultRules: rulesMostlyEditable(["closed", "cancelled"]),
   },
 ];
+
+/**
+ * Sheet rows with no stored Release counterpart. Do not invent columns.
+ */
+export const RELEASE_FIELD_LOCK_SKIPPED_SHEET_FIELDS = [
+  {
+    sheetLabel: "Affected Systems",
+    reason:
+      "No separate stored field; Application already maps to applicationIds",
+  },
+  {
+    sheetLabel: "Duration Days",
+    reason: "Computed from start/end dates on the detail page, not stored",
+  },
+] as const;
 
 /** No remaining unavailable gap rows — Tranche 3 wired all prior gaps. */
 export const RELEASE_FIELD_LOCK_GAP_ROWS: readonly Omit<
@@ -526,6 +546,91 @@ export function catalogEntryForBodyKey(
     if (keys.includes(bodyKey)) return entry;
   }
   return null;
+}
+
+/** Minimal row shape for lock lookup (catalog defaults or persisted matrix). */
+export type FieldLockRowLike = {
+  fieldKey: string;
+  statusRules: FieldLockStatusRules;
+};
+
+/**
+ * Catalog defaults as lock rows for client fail-soft when the config API is
+ * unavailable. No I/O.
+ *
+ * @returns One row per wired catalog field with default statusRules.
+ */
+export function catalogDefaultLockRows(): FieldLockRowLike[] {
+  return RELEASE_FIELD_LOCK_CATALOG.filter((e) => !e.unavailable).map((entry) => ({
+    fieldKey: entry.fieldKey,
+    statusRules: entry.defaultRules,
+  }));
+}
+
+/**
+ * Resolve lock state for one matrix field. Missing status key fails closed.
+ *
+ * @param rows - Matrix rows.
+ * @param fieldKey - Catalog fieldKey.
+ * @param currentStatusKey - Lifecycle status key (not a display label).
+ */
+export function fieldLockStateAtStatus(
+  rows: readonly FieldLockRowLike[],
+  fieldKey: string,
+  currentStatusKey: string
+): FieldLockState {
+  const row = rows.find((r) => r.fieldKey === fieldKey);
+  if (!row) return "locked";
+  return row.statusRules[currentStatusKey] ?? "locked";
+}
+
+/**
+ * Match a stored/form status label or key to a live lifecycle key.
+ * Unknown labels return null so callers fail closed instead of inventing a key.
+ *
+ * @param statuses - Live status key/label pairs.
+ * @param status - Label or key from the release row / form.
+ */
+export function resolveFieldLockStatusKey(
+  statuses: readonly { key: string; label: string }[],
+  status: string
+): string | null {
+  const trimmed = status.trim();
+  if (!trimmed) return null;
+  const byKey = statuses.find((s) => s.key === trimmed);
+  if (byKey) return byKey.key;
+  const lower = trimmed.toLocaleLowerCase();
+  const byLabel = statuses.find((s) => s.label.toLocaleLowerCase() === lower);
+  if (byLabel) return byLabel.key;
+  return null;
+}
+
+/**
+ * Whether a form/API body key is locked at the current status.
+ * Status writes stay on the lifecycle engine (never locked here).
+ * Unknown status or missing row fails closed. Uncatalogued keys are not locked
+ * by this matrix (edit policy may still deny them).
+ *
+ * @param rows - Matrix rows (live config or catalog defaults).
+ * @param currentStatusKey - Resolved lifecycle key, or null when unknown.
+ * @param bodyKey - Form / PATCH body key.
+ */
+export function isReleaseBodyKeyLocked(
+  rows: readonly FieldLockRowLike[],
+  currentStatusKey: string | null | undefined,
+  bodyKey: string
+): boolean {
+  if (
+    bodyKey === "status" ||
+    bodyKey === "overrideReason" ||
+    bodyKey === "previousStatus"
+  ) {
+    return false;
+  }
+  if (!currentStatusKey) return true;
+  const entry = catalogEntryForBodyKey(bodyKey);
+  if (!entry) return false;
+  return fieldLockStateAtStatus(rows, entry.fieldKey, currentStatusKey) === "locked";
 }
 
 /**

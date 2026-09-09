@@ -8,6 +8,7 @@ import { createDefaultReleaseLifecycleConfig } from "./release-lifecycle-config"
 import {
   defaultFieldLockRowsFromCatalog,
   reconcileRejectedReworkUnlock,
+  reconcileSheetLockFloor,
 } from "./release-field-lock-config-db";
 import {
   getFieldLockStateFromRows,
@@ -15,7 +16,10 @@ import {
 } from "./release-field-lock-engine";
 import {
   catalogEntryForBodyKey,
+  catalogDefaultLockRows,
+  isReleaseBodyKeyLocked,
   RELEASE_FIELD_LOCK_CATALOG,
+  RELEASE_FIELD_LOCK_SKIPPED_SHEET_FIELDS,
 } from "./release-field-lock-catalog";
 
 describe("release field-lock engine", () => {
@@ -158,5 +162,101 @@ describe("release field-lock engine", () => {
     ]);
     assert.equal(result.allowed, false);
     assert.ok(result.rejected.some((r) => r.field === "releaseCode"));
+  });
+});
+
+describe("RD-139 sheet matrix", () => {
+  const lifecycle = createDefaultReleaseLifecycleConfig();
+  const rows = defaultFieldLockRowsFromCatalog(lifecycle);
+
+  it("locks Application at Testing (and later) and allows it in Planning", () => {
+    assert.equal(
+      getFieldLockStateFromRows(rows, "applications", "testing"),
+      "locked"
+    );
+    const denied = validateReleaseFieldUpdateWithRows(rows, "testing", [
+      "applicationIds",
+    ]);
+    assert.equal(denied.allowed, false);
+    assert.ok(denied.rejected.some((r) => r.field === "applications"));
+
+    const allowed = validateReleaseFieldUpdateWithRows(rows, "planning", [
+      "applicationIds",
+    ]);
+    assert.equal(allowed.allowed, true);
+    assert.equal(
+      getFieldLockStateFromRows(rows, "applications", "planning"),
+      "editable"
+    );
+  });
+
+  it("fails closed on an unknown status instead of unlocking fields", () => {
+    const state = getFieldLockStateFromRows(
+      rows,
+      "applications",
+      "not_a_lifecycle_key"
+    );
+    assert.equal(state, "locked");
+    const result = validateReleaseFieldUpdateWithRows(
+      rows,
+      "not_a_lifecycle_key",
+      ["applicationIds"]
+    );
+    assert.equal(result.allowed, false);
+    assert.equal(
+      isReleaseBodyKeyLocked(rows, null, "applicationIds"),
+      true
+    );
+    assert.equal(
+      isReleaseBodyKeyLocked(catalogDefaultLockRows(), "planning", "applicationIds"),
+      false
+    );
+  });
+
+  it("treats Editable* Size at CAB Approved as a side-effect, not a lock", () => {
+    assert.equal(
+      getFieldLockStateFromRows(rows, "releaseSize", "pending_cab"),
+      "locked"
+    );
+    assert.equal(
+      getFieldLockStateFromRows(rows, "releaseSize", "cab_approved"),
+      "editable_with_side_effect"
+    );
+    const result = validateReleaseFieldUpdateWithRows(rows, "cab_approved", [
+      "releaseSize",
+    ]);
+    assert.equal(result.allowed, true);
+    assert.equal(result.sideEffects[0]?.effect, "revert_to_pending_cab");
+  });
+
+  it("does not invent columns for sheet fields without a stored counterpart", () => {
+    const labels = RELEASE_FIELD_LOCK_SKIPPED_SHEET_FIELDS.map((s) => s.sheetLabel);
+    assert.ok(labels.includes("Affected Systems"));
+    assert.ok(labels.includes("Duration Days"));
+    assert.equal(
+      RELEASE_FIELD_LOCK_CATALOG.some((e) => e.label === "Affected Systems"),
+      false
+    );
+    assert.equal(
+      RELEASE_FIELD_LOCK_CATALOG.some((e) => /duration/i.test(e.fieldKey)),
+      false
+    );
+  });
+
+  it("tightens stored Application Testing cells to locked without unlocking extras", () => {
+    const stale = rows.map((row) =>
+      row.fieldKey === "applications"
+        ? {
+            ...row,
+            statusRules: { ...row.statusRules, testing: "editable" as const },
+          }
+        : row
+    );
+    const next = reconcileSheetLockFloor(stale, lifecycle);
+    assert.ok(next.changedFieldKeys.includes("applications"));
+    assert.equal(
+      next.rows.find((r) => r.fieldKey === "applications")?.statusRules.testing,
+      "locked"
+    );
   });
 });

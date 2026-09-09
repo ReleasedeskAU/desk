@@ -77,6 +77,20 @@ describe("field-lock write-path inventory (source wiring)", () => {
     assert.match(src, /VR-21/);
   });
 
+  it("PATCH /api/releases/[id] lets the field-lock catalog override coarse edit-mode denials", () => {
+    const src = readSrc("app/api/releases/[id]/route.ts");
+    assert.match(src, /catalogEntryForBodyKey/);
+    assert.match(src, /isReleaseFullyLocked/);
+    assert.match(src, /editPolicyDenied\.filter/);
+  });
+
+  it("Edit Release disables locked fields from the matrix up front", () => {
+    const src = readSrc("components/releases/ReleaseFormModal.tsx");
+    assert.match(src, /isReleaseBodyKeyLocked/);
+    assert.match(src, /fieldLocked\("applicationIds"\)/);
+    assert.match(src, /\/api\/release-field-lock-config/);
+  });
+
   it("PUT /api/release-field-lock-config routes through saveReleaseFieldLockConfig", () => {
     const src = readSrc("app/api/release-field-lock-config/route.ts");
     assert.match(src, /saveReleaseFieldLockConfig/);

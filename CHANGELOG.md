@@ -6,9 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **Connector delete:** Trash uses this pair’s credential id (not every credential on the connector). Digit-string ids are accepted. A scheduled delete no longer greys out trash — retry re-queues StaffLess. The list polls while status is Deleting. 403/404 from StaffLess use a plain message.
+- **Release field locks (RD-139):** Editability follows the Release Fields sheet via the existing field-lock catalog (lifecycle status keys, not tenant labels). Locked fields are disabled in Edit Release up front and rejected on PATCH (`FIELD_LOCK_DENIED`). Application locks from Testing onward. Editable* (Size/Priority/Scope at CAB Approved) still writes and may revert status (VR-21)—not treated as Locked. Unknown status keys fail closed. Auth unchanged (editor). No secrets or stack traces in client errors.
 
 - **Connectors sync logs:** The History action now shows live StaffLess indexing-status (indexed docs, this run, last result, unresolved errors) plus index attempts. It looks up by StaffLess connector id or `cc_pair_id`, not Prisma. The drawer auto-refreshes while a run is queued or in progress. StaffLess does not expose separate “records found” vs “fetched” counts, so those are omitted. Stack traces stay off the payload.
 
