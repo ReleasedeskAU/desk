@@ -69,6 +69,8 @@ describe("native scope write-path wiring", () => {
     assert.match(modal, /assignmentOptionsToSelect\(resolvedAssignmentOptions\?\.owners\)/);
     assert.match(modal, /assignmentOptionsToSelect\(resolvedAssignmentOptions\?\.managers\)/);
     assert.match(modal, /\/api\/release-assignment-options/);
+    assert.match(modal, /from "@\/lib\/release-assignment-select"/);
+    assert.doesNotMatch(modal, /from "@\/lib\/release-assignment-options"/);
     assert.doesNotMatch(modal, /\/api\/users/);
 
     const detail = readSrc("components/releases/DbReleaseDetail.tsx");

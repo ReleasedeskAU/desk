@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { assignmentOptionsToSelect } from "@/lib/release-assignment-options";
+import { assignmentOptionsToSelect } from "@/lib/release-assignment-select";
 
 describe("release assignment select options", () => {
   it("maps tenant-scoped assignment rows onto select values", () => {

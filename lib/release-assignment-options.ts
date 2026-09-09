@@ -1,6 +1,7 @@
 /**
- * Session-tenant Manager / Owner picker lists.
+ * Session-tenant Manager / Owner picker lists (server-only).
  * Same source as release GET `assignmentOptions` — never an unscoped user directory.
+ * Do not import this module from Client Components (Prisma + Clerk server).
  */
 
 import type { SessionUser } from "@/lib/auth/roles";
@@ -20,15 +21,4 @@ export async function loadSessionAssignmentOptions(
   const tenant = await resolveScopeTenant(session);
   if (!tenant) return null;
   return pickerPayload(await listDirectoryUsersForAssignment(tenant.organizationId));
-}
-
-/**
- * Map assignment options onto SearchableSelect values.
- *
- * @param rows - Managers or owners from the tenant-scoped payload.
- */
-export function assignmentOptionsToSelect(
-  rows: { id: string; label: string }[] | undefined
-): { value: string; label: string }[] {
-  return (rows ?? []).map((row) => ({ value: row.id, label: row.label }));
 }

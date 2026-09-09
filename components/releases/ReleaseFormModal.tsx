@@ -8,7 +8,7 @@ import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialo
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
 import { diffDraftChanges, type FieldChange } from "@/lib/detail-edit-diff";
-import { assignmentOptionsToSelect } from "@/lib/release-assignment-options";
+import { assignmentOptionsToSelect } from "@/lib/release-assignment-select";
 import type { ReleaseAssignmentOptions } from "@/lib/release-scope-service";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
