@@ -7,8 +7,9 @@ import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialog";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
-import { mapAccessLevelToRole } from "@/lib/auth/role-rank";
 import { diffDraftChanges, type FieldChange } from "@/lib/detail-edit-diff";
+import { assignmentOptionsToSelect } from "@/lib/release-assignment-options";
+import type { ReleaseAssignmentOptions } from "@/lib/release-scope-service";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
@@ -334,6 +335,7 @@ export type ReleaseFormSource = {
   previousStatus?: string | null;
   blockerCount?: number | null;
   conflictCount?: number | null;
+  assignmentOptions?: ReleaseAssignmentOptions | null;
 };
 
 /**
@@ -435,6 +437,7 @@ export function ReleaseFormModal({
   environments = [],
   releases,
   statusOptions: _statusOptionsProp,
+  assignmentOptions: assignmentOptionsProp,
   onClose,
   onSaved,
 }: {
@@ -447,14 +450,15 @@ export function ReleaseFormModal({
   releases: Option[];
   /** Callers may still pass enabled labels; create ignores this and locks status to intake. */
   statusOptions?: string[];
+  /** Session-tenant Manager / Owner lists from release GET. Create fetches the equivalent. */
+  assignmentOptions?: ReleaseAssignmentOptions | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<ReleaseFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [directoryUsers, setDirectoryUsers] = useState<
-    { id: string; userId: string; name: string; accessLevel?: string; status?: string }[]
-  >([]);
+  const [fetchedAssignmentOptions, setFetchedAssignmentOptions] =
+    useState<ReleaseAssignmentOptions | null>(null);
   const [loadedEnvs, setLoadedEnvs] = useState<EnvOption[]>([]);
   const [editLegalNext, setEditLegalNext] = useState<LegalNextStatusView[]>([]);
   const [legalNextLoading, setLegalNextLoading] = useState(false);
@@ -583,16 +587,20 @@ export function ReleaseFormModal({
   }, [editLegalNext, form.status, initial?.status, isEdit]);
 
   useEffect(() => {
-    if (!open) return;
-    return loadJsonEffect<
-      { id: string; userId: string; name: string; accessLevel?: string; status?: string }[]
-    >(
-      "/api/users",
-      (rows) =>
-        setDirectoryUsers(rows),
-      { label: "release-form-users" }
+    if (!open) {
+      setFetchedAssignmentOptions(null);
+      return;
+    }
+    if (assignmentOptionsProp) {
+      setFetchedAssignmentOptions(assignmentOptionsProp);
+      return;
+    }
+    return loadJsonEffect<ReleaseAssignmentOptions>(
+      "/api/release-assignment-options",
+      (payload) => setFetchedAssignmentOptions(payload),
+      { label: "release-form-assignment-options" }
     );
-  }, [open]);
+  }, [open, assignmentOptionsProp]);
 
   useEffect(() => {
     if (!open) {
@@ -781,33 +789,18 @@ export function ReleaseFormModal({
     return applications.filter((a) => a.departmentId === form.departmentId);
   }, [applications, form.departmentId]);
 
-  const toUserOption = (u: { id: string; userId: string; name: string }): UserOption => ({
-    value: u.id,
-    label: `${u.userId} — ${u.name}`,
-  });
-
-  const activeDirectory = useMemo(
-    () => directoryUsers.filter((u) => (u.status ?? "Active").toLowerCase() !== "inactive"),
-    [directoryUsers]
-  );
+  const resolvedAssignmentOptions = assignmentOptionsProp ?? fetchedAssignmentOptions;
 
   /** Owner picker: any existing same-tenant user. Never typed names. */
   const ownerOptions = useMemo(
-    () =>
-      [...activeDirectory]
-        .map(toUserOption)
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
-    [activeDirectory]
+    () => assignmentOptionsToSelect(resolvedAssignmentOptions?.owners),
+    [resolvedAssignmentOptions]
   );
 
   /** Manager picker: exact editors only (never admin, never readonly). */
   const managerOptions = useMemo(
-    () =>
-      activeDirectory
-        .filter((u) => mapAccessLevelToRole(u.accessLevel) === "editor")
-        .map(toUserOption)
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
-    [activeDirectory]
+    () => assignmentOptionsToSelect(resolvedAssignmentOptions?.managers),
+    [resolvedAssignmentOptions]
   );
 
   const users = ownerOptions;

@@ -1545,6 +1545,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
       <ReleaseFormModal
         open={editOpen}
         initial={releaseRowToFormInitial(release)}
+        assignmentOptions={release.assignmentOptions ?? null}
         existingReleaseCodes={lookups.releases.map((r) => r.releaseCode)}
         departments={lookups.departments.map((d) => ({ value: d.id, label: d.name }))}
         applications={lookups.applications.map((a) => ({

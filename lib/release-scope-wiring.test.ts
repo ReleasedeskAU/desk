@@ -63,4 +63,19 @@ describe("native scope write-path wiring", () => {
     assert.match(service, /scopeChangeRequestApproveWhere/);
     assert.match(service, /findFirst\(\s*\{\s*where: \{ id: args\.requestId, scopeId: args\.scopeId \}/);
   });
+
+  it("wires Manager and Owner pickers to tenant-scoped assignmentOptions, not /api/users", () => {
+    const modal = readSrc("components/releases/ReleaseFormModal.tsx");
+    assert.match(modal, /assignmentOptionsToSelect\(resolvedAssignmentOptions\?\.owners\)/);
+    assert.match(modal, /assignmentOptionsToSelect\(resolvedAssignmentOptions\?\.managers\)/);
+    assert.match(modal, /\/api\/release-assignment-options/);
+    assert.doesNotMatch(modal, /\/api\/users/);
+
+    const detail = readSrc("components/releases/DbReleaseDetail.tsx");
+    assert.match(detail, /assignmentOptions=\{release\.assignmentOptions/);
+
+    const route = readSrc("app/api/release-assignment-options/route.ts");
+    assert.match(route, /loadSessionAssignmentOptions/);
+    assert.match(route, /TENANT_REQUIRED/);
+  });
 });

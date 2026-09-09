@@ -12,6 +12,7 @@ import {
   type ReleaseFormData,
   type ReleaseFormSource,
 } from "@/components/releases/ReleaseFormModal";
+import type { ReleaseAssignmentOptions } from "@/lib/release-scope-service";
 import { RowEditButton } from "@/components/ui/RowEditButton";
 import { ReleaseStatusBadge } from "@/components/releases/ReleaseStatusBadge";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
@@ -126,6 +127,7 @@ export default function ReleasesPageContent() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [formPrefill, setFormPrefill] = useState<Partial<ReleaseFormData> | null>(null);
+  const [assignmentOptions, setAssignmentOptions] = useState<ReleaseAssignmentOptions | null>(null);
   const [editingReleaseId, setEditingReleaseId] = useState<string | null>(null);
   const [attentionItems, setAttentionItems] = useState<NeedsAttentionItem[]>([]);
   type FilterOptionsState = {
@@ -411,6 +413,7 @@ export default function ReleasesPageContent() {
     setEditingReleaseId(null);
     if (!result.ok) return;
     setFormPrefill(releaseRowToFormInitial(result.data));
+    setAssignmentOptions(result.data.assignmentOptions ?? null);
     setModalOpen(true);
   };
 
@@ -431,6 +434,7 @@ export default function ReleasesPageContent() {
                 className={cn(taBtnPrimary, "text-sm")}
                 onClick={() => {
                   setFormPrefill(null);
+                  setAssignmentOptions(null);
                   setModalOpen(true);
                 }}
               >
@@ -570,6 +574,7 @@ export default function ReleasesPageContent() {
       <ReleaseFormModal
         open={modalOpen}
         initial={formPrefill ?? undefined}
+        assignmentOptions={assignmentOptions}
         existingReleaseCodes={releaseCodes}
         departments={departments.map((d) => ({ value: d.id, label: d.name }))}
         applications={applications.map((a) => ({

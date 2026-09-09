@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
-- **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release loads are scoped to the session tenant (Clerk org, else the user’s stored `organizationId`) — no unfiltered directory list and no release load by id alone. Change-request approve `updateMany` requires both `requestId` and `scopeId`.
+- **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release loads are scoped to the session tenant (Clerk org, else the user’s stored `organizationId`) — no unfiltered directory list and no release load by id alone. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create) — they no longer load unscoped `/api/users`.
 
 ### Added
 

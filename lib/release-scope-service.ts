@@ -666,15 +666,26 @@ export function releaseScopeWritesLocked(
   return isReleaseSeatWriteLocked(config, status);
 }
 
+export type ReleaseAssignmentOption = {
+  id: string;
+  label: string;
+  name: string;
+};
+
+export type ReleaseAssignmentOptions = {
+  managers: ReleaseAssignmentOption[];
+  owners: ReleaseAssignmentOption[];
+};
+
 /**
  * Assignment picker payload (exact editors vs any directory user).
  * Labels are directory names — never free-typed.
  *
  * @param users - Same-tenant directory users.
  */
-export function pickerPayload(users: DirectoryUserRef[]) {
+export function pickerPayload(users: DirectoryUserRef[]): ReleaseAssignmentOptions {
   const { managers, owners } = assignmentPickerOptions(users);
-  const toOption = (u: DirectoryUserRef) => ({
+  const toOption = (u: DirectoryUserRef): ReleaseAssignmentOption => ({
     id: u.id,
     label: u.userId ? `${u.userId} — ${u.name}` : u.name,
     name: u.name,
