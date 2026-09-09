@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { SessionUser } from "@/lib/auth/roles";
 import { createDefaultReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import {
+  canOfferReleaseEditAction,
   deniedReleaseEditFields,
   isReleaseFieldEditable,
   isReleaseFullyLocked,
   resolveReleaseEditMode,
+  shouldOfferReleaseEdit,
 } from "@/lib/release-lifecycle-edit-policy";
 
 const config = createDefaultReleaseLifecycleConfig();
@@ -93,5 +96,61 @@ describe("deniedReleaseEditFields", () => {
       "name",
     ]);
     assert.deepEqual(denied, ["name"]);
+  });
+});
+
+const editor: SessionUser = {
+  id: "user-editor",
+  email: "editor@example.com",
+  name: "Editor",
+  role: "editor",
+};
+
+const readonly: SessionUser = {
+  id: "user-readonly",
+  email: "readonly@example.com",
+  name: "Readonly",
+  role: "readonly",
+};
+
+describe("canOfferReleaseEditAction", () => {
+  it("offers Edit for configured editable statuses including limited and read_only", () => {
+    assert.equal(canOfferReleaseEditAction(config, "Draft"), true);
+    assert.equal(canOfferReleaseEditAction(config, "Pending CAB"), true);
+    assert.equal(canOfferReleaseEditAction(config, "Deploying"), true);
+    assert.equal(canOfferReleaseEditAction(config, "Closed"), true);
+  });
+
+  it("hides Edit for a fully locked (Cancelled) release", () => {
+    assert.equal(canOfferReleaseEditAction(config, "Cancelled"), false);
+  });
+
+  it("hides Edit when the status is missing from config (no guess)", () => {
+    assert.equal(canOfferReleaseEditAction(config, "Not A Real Status"), false);
+  });
+
+  it("hides Edit when editMode is missing on the resolved status", () => {
+    const stripped = {
+      ...config,
+      statuses: config.statuses.map((status) =>
+        status.key === "draft"
+          ? { ...status, editMode: undefined as unknown as typeof status.editMode }
+          : status
+      ),
+    };
+    assert.equal(canOfferReleaseEditAction(stripped, "Draft"), false);
+  });
+});
+
+describe("shouldOfferReleaseEdit", () => {
+  it("offers Edit for an editor on an editable status", () => {
+    assert.equal(shouldOfferReleaseEdit({ user: editor, config, status: "Draft" }), true);
+  });
+
+  it("denies Edit for readonly even when the status is editable", () => {
+    assert.equal(
+      shouldOfferReleaseEdit({ user: readonly, config, status: "Draft" }),
+      false
+    );
   });
 });

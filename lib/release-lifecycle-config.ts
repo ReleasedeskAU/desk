@@ -368,7 +368,9 @@ export const DEFAULT_RELEASE_LIFECYCLE_TRANSITIONS: readonly ReleaseLifecycleTra
   transition("cab_approved", "pending_cab", 20),
   transition("cab_approved", "blocked", 30),
   transition("cab_approved", "cancelled", 40),
-  // Deploying-target gates (VR-19 / VR-18 / AV-06 / AV-08 / VR-05).
+  // Deploying-target gates (VR-19 relaxed / VR-18 / AV-06 / AV-08 / VR-05).
+  // VR-19 stays attached so stored graphs keep the catalog row, but the
+  // evaluator always passes — Prod does not need a booking (RD-129).
   transition("ready_to_deploy", "deploying", 10, [
     gate("environment_booked_for_deploy", 10),
     gate("hard_dependencies_met", 20),

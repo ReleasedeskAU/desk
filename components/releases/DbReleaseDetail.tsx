@@ -30,7 +30,7 @@ import { DbAIRiskPanel } from "@/components/releases/DbAIRiskPanel";
 import { DbLinkedWorkItems } from "@/components/releases/DbLinkedWorkItems";
 import { DbReleaseServicesInvolved } from "@/components/releases/DbReleaseServicesInvolved";
 import { StakeholderCommsPanel } from "@/components/releases/StakeholderCommsPanel";
-import { ReleaseFormModal } from "@/components/releases/ReleaseFormModal";
+import { ReleaseFormModal, releaseRowToFormInitial } from "@/components/releases/ReleaseFormModal";
 import { taBtnSecondary, taInput } from "@/lib/styles";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/auth/roles";
@@ -1507,39 +1507,7 @@ export function DbReleaseDetail({ id }: { id: string }) {
 
       <ReleaseFormModal
         open={editOpen}
-        initial={{
-          id: release.id,
-          releaseCode: release.releaseCode,
-          name: release.name,
-          programProject: release.programProject ?? "",
-          owner: release.owner,
-          status: release.status,
-          releaseDate: release.releaseDate,
-          priority: release.priority,
-          impact: release.impact,
-          departmentId: release.departmentId,
-          applicationIds: release.applications.map((a) => a.application.id),
-          dependsOnReleaseIds: release.dependsOn.map((d) => d.dependsOnRelease.id),
-          notes: release.notes ?? "",
-          releaseSize: release.releaseSize ?? "",
-          cabDate: release.cabDate ?? "",
-          startDate: release.startDate ?? "",
-          testEnvRequired: release.testEnvRequired ?? "",
-          uatEnvRequired: release.uatEnvRequired ?? "",
-          releaseOwnerId: release.releaseOwner?.id ?? release.releaseOwnerId ?? "",
-          approvalStatus: release.approvalStatus ?? "",
-          rollbackPlan: release.rollbackPlan ?? "",
-          hypercarePlan: release.hypercarePlan ?? "",
-          commsPlan: release.commsPlan ?? "",
-          trainingStatus: release.trainingStatus ?? "",
-          stakeholderIds: (release.stakeholders ?? []).map((s) => s.user.id),
-          devSignoff: release.devSignoff ?? "",
-          testSignoff: release.testSignoff ?? "",
-          uatSignoff: release.uatSignoff ?? "",
-          securityClearance: release.securityClearance ?? "",
-          businessSignoff: release.businessSignoff ?? "",
-          opsSignoff: release.opsSignoff ?? "",
-        }}
+        initial={releaseRowToFormInitial(release)}
         existingReleaseCodes={lookups.releases.map((r) => r.releaseCode)}
         departments={lookups.departments.map((d) => ({ value: d.id, label: d.name }))}
         applications={lookups.applications.map((a) => ({

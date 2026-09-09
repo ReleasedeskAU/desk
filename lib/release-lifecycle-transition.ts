@@ -285,13 +285,10 @@ export function evaluateLifecycleGate(
         ? pass()
         : fail("No UAT environment booking on record");
     case "environment_booked_for_deploy":
-      // RD-111: a missing booking must not block entry to the deployed
-      // milestone. Ready → Deploying still evaluates this gate (RD-129 is a
-      // separate unmerged change and is not applied here).
-      if (target?.deployedMilestone) return pass();
-      return facts.hasDeployBooking
-        ? pass()
-        : fail("No deployment environment booking on record");
+      // RD-129: Prod does not need a booking; a missing booking must not
+      // block Deploying. RD-111 also requires this gate not to block entry
+      // to the deployed milestone. Bookings stay on the record.
+      return pass();
     case "no_expired_env_bookings":
       return facts.expiredEnvBookingCount === 0
         ? pass()

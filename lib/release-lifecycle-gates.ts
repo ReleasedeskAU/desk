@@ -220,7 +220,8 @@ export const RELEASE_LIFECYCLE_GATE_CATALOG: Readonly<
   },
   environment_booked_for_deploy: {
     label: "Environment booked for deploy",
-    description: "A valid deployment environment booking must exist.",
+    description:
+      "Prod does not require an environment booking. A missing booking is not a Deploying blocker (RD-129).",
     ruleIds: ["VR-19"],
     dataReliability: "partial",
   },

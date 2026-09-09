@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { filterSeedDependencies } from "@/lib/dependency-view";
 import { loadDependencyLifecycleConfig } from "@/lib/dependency-lifecycle-config-db";
+import {
+  parseDependencyCreateBody,
+  toReleaseDependencyCreateData,
+} from "@/lib/dependency-create";
 import { resolveCreateLifecycleStatus } from "@/lib/entity-lifecycle-create-guard";
 import { prisma } from "@/lib/prisma";
 import { sp, str } from "@/lib/list-api-filters";
-import { createDependencySchema } from "@/lib/validation/dependency";
-import { jsonError, zodErrorResponse } from "@/lib/api-errors";
+import { jsonError } from "@/lib/api-errors";
 import {
   guardDependencyGraphMutation,
   guardReleaseFullyLocked,
@@ -90,8 +93,13 @@ export async function POST(req: Request) {
   const { user, error } = await requireRole("editor");
   if (error) return error;
 
-  const parsed = createDependencySchema.safeParse(await req.json());
-  if (!parsed.success) return zodErrorResponse(parsed.error);
+  const parsed = parseDependencyCreateBody(await req.json());
+  if (!parsed.ok) {
+    return NextResponse.json(
+      { error: parsed.error, issues: parsed.issues },
+      { status: 400 }
+    );
+  }
 
   const body = parsed.data;
 
@@ -99,12 +107,9 @@ export async function POST(req: Request) {
   let statusKey: string | undefined;
   try {
     const loaded = await loadDependencyLifecycleConfig(user!.id);
-    const resolved = resolveCreateLifecycleStatus(
-      loaded.config,
-      body.status,
-      "dependency",
-      { intakeOnly: true }
-    );
+    // Accept any enabled label — the create form offers all enabled statuses.
+    // intakeOnly rejected those and, with the hidden overlay, looked like a no-op.
+    const resolved = resolveCreateLifecycleStatus(loaded.config, body.status, "dependency");
     if (!resolved.ok) return resolved.response;
     status = resolved.status;
     statusKey = resolved.statusKey;
@@ -160,18 +165,13 @@ export async function POST(req: Request) {
     const sourceOrder = (maxOrder._max.sourceOrder ?? 0) + 1;
 
     const row = await prisma.releaseDependency.create({
-      data: {
-        dependencyCode,
-        releaseId: body.releaseId,
-        dependsOnReleaseId: body.dependsOnReleaseId,
-        dependencyType: body.dependencyType,
-        dependencyKind: body.dependencyKind ?? "Release-to-Release",
+      data: toReleaseDependencyCreateData(
+        body,
         status,
         statusKey,
-        impactIfBlocked: body.impactIfBlocked,
-        notes: body.notes ?? null,
-        sourceOrder,
-      },
+        dependencyCode,
+        sourceOrder
+      ),
       include: {
         release: { select: { id: true, releaseCode: true, name: true } },
         dependsOnRelease: { select: { id: true, releaseCode: true, name: true } },

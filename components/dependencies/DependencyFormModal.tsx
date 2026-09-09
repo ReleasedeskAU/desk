@@ -8,8 +8,10 @@ import {
   SummaryRow,
 } from "@/components/create-flow/CreateFlowUi";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
-import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
-import { buildFormSaveAlert } from "@/lib/form-save-alert";
+import {
+  dependencyCreateUserMessage,
+  isSelfDependency,
+} from "@/lib/dependency-create";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -80,7 +82,7 @@ export function DependencyFormModal({
     statusOptionsProp && statusOptionsProp.length > 0
       ? statusOptionsProp
       : lifecycle.createOptions;
-  const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Pending";
+  const defaultStatus = (defaultStatusProp || lifecycle.defaultStatus || "").trim();
   const scoped = Boolean(lockReleaseId);
 
   const defaults = useMemo<DependencyFormValues>(() => {
@@ -144,7 +146,7 @@ export function DependencyFormModal({
   useEffect(() => {
     if (!open || isEdit || createOptions.length === 0) return;
     setForm((prev) => {
-      if (createOptions.includes(prev.status)) return prev;
+      if (prev.status && createOptions.includes(prev.status)) return prev;
       return { ...prev, status: defaultStatus || createOptions[0]! };
     });
   }, [open, isEdit, createOptions, defaultStatus]);
@@ -170,7 +172,11 @@ export function DependencyFormModal({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.releaseId === form.dependsOnReleaseId) {
+    if (!form.releaseId.trim() || !form.dependsOnReleaseId.trim()) {
+      setError("Release and depends-on release are required");
+      return;
+    }
+    if (isSelfDependency(form.releaseId, form.dependsOnReleaseId)) {
       setError("A release cannot depend on itself");
       return;
     }
@@ -186,7 +192,9 @@ export function DependencyFormModal({
       notes: form.notes.trim() ? form.notes.trim() : null,
     };
 
-    const result = await safeFetchJson<CreatedSummary & { error?: string }>(
+    const result = await safeFetchJson<
+      CreatedSummary & { error?: string; issues?: Array<{ path?: string; message?: string }> }
+    >(
       isEdit ? `/api/dependencies/${editId}` : "/api/dependencies",
       {
         method: isEdit ? "PATCH" : "POST",
@@ -199,13 +207,17 @@ export function DependencyFormModal({
     setSaving(false);
     if (!result.ok || result.status >= 300) {
       const data = result.ok ? result.data : null;
-      const msg =
-        data && typeof data === "object" && data !== null && "error" in data
-          ? String((data as { error?: string }).error)
-          : isEdit
-            ? "Failed to update dependency"
-            : "Failed to create dependency";
-      setError(msg);
+      const rec =
+        data && typeof data === "object"
+          ? (data as { error?: string; issues?: Array<{ path?: string; message?: string }> })
+          : null;
+      setError(
+        dependencyCreateUserMessage({
+          error: rec?.error ?? (!result.ok ? result.error : null),
+          issues: rec?.issues,
+          fallback: isEdit ? "Failed to update dependency" : "Failed to create dependency",
+        })
+      );
       return;
     }
 
@@ -257,8 +269,7 @@ export function DependencyFormModal({
   }
 
   return (
-    <>
-      <CreateModalShell
+    <CreateModalShell
         title={isEdit ? `Edit ${depCode ?? "Dependency"}` : "New Dependency"}
         description={
           scoped
@@ -282,6 +293,14 @@ export function DependencyFormModal({
           </>
         }
       >
+        {error ? (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100"
+          >
+            {error}
+          </p>
+        ) : null}
         <form id="dependency-create-form" onSubmit={submit} className="min-w-0 space-y-4">
           {scoped ? (
             <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600 dark:bg-white/5 dark:text-white/70">
@@ -394,11 +413,6 @@ export function DependencyFormModal({
             />
           </label>
         </form>
-      </CreateModalShell>
-      <FormAlertDialog
-        alert={error ? buildFormSaveAlert(null, error, { entityLabel: "dependency" }) : null}
-        onDismiss={() => setError(null)}
-      />
-    </>
+    </CreateModalShell>
   );
 }

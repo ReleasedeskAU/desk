@@ -10,7 +10,8 @@ import {
   SummaryRow,
 } from "@/components/create-flow/CreateFlowUi";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
-import { buildFormSaveAlert } from "@/lib/form-save-alert";
+import { approvalCreateClientAlert } from "@/lib/approval-create-alert";
+import type { FormAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -72,7 +73,7 @@ export function ApprovalCreateModal({
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [formAlert, setFormAlert] = useState<FormAlert | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<CreatedApproval | null>(null);
@@ -87,7 +88,7 @@ export function ApprovalCreateModal({
     if (!open) return;
     setForm({ ...emptyForm(defaultDecision || "Pending"), releaseId: lockReleaseId || "" });
     setErrors({});
-    setError(null);
+    setFormAlert(null);
     setCreated(null);
     setLoading(true);
     const ac = new AbortController();
@@ -100,7 +101,9 @@ export function ApprovalCreateModal({
       setLoading(false);
       if (releaseResult.ok) setReleases(releaseResult.data);
       if (userResult.ok) setUsers(userResult.data);
-      if (!releaseResult.ok || !userResult.ok) setError("Could not load required lookup data.");
+      if (!releaseResult.ok || !userResult.ok) {
+        setFormAlert(approvalCreateClientAlert(null, "Could not load required lookup data."));
+      }
     })();
     return () => ac.abort();
   }, [open, defaultDecision, lockReleaseId]);
@@ -137,32 +140,44 @@ export function ApprovalCreateModal({
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
-      setError("Please fill in the required fields highlighted below.");
+      setFormAlert(
+        approvalCreateClientAlert(null, "Please fill in the required fields highlighted below.")
+      );
       return;
     }
 
     setSaving(true);
-    setError(null);
-    const result = await safeFetchJson<CreatedApproval & { error?: string }>("/api/approvals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        releaseId: form.releaseId,
-        approvalType: form.approvalType.trim(),
-        approverId: form.approverId,
-        submittedDate: form.submittedDate,
-        decision: form.decision,
-        decisionDate: form.decisionDate || null,
-        comments: form.comments.trim() || null,
-        conditions: form.conditions.trim() || null,
-        cabMeetingId: form.cabMeetingId.trim() || null,
-      }),
-      label: "create-approval",
-      rejectHttpErrors: false,
-    });
+    setFormAlert(null);
+    const result = await safeFetchJson<CreatedApproval & { error?: string; issues?: unknown }>(
+      "/api/approvals",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          releaseId: form.releaseId,
+          approvalType: form.approvalType.trim(),
+          approverId: form.approverId,
+          submittedDate: form.submittedDate,
+          decision: form.decision,
+          decisionDate: form.decisionDate || null,
+          comments: form.comments.trim() || null,
+          conditions: form.conditions.trim() || null,
+          cabMeetingId: form.cabMeetingId.trim() || null,
+        }),
+        label: "create-approval",
+        rejectHttpErrors: false,
+      }
+    );
     setSaving(false);
     if (!result.ok || result.status >= 300) {
-      setError(result.ok && result.data.error ? result.data.error : "Failed to create approval");
+      // Dialog must live inside CreateModalShell (z-200 portal). A sibling
+      // FormAlertDialog at z-60 is hidden behind the modal — RD-113 silent no-op.
+      setFormAlert(
+        approvalCreateClientAlert(
+          result.ok ? result.data : null,
+          result.ok ? "Failed to create approval" : result.error
+        )
+      );
       return;
     }
     onCreated();
@@ -178,7 +193,7 @@ export function ApprovalCreateModal({
         onCreateAnother={() => {
           setCreated(null);
           setForm({ ...emptyForm(defaultDecision || "Pending"), releaseId: lockReleaseId || "" });
-          setError(null);
+          setFormAlert(null);
         }}
       >
         <SummaryRow label="Approval ID" value={created.approvalCode} mono />
@@ -216,6 +231,8 @@ export function ApprovalCreateModal({
           </>
         }
       >
+        {/* Inside the portaled shell so the alert is not covered (z-60 vs z-200). */}
+        <FormAlertDialog alert={formAlert} onDismiss={() => setFormAlert(null)} />
         <form id="approval-create-form" onSubmit={submit} className="min-w-0 space-y-4">
           {scoped ? (
             <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600 dark:bg-white/5 dark:text-white/70">
@@ -355,10 +372,6 @@ export function ApprovalCreateModal({
           </label>
         </form>
       </CreateModalShell>
-      <FormAlertDialog
-        alert={error ? buildFormSaveAlert(null, error, { entityLabel: "approval" }) : null}
-        onDismiss={() => setError(null)}
-      />
     </>
   );
 }
