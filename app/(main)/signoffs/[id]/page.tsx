@@ -1,22 +1,23 @@
 "use client";
 
-import { use, useCallback, useEffect, useRef, useState } from "react";
-import { Stamp } from "lucide-react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { Edit3, Stamp, Trash2 } from "lucide-react";
 import { DetailField, DetailFieldGrid, DetailPageShell } from "@/components/detail/DetailPageShell";
 import { DetailSection } from "@/components/detail/editable";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
+import { SignoffRecordModal } from "@/components/signoffs/SignoffRecordModal";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
-import { type SessionUser } from "@/lib/auth/roles";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { safeFetchJson } from "@/lib/safe-fetch";
-import { taBtnPrimary, taInput } from "@/lib/styles";
-import { cn } from "@/lib/utils";
-import { RowEditButton } from "@/components/ui/RowEditButton";
+import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import type { SignoffListRow } from "@/lib/signoff-list";
 import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
-import { shouldOfferSignoffEdit } from "@/lib/signoff-lifecycle-edit-policy";
-import { signoffNextStatusLabels } from "@/lib/signoff-lifecycle-transition";
+import {
+  signoffDetailActionFlags,
+  signoffWithdrawTargetLabel,
+} from "@/lib/signoff-record-actions";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -29,10 +30,10 @@ export default function SignoffDetailPage({ params }: Props) {
   const [config, setConfig] = useState<SignoffLifecycleConfig | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [nextStatus, setNextStatus] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const nextStatusRef = useRef<HTMLSelectElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,35 +54,32 @@ export default function SignoffDetailPage({ params }: Props) {
     void load();
   }, [load]);
 
-  const nextOptions = config ? signoffNextStatusLabels(config, row?.status) : [];
-  useEffect(() => {
-    setNextStatus(nextOptions[0] ?? "");
-  }, [row?.id, row?.status, nextOptions[0]]);
-
   const editsLocked = /^cancell?ed$/i.test(row?.releaseStatus ?? "");
-  const canEdit =
-    shouldOfferSignoffEdit({ user, config, status: row?.status }) && !editsLocked;
+  const roleCanEdit = sessionCanEdit(user) && !editsLocked;
+  const actions = useMemo(
+    () => signoffDetailActionFlags({ roleCanEdit, config, status: row?.status }),
+    [roleCanEdit, config, row?.status]
+  );
+  const withdrawLabel = config && row ? signoffWithdrawTargetLabel(config, row.status) : null;
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!row || !nextStatus) {
-      setError("Pick the next decision.");
-      return;
-    }
-    setSaving(true);
+  const confirmWithdraw = async () => {
+    if (!row || !withdrawLabel) return;
+    setWithdrawing(true);
     setError(null);
     const result = await safeFetchJson<{ error?: string }>(`/api/releases/${encodeURIComponent(row.releaseId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [row.releaseField]: nextStatus }),
-      label: "record-signoff",
+      body: JSON.stringify({ [row.releaseField]: withdrawLabel }),
+      label: "withdraw-signoff",
       rejectHttpErrors: false,
     });
-    setSaving(false);
+    setWithdrawing(false);
     if (!result.ok || result.status >= 300) {
-      setError(result.ok && result.data?.error ? result.data.error : "Failed to record sign-off");
+      setError(result.ok && result.data?.error ? result.data.error : "Failed to withdraw sign-off");
+      setWithdrawOpen(false);
       return;
     }
+    setWithdrawOpen(false);
     await load();
   };
 
@@ -97,11 +95,25 @@ export default function SignoffDetailPage({ params }: Props) {
       backLabel="Sign-offs"
       pageKey="signoffs"
       actions={
-        canEdit ? (
-          <RowEditButton
-            recordLabel={row.signoffCode}
-            onClick={() => nextStatusRef.current?.focus()}
-          />
+        actions.edit || actions.withdraw ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {actions.withdraw ? (
+              <button
+                type="button"
+                onClick={() => setWithdrawOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-slate-400 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-600 dark:text-white/45 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+              >
+                <Trash2 size={14} aria-hidden />
+                Delete
+              </button>
+            ) : null}
+            {actions.edit ? (
+              <button type="button" className={taBtnPrimary} onClick={() => setEditing(true)}>
+                <Edit3 size={14} aria-hidden />
+                Edit
+              </button>
+            ) : null}
+          </div>
         ) : null
       }
     >
@@ -136,40 +148,83 @@ export default function SignoffDetailPage({ params }: Props) {
             This release is {row.releaseStatus}. It is locked — nothing can be edited.
           </p>
         ) : null}
-
-        {canEdit ? (
-          <form onSubmit={submit} className="mt-5 max-w-sm space-y-3 border-t border-gray-100 pt-4 dark:border-[var(--border)]">
-            <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
-              Record decision
-              <select
-                id="signoff-next-status"
-                ref={nextStatusRef}
-                className={cn(taInput, "mt-1")}
-                value={nextStatus}
-                onChange={(event) => setNextStatus(event.target.value)}
-                disabled={nextOptions.length === 0}
-              >
-                {nextOptions.length === 0 ? (
-                  <option value="">No further steps</option>
-                ) : (
-                  nextOptions.map((label) => (
-                    <option key={label} value={label}>
-                      {label}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-            <button type="submit" className={taBtnPrimary} disabled={saving || !nextStatus}>
-              {saving ? "Saving…" : "Save decision"}
-            </button>
-          </form>
-        ) : null}
       </DetailSection>
+
+      <SignoffRecordModal
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={() => {
+          void load();
+        }}
+        config={config}
+        lockedRelease={{ id: row.releaseId, values: { [row.releaseField]: row.status } }}
+        initialField={row.releaseField}
+      />
+
+      {withdrawOpen && withdrawLabel ? (
+        <SignoffWithdrawDialog
+          entityCode={row.signoffCode}
+          withdrawLabel={withdrawLabel}
+          busy={withdrawing}
+          onCancel={() => setWithdrawOpen(false)}
+          onConfirm={() => void confirmWithdraw()}
+        />
+      ) : null}
+
       <FormAlertDialog
         alert={error ? buildFormSaveAlert(null, error, { entityLabel: "sign-off" }) : null}
         onDismiss={() => setError(null)}
       />
     </DetailPageShell>
+  );
+}
+
+/**
+ * Confirm mapping Delete → withdraw. Does not hard-delete a recorded decision.
+ */
+function SignoffWithdrawDialog({
+  entityCode,
+  withdrawLabel,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  entityCode: string;
+  withdrawLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      role="presentation"
+      onClick={() => !busy && onCancel()}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="signoff-withdraw-title"
+        className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-lg dark:border-[var(--border)] dark:bg-[var(--card)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id="signoff-withdraw-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Withdraw this sign-off?
+        </h2>
+        <p className="mt-2 text-sm text-gray-600 dark:text-white/65">
+          There is no separate sign-off row to delete. Delete records the lifecycle{" "}
+          <span className="font-medium text-gray-800 dark:text-white">{withdrawLabel}</span> decision for{" "}
+          <span className="font-mono font-medium">{entityCode}</span>. Recorded decisions cannot be changed.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button type="button" className={taBtnPrimary} disabled={busy} onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className={taBtnSecondary} disabled={busy} onClick={onConfirm}>
+            {busy ? "Saving…" : "Withdraw"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

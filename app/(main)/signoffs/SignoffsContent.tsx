@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Stamp } from "lucide-react";
+import { Plus, Stamp } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { TablePageToolbar } from "@/components/filters/TablePageToolbar";
 import { SIGNOFF_SORT_PRESETS } from "@/lib/table-sort-presets";
@@ -19,16 +19,20 @@ import { useTablePageLoading } from "@/hooks/useTablePageLoading";
 import { useTablePagePreferences } from "@/hooks/useTablePagePreferences";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
+import { SignoffRecordModal } from "@/components/signoffs/SignoffRecordModal";
 import { SIGNOFFS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { RowEditButton } from "@/components/ui/RowEditButton";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import type { SessionUser } from "@/lib/auth/roles";
+import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
+import { signoffListCreateAllowed } from "@/lib/signoff-record-actions";
 import { shouldOfferSignoffEdit } from "@/lib/signoff-lifecycle-edit-policy";
 import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
 import type { SignoffListRow } from "@/lib/signoff-list";
+import { taBtnPrimary } from "@/lib/styles";
+import { cn } from "@/lib/utils";
 
 type SignoffColumnKey = (typeof SIGNOFF_COLUMNS)[number]["key"];
 
@@ -115,6 +119,7 @@ export default function SignoffsContent() {
     sortKey,
     sortDir,
     toggleSort,
+    refetch,
   } = useFilteredFetch<SignoffListRow>("/api/signoffs", SIGNOFFS_FILTER_SCHEMA, {
     defaultSortKey: "signoffCode",
     defaultSortDir: "asc",
@@ -133,12 +138,14 @@ export default function SignoffsContent() {
   });
   const [allRows, setAllRows] = useState<SignoffListRow[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const lifecycle = useEntityLifecycleStatuses("/api/signoff-lifecycle-config");
   const signoffConfig = lifecycle.config as SignoffLifecycleConfig | null;
   const statusOptions = useMemo(
     () => lifecycle.filterOptions(allRows.map((row) => row.status)),
     [lifecycle, allRows]
   );
+  const canCreate = signoffListCreateAllowed(sessionCanEdit(user));
 
   useEffect(() => {
     const ac = new AbortController();
@@ -194,9 +201,37 @@ export default function SignoffsContent() {
     <div>
       <TopBar
         pageKey="signoffs"
-        trailing={<PageDocumentation pageKey="signoffs" />}
+        trailing={
+          <div className="flex items-center gap-2">
+            {canCreate ? (
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                aria-label="Create new record"
+                onClick={() => setModalOpen(true)}
+              >
+                <Plus className="mr-1 inline h-4 w-4" /> Add New Sign-off
+              </button>
+            ) : null}
+            <PageDocumentation pageKey="signoffs" />
+          </div>
+        }
         title="Sign-offs"
         subtitle={`${rows.length} checklist item${rows.length === 1 ? "" : "s"} across releases`}
+      />
+      <SignoffRecordModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => {
+          refetch();
+          void safeFetchJson<SignoffListRow[]>("/api/signoffs", { label: "signoffs-refresh" }).then(
+            (result) => {
+              if (result.ok) setAllRows(result.data);
+            }
+          );
+        }}
+        config={signoffConfig}
+        rows={allRows}
       />
       {!tablePending && (
         <TableFilterBar hasActive={hasActive} onClear={clearAll} manageFilters={filterPicker}>

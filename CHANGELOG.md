@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Sign-offs (RD-138):** The Record sign-off modal **Decision** select (second field) is enabled for new/pending requests. Sign-offs list has Add New Sign-off (editor+). Detail Edit records a still-editable decision; Delete withdraws a pending request (no hard-delete of a recorded decision). Readonly and terminal/immutable statuses get neither control.
 - **Conflict edit Release picker (RD-136):** Edit now lists releases from the same `GET /api/releases` lookup as create. The currently linked release stays in the list if it is missing from that lookup. An empty lookup shows “No releases available” instead of a blank control.
 - **RD-111 — Deployed status change:** Entering the `deployedMilestone` status is no longer hard-blocked by a missing environment booking (VR-19) or an unconfirmed DeploymentState outcome. Open blockers, conflicts, sign-offs, and hard dependencies still apply when those gates are attached. Combined with RD-129, a missing booking also does not block Deploying. Bookings are not deleted.
 - **RD-129 — deploy booking gate:** `environment_booked_for_deploy` (VR-19) no longer blocks a move toward Deploying when no environment booking exists. Prod does not need a booking. Sign-offs, hard dependencies, blockers, and other real gates are unchanged. Bookings are not deleted.

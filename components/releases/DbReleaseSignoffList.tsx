@@ -4,18 +4,9 @@ import { useMemo, useState } from "react";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { StatusBadge } from "@/components/badges/StatusBadge";
 import { ReleaseRelatedListFrame } from "@/components/releases/ReleaseRelatedListFrame";
-import {
-  CreateModalShell,
-  RequiredMark,
-} from "@/components/create-flow/CreateFlowUi";
-import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
-import { buildFormSaveAlert } from "@/lib/form-save-alert";
-import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
-import { cn } from "@/lib/utils";
-import { safeFetchJson } from "@/lib/safe-fetch";
+import { SignoffRecordModal } from "@/components/signoffs/SignoffRecordModal";
 import type { SignoffLifecycleConfig, SignoffReleaseField } from "@/lib/signoff-lifecycle-config";
 import { DEFAULT_SIGNOFF_TYPES } from "@/lib/signoff-lifecycle-config";
-import { signoffNextStatusLabels } from "@/lib/signoff-lifecycle-transition";
 import { encodeSignoffRowId, signoffCodeFor } from "@/lib/signoff-list";
 
 type Props = {
@@ -45,48 +36,6 @@ export function DbReleaseSignoffList({
   }, [signoffConfig]);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [fieldKey, setFieldKey] = useState<SignoffReleaseField | "">("");
-  const [nextStatus, setNextStatus] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const selectedType = types.find((type) => type.releaseField === fieldKey);
-  const currentValue = fieldKey ? values[fieldKey]?.trim() || "Pending" : "";
-  const nextOptions =
-    signoffConfig && fieldKey ? signoffNextStatusLabels(signoffConfig, values[fieldKey]) : [];
-
-  const openFor = (field: SignoffReleaseField | "") => {
-    setFieldKey(field);
-    const options =
-      signoffConfig && field ? signoffNextStatusLabels(signoffConfig, values[field]) : [];
-    setNextStatus(options[0] ?? "");
-    setError(null);
-    setModalOpen(true);
-  };
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!fieldKey || !nextStatus) {
-      setError("Pick a sign-off type and the next decision.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    const result = await safeFetchJson<{ error?: string }>(`/api/releases/${encodeURIComponent(releaseId)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [fieldKey]: nextStatus }),
-      label: "record-signoff",
-      rejectHttpErrors: false,
-    });
-    setSaving(false);
-    if (!result.ok || result.status >= 300) {
-      setError(result.ok && result.data?.error ? result.data.error : "Failed to record sign-off");
-      return;
-    }
-    onChanged();
-    setModalOpen(false);
-  };
 
   return (
     <>
@@ -94,7 +43,7 @@ export function DbReleaseSignoffList({
         heading="Sign-off checklist"
         addLabel="Record sign-off"
         canEdit={canEdit}
-        onAdd={() => openFor("")}
+        onAdd={() => setModalOpen(true)}
         loading={false}
         loadingLabel=""
         emptyLabel="No sign-off types are enabled."
@@ -141,81 +90,12 @@ export function DbReleaseSignoffList({
         </ul>
       </ReleaseRelatedListFrame>
 
-      {modalOpen ? (
-        <CreateModalShell
-          title="Record sign-off"
-          description="Updates the checklist field on this release (same PATCH as Edit Release)."
-          onClose={() => setModalOpen(false)}
-          footer={
-            <>
-              <button type="button" className={taBtnSecondary} onClick={() => setModalOpen(false)} disabled={saving}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="signoff-record-form"
-                className={taBtnPrimary}
-                disabled={saving || !fieldKey || !nextStatus}
-              >
-                {saving ? "Saving…" : "Save decision"}
-              </button>
-            </>
-          }
-        >
-          <form id="signoff-record-form" onSubmit={submit} className="min-w-0 space-y-4">
-            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
-              Type
-              <RequiredMark />
-              <select
-                className={cn(taInput, "mt-1 min-w-0 max-w-full")}
-                value={fieldKey}
-                onChange={(event) => {
-                  const next = event.target.value as SignoffReleaseField | "";
-                  setFieldKey(next);
-                  const options =
-                    signoffConfig && next ? signoffNextStatusLabels(signoffConfig, values[next]) : [];
-                  setNextStatus(options[0] ?? "");
-                }}
-              >
-                <option value="">Select type…</option>
-                {types
-                  .filter((type) => type.releaseField)
-                  .map((type) => (
-                    <option key={type.key} value={type.releaseField!}>
-                      {type.label}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {selectedType ? (
-              <p className="text-xs text-gray-500 dark:text-white/55">Current: {currentValue}</p>
-            ) : null}
-            <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
-              Decision
-              <RequiredMark />
-              <select
-                className={cn(taInput, "mt-1 min-w-0 max-w-full")}
-                value={nextStatus}
-                onChange={(event) => setNextStatus(event.target.value)}
-                disabled={nextOptions.length === 0}
-              >
-                {nextOptions.length === 0 ? (
-                  <option value="">No further steps</option>
-                ) : (
-                  nextOptions.map((label) => (
-                    <option key={label} value={label}>
-                      {label}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-          </form>
-        </CreateModalShell>
-      ) : null}
-      <FormAlertDialog
-        alert={error ? buildFormSaveAlert(null, error, { entityLabel: "sign-off" }) : null}
-        onDismiss={() => setError(null)}
+      <SignoffRecordModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSaved={onChanged}
+        config={signoffConfig}
+        lockedRelease={{ id: releaseId, values }}
       />
     </>
   );
