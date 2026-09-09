@@ -6,6 +6,7 @@ import {
   assignmentPickerOptions,
   assignmentWriteDenial,
   computeReleaseSeats,
+  isAssignableScopeSectionEditor,
   isExactEditorDirectoryUser,
   isReleaseSeatWriteLocked,
 } from "@/lib/release-seats";
@@ -125,6 +126,64 @@ describe("release seats", () => {
     );
     assert.equal(isExactEditorDirectoryUser(adminRow), false);
     assert.equal(isExactEditorDirectoryUser(ownerRow), false);
+  });
+});
+
+describe("scope section editors (grants, not account-role editors)", () => {
+  it("allows any existing same-tenant user as a section editor, not only account-role editors", () => {
+    assert.equal(isAssignableScopeSectionEditor(ownerRow), true);
+    assert.equal(isAssignableScopeSectionEditor(adminRow), true);
+    assert.equal(isAssignableScopeSectionEditor(editorRow), true);
+    assert.equal(isExactEditorDirectoryUser(ownerRow), false);
+    assert.equal(isExactEditorDirectoryUser(adminRow), false);
+    const { managers } = assignmentPickerOptions([ownerRow, editorRow, adminRow]);
+    assert.deepEqual(managers.map((u) => u.id), ["user_editor"]);
+  });
+
+  it("does not turn a section editor into a Release Manager or release editor", () => {
+    const grantedReadonly = computeReleaseSeats({
+      session: readonly,
+      directoryUser: ownerRow,
+      seats: { releaseOwnerId: "someone_else", releaseManagerId: "user_editor" },
+      writeLocked: false,
+    });
+    assert.equal(grantedReadonly.holdsSeat, false);
+    assert.equal(grantedReadonly.isCurrentManager, false);
+    assert.equal(
+      assignmentWriteDenial(grantedReadonly, { releaseOwnerId: "user_owner" })?.code,
+      "OWNER_ASSIGN_DENIED"
+    );
+    const caps = scopeSectionCapabilities(grantedReadonly, {
+      kind: "scope",
+      statusKey: SCOPE_STATUS_DRAFT,
+      granteeUserIds: ["user_owner"],
+    });
+    assert.equal(caps.canEditDescription, true);
+    assert.equal(caps.canAddAttachments, true);
+    assert.equal(caps.canApprove, false);
+    assert.equal(caps.canAddGrant, false);
+  });
+
+  it("does not carry a scope grant onto a change-request section", () => {
+    const decision = computeReleaseSeats({
+      session: readonly,
+      directoryUser: ownerRow,
+      seats: { releaseOwnerId: "someone_else", releaseManagerId: "user_editor" },
+      writeLocked: false,
+    });
+    const onScope = scopeSectionCapabilities(decision, {
+      kind: "scope",
+      statusKey: SCOPE_STATUS_DRAFT,
+      granteeUserIds: ["user_owner"],
+    });
+    const onRequest = scopeSectionCapabilities(decision, {
+      kind: "change_request",
+      statusKey: SCOPE_STATUS_DRAFT,
+      granteeUserIds: [],
+    });
+    assert.equal(onScope.canEditDescription, true);
+    assert.equal(onRequest.canEditDescription, false);
+    assert.equal(onRequest.canAddAttachments, false);
   });
 });
 

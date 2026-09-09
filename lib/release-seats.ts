@@ -74,6 +74,17 @@ export function isAssignableOwnerDirectoryUser(user: DirectoryUserRef): boolean 
 }
 
 /**
+ * Who may be added as a Scope / change-request SECTION editor.
+ * Any existing same-tenant Release Desk user — not limited to account-role
+ * editors. This is not a Release Manager seat and not an account-role change.
+ *
+ * @param user - Directory user.
+ */
+export function isAssignableScopeSectionEditor(user: DirectoryUserRef): boolean {
+  return isAssignableOwnerDirectoryUser(user);
+}
+
+/**
  * Live or terminal releases deny manager/owner/scope writes.
  * Live = deployingMilestone or deployedMilestone. Terminal = status.terminal.
  * Unknown status is not guessed as live/terminal.

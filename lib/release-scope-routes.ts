@@ -28,7 +28,7 @@ import {
   validateScopeAttachment,
 } from "@/lib/release-scope-attachments";
 import { canGrantDraftSection } from "@/lib/release-scope-permissions";
-import { isAssignableOwnerDirectoryUser } from "@/lib/release-seats";
+import { isAssignableScopeSectionEditor } from "@/lib/release-seats";
 import { isScopeDraft } from "@/lib/release-scope-status";
 import { readScopeFile, writeScopeFile } from "@/lib/release-scope-files";
 import { auditActorName } from "@/lib/release-audit";
@@ -379,7 +379,8 @@ async function addGrant(args: {
   }
   const users = await listDirectoryUsersForAssignment();
   const grantee = users.find((u) => u.id === args.granteeUserId);
-  if (!grantee || !isAssignableOwnerDirectoryUser(grantee)) {
+  // Section editor = any existing same-tenant user, not account-role editors only.
+  if (!grantee || !isAssignableScopeSectionEditor(grantee)) {
     return scopeDenied(400, "Choose an existing Release Desk user.", "INVALID_GRANTEE");
   }
   if (grantee.id === ctx.directoryUser?.id) {

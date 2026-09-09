@@ -31,4 +31,10 @@ describe("native scope write-path wiring", () => {
     assert.doesNotMatch(service, /cabScopeSnapshot\s*:/);
     assert.doesNotMatch(service, /applicationIds\s*:/);
   });
+
+  it("grants any same-tenant user as a section editor, not account-role editors only", () => {
+    const routes = readSrc("lib/release-scope-routes.ts");
+    assert.match(routes, /isAssignableScopeSectionEditor/);
+    assert.doesNotMatch(routes, /isExactEditorDirectoryUser/);
+  });
 });

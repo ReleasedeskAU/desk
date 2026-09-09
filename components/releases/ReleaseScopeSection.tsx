@@ -501,6 +501,10 @@ function GrantRow({
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
         People who can edit this section
       </p>
+      <p className="text-[11.5px] text-slate-500 dark:text-white/50">
+        Any existing Release Desk user. They can edit this section only — they are not a Release
+        Manager and cannot approve.
+      </p>
       {grants.map((g) => (
         <div
           key={g.id}

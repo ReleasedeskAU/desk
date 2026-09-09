@@ -1,8 +1,13 @@
 /**
  * Native scope / change-request section permissions.
- * Section grants are separate from account role and do not carry between
- * scope and a change request. After approval, leftover grants do not keep
- * the section writable.
+ *
+ * Section editors (grants) are not account-role editors and not Release Managers.
+ * While a section is draft, the current manager or owner may add ANY existing
+ * same-tenant user as a section editor. That person may edit only that
+ * section's description and add attachments until it is approved — they cannot
+ * approve, cannot add people, and do not gain a manager/owner seat.
+ * Grants do not carry between scope and a change request. After approval,
+ * add is denied; leftover grants do not keep the section writable.
  */
 import {
   canSeatEditRelease,
@@ -66,7 +71,9 @@ export function scopeSectionCapabilities(
 }
 
 /**
- * True when the actor may add an existing same-tenant user to a still-draft section.
+ * True when the current manager or owner may add a section editor.
+ * The grantee may be any existing same-tenant user (see
+ * `isAssignableScopeSectionEditor`) — not limited to account-role editors.
  *
  * @param decision - Seat decision.
  * @param statusKey - Section status key.
