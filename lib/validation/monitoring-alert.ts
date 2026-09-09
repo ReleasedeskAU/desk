@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z, type ZodError } from "zod";
 import { ALERT_SOURCES } from "@/lib/alert-source";
 
 const optionalNullableString = z.union([z.string().trim().max(4000), z.null()]).optional();
@@ -40,6 +40,7 @@ export type CreateMonitoringAlertInput = z.infer<typeof createMonitoringAlertSch
 /**
  * PATCH /api/monitoring-alerts/[id] — allowlisted fields only.
  * alertCode is immutable. threshold/currentValue stay strings (mixed seed formats).
+ * alertSource matches the Alerts detail save body (RD-120).
  */
 export const patchMonitoringAlertSchema = z
   .object({
@@ -57,7 +58,32 @@ export const patchMonitoringAlertSchema = z
     notes: optionalNullableString,
     /** Soft-gate override / dismiss justification (Flexible transitions). */
     overrideReason: z.string().trim().min(1).max(2000).optional(),
+    /** Stored origin; UI already edits this. Not a status-transition requirement. */
+    alertSource: z.enum(ALERT_SOURCES).optional(),
   })
   .strict();
 
 export type PatchMonitoringAlertInput = z.infer<typeof patchMonitoringAlertSchema>;
+
+/**
+ * Client-safe PATCH validation body. Surfaces the first field issue instead of
+ * a generic "Validation failed" so a real mismatch is visible (RD-120).
+ * @param err - Zod failure from patchMonitoringAlertSchema
+ * @returns JSON body with `error` plus field `issues`; no stack traces
+ */
+export function monitoringAlertPatchValidationBody(err: ZodError): {
+  error: string;
+  issues: { path: string; message: string }[];
+} {
+  const issues = err.issues.map((i) => ({
+    path: i.path.join("."),
+    message: i.message,
+  }));
+  const first = issues[0];
+  const error = first
+    ? first.path
+      ? `${first.path}: ${first.message}`
+      : first.message
+    : "Validation failed";
+  return { error, issues };
+}

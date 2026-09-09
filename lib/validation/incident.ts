@@ -36,9 +36,25 @@ export const INCIDENT_SEVERITY_VALUES = [
   "P4",
 ] as const;
 
+const RELATED_RELEASE_REQUIRED = "Related Release is required";
+
+/**
+ * Stored Incident.relatedReleaseCode on create. Rejects omit/null/blank so a
+ * crafted POST cannot persist an incident without a related release.
+ */
+export const createRelatedReleaseCodeSchema = z
+  .string({
+    required_error: RELATED_RELEASE_REQUIRED,
+    invalid_type_error: RELATED_RELEASE_REQUIRED,
+  })
+  .trim()
+  .min(1, RELATED_RELEASE_REQUIRED)
+  .max(4000);
+
 /**
  * POST /api/incidents body. Rejects unknown fields and never accepts a client-provided incidentCode.
  * Application and related-release existence are checked by the API.
+ * relatedReleaseCode is required on create only; PATCH and historical rows may still be blank.
  */
 export const createIncidentSchema = z
   .object({
@@ -52,7 +68,7 @@ export const createIncidentSchema = z
     environmentName: z.string().trim().min(1).max(200),
     departmentName: optionalNullableString,
     assignedTo: optionalNullableString,
-    relatedReleaseCode: optionalNullableString,
+    relatedReleaseCode: createRelatedReleaseCodeSchema,
   })
   .strict();
 

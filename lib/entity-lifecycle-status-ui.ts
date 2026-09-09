@@ -119,6 +119,25 @@ export function isEnabledEntityStatusLabel(
 }
 
 /**
+ * Filter dropdown: enabled labels only. Keeps a current selection that is
+ * Off/unknown so an applied filter remains visible. Does not union other
+ * in-use row values (those still render on the row).
+ * @param enabledLabels - Enabled lifecycle labels in display order.
+ * @param selected - Currently applied filter value, if any.
+ */
+export function choosableEntityStatusFilterOptions(
+  enabledLabels: readonly string[],
+  selected?: string | null
+): string[] {
+  const enabled = [...enabledLabels];
+  const raw = (selected ?? "").trim();
+  if (!raw) return enabled;
+  const key = raw.toLocaleLowerCase();
+  if (enabled.some((label) => label.toLocaleLowerCase() === key)) return enabled;
+  return [raw, ...enabled];
+}
+
+/**
  * Filter options: enabled labels, then Off/unknown still present on data.
  */
 export function entityStatusFilterOptions(

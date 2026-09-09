@@ -21,12 +21,14 @@ import { TableSkeleton } from "@/components/ui/TableSkeleton";
 import { PageDocumentation } from "@/components/help/PageDocumentation";
 import { SignoffRecordModal } from "@/components/signoffs/SignoffRecordModal";
 import { SIGNOFFS_FILTER_SCHEMA } from "@/lib/table-filters";
-import { safeFetchJson } from "@/lib/safe-fetch";
+import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { StatusBadge } from "@/components/badges/StatusBadge";
+import { RowEditButton } from "@/components/ui/RowEditButton";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { signoffListCreateAllowed } from "@/lib/signoff-record-actions";
+import { shouldOfferSignoffEdit } from "@/lib/signoff-lifecycle-edit-policy";
 import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
 import type { SignoffListRow } from "@/lib/signoff-list";
 import { taBtnPrimary } from "@/lib/styles";
@@ -34,7 +36,11 @@ import { cn } from "@/lib/utils";
 
 type SignoffColumnKey = (typeof SIGNOFF_COLUMNS)[number]["key"];
 
-function renderSignoffCell(row: SignoffListRow, key: SignoffColumnKey) {
+function renderSignoffCell(
+  row: SignoffListRow,
+  key: SignoffColumnKey,
+  offerEdit: boolean
+) {
   switch (key) {
     case "signoffCode":
       return (
@@ -83,6 +89,19 @@ function renderSignoffCell(row: SignoffListRow, key: SignoffColumnKey) {
       return <td key={key} className={`${tableCell} whitespace-nowrap`}>{row.department}</td>;
     case "owner":
       return <td key={key} className={`${tableCell} whitespace-nowrap`}>{row.owner}</td>;
+    case "actions":
+      return (
+        <td key={key} className={`${tableCell} whitespace-nowrap`}>
+          {offerEdit ? (
+            <RowEditButton
+              recordLabel={row.signoffCode}
+              href={`/signoffs/${encodeURIComponent(row.id)}`}
+            />
+          ) : (
+            <span className="text-xs text-gray-400 dark:text-white/40">—</span>
+          )}
+        </td>
+      );
     default:
       return null;
   }
@@ -119,9 +138,9 @@ export default function SignoffsContent() {
   });
   const [allRows, setAllRows] = useState<SignoffListRow[]>([]);
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [signoffConfig, setSignoffConfig] = useState<SignoffLifecycleConfig | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const lifecycle = useEntityLifecycleStatuses("/api/signoff-lifecycle-config");
+  const signoffConfig = lifecycle.config as SignoffLifecycleConfig | null;
   const statusOptions = useMemo(
     () => lifecycle.filterOptions(allRows.map((row) => row.status)),
     [lifecycle, allRows]
@@ -131,26 +150,22 @@ export default function SignoffsContent() {
   useEffect(() => {
     const ac = new AbortController();
     void (async () => {
-      const [listRes, meRes, cfgRes] = await Promise.all([
-        safeFetchJson<SignoffListRow[]>("/api/signoffs", {
-          signal: ac.signal,
-          label: "signoffs",
-        }),
-        safeFetchJson<{ user: SessionUser }>("/api/auth/me", {
-          signal: ac.signal,
-          label: "auth-me",
-        }),
-        safeFetchJson<{ config: SignoffLifecycleConfig }>("/api/signoff-lifecycle-config", {
-          signal: ac.signal,
-          label: "signoff-lifecycle",
-        }),
-      ]);
+      const result = await safeFetchJson<SignoffListRow[]>("/api/signoffs", {
+        signal: ac.signal,
+        label: "signoffs",
+      });
       if (ac.signal.aborted) return;
-      if (listRes.ok) setAllRows(listRes.data);
-      if (meRes.ok) setUser(meRes.data.user);
-      if (cfgRes.ok) setSignoffConfig(cfgRes.data.config);
+      if (result.ok) setAllRows(result.data);
     })();
     return () => ac.abort();
+  }, []);
+
+  useEffect(() => {
+    return loadJsonEffect<{ user: SessionUser }>(
+      "/api/auth/me",
+      (data) => setUser(data.user),
+      { label: "auth-me" }
+    );
   }, []);
 
   const types = useMemo(
@@ -163,7 +178,7 @@ export default function SignoffsContent() {
     SIGNOFF_COLUMNS,
     SIGNOFFS_FILTER_FIELDS,
     {
-      lockedKeys: ["signoffCode"],
+      lockedKeys: ["signoffCode", "actions"],
       defaultHiddenFilters: SIGNOFFS_DEFAULT_HIDDEN_FILTER_KEYS,
       defaultHiddenColumns: SIGNOFF_DEFAULT_HIDDEN_COLUMN_KEYS,
     }
@@ -330,7 +345,17 @@ export default function SignoffsContent() {
                 {rows.map((row) => (
                   <tr key={row.id} className={tableRow}>
                     {SIGNOFF_COLUMNS.map((col) =>
-                      isColumnVisible(col.key) ? renderSignoffCell(row, col.key as SignoffColumnKey) : null
+                      isColumnVisible(col.key)
+                        ? renderSignoffCell(
+                            row,
+                            col.key as SignoffColumnKey,
+                            shouldOfferSignoffEdit({
+                              user,
+                              config: signoffConfig,
+                              status: row.status,
+                            })
+                          )
+                        : null
                     )}
                   </tr>
                 ))}
