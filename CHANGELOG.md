@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Sign-offs (RD-138):** The Record sign-off modal **Decision** select (second field) is enabled for new/pending requests. Sign-offs list has Add New Sign-off (editor+). Detail Edit records a still-editable decision; Delete withdraws a pending request (no hard-delete of a recorded decision). Readonly and terminal/immutable statuses get neither control.
+
 - **Connector delete:** Trash uses this pair’s credential id (not every credential on the connector). Digit-string ids are accepted. A scheduled delete no longer greys out trash — retry re-queues StaffLess. The list polls while status is Deleting. 403/404 from StaffLess use a plain message.
 
 - **Connectors sync logs:** The History action now shows live StaffLess indexing-status (indexed docs, this run, last result, unresolved errors) plus index attempts. It looks up by StaffLess connector id or `cc_pair_id`, not Prisma. The drawer auto-refreshes while a run is queued or in progress. StaffLess does not expose separate “records found” vs “fetched” counts, so those are omitted. Stack traces stay off the payload.
