@@ -30,7 +30,7 @@ import {
   isReleaseCancelled,
   loadGuardReleaseConfig,
 } from "@/lib/release-related-entity-guards";
-import { editPolicyDeniedMessage } from "@/lib/edit-policy-user-message";
+import { releaseEditPolicyDeniedError } from "@/lib/edit-policy-user-message";
 import {
   encodeUxNoticeHeader,
   UX_NOTICE_HEADER,
@@ -172,17 +172,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ? editPolicyDenied
       : editPolicyDenied.filter((key) => !catalogEntryForBodyKey(key));
     if (denied.length > 0) {
+      const statusRef = resolveLifecycleStatusRef(config, existing.status);
+      const policyError = releaseEditPolicyDeniedError({
+        mode,
+        statusLabel: statusRef?.label ?? existing.status,
+        statusKey: statusRef?.key ?? null,
+        deniedFields: denied,
+      });
       return NextResponse.json(
         {
-          error: editPolicyDeniedMessage({
-            entity: "release",
-            mode,
-            statusLabel: existing.status,
-            deniedFields: denied,
-          }),
+          error: policyError.error,
           code: "EDIT_POLICY_DENIED",
           mode,
           denied,
+          ...(policyError.field ? { field: policyError.field } : {}),
         },
         { status: 409 }
       );

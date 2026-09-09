@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { RELEASE_NAME_PENDING_CAB_DENIED_MESSAGE } from "@/lib/edit-policy-user-message";
 import { buildReleaseFormSaveAlert } from "@/lib/release-form-save-alert";
 
 describe("buildReleaseFormSaveAlert", () => {
@@ -61,6 +62,36 @@ describe("buildReleaseFormSaveAlert", () => {
   it("falls back when body has no error field", () => {
     const alert = buildReleaseFormSaveAlert(null, "Failed to save release");
     assert.equal(alert.message, "Failed to save release");
+    assert.equal(alert.title, "Could not save release");
+  });
+
+  it("shows a plain name-lock dialog at pending CAB, not a technical code (RD-141)", () => {
+    const alert = buildReleaseFormSaveAlert(
+      {
+        error: RELEASE_NAME_PENDING_CAB_DENIED_MESSAGE,
+        code: "EDIT_POLICY_DENIED",
+        field: "name",
+        denied: ["name"],
+        mode: "limited",
+      },
+      "Failed to save release"
+    );
+    assert.equal(alert.title, "Release name can’t be changed");
+    assert.match(alert.message, /can’t be changed at this stage/i);
+    assert.match(alert.message, /release manager/i);
+    assert.equal(alert.message.includes("EDIT_POLICY_DENIED"), false);
+    assert.doesNotMatch(alert.message, /\blimited\b/);
+    assert.doesNotMatch(alert.message, /Fields affected:\s*name/);
+    assert.doesNotMatch(alert.title, /Status change blocked/);
+  });
+
+  it("keeps a clear message for a missing required field (not the name-lock copy)", () => {
+    const alert = buildReleaseFormSaveAlert(
+      { error: "Release name is required" },
+      "Failed to save release"
+    );
+    assert.equal(alert.message, "Release name is required");
+    assert.doesNotMatch(alert.message, /ask a release manager/i);
     assert.equal(alert.title, "Could not save release");
   });
 });
