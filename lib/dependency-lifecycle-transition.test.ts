@@ -11,7 +11,10 @@ import {
 } from "@/lib/dependency-lifecycle-transition";
 import {
   deniedDependencyEditFields,
+  dependencyEditFormPatchBody,
+  isDependencyEditFormFieldVisible,
   resolveDependencyEditMode,
+  visibleDependencyEditFormFields,
 } from "@/lib/dependency-lifecycle-edit-policy";
 
 const config = createDefaultDependencyLifecycleConfig();
@@ -244,5 +247,98 @@ describe("dependency edit policy", () => {
       "acknowledgeSide",
     ]);
     assert.deepEqual(denied, ["dependencyType"]);
+  });
+});
+
+describe("dependency edit-form field visibility (RD-119)", () => {
+  const draft = {
+    releaseId: "rel-1",
+    dependsOnReleaseId: "rel-2",
+    dependencyType: "Hard",
+    status: "In Progress",
+    impactIfBlocked: "Release Delay",
+    notes: "  keep going  ",
+  };
+
+  it("shows every status-gated form field for a full next status", () => {
+    assert.deepEqual(visibleDependencyEditFormFields(config, "In Progress"), [
+      "releaseId",
+      "dependsOnReleaseId",
+      "dependencyType",
+      "status",
+      "impactIfBlocked",
+      "notes",
+    ]);
+    assert.deepEqual(visibleDependencyEditFormFields(config, "in_progress"), [
+      "releaseId",
+      "dependsOnReleaseId",
+      "dependencyType",
+      "status",
+      "impactIfBlocked",
+      "notes",
+    ]);
+    const patch = dependencyEditFormPatchBody(config, draft);
+    assert.equal(patch.dependencyType, "Hard");
+    assert.equal(patch.impactIfBlocked, "Release Delay");
+    assert.equal(patch.notes, "keep going");
+  });
+
+  it("hides locked fields when the selected next status is limited or immutable", () => {
+    assert.deepEqual(visibleDependencyEditFormFields(config, "Resolved"), [
+      "status",
+      "notes",
+    ]);
+    assert.equal(
+      isDependencyEditFormFieldVisible(config, "resolved", "dependencyType"),
+      false
+    );
+    assert.equal(
+      isDependencyEditFormFieldVisible(config, "Resolved", "impactIfBlocked"),
+      false
+    );
+    assert.equal(isDependencyEditFormFieldVisible(config, "Closed", "notes"), false);
+    assert.deepEqual(visibleDependencyEditFormFields(config, "closed"), ["status"]);
+    const closedPatch = dependencyEditFormPatchBody(config, {
+      ...draft,
+      status: "Closed",
+    });
+    assert.deepEqual(Object.keys(closedPatch), ["status"]);
+    assert.equal(closedPatch.status, "Closed");
+  });
+
+  it("resolves a renamed tenant status by config key, not the English label", () => {
+    const renamed = createDefaultDependencyLifecycleConfig();
+    const resolved = renamed.statuses.find((s) => s.key === "resolved");
+    const closed = renamed.statuses.find((s) => s.key === "closed");
+    assert.ok(resolved && closed);
+    resolved.label = "Wrapped Up";
+    closed.label = "Archived";
+
+    assert.deepEqual(visibleDependencyEditFormFields(renamed, "Wrapped Up"), [
+      "status",
+      "notes",
+    ]);
+    assert.deepEqual(visibleDependencyEditFormFields(renamed, "resolved"), [
+      "status",
+      "notes",
+    ]);
+    assert.equal(
+      isDependencyEditFormFieldVisible(renamed, "Archived", "impactIfBlocked"),
+      false
+    );
+    assert.equal(
+      isDependencyEditFormFieldVisible(renamed, "closed", "dependencyType"),
+      false
+    );
+    assert.equal(isDependencyEditFormFieldVisible(renamed, "Archived", "status"), true);
+    // Old English label is unknown after rename — do not special-case "Resolved".
+    assert.equal(
+      isDependencyEditFormFieldVisible(renamed, "Resolved", "dependencyType"),
+      true
+    );
+    assert.equal(
+      isDependencyEditFormFieldVisible(null, "Closed", "impactIfBlocked"),
+      true
+    );
   });
 });

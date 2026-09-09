@@ -160,7 +160,10 @@ describe("approvalWorkflow", () => {
     assert.equal(primary?.stampsResolution, true);
     assert.ok(secondary.some((s) => s.status === "Approved with Conditions"));
     assert.ok(secondary.some((s) => s.status === "Rejected"));
-    assert.ok(secondary.some((s) => s.status === "Deferred"));
+    assert.equal(
+      secondary.some((s) => s.status === "Deferred"),
+      false
+    );
   });
 
   it("hides the required Approved → Expired cron edge from one-click", () => {

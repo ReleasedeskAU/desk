@@ -19,6 +19,8 @@ function cloneGate(gate: IncidentLifecycleGateAttachment): IncidentLifecycleGate
 
 /**
  * Reconcile a stored incident config toward the shipped 8-status spec.
+ * Optional LC_Incidents-absent statuses (Resolving, Reopened) stay Off unless
+ * the tenant enabled a transition into or out of them.
  * @param config - Current user graph (already normalized).
  * @returns Cloned config with missing system statuses, edges, and default checks.
  */
@@ -74,6 +76,21 @@ export function reconcileIncidentLifecycleSpec(
       existing.gates.push(cloneGate(gate));
       have.add(gate.gateType);
     }
+  }
+
+  // LC_Incidents optional stages default Off. Older snapshots seeded them On
+  // even though their edges were Off — treat unused optional stages as Off so
+  // filters match the sheet. A tenant who enabled a path into the status keeps it.
+  const optedIn = new Set<string>();
+  for (const item of transitions) {
+    if (!item.enabled) continue;
+    optedIn.add(item.fromKey);
+    optedIn.add(item.toKey);
+  }
+  for (const status of statuses) {
+    const def = defaults.statuses.find((d) => d.key === status.key);
+    if (!def || def.enabled || optedIn.has(status.key)) continue;
+    status.enabled = false;
   }
 
   return { statuses, transitions };

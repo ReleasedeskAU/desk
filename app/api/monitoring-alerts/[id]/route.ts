@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
 import { prisma } from "@/lib/prisma";
-import { zodErrorResponse } from "@/lib/api-errors";
-import { patchMonitoringAlertSchema } from "@/lib/validation/monitoring-alert";
+import {
+  monitoringAlertPatchValidationBody,
+  patchMonitoringAlertSchema,
+} from "@/lib/validation/monitoring-alert";
 import { loadAlertLifecycleConfig } from "@/lib/alert-lifecycle-config-db";
 import { deniedAlertEditFields } from "@/lib/alert-lifecycle-edit-policy";
 import {
@@ -54,7 +56,11 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "Alert not found" }, { status: 404 });
 
   const parsed = patchMonitoringAlertSchema.safeParse(await req.json());
-  if (!parsed.success) return zodErrorResponse(parsed.error);
+  if (!parsed.success) {
+    return NextResponse.json(monitoringAlertPatchValidationBody(parsed.error), {
+      status: 400,
+    });
+  }
   const body = parsed.data;
   if (Object.keys(body).length === 0) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
@@ -175,6 +181,10 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (body.environmentName !== undefined && proposed.has("environmentName")) {
     data.environmentName = body.environmentName;
+  }
+  // Enum-validated Manual|System only — matches the column; not a free-text origin.
+  if (body.alertSource !== undefined && proposed.has("alertSource")) {
+    data.alertSource = body.alertSource;
   }
 
   const row = await prisma.monitoringAlert.update({
