@@ -2,10 +2,10 @@
  * Session-tenant resolution for native Scope and release GET/list.
  * Platform is multi-tenant — a different non-null organizationId is another tenant.
  *
- * List and detail use the same session org (directory User.organizationId, else
- * Clerk Organization.id). Do not use getDefaultOrganizationId. Do not skip the
- * org match on detail. Clerk org is identity; User.organizationId is the
- * data-plane tenant stamped on User/Release rows.
+ * List and detail use the same session org when RELEASE_TENANT_SCOPE=on
+ * (directory User.organizationId, else Clerk Organization.id). Do not use
+ * getDefaultOrganizationId. Do not skip the org match on detail while on.
+ * Temporarily off by default until Clerk orgs are linked to the data tenant.
  */
 
 import { auth } from "@clerk/nextjs/server";
@@ -13,6 +13,7 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { resolveDirectoryUser } from "@/lib/release-directory-user";
+import { isReleaseTenantScopeEnabled } from "@/lib/release-tenant-scope-flag";
 
 export type ScopeTenantContext = {
   /** Session data-plane organization id. */
@@ -23,8 +24,8 @@ export type TenantReleaseLookup =
   | { ok: true; releaseId: string; tenant: ScopeTenantContext }
   | { ok: false; code: "TENANT_REQUIRED" | "NOT_FOUND" };
 
-export type TenantReleaseListWhere<T> =
-  | { ok: true; where: { AND: [T, { id: { in: string[] } }] } }
+export type TenantReleaseListWhere<T extends object> =
+  | { ok: true; where: T | { AND: [T, { id: { in: string[] } }] } }
   | { ok: false; code: "TENANT_REQUIRED" };
 
 /**
@@ -183,7 +184,8 @@ export async function listReleaseIdsForOrganization(
 
 /**
  * Restrict a Prisma release list to the session tenant. Fail closed when the
- * session has no org — never return an unscoped dump.
+ * session has no org — never return an unscoped dump — unless tenant scope is
+ * temporarily off (RELEASE_TENANT_SCOPE).
  *
  * @param session - Authenticated session.
  * @param where - Existing list filters.
@@ -192,6 +194,7 @@ export async function releaseWhereForSessionTenant<T extends object>(
   session: SessionUser,
   where: T
 ): Promise<TenantReleaseListWhere<T>> {
+  if (!isReleaseTenantScopeEnabled()) return { ok: true, where };
   const tenant = await resolveScopeTenant(session);
   if (!tenant) return { ok: false, code: "TENANT_REQUIRED" };
   const ids = await listReleaseIdsForOrganization(tenant.organizationId);
@@ -217,7 +220,7 @@ export async function findReleaseIdForTenant(
 }
 
 /**
- * Load a release only when it belongs to the session tenant.
+ * Load a release for the session. Tenant on: org must match. Tenant off: any org.
  *
  * @param releaseIdOrCode - URL id or releaseCode.
  * @param session - Authenticated session.
@@ -226,6 +229,15 @@ export async function lookupReleaseForSessionTenant(
   releaseIdOrCode: string,
   session: SessionUser
 ): Promise<TenantReleaseLookup> {
+  if (!isReleaseTenantScopeEnabled()) {
+    const row = await findReleaseIdAndOrganization(releaseIdOrCode);
+    if (!row) return { ok: false, code: "NOT_FOUND" };
+    const tenant = row.organizationId
+      ? { organizationId: row.organizationId }
+      : await resolveScopeTenant(session);
+    if (!tenant) return { ok: false, code: "TENANT_REQUIRED" };
+    return { ok: true, releaseId: row.id, tenant };
+  }
   const tenant = await resolveScopeTenant(session);
   if (!tenant) return { ok: false, code: "TENANT_REQUIRED" };
   const releaseId = await findReleaseIdForTenant(releaseIdOrCode, tenant.organizationId);

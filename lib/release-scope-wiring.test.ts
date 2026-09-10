@@ -66,6 +66,7 @@ describe("native scope write-path wiring", () => {
     assert.match(lookupsRoute, /releaseWhereForSessionTenant/);
 
     const tenant = readSrc("lib/release-scope-tenant.ts");
+    assert.match(tenant, /if \(!isReleaseTenantScopeEnabled\(\)\) return \{ ok: true, where \}/);
     assert.match(tenant, /if \(!tenant\) return \{ ok: false, code: "TENANT_REQUIRED" \}/);
     assert.match(tenant, /listReleaseIdsForOrganization/);
   });

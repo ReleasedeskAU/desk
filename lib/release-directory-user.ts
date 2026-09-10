@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/roles";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import type { DirectoryUserRef } from "@/lib/release-seats";
+import { isReleaseTenantScopeEnabled } from "@/lib/release-tenant-scope-flag";
 
 const DIRECTORY_SELECT = {
   id: true,
@@ -65,21 +66,40 @@ type DirectoryUserRow = {
   status: string;
 };
 
+function toDirectoryUserRef(row: DirectoryUserRow): DirectoryUserRef {
+  return {
+    id: row.id,
+    userId: row.userId,
+    clerkUserId: row.clerkUserId,
+    email: row.email,
+    name: row.name,
+    accessLevel: row.accessLevel,
+    role: row.role,
+    status: row.status,
+  };
+}
+
 /**
- * List directory users in the session tenant for assignment pickers and grants.
- * Exact organizationId match — same org as release list/detail. Other-org and
- * unclassified (NULL) users stay hidden. Missing/whitespace org → empty list
- * (no unfiltered read, no /api/users fallback).
+ * List directory users for assignment pickers and grants.
+ * Tenant on: exact organizationId match; missing org → empty list.
+ * Tenant off: every directory user (temporary until RELEASE_TENANT_SCOPE=on).
  *
- * @param organizationId - Session organization id.
+ * @param organizationId - Session organization id (ignored while tenant scope is off).
  */
 export async function listDirectoryUsersForAssignment(
   organizationId: string | null
 ): Promise<DirectoryUserRef[]> {
-  const orgId = assignmentDirectoryOrganizationId(organizationId);
-  if (!orgId) return [];
-
   try {
+    if (!isReleaseTenantScopeEnabled()) {
+      const rows = await prisma.$queryRaw<DirectoryUserRow[]>`
+        SELECT id, "userId", "clerkUserId", email, name, "accessLevel", role, status
+        FROM "User"
+        ORDER BY name ASC, email ASC
+      `;
+      return rows.map(toDirectoryUserRef);
+    }
+    const orgId = assignmentDirectoryOrganizationId(organizationId);
+    if (!orgId) return [];
     // User.organizationId exists on live Neon but is omitted from the vendored Prisma model.
     const rows = await prisma.$queryRaw<DirectoryUserRow[]>`
       SELECT id, "userId", "clerkUserId", email, name, "accessLevel", role, status
@@ -87,16 +107,7 @@ export async function listDirectoryUsersForAssignment(
       WHERE "organizationId" = ${orgId}
       ORDER BY name ASC, email ASC
     `;
-    return rows.map((row) => ({
-      id: row.id,
-      userId: row.userId,
-      clerkUserId: row.clerkUserId,
-      email: row.email,
-      name: row.name,
-      accessLevel: row.accessLevel,
-      role: row.role,
-      status: row.status,
-    }));
+    return rows.map(toDirectoryUserRef);
   } catch (error) {
     logger.warn("directory assignment list: tenant-scoped user query failed", {
       error: error instanceof Error ? error.message : "unknown",

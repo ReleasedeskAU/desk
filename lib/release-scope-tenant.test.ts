@@ -13,6 +13,7 @@ import {
   releaseRowVisibleToSessionTenant,
   requireTenantOrganizationId,
 } from "@/lib/release-scope-tenant";
+import { isReleaseTenantScopeEnabled, RELEASE_TENANT_SCOPE_ENV } from "@/lib/release-tenant-scope-flag";
 
 describe("scope tenant scoping", () => {
   it("rejects empty tenant ids instead of falling back to a default tenant", () => {
@@ -38,8 +39,30 @@ describe("scope tenant scoping", () => {
   });
 
   it("returns no directory users when the organization id is missing", async () => {
-    const users = await listDirectoryUsersForAssignment("   ");
-    assert.deepEqual(users, []);
+    const prev = process.env[RELEASE_TENANT_SCOPE_ENV];
+    process.env[RELEASE_TENANT_SCOPE_ENV] = "on";
+    try {
+      const users = await listDirectoryUsersForAssignment("   ");
+      assert.deepEqual(users, []);
+    } finally {
+      if (prev === undefined) delete process.env[RELEASE_TENANT_SCOPE_ENV];
+      else process.env[RELEASE_TENANT_SCOPE_ENV] = prev;
+    }
+  });
+
+  it("keeps tenant scope off until RELEASE_TENANT_SCOPE is on", () => {
+    const prev = process.env[RELEASE_TENANT_SCOPE_ENV];
+    try {
+      delete process.env[RELEASE_TENANT_SCOPE_ENV];
+      assert.equal(isReleaseTenantScopeEnabled(), false);
+      process.env[RELEASE_TENANT_SCOPE_ENV] = "off";
+      assert.equal(isReleaseTenantScopeEnabled(), false);
+      process.env[RELEASE_TENANT_SCOPE_ENV] = "on";
+      assert.equal(isReleaseTenantScopeEnabled(), true);
+    } finally {
+      if (prev === undefined) delete process.env[RELEASE_TENANT_SCOPE_ENV];
+      else process.env[RELEASE_TENANT_SCOPE_ENV] = prev;
+    }
   });
 
   it("loads a list-visible release for the same session tenant", () => {

@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- **Release tenant scope temporarily off:** Session org matching on release list, detail, and assignment pickers is skipped until Clerk orgs are linked to the data tenant (`RELEASE_TENANT_SCOPE`, default off). Set `RELEASE_TENANT_SCOPE=on` to restore exact `organizationId` matching. Signed-in users can see every org's releases while this is off. Auth is unchanged (still signed-in). No secrets in client errors.
+
 - **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release **list + detail** use the same session tenant (directory `User.organizationId`, else Clerk org). Detail still requires an exact `organizationId` match (null/other-org → 404). Assignment pickers are that same org only — not NULL-org users and not unscoped `/api/users`. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create). The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
 
 ### Added
