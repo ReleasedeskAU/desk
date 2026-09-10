@@ -214,17 +214,17 @@ export function ReleaseScopeSection({
                 placeholder="What is in scope, what is out of scope, and which applications are involved."
               />
               <div className="flex flex-wrap items-end gap-3">
-                <label className="text-xs font-medium text-slate-500">
+                <label className="block min-w-0 text-xs font-medium text-slate-500">
                   Scope-approval due date
                   {scope.approvalDueRequired ? " *" : " (optional)"}
                   <input
                     type="date"
-                    className={cn(taInput, "mt-1")}
+                    className={cn(taInput, "mt-1 block w-auto max-w-full")}
                     value={due}
                     onChange={(e) => setDue(e.target.value)}
                   />
                 </label>
-                <button type="button" className={taBtnSecondary} disabled={busy} onClick={saveDraft}>
+                <button type="button" className={cn(taBtnSecondary, "shrink-0")} disabled={busy} onClick={saveDraft}>
                   Save draft
                 </button>
               </div>
