@@ -25,6 +25,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { ApprovalCreateModal } from "@/components/approvals/ApprovalCreateModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
@@ -152,7 +153,12 @@ export default function ApprovalQueueContent() {
         trailing={
           <div className="flex items-center gap-2">
             {sessionCanEdit(user) ? (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("approval_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> Add New Approval
               </button>
             ) : null}

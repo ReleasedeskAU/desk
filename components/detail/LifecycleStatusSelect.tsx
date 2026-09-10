@@ -9,6 +9,7 @@ import { ChevronDown } from "lucide-react";
 import { HoverExplain } from "@/components/ui/InfoTooltip";
 import { taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { controlLoc } from "@/lib/ui-control-locators";
 
 export type LifecycleStatusSelectOption = {
   value: string;
@@ -27,6 +28,8 @@ type LifecycleStatusSelectProps = {
   className?: string;
   /** Accessible name for the control. */
   "aria-label"?: string;
+  /** Unique snake_case token for id / data-test-id. */
+  locator?: string;
 };
 
 /**
@@ -42,6 +45,7 @@ export function LifecycleStatusSelect({
   disabled = false,
   className,
   "aria-label": ariaLabel = "Status",
+  locator,
 }: LifecycleStatusSelectProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -79,6 +83,7 @@ export function LifecycleStatusSelect({
           "flex w-full items-center justify-between gap-2 text-left"
         )}
         onClick={() => setOpen((v) => !v)}
+        {...(locator ? controlLoc(locator) : {})}
       >
         <span className="min-w-0 truncate">{display || "Select status…"}</span>
         <ChevronDown

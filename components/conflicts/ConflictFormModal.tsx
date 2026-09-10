@@ -21,6 +21,7 @@ import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import { filterReleasesForRelatedCreate } from "@/lib/release-related-link-eligibility";
 import { CONFLICT_TYPES, mergeConflictTypes } from "@/lib/validation/conflict";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 const CONFLICT_PRIORITIES = ["P1 - Critical", "P2 - High", "P3 - Medium"] as const;
 
@@ -122,6 +123,7 @@ export function ConflictFormModal({
   const defaultStatus = defaultStatusProp || lifecycle.defaultStatus || "Detected";
   const typeOptions = useMemo(() => mergeConflictTypes(conflictTypeOptions), [conflictTypeOptions]);
   const scoped = Boolean(lockRelease1Code);
+  const loc = (control: string) => locatorToken("conflict_create", control);
 
   const lockedDepartmentId = lockOrg?.departmentId ?? "";
   const lockedApplicationId = lockOrg?.applicationId ?? "";
@@ -290,6 +292,7 @@ export function ConflictFormModal({
         title="Conflict created"
         subtitle="The conflict queue has been refreshed."
         labelledBy="conflict-created-title"
+        locatorPrefix="conflict"
         onClose={onClose}
         onCreateAnother={() => {
           setCreated(null);
@@ -343,6 +346,7 @@ export function ConflictFormModal({
         ) : (
           <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
             <SelectField
+              id={loc("department")}
               label="Department"
               required
               value={form.departmentId}
@@ -365,6 +369,7 @@ export function ConflictFormModal({
               ))}
             </SelectField>
             <SelectField
+              id={loc("application")}
               label="Application"
               required
               value={form.applicationId}
@@ -390,6 +395,7 @@ export function ConflictFormModal({
 
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <SelectField
+            id={loc("status")}
             label="Status"
             required
             value={form.status}
@@ -403,6 +409,7 @@ export function ConflictFormModal({
             ))}
           </SelectField>
           <SelectField
+            id={loc("priority")}
             label="Priority"
             required
             value={form.priority}
@@ -439,6 +446,8 @@ export function ConflictFormModal({
                 }
                 disabled={loadingLookups || !releaseConfig}
                 allowClear={false}
+                locator={loc("release_1")}
+                name={loc("release_1")}
               />
             </div>
             {fieldErrors.release1Code ? (
@@ -468,6 +477,8 @@ export function ConflictFormModal({
                 (!scoped && !form.release1Code)
               }
               allowClear={false}
+              locator={loc("release_2")}
+              name={loc("release_2")}
             />
           </div>
           {fieldErrors.release2Code ? (
@@ -477,6 +488,7 @@ export function ConflictFormModal({
 
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <SelectField
+            id={loc("environment")}
             label="Conflicting environment"
             required
             value={form.conflictingEnvironment}
@@ -492,6 +504,7 @@ export function ConflictFormModal({
             ))}
           </SelectField>
           <SelectField
+            id={loc("conflict_type")}
             label="Conflict type"
             required
             value={form.environmentConflictType}
@@ -507,16 +520,28 @@ export function ConflictFormModal({
         </div>
 
         <TextField
+          id={loc("assigned_to")}
           label="Assigned to"
           value={form.assignedTo}
           onChange={(event) => set("assignedTo", event.target.value)}
           maxLength={2000}
         />
-        <TextareaField label="Notes" value={form.notes} onChange={(event) => set("notes", event.target.value)} />
+        <TextareaField
+          id={loc("notes")}
+          label="Notes"
+          value={form.notes}
+          onChange={(event) => set("notes", event.target.value)}
+        />
       </form>
 
       <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
-        <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+        <button
+          type="button"
+          className={taBtnSecondary}
+          onClick={onClose}
+          disabled={saving}
+          {...controlLoc(loc("cancel"))}
+        >
           Cancel
         </button>
         <button
@@ -524,6 +549,7 @@ export function ConflictFormModal({
           form="conflict-create-form"
           className={taBtnPrimary}
           disabled={saving || loadingLookups}
+          {...controlLoc(loc("save"))}
         >
           {saving ? "Creating…" : "Create Conflict"}
         </button>

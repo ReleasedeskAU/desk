@@ -6,6 +6,7 @@ import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { controlLoc, fieldLoc } from "@/lib/ui-control-locators";
 
 export function ModalFrame({
   children,
@@ -78,10 +79,13 @@ export function SelectField({
   required,
   error,
   children,
+  id,
+  name,
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
+  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
       {label}
       {required ? (
         <>
@@ -89,7 +93,7 @@ export function SelectField({
           <RequiredMark />
         </>
       ) : null}
-      <select {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
+      <select {...props} {...locators} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
         {children}
       </select>
       <FieldError message={error} />
@@ -101,10 +105,13 @@ export function TextField({
   label,
   required,
   error,
+  id,
+  name,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
+  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
       {label}
       {required ? (
         <>
@@ -112,7 +119,7 @@ export function TextField({
           <RequiredMark />
         </>
       ) : null}
-      <input {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
+      <input {...props} {...locators} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
       <FieldError message={error} />
     </label>
   );
@@ -122,10 +129,13 @@ export function TextareaField({
   label,
   required,
   error,
+  id,
+  name,
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
+  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2" htmlFor={locators.id}>
       {label}
       {required ? (
         <>
@@ -135,6 +145,7 @@ export function TextareaField({
       ) : null}
       <textarea
         {...props}
+        {...locators}
         maxLength={4000}
         className={cn(taInput, "mt-1 min-h-[76px]", error && "border-rose-400")}
       />
@@ -168,6 +179,8 @@ type CreatedConfirmationProps = {
   viewHref?: string;
   viewLabel?: string;
   rows: Array<{ label: string; value: string; mono?: boolean }>;
+  /** Prefix for button locators, e.g. `dependency`. */
+  locatorPrefix?: string;
 };
 
 /** Standard post-create confirmation with summary, view link, and create-another. */
@@ -180,6 +193,7 @@ export function CreatedConfirmation({
   viewHref,
   viewLabel,
   rows,
+  locatorPrefix = "record",
 }: CreatedConfirmationProps) {
   return (
     <ModalFrame onClose={onClose} labelledBy={labelledBy}>
@@ -200,15 +214,29 @@ export function CreatedConfirmation({
         ))}
       </dl>
       <div className="mt-5 flex flex-wrap justify-end gap-2">
-        <button type="button" className={taBtnSecondary} onClick={onCreateAnother}>
+        <button
+          type="button"
+          className={taBtnSecondary}
+          onClick={onCreateAnother}
+          {...controlLoc(`${locatorPrefix}_create_another`)}
+        >
           Create another
         </button>
         {viewHref && viewLabel ? (
-          <ProgressLink href={viewHref} className={cn(taBtnSecondary, "inline-flex items-center")}>
+          <ProgressLink
+            href={viewHref}
+            className={cn(taBtnSecondary, "inline-flex items-center")}
+            {...controlLoc(`${locatorPrefix}_created_view`)}
+          >
             {viewLabel}
           </ProgressLink>
         ) : null}
-        <button type="button" className={taBtnPrimary} onClick={onClose}>
+        <button
+          type="button"
+          className={taBtnPrimary}
+          onClick={onClose}
+          {...controlLoc(`${locatorPrefix}_created_close`)}
+        >
           Close
         </button>
       </div>

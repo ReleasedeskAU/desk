@@ -45,6 +45,7 @@ import { RISKS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { RiskFormModal } from "@/components/risks/RiskFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
 /** Calendar days from today to prod/start date (can be negative if past). */
@@ -1251,7 +1252,12 @@ export default function RiskRegisterContent() {
         trailing={
           <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("risk_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> Add New Risk
               </button>
             ) : null}

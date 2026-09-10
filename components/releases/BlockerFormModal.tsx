@@ -11,6 +11,7 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { BLOCKER_CATEGORIES } from "@/lib/blocker-categories";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 const BLOCKER_TYPES = BLOCKER_CATEGORIES;
 
@@ -119,6 +120,7 @@ export function BlockerFormModal({
   raisedByDefault = "",
   defaultStatus = "Open",
 }: Props) {
+  const loc = (control: string) => locatorToken("blocker_create", control);
   const scoped = Boolean(lockedReleaseCode);
 
   const defaults = useMemo(
@@ -311,16 +313,18 @@ export function BlockerFormModal({
               setForm(defaults);
               setError(null);
             }}
+            {...controlLoc("blocker_create_another")}
           >
             Create another
           </button>
           <ProgressLink
             href={`/blockers/${created.id}`}
             className={cn(taBtnSecondary, "inline-flex items-center")}
+            {...controlLoc("blocker_created_view")}
           >
             View blocker
           </ProgressLink>
-          <button type="button" className={taBtnPrimary} onClick={onClose}>
+          <button type="button" className={taBtnPrimary} onClick={onClose} {...controlLoc("blocker_created_close")}>
             Close
           </button>
         </div>
@@ -359,6 +363,8 @@ export function BlockerFormModal({
                   }}
                   placeholder={loadingReleases ? "Loading…" : "Select release…"}
                   disabled={loadingReleases}
+                  locator={loc("release")}
+                  name={loc("release")}
                 />
               </div>
             </label>
@@ -371,6 +377,7 @@ export function BlockerFormModal({
               value={form.blockerType}
               onChange={(e) => set("blockerType")(e.target.value)}
               required
+              {...fieldLoc(loc("blocker_type"))}
             >
               {BLOCKER_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -387,6 +394,7 @@ export function BlockerFormModal({
               value={form.blockerDescription}
               onChange={(e) => set("blockerDescription")(e.target.value)}
               required
+              {...fieldLoc(loc("description"))}
             />
           </label>
 
@@ -398,6 +406,7 @@ export function BlockerFormModal({
                 value={form.severity}
                 onChange={(e) => set("severity")(e.target.value)}
                 required
+                {...fieldLoc(loc("severity"))}
               >
                 {SEVERITIES.map((s) => (
                   <option key={s} value={s}>
@@ -412,6 +421,7 @@ export function BlockerFormModal({
                 className={fieldClass}
                 value={form.escalationLevel}
                 onChange={(e) => set("escalationLevel")(e.target.value)}
+                {...fieldLoc(loc("escalation"))}
               >
                 {ESCALATIONS.map((s) => (
                   <option key={s} value={s}>
@@ -429,6 +439,7 @@ export function BlockerFormModal({
               value={form.impactOnRelease}
               onChange={(e) => set("impactOnRelease")(e.target.value)}
               required
+              {...fieldLoc(loc("impact_on_release"))}
             />
           </label>
 
@@ -441,6 +452,7 @@ export function BlockerFormModal({
                 value={form.raisedDate}
                 onChange={(e) => set("raisedDate")(e.target.value)}
                 required
+                {...fieldLoc(loc("raised_date"))}
               />
             </label>
             <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
@@ -450,6 +462,7 @@ export function BlockerFormModal({
                 className={fieldClass}
                 value={form.targetResolutionDate}
                 onChange={(e) => set("targetResolutionDate")(e.target.value)}
+                {...fieldLoc(loc("target_resolution"))}
               />
             </label>
           </div>
@@ -461,6 +474,7 @@ export function BlockerFormModal({
                 className={fieldClass}
                 value={form.raisedBy}
                 onChange={(e) => set("raisedBy")(e.target.value)}
+                {...fieldLoc(loc("raised_by"))}
               />
             </label>
             <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
@@ -469,6 +483,7 @@ export function BlockerFormModal({
                 className={fieldClass}
                 value={form.assignedTo}
                 onChange={(e) => set("assignedTo")(e.target.value)}
+                {...fieldLoc(loc("assigned_to"))}
               />
             </label>
           </div>
@@ -479,6 +494,7 @@ export function BlockerFormModal({
               className={fieldClass}
               value={form.applicationName}
               onChange={(e) => set("applicationName")(e.target.value)}
+              {...fieldLoc(loc("application"))}
             />
           </label>
 
@@ -488,12 +504,13 @@ export function BlockerFormModal({
               className={fieldClass}
               value={form.rootCause}
               onChange={(e) => set("rootCause")(e.target.value)}
+              {...fieldLoc(loc("root_cause"))}
             />
           </label>
         </form>
 
         <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-3 dark:border-[var(--border)]">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>
             Cancel
           </button>
           <button
@@ -501,6 +518,7 @@ export function BlockerFormModal({
             form="blocker-create-form"
             className={taBtnPrimary}
             disabled={saving || (!scoped && (loadingReleases || !form.releaseId))}
+            {...controlLoc(loc("save"))}
           >
             {saving ? "Saving…" : "Create blocker"}
           </button>

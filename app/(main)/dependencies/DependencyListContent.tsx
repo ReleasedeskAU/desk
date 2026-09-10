@@ -26,6 +26,7 @@ import { DependencyFormModal } from "@/components/dependencies/DependencyFormMod
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { loadJsonEffect } from "@/lib/safe-fetch";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { DEPENDENCY_IMPACTS } from "@/lib/validation/dependency";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
@@ -234,6 +235,7 @@ export default function DependencyListContent() {
                 type="button"
                 className={cn(taBtnPrimary, "text-sm")}
                 onClick={() => setModalOpen(true)}
+                {...controlLoc("dependency_list_add")}
               >
                 <Plus className="mr-1 inline h-4 w-4" /> New Dependency
               </button>

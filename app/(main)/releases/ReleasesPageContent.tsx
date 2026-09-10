@@ -49,6 +49,7 @@ import { formatDate, cn } from "@/lib/utils";
 import { RELEASE_TABLE_SORT_PRESETS } from "@/lib/table-sort-presets";
 import { readSortFromValues, sortRows } from "@/lib/table-sort";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import type { SessionUser } from "@/lib/auth/roles";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
 import { shouldOfferReleaseEdit } from "@/lib/release-lifecycle-edit-policy";
@@ -433,6 +434,7 @@ export default function ReleasesPageContent() {
                   setFormPrefill(null);
                   setModalOpen(true);
                 }}
+                {...controlLoc("release_list_add")}
               >
                 <Plus className="mr-1 inline h-4 w-4" /> Add New Release
               </button>
@@ -717,7 +719,7 @@ function UnifiedRow({
       {isColumnVisible("actions") && (
         <td className={`${tableCell} whitespace-nowrap`}>
           {offerEdit ? (
-            <RowEditButton recordLabel={row.code} onClick={onEdit} disabled={editBusy} />
+            <RowEditButton entity="release" recordLabel={row.code} onClick={onEdit} disabled={editBusy} />
           ) : (
             <span className="text-xs text-gray-400 dark:text-white/40">—</span>
           )}

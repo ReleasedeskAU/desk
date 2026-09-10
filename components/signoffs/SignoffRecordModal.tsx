@@ -16,6 +16,7 @@ import {
   signoffDecisionControlEnabled,
   signoffManualNextLabels,
 } from "@/lib/signoff-record-actions";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 export type SignoffRecordLockedRelease = {
   id: string;
@@ -55,6 +56,7 @@ export function SignoffRecordModal({
   rows = [],
   initialField = "",
 }: Props) {
+  const loc = (control: string) => locatorToken("signoff_record", control);
   const [releaseId, setReleaseId] = useState("");
   const [fieldKey, setFieldKey] = useState<SignoffReleaseField | "">("");
   const [nextStatus, setNextStatus] = useState("");
@@ -151,7 +153,13 @@ export function SignoffRecordModal({
         onClose={onClose}
         footer={
           <>
-            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+            <button
+              type="button"
+              className={taBtnSecondary}
+              onClick={onClose}
+              disabled={saving}
+              {...controlLoc(loc("cancel"))}
+            >
               Cancel
             </button>
             <button
@@ -159,6 +167,7 @@ export function SignoffRecordModal({
               form="signoff-record-form"
               className={taBtnPrimary}
               disabled={saving || !effectiveReleaseId || !fieldKey || !nextStatus || !decisionEnabled}
+              {...controlLoc(loc("save"))}
             >
               {saving ? "Saving…" : "Save decision"}
             </button>
@@ -177,6 +186,7 @@ export function SignoffRecordModal({
                   setReleaseId(event.target.value);
                   setFieldKey("");
                 }}
+                {...fieldLoc(loc("release"))}
               >
                 <option value="">Select release…</option>
                 {releases.map((release) => (
@@ -195,6 +205,7 @@ export function SignoffRecordModal({
               value={fieldKey}
               disabled={Boolean(initialField)}
               onChange={(event) => setFieldKey(event.target.value as SignoffReleaseField | "")}
+              {...fieldLoc(loc("type"))}
             >
               <option value="">Select type…</option>
               {types.map((type) => (
@@ -216,6 +227,7 @@ export function SignoffRecordModal({
               value={nextStatus}
               onChange={(event) => setNextStatus(event.target.value)}
               disabled={!decisionEnabled}
+              {...fieldLoc(loc("decision"))}
             >
               {decisionEnabled ? (
                 nextOptions.map((label) => (

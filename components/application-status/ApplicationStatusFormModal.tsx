@@ -12,6 +12,7 @@ import {
 } from "@/components/forms/create-modal-primitives";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type Application = { id: string; name: string };
 type Environment = { id: string; name: string; applicationId: string };
@@ -60,6 +61,7 @@ type Props = {
 
 /** Upserts current application health for one application/environment pair. */
 export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) {
+  const loc = (control: string) => locatorToken("application_status_create", control);
   const [form, setForm] = useState<FormValues>(emptyForm);
   const [applications, setApplications] = useState<Application[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -171,6 +173,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
         title="Status recorded"
         subtitle="The application status list has been refreshed."
         labelledBy="app-status-recorded-title"
+        locatorPrefix="application_status"
         onClose={onClose}
         onCreateAnother={() => {
           setRecorded(null);
@@ -200,6 +203,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
       {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
       <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
         <SelectField
+          id={loc("application")}
           label="Application"
           required
           value={form.applicationId}
@@ -217,6 +221,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
           ))}
         </SelectField>
         <SelectField
+          id={loc("environment")}
           label="Environment"
           required
           value={form.environmentName}
@@ -232,6 +237,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
           ))}
         </SelectField>
         <SelectField
+          id={loc("status")}
           label="Status"
           required
           value={form.status}
@@ -245,6 +251,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
           ))}
         </SelectField>
         <TextField
+          id={loc("last_check")}
           label="Last check"
           type="datetime-local"
           required
@@ -253,6 +260,7 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
           onChange={(event) => set("lastCheck", event.target.value)}
         />
         <TextField
+          id={loc("uptime_percent")}
           label="Uptime %"
           type="number"
           min={0}
@@ -264,15 +272,16 @@ export function ApplicationStatusFormModal({ open, onClose, onCreated }: Props) 
           onChange={(event) => set("uptimePercent", event.target.value)}
         />
         <TextareaField
+          id={loc("notes")}
           label="Notes"
           value={form.notes}
           onChange={(event) => set("notes", event.target.value)}
         />
         <div className="mt-2 flex justify-end gap-2 sm:col-span-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>
             Cancel
           </button>
-          <button type="submit" className={taBtnPrimary} disabled={saving || loadingLookups}>
+          <button type="submit" className={taBtnPrimary} disabled={saving || loadingLookups} {...controlLoc(loc("save"))}>
             {saving ? "Saving…" : "Record Status"}
           </button>
         </div>

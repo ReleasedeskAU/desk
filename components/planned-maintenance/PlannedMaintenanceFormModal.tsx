@@ -12,6 +12,7 @@ import {
 } from "@/components/forms/create-modal-primitives";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type Application = { id: string; name: string };
 type Environment = { id: string; name: string; applicationId: string };
@@ -86,6 +87,7 @@ type Props = {
 
 /** Creates a planned maintenance window; server generates maintenanceCode. */
 export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props) {
+  const loc = (control: string) => locatorToken("maintenance_create", control);
   const [form, setForm] = useState<FormValues>(emptyForm);
   const [applications, setApplications] = useState<Application[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -197,6 +199,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
         title="Maintenance window created"
         subtitle="The planned maintenance list has been refreshed."
         labelledBy="maintenance-created-title"
+        locatorPrefix="maintenance"
         onClose={onClose}
         onCreateAnother={() => {
           setCreated(null);
@@ -227,6 +230,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
       {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
       <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
         <TextField
+          id={loc("scheduled_date")}
           label="Scheduled date"
           type="date"
           required
@@ -235,6 +239,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           onChange={(event) => set("scheduledDate", event.target.value)}
         />
         <SelectField
+          id={loc("type")}
           label="Type"
           required
           value={form.type}
@@ -248,6 +253,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           ))}
         </SelectField>
         <TextField
+          id={loc("start_time")}
           label="Start time"
           type="time"
           required
@@ -256,6 +262,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           onChange={(event) => set("startTime", event.target.value)}
         />
         <TextField
+          id={loc("end_time")}
           label="End time"
           type="time"
           required
@@ -264,6 +271,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           onChange={(event) => set("endTime", event.target.value)}
         />
         <SelectField
+          id={loc("application")}
           label="Application"
           value={form.applicationId}
           disabled={loadingLookups}
@@ -279,6 +287,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           ))}
         </SelectField>
         <SelectField
+          id={loc("environment")}
           label="Environment"
           required
           value={form.environmentName}
@@ -294,6 +303,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           ))}
         </SelectField>
         <SelectField
+          id={loc("impact")}
           label="Impact"
           required
           value={form.impact}
@@ -307,6 +317,7 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           ))}
         </SelectField>
         <SelectField
+          id={loc("approval_status")}
           label="Approval status"
           required
           value={form.approvalStatus}
@@ -320,21 +331,23 @@ export function PlannedMaintenanceFormModal({ open, onClose, onCreated }: Props)
           ))}
         </SelectField>
         <TextField
+          id={loc("requestor")}
           label="Requestor"
           value={form.requestor}
           maxLength={4000}
           onChange={(event) => set("requestor", event.target.value)}
         />
         <TextareaField
+          id={loc("notes")}
           label="Notes"
           value={form.notes}
           onChange={(event) => set("notes", event.target.value)}
         />
         <div className="mt-2 flex justify-end gap-2 sm:col-span-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>
             Cancel
           </button>
-          <button type="submit" className={taBtnPrimary} disabled={saving || loadingLookups}>
+          <button type="submit" className={taBtnPrimary} disabled={saving || loadingLookups} {...controlLoc(loc("save"))}>
             {saving ? "Creating…" : "Create Maintenance"}
           </button>
         </div>

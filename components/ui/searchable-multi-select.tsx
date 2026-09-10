@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronsUpDown, X } from "lucide-react";
 import { taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 export type SearchableOption = { value: string; label: string };
 
@@ -15,6 +16,8 @@ export function SearchableMultiSelect({
   searchPlaceholder = "Search…",
   disabled,
   className,
+  locator,
+  name,
 }: {
   values: string[];
   onChange: (values: string[]) => void;
@@ -23,6 +26,9 @@ export function SearchableMultiSelect({
   searchPlaceholder?: string;
   disabled?: boolean;
   className?: string;
+  /** Unique snake_case token for id / data-test-id on the toggle. */
+  locator?: string;
+  name?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -62,6 +68,7 @@ export function SearchableMultiSelect({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(taInput, "flex min-h-[42px] items-center justify-between gap-2 text-left")}
+        {...(locator ? controlLoc(locator) : {})}
       >
         <span className="flex min-w-0 flex-1 flex-wrap gap-1">
           {selected.length === 0 ? (
@@ -98,6 +105,9 @@ export function SearchableMultiSelect({
         </span>
         <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
       </button>
+      {name ? (
+        <input type="hidden" name={locatorToken(name)} value={values.join(",")} readOnly />
+      ) : null}
       {open && (
         <div className="absolute left-0 z-50 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-[var(--border)] dark:bg-[var(--card)]">
           <div className="border-b border-gray-100 p-2 dark:border-white/10">
@@ -108,6 +118,7 @@ export function SearchableMultiSelect({
               onChange={(e) => setQ(e.target.value)}
               placeholder={searchPlaceholder}
               className={cn(taInput, "w-full")}
+              {...(locator ? fieldLoc(locatorToken(locator, "search")) : {})}
             />
           </div>
           <div className="max-h-52 overflow-y-auto py-1">
@@ -158,6 +169,8 @@ export function SearchableSelect({
   disabled,
   className,
   allowClear = true,
+  locator,
+  name,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -167,6 +180,9 @@ export function SearchableSelect({
   disabled?: boolean;
   className?: string;
   allowClear?: boolean;
+  /** Unique snake_case token for id / data-test-id on the toggle. */
+  locator?: string;
+  name?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -199,12 +215,16 @@ export function SearchableSelect({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(taInput, "flex items-center justify-between gap-2 text-left")}
+        {...(locator ? controlLoc(locator) : {})}
       >
         <span className={cn("truncate", !selectedLabel && "text-gray-400")}>
           {selectedLabel ?? placeholder}
         </span>
         <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
       </button>
+      {name ? (
+        <input type="hidden" name={locatorToken(name)} value={value} readOnly />
+      ) : null}
       {open && (
         <div className="absolute left-0 z-50 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-[var(--border)] dark:bg-[var(--card)]">
           <div className="border-b border-gray-100 p-2 dark:border-white/10">
@@ -215,6 +235,7 @@ export function SearchableSelect({
               onChange={(e) => setQ(e.target.value)}
               placeholder={searchPlaceholder}
               className={cn(taInput, "w-full")}
+              {...(locator ? fieldLoc(locatorToken(locator, "search")) : {})}
             />
           </div>
           <div className="max-h-52 overflow-y-auto py-1">

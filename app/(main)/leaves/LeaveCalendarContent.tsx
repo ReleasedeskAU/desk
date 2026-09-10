@@ -25,6 +25,7 @@ import { LEAVES_FILTER_SCHEMA } from "@/lib/table-filters";
 import { LeaveCreateModal } from "@/components/leaves/LeaveCreateModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
 type LeaveRow = {
@@ -130,7 +131,12 @@ export default function LeaveCalendarContent() {
         trailing={
           <div className="flex items-center gap-2">
             {sessionCanEdit(user) ? (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("leave_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> Add New Leave
               </button>
             ) : null}

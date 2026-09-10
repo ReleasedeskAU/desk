@@ -33,6 +33,7 @@ import type { SignoffLifecycleConfig } from "@/lib/signoff-lifecycle-config";
 import type { SignoffListRow } from "@/lib/signoff-list";
 import { taBtnPrimary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { controlLoc } from "@/lib/ui-control-locators";
 
 type SignoffColumnKey = (typeof SIGNOFF_COLUMNS)[number]["key"];
 
@@ -94,6 +95,7 @@ function renderSignoffCell(
         <td key={key} className={`${tableCell} whitespace-nowrap`}>
           {offerEdit ? (
             <RowEditButton
+              entity="signoff"
               recordLabel={row.signoffCode}
               href={`/signoffs/${encodeURIComponent(row.id)}`}
             />
@@ -209,6 +211,7 @@ export default function SignoffsContent() {
                 className={cn(taBtnPrimary, "text-sm")}
                 aria-label="Create new record"
                 onClick={() => setModalOpen(true)}
+                {...controlLoc("signoff_list_add")}
               >
                 <Plus className="mr-1 inline h-4 w-4" /> Add New Sign-off
               </button>

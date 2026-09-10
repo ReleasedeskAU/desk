@@ -11,6 +11,7 @@ import {
 } from "@/components/forms/create-modal-primitives";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type FormValues = {
   sourceSystem: string;
@@ -57,6 +58,7 @@ export function IntegrationFlowFormModal({
   integrationTypeOptions = [],
   frequencyOptions = [],
 }: Props) {
+  const loc = (control: string) => locatorToken("integration_flow_create", control);
   const [form, setForm] = useState<FormValues>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export function IntegrationFlowFormModal({
         title="Integration flow created"
         subtitle="The integration flows list has been refreshed."
         labelledBy="integration-flow-created-title"
+        locatorPrefix="integration_flow"
         onClose={onClose}
         onCreateAnother={() => {
           setCreated(null);
@@ -169,6 +172,7 @@ export function IntegrationFlowFormModal({
       {formError ? <FormError message={formError} onDismiss={() => setFormError(null)} /> : null}
       <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
         <TextField
+          id={loc("source_system")}
           label="Source system"
           required
           value={form.sourceSystem}
@@ -177,6 +181,7 @@ export function IntegrationFlowFormModal({
           maxLength={200}
         />
         <TextField
+          id={loc("target_system")}
           label="Target system"
           required
           value={form.targetSystem}
@@ -185,6 +190,7 @@ export function IntegrationFlowFormModal({
           maxLength={200}
         />
         <TextField
+          id={loc("integration_type")}
           label="Integration type"
           required
           value={form.integrationType}
@@ -199,6 +205,7 @@ export function IntegrationFlowFormModal({
           ))}
         </datalist>
         <TextField
+          id={loc("frequency")}
           label="Frequency"
           required
           value={form.frequency}
@@ -213,6 +220,7 @@ export function IntegrationFlowFormModal({
           ))}
         </datalist>
         <TextareaField
+          id={loc("data_elements")}
           label="Data elements"
           required
           value={form.dataElements}
@@ -220,6 +228,7 @@ export function IntegrationFlowFormModal({
           onChange={(event) => set("dataElements", event.target.value)}
         />
         <TextareaField
+          id={loc("business_purpose")}
           label="Business purpose"
           required
           value={form.businessPurpose}
@@ -227,10 +236,10 @@ export function IntegrationFlowFormModal({
           onChange={(event) => set("businessPurpose", event.target.value)}
         />
         <div className="mt-2 flex justify-end gap-2 sm:col-span-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>
             Cancel
           </button>
-          <button type="submit" className={taBtnPrimary} disabled={saving}>
+          <button type="submit" className={taBtnPrimary} disabled={saving} {...controlLoc(loc("save"))}>
             {saving ? "Creating…" : "Create Flow"}
           </button>
         </div>

@@ -26,6 +26,7 @@ import { loadJsonEffect } from "@/lib/safe-fetch";
 import { ConflictFormModal } from "@/components/conflicts/ConflictFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 
@@ -238,7 +239,12 @@ export default function ConflictQueueContent() {
         trailing={
           <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("conflict_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> New Conflict
               </button>
             ) : null}

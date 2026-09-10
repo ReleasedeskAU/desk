@@ -45,6 +45,7 @@ import { timelineRangeLabel } from "@/lib/release-timeline";
 import { periodRange, type Period } from "@/lib/period-range";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/auth/roles";
 import { canEdit as sessionCanEdit } from "@/lib/auth/roles";
@@ -373,7 +374,12 @@ export default function BookingContent() {
         trailing={
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {canEdit && (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("booking_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> New Booking
               </button>
             )}

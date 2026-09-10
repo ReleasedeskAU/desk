@@ -62,6 +62,7 @@ import {
 } from "@/lib/signoff-lifecycle-transition";
 import { ConflictChoiceDialog } from "@/components/conflicts/ConflictChoiceDialog";
 import type { ConflictFinding } from "@/lib/conflict-finding-types";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 /**
  * Build a PATCH body with only fields that differ from the edit baseline.
@@ -837,6 +838,9 @@ export function ReleaseFormModal({
     return [{ value: current, label: current }, ...ownerOptions];
   };
 
+  const locPrefix = isEdit ? "release_edit" : "release_create";
+  const loc = (control: string) => locatorToken(locPrefix, control);
+
   if (!open) return null;
 
   const regenerateId = () => {
@@ -1181,13 +1185,18 @@ export function ReleaseFormModal({
                 // Clearing created re-runs form init with the refreshed release-code list.
                 setCreated(null);
               }}
+              {...controlLoc("release_create_another")}
             >
               Create another
             </button>
-            <ProgressLink href={`/releases/${created.id}`} className={cn(taBtnSecondary, "inline-flex items-center")}>
+            <ProgressLink
+              href={`/releases/${created.id}`}
+              className={cn(taBtnSecondary, "inline-flex items-center")}
+              {...controlLoc("release_created_view")}
+            >
               View release
             </ProgressLink>
-            <button type="button" className={taBtnPrimary} onClick={onClose}>
+            <button type="button" className={taBtnPrimary} onClick={onClose} {...controlLoc("release_created_close")}>
               Close
             </button>
           </div>
@@ -1228,7 +1237,7 @@ export function ReleaseFormModal({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <label className="text-xs font-medium text-gray-500">
+            <label className="text-xs font-medium text-gray-500" htmlFor={loc("release_code")}>
               Release ID
               <RequiredMark />
             </label>
@@ -1243,6 +1252,7 @@ export function ReleaseFormModal({
                 onChange={(e) => set("releaseCode", e.target.value.toUpperCase())}
                 readOnly
                 placeholder="Auto-generated unique ID"
+                {...fieldLoc(loc("release_code"))}
               />
               {!isEdit && (
                 <button
@@ -1250,6 +1260,7 @@ export function ReleaseFormModal({
                   onClick={regenerateId}
                   className="shrink-0 rounded-lg border border-gray-200 px-3 text-gray-500 hover:bg-brand-50 hover:text-brand-600"
                   title="Generate new ID"
+                  {...controlLoc(loc("regenerate_id"))}
                 >
                   <RefreshCw className="h-4 w-4" />
                 </button>
@@ -1259,6 +1270,7 @@ export function ReleaseFormModal({
           </div>
 
           <Field
+            loc={loc("name")}
             label="Release Name"
             required
             value={form.name}
@@ -1267,12 +1279,14 @@ export function ReleaseFormModal({
             disabled={fieldLocked("name")}
           />
           <Field
+            loc={loc("program_project")}
             label="Program / Project"
             value={form.programProject}
             onChange={(v) => set("programProject", v)}
             placeholder="N/A for hotfixes, infra, security…"
           />
           <Field
+            loc={loc("release_type")}
             label="Release Type"
             value={form.releaseType}
             onChange={(v) => set("releaseType", v)}
@@ -1293,6 +1307,8 @@ export function ReleaseFormModal({
                 placeholder="Select department…"
                 searchPlaceholder="Search departments…"
                 className={fieldErrors.departmentId ? "[&_button]:border-rose-400" : undefined}
+                locator={loc("department")}
+                name={loc("department")}
               />
             </div>
             <FieldError message={fieldErrors.departmentId} />
@@ -1312,6 +1328,8 @@ export function ReleaseFormModal({
                 searchPlaceholder="Search users…"
                 disabled={fieldLocked("releaseOwnerId")}
                 className={fieldErrors.releaseOwnerId ? "[&_button]:border-rose-400" : undefined}
+                locator={loc("release_owner")}
+                name={loc("release_owner")}
               />
             </div>
             <FieldError message={fieldErrors.releaseOwnerId} />
@@ -1327,6 +1345,8 @@ export function ReleaseFormModal({
                 placeholder="Select backup owner…"
                 searchPlaceholder="Search users…"
                 disabled={fieldLocked("backupOwner")}
+                locator={loc("backup_owner")}
+                name={loc("backup_owner")}
               />
             </div>
           </div>
@@ -1341,6 +1361,8 @@ export function ReleaseFormModal({
                 placeholder="Select technical lead…"
                 searchPlaceholder="Search users…"
                 disabled={fieldLocked("technicalLead")}
+                locator={loc("technical_lead")}
+                name={loc("technical_lead")}
               />
             </div>
           </div>
@@ -1355,6 +1377,8 @@ export function ReleaseFormModal({
                 placeholder="Select business owner…"
                 searchPlaceholder="Search users…"
                 disabled={fieldLocked("businessOwner")}
+                locator={loc("business_owner")}
+                name={loc("business_owner")}
               />
             </div>
           </div>
@@ -1378,6 +1402,8 @@ export function ReleaseFormModal({
                 searchPlaceholder="Search applications…"
                 disabled={!form.departmentId || fieldLocked("applicationIds")}
                 className={fieldErrors.applicationIds ? "[&_button]:border-rose-400" : undefined}
+                locator={loc("applications")}
+                name={loc("applications")}
               />
             </div>
             <FieldError message={fieldErrors.applicationIds} />
@@ -1391,6 +1417,7 @@ export function ReleaseFormModal({
             {isEdit ? (
               <LifecycleStatusSelect
                 aria-label="Status"
+                locator={loc("status")}
                 className={cn(fieldErrors.status && "[&_button]:border-rose-400")}
                 value={form.status}
                 disabled={showTerminalStatusNotice}
@@ -1422,6 +1449,7 @@ export function ReleaseFormModal({
                 )}
                 value={form.status}
                 readOnly
+                {...fieldLoc(loc("status"))}
               />
             )}
             {isEdit ? (
@@ -1443,6 +1471,7 @@ export function ReleaseFormModal({
           </div>
 
           <LockedReadOnlyField
+            loc={loc("previous_status")}
             label="Previous Status"
             value={
               isEdit
@@ -1493,6 +1522,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("releaseSize")}
               title={fieldLocked("releaseSize") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("releaseSize", e.target.value)}
+              {...fieldLoc(loc("release_size"))}
             >
               {RELEASE_SIZES.map((s) => (
                 <option key={s} value={s}>
@@ -1510,6 +1540,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("priority")}
               title={fieldLocked("priority") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("priority", e.target.value)}
+              {...fieldLoc(loc("priority"))}
             >
               {[...new Set([...PRIORITIES, form.priority].filter(Boolean))].map((p) => (
                 <option key={p} value={p}>
@@ -1527,6 +1558,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("impact")}
               title={fieldLocked("impact") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("impact", e.target.value)}
+              {...fieldLoc(loc("impact"))}
             >
               {IMPACTS.map((p) => (
                 <option key={p} value={p}>
@@ -1548,6 +1580,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("scopeDescription")}
               title={fieldLocked("scopeDescription") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("scopeDescription", e.target.value)}
+              {...fieldLoc(loc("scope_description"))}
             />
           </div>
 
@@ -1560,6 +1593,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("cabDate")}
               title={fieldLocked("cabDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("cabDate", e.target.value)}
+              {...fieldLoc(loc("cab_date"))}
             />
           </div>
 
@@ -1572,6 +1606,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("startDate")}
               title={fieldLocked("startDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("startDate", e.target.value)}
+              {...fieldLoc(loc("start_date"))}
             />
           </div>
 
@@ -1592,6 +1627,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("releaseDate")}
               title={fieldLocked("releaseDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("releaseDate", e.target.value)}
+              {...fieldLoc(loc("end_date"))}
             />
             <FieldError message={fieldErrors.releaseDate} />
           </div>
@@ -1605,6 +1641,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("goLiveDate")}
               title={fieldLocked("goLiveDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("goLiveDate", e.target.value)}
+              {...fieldLoc(loc("go_live_date"))}
             />
           </div>
 
@@ -1617,10 +1654,12 @@ export function ReleaseFormModal({
               disabled={fieldLocked("deployDate")}
               title={fieldLocked("deployDate") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("deployDate", e.target.value)}
+              {...fieldLoc(loc("deploy_date"))}
             />
           </div>
 
           <LockedReadOnlyField
+            loc={loc("duration_days")}
             label="Duration (Days)"
             value={durationDaysLabel(form.startDate, form.releaseDate)}
           />
@@ -1632,6 +1671,7 @@ export function ReleaseFormModal({
               onChange={(e) => set("testEnvRequired", e.target.value)}
               disabled={!form.departmentId || fieldLocked("testEnvRequired")}
               title={fieldLocked("testEnvRequired") ? FIELD_LOCK_HINT : undefined}
+              {...fieldLoc(loc("test_env"))}
             >
               <option value="">
                 {form.departmentId ? "Select test env…" : "Select department first…"}
@@ -1656,6 +1696,7 @@ export function ReleaseFormModal({
               onChange={(e) => set("uatEnvRequired", e.target.value)}
               disabled={!form.departmentId || fieldLocked("uatEnvRequired")}
               title={fieldLocked("uatEnvRequired") ? FIELD_LOCK_HINT : undefined}
+              {...fieldLoc(loc("uat_env"))}
             >
               <option value="">
                 {form.departmentId ? "Select UAT env…" : "Select department first…"}
@@ -1673,6 +1714,7 @@ export function ReleaseFormModal({
           </div>
 
           <Field
+            loc={loc("deployment_window")}
             label="Deployment Window"
             value={form.deploymentWindow}
             onChange={(v) => set("deploymentWindow", v)}
@@ -1697,6 +1739,7 @@ export function ReleaseFormModal({
               title={fieldLocked("goLiveChecklistPercent") ? FIELD_LOCK_HINT : undefined}
               placeholder="0–100"
               onChange={(e) => set("goLiveChecklistPercent", e.target.value)}
+              {...fieldLoc(loc("deployment_checklist"))}
             />
             <FieldError message={fieldErrors.goLiveChecklistPercent} />
           </div>
@@ -1709,6 +1752,7 @@ export function ReleaseFormModal({
               config={signoffConfig}
               disabled={!dressRehearsalType.enabled || fieldLocked("dressRehearsal")}
               onChange={(next) => set("dressRehearsal", next)}
+              loc={loc("dress_rehearsal")}
             />
           </div>
 
@@ -1721,6 +1765,8 @@ export function ReleaseFormModal({
                 options={releaseOptions}
                 placeholder="Select dependent releases…"
                 searchPlaceholder="Search releases…"
+                locator={loc("depends_on")}
+                name={loc("depends_on")}
               />
             </div>
           </div>
@@ -1733,6 +1779,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("approvalStatus")}
               title={fieldLocked("approvalStatus") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("approvalStatus", e.target.value)}
+              {...fieldLoc(loc("approval_status"))}
             >
               <option value="">Not set</option>
               {selectOptionsWithCurrent(RELEASE_APPROVAL_STATUS_OPTIONS, form.approvalStatus).map(
@@ -1753,6 +1800,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("rollbackPlan")}
               title={fieldLocked("rollbackPlan") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("rollbackPlan", e.target.value)}
+              {...fieldLoc(loc("rollback_plan"))}
             >
               <option value="">Not set</option>
               {selectOptionsWithCurrent(RELEASE_ROLLBACK_PLAN_OPTIONS, form.rollbackPlan).map(
@@ -1773,6 +1821,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("hypercarePlan")}
               title={fieldLocked("hypercarePlan") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("hypercarePlan", e.target.value)}
+              {...fieldLoc(loc("hypercare_plan"))}
             >
               <option value="">Not set</option>
               {selectOptionsWithCurrent(RELEASE_PLAN_PROGRESS_OPTIONS, form.hypercarePlan).map(
@@ -1793,6 +1842,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("commsPlan")}
               title={fieldLocked("commsPlan") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("commsPlan", e.target.value)}
+              {...fieldLoc(loc("comms_plan"))}
             >
               <option value="">Not set</option>
               {selectOptionsWithCurrent(RELEASE_PLAN_PROGRESS_OPTIONS, form.commsPlan).map((s) => (
@@ -1811,6 +1861,7 @@ export function ReleaseFormModal({
               disabled={fieldLocked("trainingStatus")}
               title={fieldLocked("trainingStatus") ? FIELD_LOCK_HINT : undefined}
               onChange={(e) => set("trainingStatus", e.target.value)}
+              {...fieldLoc(loc("training_status"))}
             >
               <option value="">Not set</option>
               {selectOptionsWithCurrent(RELEASE_PLAN_PROGRESS_OPTIONS, form.trainingStatus).map(
@@ -1839,6 +1890,7 @@ export function ReleaseFormModal({
                   config={signoffConfig}
                   disabled={!type.enabled || fieldLocked(type.field)}
                   onChange={(next) => set(type.field, next)}
+                  loc={loc(type.field)}
                 />
               ))}
             </div>
@@ -1854,6 +1906,8 @@ export function ReleaseFormModal({
                 placeholder="Select people to keep informed…"
                 searchPlaceholder="Search people…"
                 disabled={fieldLocked("stakeholderIds")}
+                locator={loc("stakeholders")}
+                name={loc("stakeholders")}
               />
             </div>
           </div>
@@ -1867,6 +1921,7 @@ export function ReleaseFormModal({
             disabled={fieldLocked("notes")}
             title={fieldLocked("notes") ? FIELD_LOCK_HINT : undefined}
             onChange={(e) => set("notes", e.target.value)}
+            {...fieldLoc(loc("release_notes"))}
           />
         </div>
 
@@ -1882,6 +1937,7 @@ export function ReleaseFormModal({
             disabled={fieldLocked("changeDescription")}
             title={fieldLocked("changeDescription") ? FIELD_LOCK_HINT : undefined}
             onChange={(e) => set("changeDescription", e.target.value)}
+            {...fieldLoc(loc("change_description"))}
           />
         </div>
 
@@ -1897,15 +1953,18 @@ export function ReleaseFormModal({
             disabled={fieldLocked("justification")}
             title={fieldLocked("justification") ? FIELD_LOCK_HINT : undefined}
             onChange={(e) => set("justification", e.target.value)}
+            {...fieldLoc(loc("justification"))}
           />
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <LockedReadOnlyField
+            loc={loc("release_health")}
             label="Release Health"
             value={isEdit ? initial?.matrix?.releaseHealth?.trim() || "—" : "—"}
           />
           <LockedReadOnlyField
+            loc={loc("readiness_percent")}
             label="Readiness %"
             value={
               isEdit && initial?.matrix?.readinessPercent != null
@@ -1914,6 +1973,7 @@ export function ReleaseFormModal({
             }
           />
           <LockedReadOnlyField
+            loc={loc("blocker_count")}
             label="Blocker Count"
             value={
               isEdit && initial?.matrix?.blockerCount != null
@@ -1922,6 +1982,7 @@ export function ReleaseFormModal({
             }
           />
           <LockedReadOnlyField
+            loc={loc("risk_score")}
             label="Risk Score"
             value={
               isEdit && initial?.matrix?.weightedRiskScore != null
@@ -1930,6 +1991,7 @@ export function ReleaseFormModal({
             }
           />
           <LockedReadOnlyField
+            loc={loc("conflict_count")}
             label="Conflict Count"
             value={
               isEdit && initial?.matrix?.conflictCount != null
@@ -1938,25 +2000,34 @@ export function ReleaseFormModal({
             }
           />
           <LockedReadOnlyField
+            loc={loc("created_date")}
             label="Created Date"
             value={isEdit ? formatReleaseAuditInstant(initial?.matrix?.createdAt) : "—"}
           />
           <LockedReadOnlyField
+            loc={loc("created_by")}
             label="Created By"
             value={isEdit ? initial?.matrix?.createdBy?.trim() || "—" : "—"}
           />
           <LockedReadOnlyField
+            loc={loc("last_modified_date")}
             label="Last Modified Date"
             value={isEdit ? formatReleaseAuditInstant(initial?.matrix?.updatedAt) : "—"}
           />
           <LockedReadOnlyField
+            loc={loc("last_modified_by")}
             label="Last Modified By"
             value={isEdit ? initial?.matrix?.lastModifiedBy?.trim() || "—" : "—"}
           />
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose}>
+          <button
+            type="button"
+            className={taBtnSecondary}
+            onClick={onClose}
+            {...controlLoc(loc("cancel"))}
+          >
             Cancel
           </button>
           <button
@@ -1964,6 +2035,7 @@ export function ReleaseFormModal({
             className={taBtnPrimary}
             onClick={() => void save()}
             disabled={saving}
+            {...controlLoc(loc("save"))}
           >
             {saving ? "Saving…" : "Save"}
           </button>
@@ -1987,6 +2059,7 @@ function SignoffDecisionSelect({
   config,
   disabled,
   onChange,
+  loc,
 }: {
   type: { field: string; label: string; enabled: boolean; mandatory: boolean };
   value: string;
@@ -1994,6 +2067,7 @@ function SignoffDecisionSelect({
   config: SignoffLifecycleConfig;
   disabled: boolean;
   onChange: (next: string) => void;
+  loc: string;
 }) {
   const current = value.trim();
   const next = legalNextSignoffStatuses(config, current || null);
@@ -2014,6 +2088,7 @@ function SignoffDecisionSelect({
         disabled={disabled || locked}
         onChange={(e) => onChange(e.target.value)}
         aria-label={type.label}
+        {...fieldLoc(loc)}
       >
         {!current ? <option value="">Pending</option> : null}
         {options.map((label) => (
@@ -2054,15 +2129,26 @@ function SummaryRow({
   );
 }
 
-function LockedReadOnlyField({ label, value }: { label: string; value: string }) {
+function LockedReadOnlyField({
+  label,
+  value,
+  loc,
+}: {
+  label: string;
+  value: string;
+  loc?: string;
+}) {
   return (
     <div>
-      <label className="text-xs font-medium text-gray-500">{label}</label>
+      <label className="text-xs font-medium text-gray-500" htmlFor={loc ? locatorToken(loc) : undefined}>
+        {label}
+      </label>
       <input
         className={cn(taInput, "mt-1 bg-gray-50")}
         value={value}
         readOnly
         title="Locked for this release’s current status"
+        {...(loc ? fieldLoc(loc) : {})}
       />
     </div>
   );
@@ -2076,6 +2162,7 @@ function Field({
   required,
   error,
   disabled,
+  loc,
 }: {
   label: string;
   value: string;
@@ -2084,10 +2171,11 @@ function Field({
   required?: boolean;
   error?: string;
   disabled?: boolean;
+  loc: string;
 }) {
   return (
     <div>
-      <label className="text-xs font-medium text-gray-500">
+      <label className="text-xs font-medium text-gray-500" htmlFor={locatorToken(loc)}>
         {label}
         {required ? <RequiredMark /> : null}
       </label>
@@ -2098,6 +2186,7 @@ function Field({
         disabled={disabled}
         title={disabled ? FIELD_LOCK_HINT : undefined}
         onChange={(e) => onChange(e.target.value)}
+        {...fieldLoc(loc)}
       />
       <FieldError message={error} />
     </div>
