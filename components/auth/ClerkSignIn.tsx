@@ -27,8 +27,15 @@ function clerkSignInMounted(host: HTMLElement | null): boolean {
   );
 }
 
-export function ClerkSignIn() {
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+export function ClerkSignIn({
+  publishableKey: publishableKeyProp,
+}: {
+  /** Server-passed key so Production does not depend only on client inlining. */
+  publishableKey?: string;
+} = {}) {
+  const publishableKey =
+    (typeof publishableKeyProp === "string" && publishableKeyProp.trim()) ||
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const [loadFailed, setLoadFailed] = useState(false);
   const [pageOrigin, setPageOrigin] = useState("http://localhost:3000");
 
@@ -101,10 +108,34 @@ export function ClerkSignIn() {
         ) : (
           <>
             <p className="mt-2 text-rose-900/90">
-              <strong>On Vercel with test keys (`pk_test_…`):</strong> open Clerk Dashboard →{" "}
-              <strong>Configure → Paths</strong> and confirm sign-in is{" "}
-              <code className="rounded bg-rose-100 px-1">/sign-in</code>. Then allow this site origin
-              (e.g. <code className="rounded bg-rose-100 px-1">{pageOrigin}</code>) once:
+              Keys are present but the Clerk widget never painted. Guru must allow this origin
+              in Clerk Dashboard (we cannot set it from the repo):
+            </p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-rose-900/90">
+              <li>
+                <strong>Configure → Domains / Allowed origins</strong> add{" "}
+                <code className="rounded bg-rose-100 px-1">{pageOrigin}</code>
+                {" "}(and keep <code className="rounded bg-rose-100 px-1">https://releasedesk.vercel.app</code>{" "}
+                if that alias is still used).
+              </li>
+              <li>
+                <strong>Paths</strong>: sign-in <code className="rounded bg-rose-100 px-1">/sign-in</code>,
+                sign-up <code className="rounded bg-rose-100 px-1">/sign-up</code>. Redirect URLs include{" "}
+                <code className="rounded bg-rose-100 px-1">{pageOrigin}/dashboard</code>.
+              </li>
+              <li>
+                Vercel Production env: <code className="rounded bg-rose-100 px-1">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>,{" "}
+                <code className="rounded bg-rose-100 px-1">CLERK_SECRET_KEY</code>,{" "}
+                <code className="rounded bg-rose-100 px-1">NEXT_PUBLIC_APP_URL={pageOrigin}</code>, then redeploy.
+              </li>
+              <li>
+                <code className="rounded bg-rose-100 px-1">pk_live_</code> keys cannot host on{" "}
+                <code className="rounded bg-rose-100 px-1">*.vercel.app</code> — use a custom domain, or{" "}
+                <code className="rounded bg-rose-100 px-1">pk_test_</code> plus the origin allow-list.
+              </li>
+            </ol>
+            <p className="mt-2 text-rose-900/90">
+              Optional API (secret stays in Clerk/Vercel, never in git):
             </p>
             <pre className="mt-2 overflow-x-auto rounded bg-rose-100/80 p-2 text-[11px] text-rose-950">
 {`curl -X PATCH https://api.clerk.com/v1/instance \\
@@ -125,6 +156,9 @@ export function ClerkSignIn() {
 
   return (
     <div className="clerk-sign-in-host w-full min-h-[420px]">
+      <p className="signin-loading mb-3 text-sm text-gray-500" aria-live="polite">
+        Loading sign-in…
+      </p>
       <SignIn
         routing="path"
         path="/sign-in"

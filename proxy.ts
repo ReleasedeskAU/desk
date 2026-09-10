@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { clerkAuthorizedOrigins } from "@/lib/clerk-authorized-origins";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -17,39 +18,6 @@ const isPublicRoute = createRouteMatcher([
       ]
     : []),
 ]);
-
-/** Origins allowed to present Clerk session JWTs (azp). Must include the URL users actually visit. */
-function buildAuthorizedParties(): string[] {
-  const parties = new Set<string>();
-  const add = (v?: string | null) => {
-    if (!v) return;
-    const trimmed = v.trim().replace(/\/$/, "");
-    if (!trimmed) return;
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      parties.add(trimmed);
-    } else {
-      parties.add(`https://${trimmed}`);
-    }
-  };
-
-  add(process.env.NEXT_PUBLIC_APP_URL);
-  add(process.env.VERCEL_PROJECT_PRODUCTION_URL);
-  add(process.env.VERCEL_URL);
-  // Production alias used in the wild — keep even if env vars lag behind DNS.
-  add("https://releasedesk.vercel.app");
-
-  if (process.env.NODE_ENV === "development") {
-    add("http://localhost:3000");
-    add("http://127.0.0.1:3000");
-    add("http://localhost:3010");
-    add("http://127.0.0.1:3010");
-    add("http://10.138.194.41:3000");
-  }
-
-  return [...parties];
-}
-
-const authorizedParties = buildAuthorizedParties();
 
 export default clerkMiddleware(
   async (auth, req) => {
@@ -77,9 +45,13 @@ export default clerkMiddleware(
 
     return NextResponse.next();
   },
-  process.env.NODE_ENV === "production" && authorizedParties.length > 0
-    ? { authorizedParties }
-    : undefined
+  (req) => {
+    if (process.env.NODE_ENV !== "production") return {};
+    // Include the host the user opened (desk-release-desk1.vercel.app), not only
+    // the older releasedesk.vercel.app alias. Vercel sets Host; do not take it from the client.
+    const authorizedParties = clerkAuthorizedOrigins([req.nextUrl.origin]);
+    return authorizedParties.length > 0 ? { authorizedParties } : {};
+  }
 );
 
 export const config = {

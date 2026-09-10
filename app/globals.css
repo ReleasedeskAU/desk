@@ -834,4 +834,9 @@ body {
     width: 100%;
     min-height: 420px;
   }
+
+  .auth-shell .clerk-sign-in-host:has(.cl-rootBox) .signin-loading,
+  .auth-shell .clerk-sign-in-host:has([data-clerk-component]) .signin-loading {
+    display: none;
+  }
 }

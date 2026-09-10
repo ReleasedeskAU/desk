@@ -2,6 +2,7 @@
 
 import { ClerkProvider } from "@clerk/nextjs";
 import { NavigationProgressProvider } from "@/components/layout/NavigationProgress";
+import { clerkAuthorizedOrigins } from "@/lib/clerk-authorized-origins";
 
 type Props = {
   children: React.ReactNode;
@@ -20,14 +21,18 @@ type Props = {
  * @returns Children wrapped with Clerk and navigation progress context.
  */
 export function RootClientProviders({ children, clerkPublishableKey }: Props) {
+  const allowedRedirectOrigins = clerkAuthorizedOrigins();
   return (
     <ClerkProvider
       {...(clerkPublishableKey ? { publishableKey: clerkPublishableKey } : {})}
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
       afterSignOutUrl="/sign-in"
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
       signInForceRedirectUrl="/dashboard"
       signUpForceRedirectUrl="/dashboard"
+      {...(allowedRedirectOrigins.length > 0 ? { allowedRedirectOrigins } : {})}
     >
       <NavigationProgressProvider>{children}</NavigationProgressProvider>
     </ClerkProvider>

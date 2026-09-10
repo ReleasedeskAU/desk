@@ -24,6 +24,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Production sign-in origin:** Clerk middleware / redirect allow-list now includes `https://desk-release-desk1.vercel.app` (and the request host). `<SignIn />` wiring is unchanged (`ClerkProvider` + path `/sign-in`). If the left pane is still empty after deploy, Guru must add that origin on the Clerk instance (Allowed origins + redirect URLs) and set `NEXT_PUBLIC_APP_URL` on Vercel Production — `pk_live_` cannot serve `*.vercel.app`.
+
 - **UI locator typecheck (RD-229):** Optional field locators are typed so `htmlFor` does not read `.id` on `{}`. Vercel `next build` typecheck can complete after the Scope merge.
 
 - **Release form field matrix (RD-154):** Create/Edit Release now shows the Field Lock Matrix fields that were missing from the form (Release Type, Backup Owner, Technical Lead, Business Owner, Scope Description, Go-Live/Deploy dates, Deployment Window, Deployment Checklist, Dress Rehearsal, Change Description, Justification, sign-offs on create, and always-locked computed/audit/previous-status). Locks follow the existing catalog (lifecycle **keys**, not tenant labels). Affected Systems is the Application list (no second column). Duration (Days) is computed from start/end, not stored. Auth unchanged (editor). No secrets or stack traces in client errors.
