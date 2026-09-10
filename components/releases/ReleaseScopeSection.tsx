@@ -214,8 +214,8 @@ export function ReleaseScopeSection({
                 placeholder="What is in scope, what is out of scope, and which applications are involved."
               />
               <div className="flex flex-wrap items-end gap-3">
-                {/* Cap the date field so taInput's w-full cannot overflow onto Save draft. */}
-                <label className="block w-full max-w-xs text-xs font-medium text-slate-500">
+                {/* Cap the date field so taInput's w-full cannot cover Save draft. */}
+                <label className="block min-w-0 w-full max-w-xs text-xs font-medium text-slate-500">
                   Scope-approval due date
                   {scope.approvalDueRequired ? " *" : " (optional)"}
                   <input
@@ -225,7 +225,12 @@ export function ReleaseScopeSection({
                     onChange={(e) => setDue(e.target.value)}
                   />
                 </label>
-                <button type="button" className={cn(taBtnSecondary, "shrink-0")} disabled={busy} onClick={saveDraft}>
+                <button
+                  type="button"
+                  className={cn(taBtnSecondary, "relative z-[1] shrink-0")}
+                  disabled={busy}
+                  onClick={saveDraft}
+                >
                   Save draft
                 </button>
               </div>
@@ -502,9 +507,6 @@ function GrantRow({
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
         Section editors
       </p>
-      <p className="text-[11.5px] text-slate-500 dark:text-white/50">
-        While this scope is still draft, the Release Manager or owner can let another Release Desk user edit this section only. That person cannot approve, and editing stops when the scope is approved.
-      </p>
       {grants.map((g) => (
         <div
           key={g.id}
@@ -519,8 +521,9 @@ function GrantRow({
         </div>
       ))}
       {canAdd ? (
-        <div className="flex gap-2">
-          <div className="min-w-[220px] flex-1">
+        <div className="flex flex-wrap items-end gap-2">
+          {/* Same w-full overflow as the due-date row — cap the picker so Add stays clickable. */}
+          <div className="min-w-0 w-full max-w-xs">
             <SearchableSelect
               value={grantUserId}
               onChange={onGrantUserId}
@@ -529,7 +532,12 @@ function GrantRow({
               searchPlaceholder="Search users…"
             />
           </div>
-          <button type="button" className={taBtnSecondary} disabled={busy || !grantUserId} onClick={onAdd}>
+          <button
+            type="button"
+            className={cn(taBtnSecondary, "relative z-[1] shrink-0")}
+            disabled={busy || !grantUserId}
+            onClick={onAdd}
+          >
             Add
           </button>
         </div>

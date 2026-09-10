@@ -77,6 +77,16 @@ describe("native scope write-path wiring", () => {
     assert.match(service, /findFirst\(\s*\{\s*where: \{ id: args\.requestId, scopeId: args\.scopeId \}/);
   });
 
+  it("keeps scope Save draft and section-editor Add out from under full-width fields", () => {
+    const section = readSrc("components/releases/ReleaseScopeSection.tsx");
+    assert.match(section, /max-w-xs/);
+    assert.match(section, /relative z-\[1\] shrink-0/);
+    assert.doesNotMatch(
+      section,
+      /While this scope is still draft, the Release Manager or owner can let another/
+    );
+  });
+
   it("wires Manager and Owner pickers to tenant-scoped assignmentOptions, not /api/users", () => {
     const modal = readSrc("components/releases/ReleaseFormModal.tsx");
     assert.match(modal, /assignmentOptionsToSelect\(resolvedAssignmentOptions\?\.owners\)/);
