@@ -22,6 +22,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **UI locator typecheck (RD-229):** Optional field locators are typed so `htmlFor` does not read `.id` on `{}`. Vercel `next build` typecheck can complete after the Scope merge.
+
 - **Release form field matrix (RD-154):** Create/Edit Release now shows the Field Lock Matrix fields that were missing from the form (Release Type, Backup Owner, Technical Lead, Business Owner, Scope Description, Go-Live/Deploy dates, Deployment Window, Deployment Checklist, Dress Rehearsal, Change Description, Justification, sign-offs on create, and always-locked computed/audit/previous-status). Locks follow the existing catalog (lifecycle **keys**, not tenant labels). Affected Systems is the Application list (no second column). Duration (Days) is computed from start/end, not stored. Auth unchanged (editor). No secrets or stack traces in client errors.
 
 - **Related-create release pickers (RD-168, RD-193, RD-194):** New Dependency and New Conflict omit Cancelled (`cancelled` / full lock) and Blocked (`blocked` key — labels may be renamed). POST rejects those picks. Conflict edit is locked when a linked release is Cancelled (UI + PATCH). Picking a new Cancelled/Blocked release on edit is rejected. Rolled Back and Closed stay selectable. Auth unchanged (editor). No secrets or stack traces in client errors.

@@ -9,7 +9,7 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { DRIFT_SEVERITIES, DRIFT_STATUSES } from "@/lib/validation/drift";
-import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
+import { controlLoc, fieldLocIfId, locatorToken } from "@/lib/ui-control-locators";
 
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId: string };
@@ -351,20 +351,20 @@ function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">{message}</p> : null;
 }
 function SelectField({ label, required, error, children, id, name, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
-  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>{label}{required ? <> <RequiredMark /></> : null}
+  const locators = fieldLocIfId(id, name);
+  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>{label}{required ? <> <RequiredMark /></> : null}
     <select {...props} {...locators} className={cn(taInput, "mt-1", error && "border-rose-400")}>{children}</select><FieldError message={error} />
   </label>;
 }
 function TextField({ label, required, error, id, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
-  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>{label}{required ? <> <RequiredMark /></> : null}
+  const locators = fieldLocIfId(id, name);
+  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>{label}{required ? <> <RequiredMark /></> : null}
     <input {...props} {...locators} className={cn(taInput, "mt-1", error && "border-rose-400")} /><FieldError message={error} />
   </label>;
 }
 function TextareaField({ label, required, error, id, name, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
-  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2" htmlFor={locators.id}>{label}{required ? <> <RequiredMark /></> : null}
+  const locators = fieldLocIfId(id, name);
+  return <label className="block text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2" htmlFor={locators?.id}>{label}{required ? <> <RequiredMark /></> : null}
     <textarea {...props} {...locators} maxLength={4000} className={cn(taInput, "mt-1 min-h-[76px]", error && "border-rose-400")} /><FieldError message={error} />
   </label>;
 }
