@@ -44,7 +44,7 @@ describe("native scope write-path wiring", () => {
     assert.doesNotMatch(http, /tenantKeyFromSession\(null\)/);
 
     const directory = readSrc("lib/release-directory-user.ts");
-    assert.match(directory, /WHERE "organizationId" = \$\{orgId\}/);
+    assert.match(directory, /WHERE "organizationId" = \$\{orgId\} OR "organizationId" IS NULL/);
     assert.doesNotMatch(directory, /prisma\.user\.findMany/);
 
     const routes = readSrc("lib/release-scope-routes.ts");
@@ -78,6 +78,6 @@ describe("native scope write-path wiring", () => {
 
     const route = readSrc("app/api/release-assignment-options/route.ts");
     assert.match(route, /loadSessionAssignmentOptions/);
-    assert.match(route, /TENANT_REQUIRED/);
+    assert.doesNotMatch(route, /listDirectoryUsersForAssignment\(\)/);
   });
 });

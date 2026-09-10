@@ -1,8 +1,11 @@
 /**
  * Session-tenant resolution for native Scope.
- * Platform is multi-tenant — never list users or load a release without an org match.
- * Tenant comes from the session only (Clerk org, else the user's stored organizationId).
- * Fail closed: missing tenant → deny. Do not fall back to getDefaultOrganizationId or unfiltered reads.
+ * Platform is multi-tenant — a different non-null organizationId is another tenant.
+ *
+ * GET /api/releases (list) is not org-filtered. Detail must load those same rows:
+ * matching session org, or a null organizationId (legacy / preview). Do not use
+ * getDefaultOrganizationId. Clerk org is identity; User.organizationId is the
+ * data-plane tenant stamped on User/Release rows.
  */
 
 import { auth } from "@clerk/nextjs/server";
@@ -12,7 +15,8 @@ import { prisma } from "@/lib/prisma";
 import { resolveDirectoryUser } from "@/lib/release-directory-user";
 
 export type ScopeTenantContext = {
-  organizationId: string;
+  /** Session data-plane org, or null when the workspace is unscoped (NULL org columns). */
+  organizationId: string | null;
 };
 
 export type TenantReleaseLookup =
@@ -31,13 +35,52 @@ export function requireTenantOrganizationId(
 }
 
 /**
- * Resolve the session tenant. Returns null when the caller must be denied.
+ * Whether a release the list already showed is loadable for this session.
+ * Null row org = unscoped (list is not org-filtered). A different non-null org is another tenant.
+ *
+ * @param releaseOrganizationId - organizationId on the Release row (may be null).
+ * @param sessionOrganizationId - Session data-plane org (may be null).
+ */
+export function releaseRowVisibleToSessionTenant(
+  releaseOrganizationId: string | null | undefined,
+  sessionOrganizationId: string | null | undefined
+): boolean {
+  const rowOrg = requireTenantOrganizationId(releaseOrganizationId);
+  const sessionOrg = requireTenantOrganizationId(sessionOrganizationId);
+  if (rowOrg && sessionOrg) return rowOrg === sessionOrg;
+  if (rowOrg && !sessionOrg) return false;
+  return true;
+}
+
+async function readUserOrganizationId(userId: string): Promise<string | null> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ organizationId: string | null }>>`
+      SELECT "organizationId" FROM "User" WHERE id = ${userId} LIMIT 1
+    `;
+    return requireTenantOrganizationId(rows[0]?.organizationId);
+  } catch (error) {
+    logger.warn("scope tenant: User.organizationId read failed", {
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    return null;
+  }
+}
+
+/**
+ * Resolve the session data-plane tenant. Directory User.organizationId first
+ * (same stamp as Release rows). Clerk org only when the user row has no org.
  *
  * @param session - Authenticated session (never a client-supplied org id).
  */
 export async function resolveScopeTenant(
   session: SessionUser
 ): Promise<ScopeTenantContext | null> {
+  const directoryUser = await resolveDirectoryUser(session);
+  if (directoryUser) {
+    const userOrg = await readUserOrganizationId(directoryUser.id);
+    if (userOrg) return { organizationId: userOrg };
+  }
+
   let clerkOrgId: string | null = null;
   try {
     const raw = (await auth()).orgId;
@@ -54,34 +97,49 @@ export async function resolveScopeTenant(
         where: { clerkOrgId },
         select: { id: true },
       });
-      if (!organization) {
-        logger.warn("scope tenant: Clerk org is set but Organization row is missing");
-        return null;
-      }
-      return { organizationId: organization.id };
+      if (organization) return { organizationId: organization.id };
+      logger.warn("scope tenant: Clerk org is set but Organization row is missing");
     } catch (error) {
       logger.warn("scope tenant: Organization lookup failed", {
         error: error instanceof Error ? error.message : "unknown",
       });
-      return null;
     }
   }
 
-  const directoryUser = await resolveDirectoryUser(session);
-  if (!directoryUser) return null;
+  return null;
+}
+
+type ReleaseOrgRow = { id: string; organizationId: string | null };
+
+/**
+ * Release id + stored org for an id or releaseCode (same match as the list GET).
+ */
+export async function findReleaseIdAndOrganization(
+  releaseIdOrCode: string
+): Promise<ReleaseOrgRow | null> {
+  const key = releaseIdOrCode.trim();
+  if (!key) return null;
 
   try {
-    const rows = await prisma.$queryRaw<Array<{ organizationId: string | null }>>`
-      SELECT "organizationId" FROM "User" WHERE id = ${directoryUser.id} LIMIT 1
+    const rows = await prisma.$queryRaw<Array<{ id: string; organizationId: string | null }>>`
+      SELECT id, "organizationId" FROM "Release"
+      WHERE id = ${key} OR "releaseCode" = ${key}
+      LIMIT 1
     `;
-    const organizationId = requireTenantOrganizationId(rows[0]?.organizationId);
-    if (!organizationId) return null;
-    return { organizationId };
+    if (!rows[0]?.id) return null;
+    return {
+      id: rows[0].id,
+      organizationId: requireTenantOrganizationId(rows[0].organizationId),
+    };
   } catch (error) {
-    logger.warn("scope tenant: User.organizationId read failed", {
+    logger.warn("scope tenant: release lookup failed; trying unscoped Prisma read", {
       error: error instanceof Error ? error.message : "unknown",
     });
-    return null;
+    const row = await prisma.release.findFirst({
+      where: { OR: [{ id: key }, { releaseCode: key }] },
+      select: { id: true },
+    });
+    return row ? { id: row.id, organizationId: null } : null;
   }
 }
 
@@ -95,28 +153,14 @@ export async function findReleaseIdForTenant(
   releaseIdOrCode: string,
   organizationId: string
 ): Promise<string | null> {
-  const orgId = requireTenantOrganizationId(organizationId);
-  const key = releaseIdOrCode.trim();
-  if (!orgId || !key) return null;
-
-  try {
-    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "Release"
-      WHERE (id = ${key} OR "releaseCode" = ${key})
-        AND "organizationId" = ${orgId}
-      LIMIT 1
-    `;
-    return requireTenantOrganizationId(rows[0]?.id);
-  } catch (error) {
-    logger.warn("scope tenant: tenant-scoped release lookup failed", {
-      error: error instanceof Error ? error.message : "unknown",
-    });
-    return null;
-  }
+  const row = await findReleaseIdAndOrganization(releaseIdOrCode);
+  if (!row) return null;
+  if (!releaseRowVisibleToSessionTenant(row.organizationId, organizationId)) return null;
+  return row.id;
 }
 
 /**
- * Load a release only when it belongs to the session tenant.
+ * Load a release the list already showed, unless it belongs to another org.
  *
  * @param releaseIdOrCode - URL id or releaseCode.
  * @param session - Authenticated session.
@@ -125,11 +169,20 @@ export async function lookupReleaseForSessionTenant(
   releaseIdOrCode: string,
   session: SessionUser
 ): Promise<TenantReleaseLookup> {
+  const row = await findReleaseIdAndOrganization(releaseIdOrCode);
+  if (!row) return { ok: false, code: "NOT_FOUND" };
+
   const tenant = await resolveScopeTenant(session);
-  if (!tenant) return { ok: false, code: "TENANT_REQUIRED" };
-  const releaseId = await findReleaseIdForTenant(releaseIdOrCode, tenant.organizationId);
-  if (!releaseId) return { ok: false, code: "NOT_FOUND" };
-  return { ok: true, releaseId, tenant };
+  const sessionOrg = tenant?.organizationId ?? null;
+  if (!releaseRowVisibleToSessionTenant(row.organizationId, sessionOrg)) {
+    return { ok: false, code: "NOT_FOUND" };
+  }
+
+  return {
+    ok: true,
+    releaseId: row.id,
+    tenant: { organizationId: sessionOrg ?? row.organizationId },
+  };
 }
 
 /**
@@ -138,7 +191,10 @@ export async function lookupReleaseForSessionTenant(
  * @param fileTenantKey - tenantKey on ReleaseScopeFile.
  * @param organizationId - Session organization id.
  */
-export function assertSameTenantFile(fileTenantKey: string, organizationId: string): boolean {
+export function assertSameTenantFile(
+  fileTenantKey: string,
+  organizationId: string | null | undefined
+): boolean {
   const fileKey = requireTenantOrganizationId(fileTenantKey);
   const orgId = requireTenantOrganizationId(organizationId);
   return Boolean(fileKey && orgId && fileKey === orgId);

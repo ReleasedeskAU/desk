@@ -9,6 +9,7 @@ import { scopeChangeRequestApproveWhere } from "@/lib/release-scope-service";
 import { SCOPE_STATUS_DRAFT } from "@/lib/release-scope-status";
 import {
   assertSameTenantFile,
+  releaseRowVisibleToSessionTenant,
   requireTenantOrganizationId,
 } from "@/lib/release-scope-tenant";
 
@@ -38,6 +39,18 @@ describe("scope tenant scoping", () => {
   it("returns no directory users when the organization id is missing", async () => {
     const users = await listDirectoryUsersForAssignment("   ");
     assert.deepEqual(users, []);
+  });
+
+  it("loads a list-visible release for the same session tenant", () => {
+    assert.equal(releaseRowVisibleToSessionTenant("org_a", "org_a"), true);
+    assert.equal(releaseRowVisibleToSessionTenant(null, "org_a"), true);
+    assert.equal(releaseRowVisibleToSessionTenant("", "org_a"), true);
+    assert.equal(releaseRowVisibleToSessionTenant(null, null), true);
+  });
+
+  it("does not load another tenant's release even when the list is unscoped", () => {
+    assert.equal(releaseRowVisibleToSessionTenant("org_b", "org_a"), false);
+    assert.equal(releaseRowVisibleToSessionTenant("org_b", null), false);
   });
 
   it("requires both requestId and scopeId on change-request approve", () => {

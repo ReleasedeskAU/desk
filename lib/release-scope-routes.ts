@@ -285,6 +285,9 @@ async function persistAttachment(args: {
   }
 
   const tenantKey = ctx.tenant.organizationId;
+  if (!tenantKey) {
+    return scopeDenied(403, "Tenant required", "TENANT_REQUIRED");
+  }
   const stored = await writeScopeFile(tenantKey, bytes);
   const actor = routeActor(ctx.user, ctx.directoryUser);
   await prisma.releaseScopeFile.create({
@@ -335,6 +338,9 @@ export async function handleDownloadAttachment(args: {
   const ctx = await loadScopeRouteContext(args.idParam);
   if (!ctx.ok) return ctx.response;
   const tenantKey = ctx.tenant.organizationId;
+  if (!tenantKey) {
+    return scopeDenied(404, "Attachment was not found.", "NOT_FOUND");
+  }
   const row = await prisma.releaseScopeFile.findFirst({
     where: {
       id: args.fileId,

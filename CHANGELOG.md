@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
-- **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release loads are scoped to the session tenant (Clerk org, else the user’s stored `organizationId`) — no unfiltered directory list and no release load by id alone. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create) — they no longer load unscoped `/api/users`. The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
+- **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release loads are scoped to the session tenant (directory `User.organizationId`, else Clerk org). A list-visible release with a null `organizationId` still loads on detail; a different non-null org stays 404. Assignment pickers include the session org plus unclassified (NULL org) users — not every directory user. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create) — they no longer load unscoped `/api/users`. The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
 
 ### Added
 

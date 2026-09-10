@@ -11,14 +11,13 @@ import { resolveScopeTenant } from "@/lib/release-scope-tenant";
 
 /**
  * Tenant-scoped assignment options for the session.
- * Missing tenant → null (caller must deny or show an empty picker).
+ * Uses the same org as detail GET, plus unclassified (NULL organizationId) users.
  *
  * @param session - Authenticated session.
  */
 export async function loadSessionAssignmentOptions(
   session: SessionUser
-): Promise<ReleaseAssignmentOptions | null> {
+): Promise<ReleaseAssignmentOptions> {
   const tenant = await resolveScopeTenant(session);
-  if (!tenant) return null;
-  return pickerPayload(await listDirectoryUsersForAssignment(tenant.organizationId));
+  return pickerPayload(await listDirectoryUsersForAssignment(tenant?.organizationId ?? null));
 }
