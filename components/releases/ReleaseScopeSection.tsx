@@ -183,8 +183,8 @@ export function ReleaseScopeSection({
       icon={FileText}
       tone="sky"
       title="Scope"
-      description="Native release scope — approval here is not CAB and does not write to Jira."
-      detail="Draft and approve scope on this page. After approval, start at most one draft change request. Attachments are append-only."
+      description="What is in and out of this release."
+      detail="Edit and approve the scope on this page. Once approved, further changes need a change request. Only the current Release Manager or owner can edit or approve. While draft, they can also add section editors who may edit this section only — not approve. Files can be added while draft and cannot be removed after approval."
       collapsible
       defaultOpen
     >
@@ -211,7 +211,7 @@ export function ReleaseScopeSection({
                 className={cn(taInput, "min-h-[140px]")}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Describe the scope. Applications stay as plain text here."
+                placeholder="What is in scope, what is out of scope, and which applications are involved."
               />
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-xs font-medium text-slate-500">
@@ -499,11 +499,10 @@ function GrantRow({
   return (
     <div className="space-y-2">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-        People who can edit this section
+        Section editors
       </p>
       <p className="text-[11.5px] text-slate-500 dark:text-white/50">
-        The current Release Manager or current owner can add any existing Release Desk user.
-        That person can edit this section only — they are not a Release Manager and cannot approve.
+        While this scope is still draft, the Release Manager or owner can let another Release Desk user edit this section only. That person cannot approve, and editing stops when the scope is approved.
       </p>
       {grants.map((g) => (
         <div
