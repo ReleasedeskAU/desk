@@ -14,6 +14,7 @@ import {
 } from "@/lib/list-api-filters";
 import { parseLookupInclude } from "@/lib/release-lookup-scope";
 import { ensureDbAwake, isRetryableDbError, prisma, withDbRetry } from "@/lib/prisma";
+import { releaseWhereForSessionTenant } from "@/lib/release-scope-tenant";
 
 /** Neon cold starts on Vercel can exceed the default 10s hobby limit. */
 export const maxDuration = 60;
@@ -24,7 +25,7 @@ export const maxDuration = 60;
  * load every release. Omitted include stays full for older callers.
  */
 export async function GET(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
 
   try {
@@ -34,6 +35,15 @@ export async function GET(req: Request) {
     params.delete("include");
 
     await ensureDbAwake();
+
+    const scopedReleases = include.releases
+      ? await releaseWhereForSessionTenant(user!, releaseListWhere(params))
+      : null;
+    // Same session org as GET /api/releases. Missing tenant → empty, not a dump.
+    const releaseWhere =
+      scopedReleases && scopedReleases.ok
+        ? scopedReleases.where
+        : { id: { in: [] as string[] } };
 
     const [departments, applications, environments, bookingRows, releases, calendarEvents] =
       await Promise.all([
@@ -87,7 +97,7 @@ export async function GET(req: Request) {
           ? withDbRetry(
               () =>
                 prisma.release.findMany({
-                  where: releaseListWhere(params),
+                  where: releaseWhere,
                   include: {
                     department: true,
                     applications: { include: { application: true } },

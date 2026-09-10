@@ -8,6 +8,8 @@ import { EditSuccessDialog } from "@/components/detail/editable/EditSuccessDialo
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
 import { diffDraftChanges, type FieldChange } from "@/lib/detail-edit-diff";
+import { assignmentOptionsToSelect } from "@/lib/release-assignment-select";
+import type { ReleaseAssignmentOptions } from "@/lib/release-scope-service";
 import { cn } from "@/lib/utils";
 import { loadJsonEffect, safeFetchJson } from "@/lib/safe-fetch";
 import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
@@ -122,6 +124,7 @@ export type ReleaseFormData = {
   testEnvRequired: string;
   uatEnvRequired: string;
   releaseOwnerId: string;
+  releaseManagerId: string;
   approvalStatus: string;
   rollbackPlan: string;
   hypercarePlan: string;
@@ -171,6 +174,7 @@ const RELEASE_EDIT_LABELS: Partial<Record<keyof ReleaseFormData, string>> = {
   testEnvRequired: "Test env",
   uatEnvRequired: "UAT env",
   releaseOwnerId: "Release owner",
+  releaseManagerId: "Release manager",
   approvalStatus: "Approval status",
   rollbackPlan: "Rollback plan",
   hypercarePlan: "Hypercare plan",
@@ -241,6 +245,7 @@ const EMPTY_FORM: ReleaseFormData = {
   testEnvRequired: "",
   uatEnvRequired: "",
   releaseOwnerId: "",
+  releaseManagerId: "",
   approvalStatus: "",
   rollbackPlan: "",
   hypercarePlan: "",
@@ -295,6 +300,8 @@ export type ReleaseFormSource = {
   uatEnvRequired?: string | null;
   releaseOwner?: { id?: string | null } | null;
   releaseOwnerId?: string | null;
+  releaseManager?: { id?: string | null } | null;
+  releaseManagerId?: string | null;
   approvalStatus?: string | null;
   rollbackPlan?: string | null;
   hypercarePlan?: string | null;
@@ -329,6 +336,7 @@ export type ReleaseFormSource = {
   previousStatus?: string | null;
   blockerCount?: number | null;
   conflictCount?: number | null;
+  assignmentOptions?: ReleaseAssignmentOptions | null;
 };
 
 /**
@@ -358,6 +366,7 @@ export function releaseRowToFormInitial(release: ReleaseFormSource): ReleaseForm
     testEnvRequired: release.testEnvRequired ?? "",
     uatEnvRequired: release.uatEnvRequired ?? "",
     releaseOwnerId: release.releaseOwner?.id ?? release.releaseOwnerId ?? "",
+    releaseManagerId: release.releaseManager?.id ?? release.releaseManagerId ?? "",
     approvalStatus: release.approvalStatus ?? "",
     rollbackPlan: release.rollbackPlan ?? "",
     hypercarePlan: release.hypercarePlan ?? "",
@@ -429,6 +438,7 @@ export function ReleaseFormModal({
   environments = [],
   releases,
   statusOptions: _statusOptionsProp,
+  assignmentOptions: assignmentOptionsProp,
   onClose,
   onSaved,
 }: {
@@ -441,12 +451,15 @@ export function ReleaseFormModal({
   releases: Option[];
   /** Callers may still pass enabled labels; create ignores this and locks status to intake. */
   statusOptions?: string[];
+  /** Session-tenant Manager / Owner lists from release GET. Create fetches the equivalent. */
+  assignmentOptions?: ReleaseAssignmentOptions | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<ReleaseFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [users, setUsers] = useState<UserOption[]>([]);
+  const [fetchedAssignmentOptions, setFetchedAssignmentOptions] =
+    useState<ReleaseAssignmentOptions | null>(null);
   const [loadedEnvs, setLoadedEnvs] = useState<EnvOption[]>([]);
   const [editLegalNext, setEditLegalNext] = useState<LegalNextStatusView[]>([]);
   const [legalNextLoading, setLegalNextLoading] = useState(false);
@@ -575,19 +588,20 @@ export function ReleaseFormModal({
   }, [editLegalNext, form.status, initial?.status, isEdit]);
 
   useEffect(() => {
-    if (!open) return;
-    return loadJsonEffect<{ id: string; userId: string; name: string }[]>(
-      "/api/users",
-      (rows) =>
-        setUsers(
-          rows.map((u) => ({
-            value: u.id,
-            label: `${u.userId} — ${u.name}`,
-          }))
-        ),
-      { label: "release-form-users" }
+    if (!open) {
+      setFetchedAssignmentOptions(null);
+      return;
+    }
+    if (assignmentOptionsProp) {
+      setFetchedAssignmentOptions(assignmentOptionsProp);
+      return;
+    }
+    return loadJsonEffect<ReleaseAssignmentOptions>(
+      "/api/release-assignment-options",
+      (payload) => setFetchedAssignmentOptions(payload),
+      { label: "release-form-assignment-options" }
     );
-  }, [open]);
+  }, [open, assignmentOptionsProp]);
 
   useEffect(() => {
     if (!open) {
@@ -735,6 +749,7 @@ export function ReleaseFormModal({
       testEnvRequired: initial?.testEnvRequired ?? "",
       uatEnvRequired: initial?.uatEnvRequired ?? "",
       releaseOwnerId: initial?.releaseOwnerId ?? "",
+      releaseManagerId: initial?.releaseManagerId ?? "",
       approvalStatus: initial?.approvalStatus ?? "",
       rollbackPlan: initial?.rollbackPlan ?? "",
       hypercarePlan: initial?.hypercarePlan ?? "",
@@ -775,11 +790,21 @@ export function ReleaseFormModal({
     return applications.filter((a) => a.departmentId === form.departmentId);
   }, [applications, form.departmentId]);
 
-  /** Owners are global — do not filter by selected department. */
+  const resolvedAssignmentOptions = assignmentOptionsProp ?? fetchedAssignmentOptions;
+
+  /** Owner picker: any existing same-tenant user. Never typed names. */
   const ownerOptions = useMemo(
-    () => [...users].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
-    [users]
+    () => assignmentOptionsToSelect(resolvedAssignmentOptions?.owners),
+    [resolvedAssignmentOptions]
   );
+
+  /** Manager picker: exact editors only (never admin, never readonly). */
+  const managerOptions = useMemo(
+    () => assignmentOptionsToSelect(resolvedAssignmentOptions?.managers),
+    [resolvedAssignmentOptions]
+  );
+
+  const users = ownerOptions;
 
   const envSource = environments.length > 0 ? environments : loadedEnvs;
   const appIdsInDept = useMemo(() => new Set(filteredApps.map((a) => a.value)), [filteredApps]);
@@ -941,6 +966,7 @@ export function ReleaseFormModal({
       goLiveDate: form.goLiveDate || null,
       deployDate: form.deployDate || null,
       releaseOwnerId: form.releaseOwnerId || null,
+      releaseManagerId: form.releaseManagerId || null,
       notes: form.notes.trim() || null,
       testEnvRequired: form.testEnvRequired.trim() || null,
       uatEnvRequired: form.uatEnvRequired.trim() || null,
@@ -974,6 +1000,7 @@ export function ReleaseFormModal({
     let payload: Record<string, unknown>;
     if (isEdit && editBaseline.current) {
       payload = sparseReleaseEditPayload(editBaseline.current, full);
+      delete payload.scopeDescription;
     } else {
       payload = full;
     }
@@ -1336,6 +1363,19 @@ export function ReleaseFormModal({
           </div>
 
           <div>
+            <label className="text-xs font-medium text-gray-500">Release Manager</label>
+            <div className="mt-1">
+              <SearchableSelect
+                value={form.releaseManagerId}
+                onChange={(v) => set("releaseManagerId", v)}
+                options={managerOptions}
+                placeholder="Select manager…"
+                searchPlaceholder="Search editors…"
+              />
+            </div>
+          </div>
+
+          <div>
             <label className="text-xs font-medium text-gray-500">Backup Owner</label>
             <div className="mt-1">
               <SearchableSelect
@@ -1574,11 +1614,17 @@ export function ReleaseFormModal({
               className={cn(
                 taInput,
                 "min-h-[72px] mt-1",
-                fieldLocked("scopeDescription") && "bg-gray-50"
+                (isEdit || fieldLocked("scopeDescription")) && "bg-gray-50"
               )}
               value={form.scopeDescription}
-              disabled={fieldLocked("scopeDescription")}
-              title={fieldLocked("scopeDescription") ? FIELD_LOCK_HINT : undefined}
+              disabled={isEdit || fieldLocked("scopeDescription")}
+              title={
+                isEdit
+                  ? "Edit and approve scope on the release Scope section."
+                  : fieldLocked("scopeDescription")
+                    ? FIELD_LOCK_HINT
+                    : undefined
+              }
               onChange={(e) => set("scopeDescription", e.target.value)}
               {...fieldLoc(loc("scope_description"))}
             />

@@ -505,6 +505,7 @@ export type CreateReleaseInput = {
   goLiveChecklistPercent?: number | null;
   deploymentWindow?: string | null;
   releaseOwnerId?: string | null;
+  releaseManagerId?: string | null;
   /**
    * Pin to the creator's latest lifecycle config version. Null leaves the
    * release as latest-unpinned (legacy path / pin unavailable).
@@ -576,6 +577,7 @@ export async function createReleaseRow(data: CreateReleaseInput) {
           technicalLead: data.technicalLead ?? undefined,
           businessOwner: data.businessOwner ?? undefined,
           scopeDescription: data.scopeDescription ?? undefined,
+          releaseManagerId: data.releaseManagerId ?? undefined,
           changeDescription: data.changeDescription ?? undefined,
           justification: data.justification ?? undefined,
           goLiveDate: data.goLiveDate ?? undefined,

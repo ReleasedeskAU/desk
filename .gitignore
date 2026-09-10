@@ -30,6 +30,9 @@ yarn-error.log*
 .env
 .env*.local
 
+# native scope file store (server-generated keys only)
+/.data/
+
 # sqlite
 /prisma/dev.db
 /prisma/dev.db-journal

@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release **list + detail** use the same session tenant (directory `User.organizationId`, else Clerk org). Detail still requires an exact `organizationId` match (null/other-org → 404). Assignment pickers are that same org only — not NULL-org users and not unscoped `/api/users`. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create). The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
+
+### Added
+
+- **Native Scope and Scope Change Requests:** Release page has a Scope section (status + due date above Description / History / Attachments). Status keys are `draft` / `approved` with tenant labels (or purpose). First approve records session actor + stored text and locks description, due date, attachments, and grants in one transaction. Change requests appear only after scope is approved; one draft at a time; proposed text does not write `scopeDescription` until approve; approve fails on the route if why was not saved. Request files stay on the request. Scope lock is this approval state — not `cabScopeSnapshot` / CAB Approved. Draft scope writes use `/api/releases/[id]/scope*` (not Release PATCH / VR-21). No Jira writes. Attachments are server-stored, tenant from the session organization (no single-tenant default), append-only (PDF / Word / email). **Scope section editors** (not account-role editors / Release Managers): while the section is draft, the current manager or owner may add **any** existing same-tenant Release Desk user; that person can edit only that section’s description and add attachments until approved — they cannot approve, cannot add people, and do not become a Release Manager or account editor. After approval, add is denied and leftover grants do not keep the section writable. The same per-section grant pattern applies to each draft change request; a scope grant does not carry to a change request.
+
+- **Release Manager / Owner seats:** `releaseManagerId` on Release. Current manager or current owner can edit the release, scope, manager, owner, and approve — account role does not block that seat (a readonly owner can edit/approve that release). Any other exact editor may only assign the manager seat to themselves. Manager picker = exact editors; owner picker = any existing same-tenant user. createdBy / previous / title / page access grant nothing. Live (`deployingMilestone` / `deployedMilestone`) and terminal statuses deny these writes. Reassignment appends to the release audit log (actor, time, previous, new) — not scope history.
+
 ### Changed
 
 - **UI test locators:** Create/edit forms and list Add/Edit controls now expose a stable snake_case token on `id` and `data-test-id` (plus `name` on fields) so automation can find them without brittle xpath. Shared pickers and dialogs take locator props instead of hardcoded ids. Existing kebab-case `data-testid` values are unchanged.

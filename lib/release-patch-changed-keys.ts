@@ -156,5 +156,12 @@ export function keysWithActualReleasePatchChanges(args: {
   ) {
     next = next.filter((key) => key !== "releaseOwnerId" && key !== "owner");
   }
+  if (
+    next.includes("status") &&
+    next.includes("releaseManagerId") &&
+    next.filter((key) => key !== "status" && key !== "releaseManagerId").length === 0
+  ) {
+    next = next.filter((key) => key !== "releaseManagerId");
+  }
   return next;
 }
