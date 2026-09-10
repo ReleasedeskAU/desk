@@ -16,7 +16,7 @@ import { scaleAxisValues } from "@/lib/risk-engine-config";
 import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import { RISK_STATUSES } from "@/lib/validation/risk";
-import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
+import { controlLoc, fieldLocIfId, locatorToken } from "@/lib/ui-control-locators";
 
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId: string };
@@ -522,9 +522,9 @@ function SelectField({
   name,
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
+  const locators = fieldLocIfId(id, name);
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>
       {label}
       {required ? <RequiredMark /> : null}
       <select {...props} {...locators} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
@@ -542,9 +542,9 @@ function TextField({
   name,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
+  const locators = fieldLocIfId(id, name);
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>
       {label}
       {required ? <RequiredMark /> : null}
       <input {...props} {...locators} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
@@ -560,9 +560,9 @@ function TextareaField({
   name,
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
+  const locators = fieldLocIfId(id, name);
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>
       {label}
       {required ? <RequiredMark /> : null}
       <textarea

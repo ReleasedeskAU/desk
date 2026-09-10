@@ -6,7 +6,7 @@ import { FormAlertDialog } from "@/components/ui/FormAlertDialog";
 import { buildFormSaveAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
-import { controlLoc, fieldLoc } from "@/lib/ui-control-locators";
+import { controlLoc, fieldLocIfId } from "@/lib/ui-control-locators";
 
 export function ModalFrame({
   children,
@@ -83,9 +83,9 @@ export function SelectField({
   name,
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
+  const locators = fieldLocIfId(id, name);
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>
       {label}
       {required ? (
         <>
@@ -109,9 +109,9 @@ export function TextField({
   name,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
+  const locators = fieldLocIfId(id, name);
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators?.id}>
       {label}
       {required ? (
         <>
@@ -133,9 +133,9 @@ export function TextareaField({
   name,
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
-  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
+  const locators = fieldLocIfId(id, name);
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2" htmlFor={locators.id}>
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70 sm:col-span-2" htmlFor={locators?.id}>
       {label}
       {required ? (
         <>

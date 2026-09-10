@@ -46,3 +46,18 @@ export function fieldLoc(
   const id = locatorToken(token);
   return { id, name: name ? locatorToken(name) : id, "data-test-id": id };
 }
+
+/**
+ * fieldLoc when `id` is a non-empty string; otherwise undefined.
+ * Avoids `htmlFor={locators.id}` on `{}` (Next typecheck fail).
+ *
+ * @param id - Control id, or a non-string / empty value.
+ * @param name - Optional form name (falls back to id).
+ */
+export function fieldLocIfId(
+  id: unknown,
+  name?: unknown
+): ReturnType<typeof fieldLoc> | undefined {
+  if (typeof id !== "string" || !id) return undefined;
+  return fieldLoc(id, typeof name === "string" ? name : id);
+}

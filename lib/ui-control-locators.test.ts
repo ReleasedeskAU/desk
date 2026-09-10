@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
+import { controlLoc, fieldLoc, fieldLocIfId, locatorToken } from "@/lib/ui-control-locators";
 
 describe("locatorToken", () => {
   it("builds snake_case from surface + camelCase control", () => {
@@ -36,6 +36,12 @@ describe("controlLoc / fieldLoc", () => {
       "data-test-id": "release_create_name",
     });
     assert.equal(fieldLoc("release_create_name", "name").name, "name");
+  });
+
+  it("fieldLocIfId returns locators only when id is a real string", () => {
+    assert.equal(fieldLocIfId(undefined), undefined);
+    assert.equal(fieldLocIfId(""), undefined);
+    assert.deepEqual(fieldLocIfId("release_create_name"), fieldLoc("release_create_name"));
   });
 });
 
