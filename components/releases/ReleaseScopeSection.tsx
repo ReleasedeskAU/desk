@@ -4,13 +4,22 @@ import { useEffect, useState } from "react";
 import { FileText, History, Paperclip, Plus, Trash2 } from "lucide-react";
 import { DetailSection, EmptyHint, StatusChip, TintedCallout } from "@/components/detail/editable";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import {
   grantsFromScopeWriteBody,
+  SCOPE_APPROVE_BY_HELP,
+  SCOPE_APPROVE_BY_LABEL,
+  SCOPE_APPROVED,
+  SCOPE_CHANGE_REQUEST_APPROVED,
+  SCOPE_CHANGE_REQUEST_SAVED,
   SCOPE_DRAFT_SAVED,
   SCOPE_EDITOR_ADDED,
+  SCOPE_EDITOR_REMOVED,
+  SCOPE_SECTION_EDITORS_HELP,
+  SCOPE_SECTION_HELP,
 } from "@/lib/release-scope-feedback";
 
 type HistoryRow = {
@@ -183,6 +192,7 @@ export function ReleaseScopeSection({
       setError(res.error);
       return;
     }
+    setSuccess(SCOPE_APPROVED);
     onChanged();
   }
 
@@ -209,7 +219,7 @@ export function ReleaseScopeSection({
       tone="sky"
       title="Scope"
       description="What is in and out of this release."
-      detail="Edit and approve the scope on this page. Once approved, further changes need a change request. Only the current Release Manager or owner can edit or approve. While draft, they can also add section editors who may edit this section only — not approve. Files can be added while draft and cannot be removed after approval."
+      detail={SCOPE_SECTION_HELP}
       collapsible
       defaultOpen
     >
@@ -249,8 +259,11 @@ export function ReleaseScopeSection({
               <div className="flex flex-wrap items-end gap-3">
                 {/* Cap the date field so taInput's w-full cannot cover Save draft. */}
                 <label className="block min-w-0 w-full max-w-xs text-xs font-medium text-slate-500">
-                  Scope-approval due date
-                  {scope.approvalDueRequired ? " *" : " (optional)"}
+                  <span className="inline-flex items-center gap-1">
+                    {SCOPE_APPROVE_BY_LABEL}
+                    {scope.approvalDueRequired ? " *" : null}
+                    <InfoTooltip text={SCOPE_APPROVE_BY_HELP} label={`About ${SCOPE_APPROVE_BY_LABEL}`} />
+                  </span>
                   <input
                     type="date"
                     className={cn(taInput, "mt-1")}
@@ -308,6 +321,8 @@ export function ReleaseScopeSection({
             }}
             onRemove={async (grantId) => {
               setBusy(true);
+              setError(null);
+              setSuccess(null);
               const res = await writeJson(`/api/releases/${releaseId}/scope/grants/${grantId}`, {
                 method: "DELETE",
                 label: "scope-ungrant",
@@ -317,6 +332,10 @@ export function ReleaseScopeSection({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data);
+              if (nextGrants) setGrants(nextGrants);
+              else setGrants((prev) => prev.filter((g) => g.id !== grantId));
+              setSuccess(SCOPE_EDITOR_REMOVED);
               onChanged();
             }}
           />
@@ -356,6 +375,7 @@ export function ReleaseScopeSection({
                 request={req}
                 users={users}
                 onChanged={onChanged}
+                onNotify={setSuccess}
               />
             ))
           )}
@@ -542,8 +562,9 @@ function GrantRow({
   const nameFor = (id: string) => users.find((u) => u.id === id)?.name ?? id;
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <p className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
         Section editors
+        <InfoTooltip text={SCOPE_SECTION_EDITORS_HELP} label="About Section editors" />
       </p>
       {grants.map((g) => (
         <div
@@ -589,11 +610,13 @@ function ChangeRequestCard({
   request,
   users,
   onChanged,
+  onNotify,
 }: {
   releaseId: string;
   request: ChangeRequestView;
   users: AssignmentOption[];
   onChanged: () => void;
+  onNotify: (message: string) => void;
 }) {
   const [tab, setTab] = useState<TabKey>("description");
   const [text, setText] = useState(request.proposedText);
@@ -601,8 +624,18 @@ function ChangeRequestCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [grantUserId, setGrantUserId] = useState("");
+  const [grants, setGrants] = useState(request.grants);
   const caps = request.capabilities;
   const base = `/api/releases/${releaseId}/scope/change-requests/${request.id}`;
+
+  useEffect(() => {
+    setText(request.proposedText);
+    setWhy(request.approvalWhy ?? "");
+  }, [request.proposedText, request.approvalWhy, request.lockVersion]);
+
+  useEffect(() => {
+    setGrants(request.grants);
+  }, [request.grants]);
 
   async function save() {
     setBusy(true);
@@ -622,6 +655,7 @@ function ChangeRequestCard({
       setError(res.error);
       return;
     }
+    onNotify(SCOPE_CHANGE_REQUEST_SAVED);
     onChanged();
   }
 
@@ -639,6 +673,7 @@ function ChangeRequestCard({
       setError(res.error);
       return;
     }
+    onNotify(SCOPE_CHANGE_REQUEST_APPROVED);
     onChanged();
   }
 
@@ -690,7 +725,7 @@ function ChangeRequestCard({
             </>
           )}
           <GrantRow
-            grants={request.grants}
+            grants={grants}
             users={users}
             canAdd={caps.canAddGrant}
             canRemove={caps.canRemoveGrant}
@@ -700,6 +735,7 @@ function ChangeRequestCard({
             onAdd={async () => {
               if (!grantUserId) return;
               setBusy(true);
+              setError(null);
               const res = await writeJson(`${base}/grants`, {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -711,11 +747,15 @@ function ChangeRequestCard({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data, request.id);
+              if (nextGrants) setGrants(nextGrants);
               setGrantUserId("");
+              onNotify(SCOPE_EDITOR_ADDED);
               onChanged();
             }}
             onRemove={async (grantId) => {
               setBusy(true);
+              setError(null);
               const res = await writeJson(`${base}/grants/${grantId}`, {
                 method: "DELETE",
                 label: "scope-cr-ungrant",
@@ -725,6 +765,10 @@ function ChangeRequestCard({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data, request.id);
+              if (nextGrants) setGrants(nextGrants);
+              else setGrants((prev) => prev.filter((g) => g.id !== grantId));
+              onNotify(SCOPE_EDITOR_REMOVED);
               onChanged();
             }}
           />
