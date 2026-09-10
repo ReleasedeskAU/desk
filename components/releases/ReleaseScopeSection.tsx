@@ -1,12 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, History, Paperclip, Plus, Trash2 } from "lucide-react";
 import { DetailSection, EmptyHint, StatusChip, TintedCallout } from "@/components/detail/editable";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import {
+  grantsFromScopeWriteBody,
+  SCOPE_APPROVE_BY_HELP,
+  SCOPE_APPROVE_BY_LABEL,
+  SCOPE_APPROVED,
+  SCOPE_CHANGE_REQUEST_APPROVED,
+  SCOPE_CHANGE_REQUEST_SAVED,
+  SCOPE_DRAFT_SAVED,
+  SCOPE_EDITOR_ADDED,
+  SCOPE_EDITOR_REMOVED,
+  SCOPE_SECTION_EDITORS_HELP,
+  SCOPE_SECTION_HELP,
+} from "@/lib/release-scope-feedback";
 
 type HistoryRow = {
   id: string;
@@ -78,11 +92,16 @@ type AssignmentOption = { id: string; label: string; name: string };
 
 type TabKey = "description" | "history" | "attachments";
 
+type ScopeWriteBody = {
+  error?: string;
+  scope?: { grants?: GrantRow[] };
+};
+
 async function writeJson(
   url: string,
   init: RequestInit & { label: string }
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const res = await safeFetchJson<{ error?: string }>(url, {
+): Promise<{ ok: true; data: ScopeWriteBody } | { ok: false; error: string }> {
+  const res = await safeFetchJson<ScopeWriteBody>(url, {
     ...init,
     rejectHttpErrors: false,
   });
@@ -90,7 +109,7 @@ async function writeJson(
   if (res.status >= 400) {
     return { ok: false, error: res.data?.error ?? "Request failed." };
   }
-  return { ok: true };
+  return { ok: true, data: res.data ?? {} };
 }
 
 /**
@@ -120,13 +139,25 @@ export function ReleaseScopeSection({
   const [due, setDue] = useState(scope.approvalDueAt ? scope.approvalDueAt.slice(0, 10) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [grantUserId, setGrantUserId] = useState("");
+  const [grants, setGrants] = useState(scope.grants);
 
   const approved = scope.statusKey !== "draft";
+
+  useEffect(() => {
+    setText(scope.description);
+    setDue(scope.approvalDueAt ? scope.approvalDueAt.slice(0, 10) : "");
+  }, [scope.description, scope.approvalDueAt, scope.lockVersion]);
+
+  useEffect(() => {
+    setGrants(scope.grants);
+  }, [scope.grants]);
 
   async function saveDraft() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     const res = await writeJson(`/api/releases/${releaseId}/scope`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -142,12 +173,14 @@ export function ReleaseScopeSection({
       setError(res.error);
       return;
     }
+    setSuccess(SCOPE_DRAFT_SAVED);
     onChanged();
   }
 
   async function approve() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     const res = await writeJson(`/api/releases/${releaseId}/scope/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -159,12 +192,14 @@ export function ReleaseScopeSection({
       setError(res.error);
       return;
     }
+    setSuccess(SCOPE_APPROVED);
     onChanged();
   }
 
   async function startChangeRequest() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     const res = await writeJson(`/api/releases/${releaseId}/scope/change-requests`, {
       method: "POST",
       label: "scope-cr-create",
@@ -184,7 +219,7 @@ export function ReleaseScopeSection({
       tone="sky"
       title="Scope"
       description="What is in and out of this release."
-      detail="Edit and approve the scope on this page. Once approved, further changes need a change request. Only the current Release Manager or owner can edit or approve. While draft, they can also add section editors who may edit this section only — not approve. Files can be added while draft and cannot be removed after approval."
+      detail={SCOPE_SECTION_HELP}
       collapsible
       defaultOpen
     >
@@ -202,6 +237,14 @@ export function ReleaseScopeSection({
           {error}
         </TintedCallout>
       ) : null}
+      {success ? (
+        <div
+          role="status"
+          className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/30"
+        >
+          {success}
+        </div>
+      ) : null}
       <SectionTabs tab={tab} onTab={setTab} />
       {tab === "description" ? (
         <div className="mt-3 space-y-3">
@@ -214,9 +257,13 @@ export function ReleaseScopeSection({
                 placeholder="What is in scope, what is out of scope, and which applications are involved."
               />
               <div className="flex flex-wrap items-end gap-3">
-                <label className="text-xs font-medium text-slate-500">
-                  Scope-approval due date
-                  {scope.approvalDueRequired ? " *" : " (optional)"}
+                {/* Cap the date field so taInput's w-full cannot cover Save draft. */}
+                <label className="block min-w-0 w-full max-w-xs text-xs font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    {SCOPE_APPROVE_BY_LABEL}
+                    {scope.approvalDueRequired ? " *" : null}
+                    <InfoTooltip text={SCOPE_APPROVE_BY_HELP} label={`About ${SCOPE_APPROVE_BY_LABEL}`} />
+                  </span>
                   <input
                     type="date"
                     className={cn(taInput, "mt-1")}
@@ -224,7 +271,12 @@ export function ReleaseScopeSection({
                     onChange={(e) => setDue(e.target.value)}
                   />
                 </label>
-                <button type="button" className={taBtnSecondary} disabled={busy} onClick={saveDraft}>
+                <button
+                  type="button"
+                  className={cn(taBtnSecondary, "relative z-[1] shrink-0")}
+                  disabled={busy}
+                  onClick={saveDraft}
+                >
                   Save draft
                 </button>
               </div>
@@ -238,7 +290,7 @@ export function ReleaseScopeSection({
             </p>
           ) : null}
           <GrantRow
-            grants={scope.grants}
+            grants={grants}
             users={users}
             canAdd={scopeCaps.canAddGrant}
             canRemove={scopeCaps.canRemoveGrant}
@@ -248,6 +300,8 @@ export function ReleaseScopeSection({
             onAdd={async () => {
               if (!grantUserId) return;
               setBusy(true);
+              setError(null);
+              setSuccess(null);
               const res = await writeJson(`/api/releases/${releaseId}/scope/grants`, {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -259,11 +313,16 @@ export function ReleaseScopeSection({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data);
+              if (nextGrants) setGrants(nextGrants);
               setGrantUserId("");
+              setSuccess(SCOPE_EDITOR_ADDED);
               onChanged();
             }}
             onRemove={async (grantId) => {
               setBusy(true);
+              setError(null);
+              setSuccess(null);
               const res = await writeJson(`/api/releases/${releaseId}/scope/grants/${grantId}`, {
                 method: "DELETE",
                 label: "scope-ungrant",
@@ -273,6 +332,10 @@ export function ReleaseScopeSection({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data);
+              if (nextGrants) setGrants(nextGrants);
+              else setGrants((prev) => prev.filter((g) => g.id !== grantId));
+              setSuccess(SCOPE_EDITOR_REMOVED);
               onChanged();
             }}
           />
@@ -312,6 +375,7 @@ export function ReleaseScopeSection({
                 request={req}
                 users={users}
                 onChanged={onChanged}
+                onNotify={setSuccess}
               />
             ))
           )}
@@ -498,11 +562,9 @@ function GrantRow({
   const nameFor = (id: string) => users.find((u) => u.id === id)?.name ?? id;
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <p className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
         Section editors
-      </p>
-      <p className="text-[11.5px] text-slate-500 dark:text-white/50">
-        While this scope is still draft, the Release Manager or owner can let another Release Desk user edit this section only. That person cannot approve, and editing stops when the scope is approved.
+        <InfoTooltip text={SCOPE_SECTION_EDITORS_HELP} label="About Section editors" />
       </p>
       {grants.map((g) => (
         <div
@@ -518,8 +580,9 @@ function GrantRow({
         </div>
       ))}
       {canAdd ? (
-        <div className="flex gap-2">
-          <div className="min-w-[220px] flex-1">
+        <div className="flex flex-wrap items-end gap-2">
+          {/* Same w-full overflow as the due-date row — cap the picker so Add stays clickable. */}
+          <div className="min-w-0 w-full max-w-xs">
             <SearchableSelect
               value={grantUserId}
               onChange={onGrantUserId}
@@ -528,7 +591,12 @@ function GrantRow({
               searchPlaceholder="Search users…"
             />
           </div>
-          <button type="button" className={taBtnSecondary} disabled={busy || !grantUserId} onClick={onAdd}>
+          <button
+            type="button"
+            className={cn(taBtnSecondary, "relative z-[1] shrink-0")}
+            disabled={busy || !grantUserId}
+            onClick={onAdd}
+          >
             Add
           </button>
         </div>
@@ -542,11 +610,13 @@ function ChangeRequestCard({
   request,
   users,
   onChanged,
+  onNotify,
 }: {
   releaseId: string;
   request: ChangeRequestView;
   users: AssignmentOption[];
   onChanged: () => void;
+  onNotify: (message: string) => void;
 }) {
   const [tab, setTab] = useState<TabKey>("description");
   const [text, setText] = useState(request.proposedText);
@@ -554,8 +624,18 @@ function ChangeRequestCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [grantUserId, setGrantUserId] = useState("");
+  const [grants, setGrants] = useState(request.grants);
   const caps = request.capabilities;
   const base = `/api/releases/${releaseId}/scope/change-requests/${request.id}`;
+
+  useEffect(() => {
+    setText(request.proposedText);
+    setWhy(request.approvalWhy ?? "");
+  }, [request.proposedText, request.approvalWhy, request.lockVersion]);
+
+  useEffect(() => {
+    setGrants(request.grants);
+  }, [request.grants]);
 
   async function save() {
     setBusy(true);
@@ -575,6 +655,7 @@ function ChangeRequestCard({
       setError(res.error);
       return;
     }
+    onNotify(SCOPE_CHANGE_REQUEST_SAVED);
     onChanged();
   }
 
@@ -592,6 +673,7 @@ function ChangeRequestCard({
       setError(res.error);
       return;
     }
+    onNotify(SCOPE_CHANGE_REQUEST_APPROVED);
     onChanged();
   }
 
@@ -643,7 +725,7 @@ function ChangeRequestCard({
             </>
           )}
           <GrantRow
-            grants={request.grants}
+            grants={grants}
             users={users}
             canAdd={caps.canAddGrant}
             canRemove={caps.canRemoveGrant}
@@ -653,6 +735,7 @@ function ChangeRequestCard({
             onAdd={async () => {
               if (!grantUserId) return;
               setBusy(true);
+              setError(null);
               const res = await writeJson(`${base}/grants`, {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -664,11 +747,15 @@ function ChangeRequestCard({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data, request.id);
+              if (nextGrants) setGrants(nextGrants);
               setGrantUserId("");
+              onNotify(SCOPE_EDITOR_ADDED);
               onChanged();
             }}
             onRemove={async (grantId) => {
               setBusy(true);
+              setError(null);
               const res = await writeJson(`${base}/grants/${grantId}`, {
                 method: "DELETE",
                 label: "scope-cr-ungrant",
@@ -678,6 +765,10 @@ function ChangeRequestCard({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data, request.id);
+              if (nextGrants) setGrants(nextGrants);
+              else setGrants((prev) => prev.filter((g) => g.id !== grantId));
+              onNotify(SCOPE_EDITOR_REMOVED);
               onChanged();
             }}
           />

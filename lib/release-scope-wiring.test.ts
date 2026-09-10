@@ -77,6 +77,30 @@ describe("native scope write-path wiring", () => {
     assert.match(service, /findFirst\(\s*\{\s*where: \{ id: args\.requestId, scopeId: args\.scopeId \}/);
   });
 
+  it("keeps scope Save draft and section-editor Add out from under full-width fields", () => {
+    const section = readSrc("components/releases/ReleaseScopeSection.tsx");
+    assert.match(section, /max-w-xs/);
+    assert.match(section, /relative z-\[1\] shrink-0/);
+    assert.match(section, /SCOPE_DRAFT_SAVED/);
+    assert.match(section, /SCOPE_EDITOR_ADDED/);
+    assert.match(section, /SCOPE_EDITOR_REMOVED/);
+    assert.match(section, /SCOPE_APPROVED/);
+    assert.match(section, /SCOPE_CHANGE_REQUEST_SAVED/);
+    assert.match(section, /SCOPE_CHANGE_REQUEST_APPROVED/);
+    assert.match(section, /SCOPE_APPROVE_BY_LABEL/);
+    assert.match(section, /SCOPE_SECTION_HELP/);
+    assert.match(section, /InfoTooltip/);
+    assert.match(section, /grantsFromScopeWriteBody/);
+    assert.doesNotMatch(section, /Scope-approval due date/);
+    assert.doesNotMatch(
+      section,
+      /While this scope is still draft, the Release Manager or owner can let another/
+    );
+    const detail = readSrc("components/releases/DbReleaseDetail.tsx");
+    assert.match(detail, /key=\{release\.nativeScope\.id\}/);
+    assert.doesNotMatch(detail, /nativeScope\.id\}-\$\{release\.nativeScope\.lockVersion/);
+  });
+
   it("wires Manager and Owner pickers to tenant-scoped assignmentOptions, not /api/users", () => {
     const modal = readSrc("components/releases/ReleaseFormModal.tsx");
     assert.match(modal, /assignmentOptionsToSelect\(resolvedAssignmentOptions\?\.owners\)/);

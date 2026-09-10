@@ -1137,7 +1137,8 @@ export function DbReleaseDetail({ id }: { id: string }) {
       <DetailBand label="Governance · cleared to ship?">
         {release.nativeScope && release.capabilities?.scope ? (
           <ReleaseScopeSection
-            key={`${release.nativeScope.id}-${release.nativeScope.lockVersion}`}
+            // Scope id only — including lockVersion remounted the section and hid save/add confirmation.
+            key={release.nativeScope.id}
             releaseId={release.id}
             scope={release.nativeScope}
             scopeCaps={release.capabilities.scope}
