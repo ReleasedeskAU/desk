@@ -67,35 +67,26 @@ type DirectoryUserRow = {
 
 /**
  * List directory users in the session tenant for assignment pickers and grants.
- * Same org as the session, plus unclassified (NULL organizationId) rows — the
- * release list is not org-filtered, and preview data often lacks the column.
- * Users stamped with a different organizationId stay hidden.
- * Whitespace-only org → empty list (no unfiltered read).
+ * Exact organizationId match — same org as release list/detail. Other-org and
+ * unclassified (NULL) users stay hidden. Missing/whitespace org → empty list
+ * (no unfiltered read, no /api/users fallback).
  *
- * @param organizationId - Session organization id, or null for unscoped rows only.
+ * @param organizationId - Session organization id.
  */
 export async function listDirectoryUsersForAssignment(
   organizationId: string | null
 ): Promise<DirectoryUserRef[]> {
   const orgId = assignmentDirectoryOrganizationId(organizationId);
+  if (!orgId) return [];
 
   try {
     // User.organizationId exists on live Neon but is omitted from the vendored Prisma model.
-    const rows = orgId
-      ? await prisma.$queryRaw<DirectoryUserRow[]>`
-          SELECT id, "userId", "clerkUserId", email, name, "accessLevel", role, status
-          FROM "User"
-          WHERE "organizationId" = ${orgId} OR "organizationId" IS NULL
-          ORDER BY name ASC, email ASC
-        `
-      : organizationId === null
-        ? await prisma.$queryRaw<DirectoryUserRow[]>`
-            SELECT id, "userId", "clerkUserId", email, name, "accessLevel", role, status
-            FROM "User"
-            WHERE "organizationId" IS NULL
-            ORDER BY name ASC, email ASC
-          `
-        : [];
+    const rows = await prisma.$queryRaw<DirectoryUserRow[]>`
+      SELECT id, "userId", "clerkUserId", email, name, "accessLevel", role, status
+      FROM "User"
+      WHERE "organizationId" = ${orgId}
+      ORDER BY name ASC, email ASC
+    `;
     return rows.map((row) => ({
       id: row.id,
       userId: row.userId,

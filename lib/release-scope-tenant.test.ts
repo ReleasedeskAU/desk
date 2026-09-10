@@ -8,6 +8,7 @@ import { tenantKeyFromSession } from "@/lib/release-scope-files";
 import { scopeChangeRequestApproveWhere } from "@/lib/release-scope-service";
 import { SCOPE_STATUS_DRAFT } from "@/lib/release-scope-status";
 import {
+  andReleaseWhereTenantIds,
   assertSameTenantFile,
   releaseRowVisibleToSessionTenant,
   requireTenantOrganizationId,
@@ -42,15 +43,29 @@ describe("scope tenant scoping", () => {
   });
 
   it("loads a list-visible release for the same session tenant", () => {
+    const sessionOrg = "org_a";
+    const listed = [
+      { id: "rel_same", organizationId: "org_a" },
+      { id: "rel_other", organizationId: "org_b" },
+      { id: "rel_null", organizationId: null },
+    ];
+    const visibleIds = listed
+      .filter((row) => releaseRowVisibleToSessionTenant(row.organizationId, sessionOrg))
+      .map((row) => row.id);
+
+    assert.deepEqual(visibleIds, ["rel_same"]);
+    assert.deepEqual(andReleaseWhereTenantIds({ status: "Planning" }, visibleIds), {
+      AND: [{ status: "Planning" }, { id: { in: ["rel_same"] } }],
+    });
     assert.equal(releaseRowVisibleToSessionTenant("org_a", "org_a"), true);
-    assert.equal(releaseRowVisibleToSessionTenant(null, "org_a"), true);
-    assert.equal(releaseRowVisibleToSessionTenant("", "org_a"), true);
-    assert.equal(releaseRowVisibleToSessionTenant(null, null), true);
   });
 
-  it("does not load another tenant's release even when the list is unscoped", () => {
+  it("does not load another tenant's release or skip the org match", () => {
     assert.equal(releaseRowVisibleToSessionTenant("org_b", "org_a"), false);
     assert.equal(releaseRowVisibleToSessionTenant("org_b", null), false);
+    assert.equal(releaseRowVisibleToSessionTenant(null, "org_a"), false);
+    assert.equal(releaseRowVisibleToSessionTenant("", "org_a"), false);
+    assert.equal(releaseRowVisibleToSessionTenant(null, null), false);
   });
 
   it("requires both requestId and scopeId on change-request approve", () => {

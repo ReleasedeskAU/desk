@@ -4,6 +4,8 @@ import { resolveDirectoryUser } from "@/lib/release-directory-user";
 import { isExactEditorDirectoryUser } from "@/lib/release-seats";
 import { prisma } from "@/lib/prisma";
 import { releaseListOrderBy, releaseListWhere, sp } from "@/lib/list-api-filters";
+import { releaseWhereForSessionTenant } from "@/lib/release-scope-tenant";
+import { tenantReleaseLookupError } from "@/lib/release-scope-http";
 import { generateReleaseId, normalizeProgramProject } from "@/lib/release-id";
 import { createReleaseRow } from "@/lib/org-compat";
 import {
@@ -57,11 +59,13 @@ function optionalFloat(value: unknown): number | null | undefined {
 }
 
 export async function GET(req: Request) {
-  const { error } = await requireRole("readonly");
+  const { user, error } = await requireRole("readonly");
   if (error) return error;
   const params = sp(req);
+  const scoped = await releaseWhereForSessionTenant(user!, releaseListWhere(params));
+  if (!scoped.ok) return tenantReleaseLookupError(scoped)!;
   const data = await prisma.release.findMany({
-    where: releaseListWhere(params),
+    where: scoped.where,
     include: {
       department: true,
       applications: { include: { application: true } },

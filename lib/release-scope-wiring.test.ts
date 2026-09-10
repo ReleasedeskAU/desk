@@ -44,7 +44,8 @@ describe("native scope write-path wiring", () => {
     assert.doesNotMatch(http, /tenantKeyFromSession\(null\)/);
 
     const directory = readSrc("lib/release-directory-user.ts");
-    assert.match(directory, /WHERE "organizationId" = \$\{orgId\} OR "organizationId" IS NULL/);
+    assert.match(directory, /WHERE "organizationId" = \$\{orgId\}/);
+    assert.doesNotMatch(directory, /organizationId" IS NULL/);
     assert.doesNotMatch(directory, /prisma\.user\.findMany/);
 
     const routes = readSrc("lib/release-scope-routes.ts");
@@ -56,6 +57,17 @@ describe("native scope write-path wiring", () => {
     assert.match(releaseRoute, /lookupReleaseForSessionTenant/);
     assert.match(releaseRoute, /listDirectoryUsersForAssignment\(looked\.tenant\.organizationId\)/);
     assert.doesNotMatch(releaseRoute, /listDirectoryUsersForAssignment\(\)/);
+
+    const listRoute = readSrc("app/api/releases/route.ts");
+    assert.match(listRoute, /releaseWhereForSessionTenant/);
+    assert.match(listRoute, /tenantReleaseLookupError/);
+
+    const lookupsRoute = readSrc("app/api/release-lookups/route.ts");
+    assert.match(lookupsRoute, /releaseWhereForSessionTenant/);
+
+    const tenant = readSrc("lib/release-scope-tenant.ts");
+    assert.match(tenant, /if \(!tenant\) return \{ ok: false, code: "TENANT_REQUIRED" \}/);
+    assert.match(tenant, /listReleaseIdsForOrganization/);
   });
 
   it("approves a change request only when requestId and scopeId both match", () => {
