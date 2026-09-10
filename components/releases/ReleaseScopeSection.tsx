@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, History, Paperclip, Plus, Trash2 } from "lucide-react";
 import { DetailSection, EmptyHint, StatusChip, TintedCallout } from "@/components/detail/editable";
 import { SearchableSelect } from "@/components/ui/searchable-multi-select";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
+import {
+  grantsFromScopeWriteBody,
+  SCOPE_DRAFT_SAVED,
+  SCOPE_EDITOR_ADDED,
+} from "@/lib/release-scope-feedback";
 
 type HistoryRow = {
   id: string;
@@ -78,11 +83,16 @@ type AssignmentOption = { id: string; label: string; name: string };
 
 type TabKey = "description" | "history" | "attachments";
 
+type ScopeWriteBody = {
+  error?: string;
+  scope?: { grants?: GrantRow[] };
+};
+
 async function writeJson(
   url: string,
   init: RequestInit & { label: string }
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const res = await safeFetchJson<{ error?: string }>(url, {
+): Promise<{ ok: true; data: ScopeWriteBody } | { ok: false; error: string }> {
+  const res = await safeFetchJson<ScopeWriteBody>(url, {
     ...init,
     rejectHttpErrors: false,
   });
@@ -90,7 +100,7 @@ async function writeJson(
   if (res.status >= 400) {
     return { ok: false, error: res.data?.error ?? "Request failed." };
   }
-  return { ok: true };
+  return { ok: true, data: res.data ?? {} };
 }
 
 /**
@@ -120,13 +130,25 @@ export function ReleaseScopeSection({
   const [due, setDue] = useState(scope.approvalDueAt ? scope.approvalDueAt.slice(0, 10) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [grantUserId, setGrantUserId] = useState("");
+  const [grants, setGrants] = useState(scope.grants);
 
   const approved = scope.statusKey !== "draft";
+
+  useEffect(() => {
+    setText(scope.description);
+    setDue(scope.approvalDueAt ? scope.approvalDueAt.slice(0, 10) : "");
+  }, [scope.description, scope.approvalDueAt, scope.lockVersion]);
+
+  useEffect(() => {
+    setGrants(scope.grants);
+  }, [scope.grants]);
 
   async function saveDraft() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     const res = await writeJson(`/api/releases/${releaseId}/scope`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -142,12 +164,14 @@ export function ReleaseScopeSection({
       setError(res.error);
       return;
     }
+    setSuccess(SCOPE_DRAFT_SAVED);
     onChanged();
   }
 
   async function approve() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     const res = await writeJson(`/api/releases/${releaseId}/scope/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -165,6 +189,7 @@ export function ReleaseScopeSection({
   async function startChangeRequest() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     const res = await writeJson(`/api/releases/${releaseId}/scope/change-requests`, {
       method: "POST",
       label: "scope-cr-create",
@@ -201,6 +226,14 @@ export function ReleaseScopeSection({
         <TintedCallout tone="rose" className="mt-3">
           {error}
         </TintedCallout>
+      ) : null}
+      {success ? (
+        <div
+          role="status"
+          className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/30"
+        >
+          {success}
+        </div>
       ) : null}
       <SectionTabs tab={tab} onTab={setTab} />
       {tab === "description" ? (
@@ -244,7 +277,7 @@ export function ReleaseScopeSection({
             </p>
           ) : null}
           <GrantRow
-            grants={scope.grants}
+            grants={grants}
             users={users}
             canAdd={scopeCaps.canAddGrant}
             canRemove={scopeCaps.canRemoveGrant}
@@ -254,6 +287,8 @@ export function ReleaseScopeSection({
             onAdd={async () => {
               if (!grantUserId) return;
               setBusy(true);
+              setError(null);
+              setSuccess(null);
               const res = await writeJson(`/api/releases/${releaseId}/scope/grants`, {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -265,7 +300,10 @@ export function ReleaseScopeSection({
                 setError(res.error);
                 return;
               }
+              const nextGrants = grantsFromScopeWriteBody(res.data);
+              if (nextGrants) setGrants(nextGrants);
               setGrantUserId("");
+              setSuccess(SCOPE_EDITOR_ADDED);
               onChanged();
             }}
             onRemove={async (grantId) => {

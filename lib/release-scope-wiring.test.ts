@@ -81,10 +81,16 @@ describe("native scope write-path wiring", () => {
     const section = readSrc("components/releases/ReleaseScopeSection.tsx");
     assert.match(section, /max-w-xs/);
     assert.match(section, /relative z-\[1\] shrink-0/);
+    assert.match(section, /SCOPE_DRAFT_SAVED/);
+    assert.match(section, /SCOPE_EDITOR_ADDED/);
+    assert.match(section, /grantsFromScopeWriteBody/);
     assert.doesNotMatch(
       section,
       /While this scope is still draft, the Release Manager or owner can let another/
     );
+    const detail = readSrc("components/releases/DbReleaseDetail.tsx");
+    assert.match(detail, /key=\{release\.nativeScope\.id\}/);
+    assert.doesNotMatch(detail, /nativeScope\.id\}-\$\{release\.nativeScope\.lockVersion/);
   });
 
   it("wires Manager and Owner pickers to tenant-scoped assignmentOptions, not /api/users", () => {
