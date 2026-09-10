@@ -18,6 +18,7 @@ import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import type { ReleaseLifecycleConfig } from "@/lib/release-lifecycle-config";
 import { filterReleasesForRelatedCreate } from "@/lib/release-related-link-eligibility";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 import { DEPENDENCY_IMPACTS, DEPENDENCY_TYPES } from "@/lib/validation/dependency";
 
 type ReleaseOption = { id: string; releaseCode: string; name: string; status: string };
@@ -79,6 +80,7 @@ export function DependencyFormModal({
   lockReleaseId,
 }: Props) {
   const isEdit = Boolean(editId);
+  const loc = (control: string) => locatorToken(isEdit ? "dependency_edit" : "dependency_create", control);
   const lifecycle = useEntityLifecycleStatuses("/api/dependency-lifecycle-config");
   const releaseLifecycle = useEntityLifecycleStatuses("/api/release-lifecycle-config");
   const releaseConfig = (releaseLifecycle.config ?? null) as ReleaseLifecycleConfig | null;
@@ -292,7 +294,13 @@ export function DependencyFormModal({
         onClose={onClose}
         footer={
           <>
-            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+            <button
+              type="button"
+              className={taBtnSecondary}
+              onClick={onClose}
+              disabled={saving}
+              {...controlLoc(loc("cancel"))}
+            >
               Cancel
             </button>
             <button
@@ -300,6 +308,7 @@ export function DependencyFormModal({
               form="dependency-create-form"
               className={taBtnPrimary}
               disabled={saving || loadingReleases}
+              {...controlLoc(loc("save"))}
             >
               {saving ? "Saving…" : isEdit ? "Save changes" : "Create dependency"}
             </button>
@@ -348,6 +357,8 @@ export function DependencyFormModal({
                   }
                   disabled={loadingReleases || !releaseConfig}
                   allowClear={false}
+                  locator={loc("release")}
+                  name={loc("release")}
                 />
               </div>
             </label>
@@ -372,6 +383,8 @@ export function DependencyFormModal({
                   (!scoped && !form.releaseId)
                 }
                 allowClear={false}
+                locator={loc("depends_on")}
+                name={loc("depends_on")}
               />
             </div>
           </label>
@@ -385,6 +398,7 @@ export function DependencyFormModal({
                 value={form.dependencyType}
                 onChange={(e) => set("dependencyType")(e.target.value)}
                 required
+                {...fieldLoc(loc("type"))}
               >
                 {DEPENDENCY_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -401,6 +415,7 @@ export function DependencyFormModal({
                 value={form.status}
                 onChange={(e) => set("status")(e.target.value)}
                 required
+                {...fieldLoc(loc("status"))}
               >
                 {statusSelectOptions.map((s) => (
                   <option key={s} value={s}>
@@ -419,6 +434,7 @@ export function DependencyFormModal({
               value={form.impactIfBlocked}
               onChange={(e) => set("impactIfBlocked")(e.target.value)}
               required
+              {...fieldLoc(loc("impact_if_blocked"))}
             >
               {DEPENDENCY_IMPACTS.map((i) => (
                 <option key={i} value={i}>
@@ -435,6 +451,7 @@ export function DependencyFormModal({
               value={form.notes}
               onChange={(e) => set("notes")(e.target.value)}
               maxLength={4000}
+              {...fieldLoc(loc("notes"))}
             />
           </label>
         </form>

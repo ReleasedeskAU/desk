@@ -11,6 +11,7 @@ import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { formatDate } from "@/lib/utils";
 import { manualAlertCreateFields } from "@/lib/alert-source";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 const ALERT_SEVERITIES = ["Critical", "Warning"] as const;
 /** Fallback status labels before alert lifecycle config loads. */
@@ -101,6 +102,7 @@ export function MonitoringAlertFormModal({
   defaultStatus = "Active",
   lockTo = null,
 }: Props) {
+  const loc = (control: string) => locatorToken("alert_create", control);
   const statusOptions = useMemo(
     () => (statusOptionsProp.length > 0 ? statusOptionsProp : [...ALERT_STATUSES]),
     [statusOptionsProp]
@@ -271,7 +273,13 @@ export function MonitoringAlertFormModal({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button
+            type="button"
+            className={taBtnSecondary}
+            onClick={onClose}
+            disabled={saving}
+            {...controlLoc(loc("cancel"))}
+          >
             Cancel
           </button>
           <button
@@ -279,6 +287,7 @@ export function MonitoringAlertFormModal({
             form="alert-create-form"
             className={taBtnPrimary}
             disabled={saving || loadingLookups}
+            {...controlLoc(loc("save"))}
           >
             {saving ? "Creating…" : "Create Alert"}
           </button>
@@ -296,6 +305,7 @@ export function MonitoringAlertFormModal({
         ) : (
           <>
         <SelectField
+          id={loc("department")}
           label="Department"
           required
           value={form.departmentId}
@@ -318,6 +328,7 @@ export function MonitoringAlertFormModal({
           ))}
         </SelectField>
         <SelectField
+          id={loc("application")}
           label="Application"
           required
           value={form.applicationId}
@@ -341,6 +352,7 @@ export function MonitoringAlertFormModal({
           </>
         )}
         <SelectField
+          id={loc("environment")}
           label="Environment"
           required
           value={form.environmentName}
@@ -356,6 +368,7 @@ export function MonitoringAlertFormModal({
           ))}
         </SelectField>
         <TextField
+          id={loc("timestamp")}
           label="Timestamp"
           type="datetime-local"
           required
@@ -364,6 +377,7 @@ export function MonitoringAlertFormModal({
           onChange={(event) => set("timestamp", event.target.value)}
         />
         <SelectField
+          id={loc("alert_type")}
           label="Alert type"
           required
           value={form.alertType}
@@ -378,6 +392,7 @@ export function MonitoringAlertFormModal({
           ))}
         </SelectField>
         <SelectField
+          id={loc("severity")}
           label="Severity"
           required
           value={form.severity}
@@ -391,6 +406,7 @@ export function MonitoringAlertFormModal({
           ))}
         </SelectField>
         <TextField
+          id={loc("metric")}
           label="Metric"
           required
           value={form.metric}
@@ -399,18 +415,21 @@ export function MonitoringAlertFormModal({
           maxLength={200}
         />
         <TextField
+          id={loc("threshold")}
           label="Threshold"
           value={form.threshold}
           onChange={(event) => set("threshold", event.target.value)}
           maxLength={4000}
         />
         <TextField
+          id={loc("current_value")}
           label="Current value"
           value={form.currentValue}
           onChange={(event) => set("currentValue", event.target.value)}
           maxLength={4000}
         />
         <SelectField
+          id={loc("status")}
           label="Status"
           required
           value={form.status}
@@ -424,6 +443,7 @@ export function MonitoringAlertFormModal({
           ))}
         </SelectField>
         <TextField
+          id={loc("assigned_to")}
           label="Assigned to"
           value={form.assignedTo}
           onChange={(event) => set("assignedTo", event.target.value)}

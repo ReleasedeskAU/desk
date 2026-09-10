@@ -9,6 +9,7 @@ import { ConflictChoiceDialog } from "@/components/conflicts/ConflictChoiceDialo
 import type { ConflictFinding } from "@/lib/conflict-finding-types";
 import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 export type BookingFormData = {
   applicationId: string;
@@ -144,6 +145,7 @@ export function BookingFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const loc = (control: string) => locatorToken("booking_create", control);
   const [form, setForm] = useState<BookingFormData>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -443,7 +445,7 @@ export function BookingFormModal({
 
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             {!result.ok && (
-              <button type="button" className={taBtnSecondary} onClick={() => setResult(null)}>
+              <button type="button" className={taBtnSecondary} onClick={() => setResult(null)} {...controlLoc("booking_result_edit")}>
                 Edit booking
               </button>
             )}
@@ -451,6 +453,7 @@ export function BookingFormModal({
               <ProgressLink
                 href={`/booking/${result.details.id}`}
                 className={cn(taBtnSecondary, "inline-flex items-center")}
+                {...controlLoc("booking_created_view")}
               >
                 View booking
               </ProgressLink>
@@ -466,11 +469,12 @@ export function BookingFormModal({
                   setConflicts([]);
                   setConflictPrompt(null);
                 }}
+                {...controlLoc("booking_create_another")}
               >
                 Create another
               </button>
             )}
-            <button type="button" className={taBtnPrimary} onClick={dismissResult}>
+            <button type="button" className={taBtnPrimary} onClick={dismissResult} {...controlLoc("booking_created_close")}>
               Close
             </button>
           </div>
@@ -507,12 +511,19 @@ export function BookingFormModal({
                 options={applications}
                 placeholder="Select application…"
                 searchPlaceholder="Search applications…"
+                locator={loc("application")}
+                name={loc("application")}
               />
             </div>
           </div>
           <div>
             <label className="text-xs font-medium text-gray-500">Department</label>
-            <input className={cn(taInput, "bg-gray-50 dark:bg-white/5")} value={departmentLabel} readOnly />
+            <input
+              className={cn(taInput, "bg-gray-50 dark:bg-white/5")}
+              value={departmentLabel}
+              readOnly
+              {...fieldLoc(loc("department"))}
+            />
           </div>
 
           <div>
@@ -525,6 +536,8 @@ export function BookingFormModal({
                 placeholder={form.applicationId ? "Select environment…" : "Select application first…"}
                 searchPlaceholder="Search Dev, Test, UAT, Pre-prod, Prod, DR…"
                 disabled={!form.applicationId}
+                locator={loc("environment")}
+                name={loc("environment")}
               />
             </div>
             {phaseLabels.hint && (
@@ -545,6 +558,8 @@ export function BookingFormModal({
                 options={releases}
                 placeholder="Select release…"
                 searchPlaceholder="Search releases…"
+                locator={loc("release")}
+                name={loc("release")}
               />
             </div>
           </div>
@@ -556,6 +571,7 @@ export function BookingFormModal({
               className={cn(taInput, highlightDates && "border-amber-400 ring-2 ring-amber-300")}
               value={form.fromDate}
               onChange={(e) => setForm((f) => ({ ...f, fromDate: e.target.value }))}
+              {...fieldLoc(loc("start_date"))}
             />
           </div>
           <div>
@@ -568,6 +584,7 @@ export function BookingFormModal({
               className={cn(taInput, highlightDates && "border-amber-400 ring-2 ring-amber-300")}
               value={form.toDate}
               onChange={(e) => setForm((f) => ({ ...f, toDate: e.target.value }))}
+              {...fieldLoc(loc("end_date"))}
             />
           </div>
 
@@ -578,6 +595,7 @@ export function BookingFormModal({
               value={form.purpose}
               onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
               placeholder="e.g. End-to-end test window"
+              {...fieldLoc(loc("notes"))}
             />
           </div>
         </div>
@@ -603,7 +621,7 @@ export function BookingFormModal({
         )}
 
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>
             Cancel
           </button>
           <button
@@ -611,6 +629,7 @@ export function BookingFormModal({
             className={cn(taBtnPrimary, saving && "opacity-70")}
             onClick={() => void createBooking(false)}
             disabled={saving}
+            {...controlLoc(loc("save"))}
           >
             {saving ? "Creating…" : "Create booking"}
           </button>

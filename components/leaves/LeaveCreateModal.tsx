@@ -7,6 +7,7 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { LEAVE_TYPES } from "@/lib/validation/leave";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type UserOption = { id: string; userId: string; name: string; department: string };
 type ReleaseOption = { id: string; releaseCode: string; name: string };
@@ -40,6 +41,7 @@ export function LeaveCreateModal({ open, onClose, onCreated, leaveTypes = [] }: 
   onCreated: () => void;
   leaveTypes?: string[];
 }) {
+  const loc = (control: string) => locatorToken("leave_create", control);
   const [form, setForm] = useState(emptyForm);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
@@ -155,6 +157,8 @@ export function LeaveCreateModal({ open, onClose, onCreated, leaveTypes = [] }: 
               placeholder={loading ? "Loading…" : "Select staff member…"}
               disabled={loading}
               className={errors.userId ? "[&_button]:border-rose-400" : undefined}
+              locator={loc("staff_member")}
+              name={loc("staff_member")}
             />
           </div>
           <FieldError message={errors.userId} />
@@ -164,29 +168,29 @@ export function LeaveCreateModal({ open, onClose, onCreated, leaveTypes = [] }: 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Start date<RequiredMark />
-            <input type="date" className={cn(taInput, "mt-1", errors.leaveStart && "border-rose-400")} value={form.leaveStart} onChange={(e) => set("leaveStart", e.target.value)} />
+            <input type="date" className={cn(taInput, "mt-1", errors.leaveStart && "border-rose-400")} value={form.leaveStart} onChange={(e) => set("leaveStart", e.target.value)} {...fieldLoc(loc("start_date"))} />
             <FieldError message={errors.leaveStart} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             End date<RequiredMark />
-            <input type="date" min={form.leaveStart || undefined} className={cn(taInput, "mt-1", errors.leaveEnd && "border-rose-400")} value={form.leaveEnd} onChange={(e) => set("leaveEnd", e.target.value)} />
+            <input type="date" min={form.leaveStart || undefined} className={cn(taInput, "mt-1", errors.leaveEnd && "border-rose-400")} value={form.leaveEnd} onChange={(e) => set("leaveEnd", e.target.value)} {...fieldLoc(loc("end_date"))} />
             <FieldError message={errors.leaveEnd} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Leave type<RequiredMark />
-            <select className={cn(taInput, "mt-1", errors.leaveType && "border-rose-400")} value={form.leaveType} onChange={(e) => set("leaveType", e.target.value)}>
+            <select className={cn(taInput, "mt-1", errors.leaveType && "border-rose-400")} value={form.leaveType} onChange={(e) => set("leaveType", e.target.value)} {...fieldLoc(loc("leave_type"))}>
               {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
             </select>
             <FieldError message={errors.leaveType} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Days<RequiredMark />
-            <input type="number" min={1} max={3650} step={1} className={cn(taInput, "mt-1", errors.days && "border-rose-400")} value={form.days} onChange={(e) => set("days", e.target.value)} />
+            <input type="number" min={1} max={3650} step={1} className={cn(taInput, "mt-1", errors.days && "border-rose-400")} value={form.days} onChange={(e) => set("days", e.target.value)} {...fieldLoc(loc("days"))} />
             <FieldError message={errors.days} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Risk score
-            <input type="number" min={0} max={10} step={1} className={cn(taInput, "mt-1", errors.riskScore && "border-rose-400")} value={form.riskScore} onChange={(e) => set("riskScore", e.target.value)} />
+            <input type="number" min={0} max={10} step={1} className={cn(taInput, "mt-1", errors.riskScore && "border-rose-400")} value={form.riskScore} onChange={(e) => set("riskScore", e.target.value)} {...fieldLoc(loc("risk_score"))} />
             <FieldError message={errors.riskScore} />
           </label>
         </div>
@@ -200,17 +204,19 @@ export function LeaveCreateModal({ open, onClose, onCreated, leaveTypes = [] }: 
               options={releases.map((release) => ({ value: release.id, label: `${release.releaseCode} — ${release.name}` }))}
               placeholder={loading ? "Loading…" : "Select releases…"}
               disabled={loading}
+              locator={loc("affected_releases")}
+              name={loc("affected_releases")}
             />
           </div>
         </label>
         <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
           Risk impact
-          <textarea className={cn(taInput, "mt-1 min-h-[72px]")} maxLength={2000} value={form.riskImpact} onChange={(e) => set("riskImpact", e.target.value)} />
+          <textarea className={cn(taInput, "mt-1 min-h-[72px]")} maxLength={2000} value={form.riskImpact} onChange={(e) => set("riskImpact", e.target.value)} {...fieldLoc(loc("risk_impact"))} />
         </label>
         {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" className={taBtnPrimary} disabled={saving || loading}>{saving ? "Creating…" : "Create leave"}</button>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>Cancel</button>
+          <button type="submit" className={taBtnPrimary} disabled={saving || loading} {...controlLoc(loc("save"))}>{saving ? "Creating…" : "Create leave"}</button>
         </div>
       </form>
     </CreateModalShell>

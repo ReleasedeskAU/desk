@@ -16,6 +16,7 @@ import { scaleAxisValues } from "@/lib/risk-engine-config";
 import { useRiskEngineConfig } from "@/hooks/useRiskEngineConfig";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
 import { RISK_STATUSES } from "@/lib/validation/risk";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId: string };
@@ -95,6 +96,7 @@ export function RiskFormModal({
   defaultStatus: defaultStatusProp,
   lockTo = null,
 }: Props) {
+  const loc = (control: string) => locatorToken("risk_create", control);
   const { config: riskConfig } = useRiskEngineConfig();
   const likelihoodOptions = scaleAxisValues(riskConfig.likelihoodMax);
   const impactOptions = scaleAxisValues(riskConfig.impactMax);
@@ -290,7 +292,13 @@ export function RiskFormModal({
         onClose={onClose}
         footer={
           <>
-            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+            <button
+              type="button"
+              className={taBtnSecondary}
+              onClick={onClose}
+              disabled={saving}
+              {...controlLoc(loc("cancel"))}
+            >
               Cancel
             </button>
             <button
@@ -298,6 +306,7 @@ export function RiskFormModal({
               form="risk-create-form"
               className={taBtnPrimary}
               disabled={saving || loadingLookups}
+              {...controlLoc(loc("save"))}
             >
               {saving ? "Creating…" : "Create Risk"}
             </button>
@@ -320,6 +329,7 @@ export function RiskFormModal({
           ) : (
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <SelectField
+                id={loc("department")}
                 label="Department"
                 required
                 value={form.departmentId}
@@ -343,6 +353,7 @@ export function RiskFormModal({
                 ))}
               </SelectField>
               <SelectField
+                id={loc("application")}
                 label="Application"
                 required
                 value={form.applicationId}
@@ -360,6 +371,7 @@ export function RiskFormModal({
                 ))}
               </SelectField>
               <SelectField
+                id={loc("release")}
                 label="Release"
                 required
                 value={form.releaseId}
@@ -379,6 +391,7 @@ export function RiskFormModal({
 
           <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
             <SelectField
+              id={loc("category")}
               label="Category"
               required
               value={form.category}
@@ -393,12 +406,14 @@ export function RiskFormModal({
               ))}
             </SelectField>
             <TextField
+              id={loc("affected_area")}
               label="Affected area"
               value={form.affectedArea}
               onChange={(event) => set("affectedArea", event.target.value)}
               maxLength={500}
             />
             <SelectField
+              id={loc("likelihood")}
               label="Likelihood"
               required
               value={form.likelihood}
@@ -412,6 +427,7 @@ export function RiskFormModal({
               ))}
             </SelectField>
             <SelectField
+              id={loc("impact")}
               label="Impact"
               required
               value={form.impact}
@@ -425,6 +441,7 @@ export function RiskFormModal({
               ))}
             </SelectField>
             <SelectField
+              id={loc("status")}
               label="Status"
               required
               value={form.status}
@@ -438,6 +455,7 @@ export function RiskFormModal({
               ))}
             </SelectField>
             <SelectField
+              id={loc("risk_owner")}
               label="Risk owner"
               value={form.riskOwnerId}
               disabled={!form.departmentId}
@@ -453,6 +471,7 @@ export function RiskFormModal({
           </div>
 
           <TextareaField
+            id={loc("description")}
             label="Description"
             required
             value={form.description}
@@ -460,11 +479,13 @@ export function RiskFormModal({
             onChange={(event) => set("description", event.target.value)}
           />
           <TextareaField
+            id={loc("mitigation_strategy")}
             label="Mitigation strategy"
             value={form.mitigationStrategy}
             onChange={(event) => set("mitigationStrategy", event.target.value)}
           />
           <TextareaField
+            id={loc("notes")}
             label="Notes"
             value={form.notes}
             onChange={(event) => set("notes", event.target.value)}
@@ -492,35 +513,61 @@ function FormError({
 function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">{message}</p> : null;
 }
-function SelectField({ label, required, error, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
+function SelectField({
+  label,
+  required,
+  error,
+  children,
+  id,
+  name,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string }) {
+  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
       {label}
       {required ? <RequiredMark /> : null}
-      <select {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
+      <select {...props} {...locators} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")}>
         {children}
       </select>
       <FieldError message={error} />
     </label>
   );
 }
-function TextField({ label, required, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
+function TextField({
+  label,
+  required,
+  error,
+  id,
+  name,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
+  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
       {label}
       {required ? <RequiredMark /> : null}
-      <input {...props} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
+      <input {...props} {...locators} className={cn(taInput, "mt-1 min-w-0 max-w-full", error && "border-rose-400")} />
       <FieldError message={error} />
     </label>
   );
 }
-function TextareaField({ label, required, error, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
+function TextareaField({
+  label,
+  required,
+  error,
+  id,
+  name,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
+  const locators = typeof id === "string" && id ? fieldLoc(id, typeof name === "string" ? name : id) : {};
   return (
-    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70">
+    <label className="block min-w-0 text-xs font-medium text-gray-600 dark:text-white/70" htmlFor={locators.id}>
       {label}
       {required ? <RequiredMark /> : null}
       <textarea
         {...props}
+        {...locators}
         maxLength={4000}
         className={cn(taInput, "mt-1 min-h-[56px] min-w-0 max-w-full", error && "border-rose-400")}
       />

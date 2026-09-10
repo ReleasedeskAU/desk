@@ -24,6 +24,7 @@ import { INTEGRATION_FLOWS_FILTER_SCHEMA } from "@/lib/table-filters";
 import { IntegrationFlowFormModal } from "@/components/integration-flows/IntegrationFlowFormModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { cn } from "@/lib/utils";
 import { useVoiceListContext } from "@/hooks/useVoiceListContext";
 
@@ -125,7 +126,12 @@ export default function IntegrationFlowsContent() {
         trailing={
           <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("integration_flow_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> New Integration Flow
               </button>
             ) : null}

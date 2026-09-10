@@ -16,6 +16,7 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { APPROVAL_DECISIONS, approvalTypeSelectOptions } from "@/lib/validation/approval";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type ReleaseOption = { id: string; releaseCode: string; name: string };
 type UserOption = { id: string; userId: string; name: string };
@@ -79,6 +80,7 @@ export function ApprovalCreateModal({
   const [created, setCreated] = useState<CreatedApproval | null>(null);
 
   const scoped = Boolean(lockReleaseId);
+  const loc = (control: string) => locatorToken("approval_create", control);
   const conditionsRequired =
     form.decision.toLocaleLowerCase() === CONDITIONS_DECISION.toLocaleLowerCase();
   const decisionDateRequired =
@@ -217,7 +219,13 @@ export function ApprovalCreateModal({
         onClose={onClose}
         footer={
           <>
-            <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+            <button
+              type="button"
+              className={taBtnSecondary}
+              onClick={onClose}
+              disabled={saving}
+              {...controlLoc(loc("cancel"))}
+            >
               Cancel
             </button>
             <button
@@ -225,6 +233,7 @@ export function ApprovalCreateModal({
               form="approval-create-form"
               className={taBtnPrimary}
               disabled={saving || loading}
+              {...controlLoc(loc("save"))}
             >
               {saving ? "Creating…" : "Create approval"}
             </button>
@@ -257,6 +266,8 @@ export function ApprovalCreateModal({
                   placeholder={loading ? "Loading…" : "Select release…"}
                   disabled={loading}
                   className={errors.releaseId ? "[&_button]:border-rose-400" : undefined}
+                  locator={loc("release")}
+                  name={loc("release")}
                 />
               </div>
               <FieldError message={errors.releaseId} />
@@ -271,6 +282,7 @@ export function ApprovalCreateModal({
                 className={cn(taInput, "mt-1 min-w-0 max-w-full", errors.approvalType && "border-rose-400")}
                 value={form.approvalType}
                 onChange={(e) => set("approvalType", e.target.value)}
+                {...fieldLoc(loc("approval_type"))}
               >
                 {typeOptions.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -294,6 +306,8 @@ export function ApprovalCreateModal({
                   placeholder={loading ? "Loading…" : "Select approver…"}
                   disabled={loading}
                   className={errors.approverId ? "[&_button]:border-rose-400" : undefined}
+                  locator={loc("approver")}
+                  name={loc("approver")}
                 />
               </div>
               <FieldError message={errors.approverId} />
@@ -306,6 +320,7 @@ export function ApprovalCreateModal({
                 className={cn(taInput, "mt-1 min-w-0 max-w-full", errors.submittedDate && "border-rose-400")}
                 value={form.submittedDate}
                 onChange={(e) => set("submittedDate", e.target.value)}
+                {...fieldLoc(loc("submitted_date"))}
               />
               <FieldError message={errors.submittedDate} />
             </label>
@@ -316,6 +331,7 @@ export function ApprovalCreateModal({
                 className={cn(taInput, "mt-1 min-w-0 max-w-full")}
                 value={form.decision}
                 onChange={(e) => set("decision", e.target.value)}
+                {...fieldLoc(loc("decision"))}
               >
                 {decisionOptions.map((decision) => (
                   <option key={decision} value={decision}>
@@ -332,6 +348,7 @@ export function ApprovalCreateModal({
                 className={cn(taInput, "mt-1 min-w-0 max-w-full", errors.decisionDate && "border-rose-400")}
                 value={form.decisionDate}
                 onChange={(e) => set("decisionDate", e.target.value)}
+                {...fieldLoc(loc("decision_date"))}
               />
               <FieldError message={errors.decisionDate} />
             </label>
@@ -342,6 +359,7 @@ export function ApprovalCreateModal({
                 maxLength={120}
                 value={form.cabMeetingId}
                 onChange={(e) => set("cabMeetingId", e.target.value)}
+                {...fieldLoc(loc("cab_meeting"))}
               />
             </label>
           </div>
@@ -356,6 +374,7 @@ export function ApprovalCreateModal({
                 value={form.conditions}
                 onChange={(e) => set("conditions", e.target.value)}
                 placeholder="Terms this approval is subject to"
+                {...fieldLoc(loc("conditions"))}
               />
               <FieldError message={errors.conditions} />
             </label>
@@ -368,6 +387,7 @@ export function ApprovalCreateModal({
               maxLength={4000}
               value={form.comments}
               onChange={(e) => set("comments", e.target.value)}
+              {...fieldLoc(loc("comments"))}
             />
           </label>
         </form>

@@ -7,6 +7,7 @@ import { taBtnPrimary, taBtnSecondary, taInput } from "@/lib/styles";
 import { cn } from "@/lib/utils";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { ENVIRONMENT_VERSION_STATUSES } from "@/lib/validation/environment-version";
+import { controlLoc, fieldLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type Department = { id: string; name: string };
 type Application = { id: string; name: string; departmentId?: string };
@@ -51,6 +52,7 @@ export function EnvironmentVersionCreateModal({
   environments: Environment[];
   statuses?: string[];
 }) {
+  const loc = (control: string) => locatorToken("environment_version_create", control);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +165,8 @@ export function EnvironmentVersionCreateModal({
                 options={departments.map((department) => ({ value: department.id, label: department.name }))}
                 placeholder="Select department…"
                 className={errors.departmentId ? "[&_button]:border-rose-400" : undefined}
+                locator={loc("department")}
+                name={loc("department")}
               />
             </div>
             <FieldError message={errors.departmentId} />
@@ -177,6 +181,8 @@ export function EnvironmentVersionCreateModal({
                 placeholder={form.departmentId ? "Select application…" : "Select department first…"}
                 disabled={!form.departmentId}
                 className={errors.applicationId ? "[&_button]:border-rose-400" : undefined}
+                locator={loc("application")}
+                name={loc("application")}
               />
             </div>
             <FieldError message={errors.applicationId} />
@@ -191,6 +197,8 @@ export function EnvironmentVersionCreateModal({
                 placeholder={form.applicationId ? "Select environment…" : "Select application first…"}
                 disabled={!form.applicationId}
                 className={errors.environmentId ? "[&_button]:border-rose-400" : undefined}
+                locator={loc("environment")}
+                name={loc("environment")}
               />
             </div>
             <FieldError message={errors.environmentId} />
@@ -198,32 +206,32 @@ export function EnvironmentVersionCreateModal({
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Version<RequiredMark />
-            <input className={cn(taInput, "mt-1", errors.version && "border-rose-400")} maxLength={120} value={form.version} onChange={(e) => set("version", e.target.value)} placeholder="e.g. 2.4.1" />
+            <input className={cn(taInput, "mt-1", errors.version && "border-rose-400")} maxLength={120} value={form.version} onChange={(e) => set("version", e.target.value)} placeholder="e.g. 2.4.1" {...fieldLoc(loc("version"))} />
             <FieldError message={errors.version} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Build number
-            <input className={cn(taInput, "mt-1")} maxLength={120} value={form.buildNumber} onChange={(e) => set("buildNumber", e.target.value)} />
+            <input className={cn(taInput, "mt-1")} maxLength={120} value={form.buildNumber} onChange={(e) => set("buildNumber", e.target.value)} {...fieldLoc(loc("build_number"))} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Deploy date
-            <input type="date" className={cn(taInput, "mt-1")} value={form.deployDate} onChange={(e) => set("deployDate", e.target.value)} />
+            <input type="date" className={cn(taInput, "mt-1")} value={form.deployDate} onChange={(e) => set("deployDate", e.target.value)} {...fieldLoc(loc("deploy_date"))} />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
             Status
-            <select className={cn(taInput, "mt-1")} value={form.status} onChange={(e) => set("status", e.target.value)}>
+            <select className={cn(taInput, "mt-1")} value={form.status} onChange={(e) => set("status", e.target.value)} {...fieldLoc(loc("status"))}>
               {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
           </label>
         </div>
         <label className="block text-xs font-medium text-gray-600 dark:text-white/70">
           Notes
-          <textarea className={cn(taInput, "mt-1 min-h-[80px]")} maxLength={4000} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+          <textarea className={cn(taInput, "mt-1 min-h-[80px]")} maxLength={4000} value={form.notes} onChange={(e) => set("notes", e.target.value)} {...fieldLoc(loc("notes"))} />
         </label>
         {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" className={taBtnPrimary} disabled={saving}>{saving ? "Creating…" : "Create version"}</button>
+          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving} {...controlLoc(loc("cancel"))}>Cancel</button>
+          <button type="submit" className={taBtnPrimary} disabled={saving} {...controlLoc(loc("save"))}>{saving ? "Creating…" : "Create version"}</button>
         </div>
       </form>
     </CreateModalShell>

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type ConfirmDeleteDialogProps = {
   open: boolean;
@@ -75,6 +76,7 @@ export function ConfirmDeleteDialog({
             disabled={busy}
             onClick={onCancel}
             className={cn(taBtnPrimary, "active:scale-[0.97] transition-transform duration-150")}
+            {...controlLoc(locatorToken(entityLabel, "delete_cancel"))}
           >
             Cancel
           </button>
@@ -87,6 +89,7 @@ export function ConfirmDeleteDialog({
               "border-transparent text-rose-600 hover:border-rose-200 hover:bg-rose-50 dark:text-rose-300 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10",
               "active:scale-[0.97] transition-all duration-150"
             )}
+            {...controlLoc(locatorToken(entityLabel, "delete_confirm"))}
           >
             {busy ? "Deleting…" : "Delete"}
           </button>

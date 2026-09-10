@@ -7,6 +7,7 @@
 import { AlertTriangle, Info } from "lucide-react";
 import type { FormAlert } from "@/lib/form-save-alert";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 
 type FormAlertDialogProps = {
   alert: FormAlert | null;
@@ -82,7 +83,7 @@ export function FormAlertDialog({ alert, onDismiss }: FormAlertDialogProps) {
         ) : null}
 
         <div className="flex justify-end">
-          <button type="button" className={taBtnPrimary} onClick={onDismiss}>
+          <button type="button" className={taBtnPrimary} onClick={onDismiss} {...controlLoc("form_alert_ok")}>
             OK
           </button>
         </div>

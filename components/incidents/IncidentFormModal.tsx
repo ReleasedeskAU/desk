@@ -10,10 +10,8 @@ import { CreateConfirmation, CreateModalShell, SummaryRow } from "@/components/c
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { safeFetchJson } from "@/lib/safe-fetch";
 import { useEntityLifecycleStatuses } from "@/hooks/useEntityLifecycleStatuses";
-import {
-  INCIDENT_SEVERITY_LABELS,
-  INCIDENT_STATUSES,
-} from "@/lib/validation/incident";
+import { INCIDENT_SEVERITY_LABELS, INCIDENT_STATUSES } from "@/lib/validation/incident";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 type Application = { id: string; name: string };
 type Environment = { id: string; name: string; applicationId: string };
@@ -111,6 +109,7 @@ export function IncidentFormModal({
     (defaultStatusProp && defaultStatusProp.trim()) ||
     lifecycle.defaultStatus ||
     "Open";
+  const loc = (control: string) => locatorToken("incident_create", control);
   const [form, setForm] = useState<FormValues>(() => emptyForm(defaultStatus));
   const [applications, setApplications] = useState<Application[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -271,7 +270,13 @@ export function IncidentFormModal({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className={taBtnSecondary} onClick={onClose} disabled={saving}>
+          <button
+            type="button"
+            className={taBtnSecondary}
+            onClick={onClose}
+            disabled={saving}
+            {...controlLoc(loc("cancel"))}
+          >
             Cancel
           </button>
           <button
@@ -279,6 +284,7 @@ export function IncidentFormModal({
             form="incident-create-form"
             className={taBtnPrimary}
             disabled={saving || loadingLookups}
+            {...controlLoc(loc("save"))}
           >
             {saving ? "Creating…" : "Create Incident"}
           </button>
@@ -297,6 +303,7 @@ export function IncidentFormModal({
           </div>
         ) : null}
         <SelectField
+          id={loc("application")}
           label="Application"
           required
           value={form.applicationId}
@@ -314,6 +321,7 @@ export function IncidentFormModal({
           ))}
         </SelectField>
         <SelectField
+          id={loc("environment")}
           label="Environment"
           required
           value={form.environmentName}
@@ -329,6 +337,7 @@ export function IncidentFormModal({
           ))}
         </SelectField>
         <TextField
+          id={loc("timestamp")}
           label="Timestamp"
           type="datetime-local"
           required
@@ -337,6 +346,7 @@ export function IncidentFormModal({
           onChange={(event) => set("timestamp", event.target.value)}
         />
         <SelectField
+          id={loc("severity")}
           label="Severity"
           required
           value={form.severity}
@@ -350,6 +360,7 @@ export function IncidentFormModal({
           ))}
         </SelectField>
         <TextField
+          id={loc("title")}
           label="Title"
           required
           value={form.title}
@@ -358,6 +369,7 @@ export function IncidentFormModal({
           onChange={(event) => set("title", event.target.value)}
         />
         <SelectField
+          id={loc("status")}
           label="Status"
           required
           value={form.status}
@@ -371,6 +383,7 @@ export function IncidentFormModal({
           ))}
         </SelectField>
         <SelectField
+          id={loc("impact")}
           label="Impact"
           required
           value={form.impact}
@@ -385,6 +398,7 @@ export function IncidentFormModal({
         </SelectField>
         {scoped ? null : (
           <SelectField
+            id={loc("related_release")}
             label="Related Release"
             required
             value={form.relatedReleaseCode}
@@ -401,6 +415,7 @@ export function IncidentFormModal({
           </SelectField>
         )}
         <TextField
+          id={loc("assigned_to")}
           label="Assigned to"
           value={form.assignedTo}
           maxLength={4000}

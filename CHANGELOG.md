@@ -16,6 +16,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Release Manager / Owner seats:** `releaseManagerId` on Release. Current manager or current owner can edit the release, scope, manager, owner, and approve — account role does not block that seat (a readonly owner can edit/approve that release). Any other exact editor may only assign the manager seat to themselves. Manager picker = exact editors; owner picker = any existing same-tenant user. createdBy / previous / title / page access grant nothing. Live (`deployingMilestone` / `deployedMilestone`) and terminal statuses deny these writes. Reassignment appends to the release audit log (actor, time, previous, new) — not scope history.
 
+### Changed
+
+- **UI test locators:** Create/edit forms and list Add/Edit controls now expose a stable snake_case token on `id` and `data-test-id` (plus `name` on fields) so automation can find them without brittle xpath. Shared pickers and dialogs take locator props instead of hardcoded ids. Existing kebab-case `data-testid` values are unchanged.
+
 ### Fixed
 
 - **Release form field matrix (RD-154):** Create/Edit Release now shows the Field Lock Matrix fields that were missing from the form (Release Type, Backup Owner, Technical Lead, Business Owner, Scope Description, Go-Live/Deploy dates, Deployment Window, Deployment Checklist, Dress Rehearsal, Change Description, Justification, sign-offs on create, and always-locked computed/audit/previous-status). Locks follow the existing catalog (lifecycle **keys**, not tenant labels). Affected Systems is the Application list (no second column). Duration (Days) is computed from start/end, not stored. Auth unchanged (editor). No secrets or stack traces in client errors.

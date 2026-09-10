@@ -23,6 +23,7 @@ import { loadJsonEffect } from "@/lib/safe-fetch";
 import { EnvironmentVersionCreateModal } from "@/components/environments/EnvironmentVersionCreateModal";
 import { canEdit as sessionCanEdit, type SessionUser } from "@/lib/auth/roles";
 import { taBtnPrimary } from "@/lib/styles";
+import { controlLoc } from "@/lib/ui-control-locators";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
@@ -143,7 +144,12 @@ export function EnvironmentsContent() {
         trailing={
           <div className="flex items-center gap-2">
             {sessionCanEdit(user) ? (
-              <button type="button" className={cn(taBtnPrimary, "text-sm")} onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className={cn(taBtnPrimary, "text-sm")}
+                onClick={() => setModalOpen(true)}
+                {...controlLoc("environment_version_list_add")}
+              >
                 <Plus className="mr-1 inline h-4 w-4" /> Add New Environment Version
               </button>
             ) : null}

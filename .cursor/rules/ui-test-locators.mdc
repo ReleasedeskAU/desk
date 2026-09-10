@@ -1,0 +1,50 @@
+---
+description: Interactive UI controls get unique id, name (fields), and data-test-id for test automation.
+globs: ["**/*.tsx", "**/*.jsx"]
+alwaysApply: false
+---
+
+# UI test locators
+
+Automation tools (Selenium, Playwright, etc.) find controls by **id**, **name**, CSS, or xpath. We add **stable hooks in the markup** so testers are not forced to use brittle xpath (`//div[3]/button[2]`) or CSS class names.
+
+Every interactive control a test might click, type into, or assert must have locators. One **snake_case** token is reused so id-based and attribute-based tools look up the same string.
+
+## What to put on the element
+
+| Locator | Where | Example |
+|---|---|---|
+| `id` | Every interactive control (`button`, `a` that acts, `input`, `select`, `textarea`) | `id="login_submit"` |
+| `name` | Form fields only (`input`, `select`, `textarea`) — what the field is | `name="login_email"` |
+| `data-test-id` | Same controls as `id`; test-only, not for CSS or API payloads | `data-test-id="login_submit"` |
+
+Use the **same token** for `id` and `data-test-id` on that control. Buttons do **not** need `name` unless they submit a native `<form>`.
+
+```tsx
+// ❌ BAD
+<button>Save</button>
+<input type="text" />
+<button id="btn1">Save</button>
+
+// ✅ GOOD
+<button id="release_create_save" data-test-id="release_create_save">Save</button>
+<input
+  id="release_create_name"
+  name="release_name"
+  data-test-id="release_create_name"
+/>
+```
+
+Testers can then use `By.ID`, `By.NAME`, or xpath `//*[@data-test-id="release_create_save"]`. We do not hand-write xpath in React.
+
+## Naming
+
+`{surface}_{control}` in **snake_case**: `checkout_submit`, `login_submit`, `release_create_save`, `release_edit_name`.
+
+- Unique **in the document**. HTML `id` must not repeat (two Save buttons → `release_create_save` vs `release_edit_save`).
+- List rows: use a **stable** key (`release_row_rel-0001`), never an array index.
+- Shared components (`SearchableSelect`, table actions, dialogs) take `id` / `name` / `data-test-id` **as props**. Never hardcode `id="submit"` inside a shared widget.
+
+Do not use CSS modules, UUIDs, timestamps, or translated labels as locators. Keep locators when copy or layout changes.
+
+Existing `data-testid` kebab-case values are legacy. New code uses `id` + `data-test-id` (and `name` on fields) in snake_case. Do not mass-rename old attributes in passing.

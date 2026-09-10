@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ProgressLink } from "@/components/layout/NavigationProgress";
 import { taBtnPrimary, taBtnSecondary } from "@/lib/styles";
 import { cn } from "@/lib/utils";
+import { controlLoc, locatorToken } from "@/lib/ui-control-locators";
 
 /** Shared accessible modal shell for entity create flows. */
 export function CreateModalShell({
@@ -89,6 +90,7 @@ export function CreateConfirmation({
   onCreateAnother: () => void;
   children: React.ReactNode;
 }) {
+  const locPrefix = locatorToken(entity);
   return (
     <CreateModalShell
       title={`${entity} created`}
@@ -97,13 +99,27 @@ export function CreateConfirmation({
       labelledBy="create-confirmation-title"
       footer={
         <>
-          <button type="button" className={taBtnSecondary} onClick={onCreateAnother}>
+          <button
+            type="button"
+            className={taBtnSecondary}
+            onClick={onCreateAnother}
+            {...controlLoc(locatorToken(locPrefix, "create_another"))}
+          >
             Create another
           </button>
-          <ProgressLink href={viewHref} className={cn(taBtnSecondary, "inline-flex items-center")}>
+          <ProgressLink
+            href={viewHref}
+            className={cn(taBtnSecondary, "inline-flex items-center")}
+            {...controlLoc(locatorToken(locPrefix, "created_view"))}
+          >
             View record
           </ProgressLink>
-          <button type="button" className={taBtnPrimary} onClick={onClose}>
+          <button
+            type="button"
+            className={taBtnPrimary}
+            onClick={onClose}
+            {...controlLoc(locatorToken(locPrefix, "created_close"))}
+          >
             Close
           </button>
         </>
