@@ -214,12 +214,13 @@ export function ReleaseScopeSection({
                 placeholder="What is in scope, what is out of scope, and which applications are involved."
               />
               <div className="flex flex-wrap items-end gap-3">
-                <label className="block min-w-0 text-xs font-medium text-slate-500">
+                {/* Cap the date field so taInput's w-full cannot overflow onto Save draft. */}
+                <label className="block w-full max-w-xs text-xs font-medium text-slate-500">
                   Scope-approval due date
                   {scope.approvalDueRequired ? " *" : " (optional)"}
                   <input
                     type="date"
-                    className={cn(taInput, "mt-1 block w-auto max-w-full")}
+                    className={cn(taInput, "mt-1")}
                     value={due}
                     onChange={(e) => setDue(e.target.value)}
                   />
