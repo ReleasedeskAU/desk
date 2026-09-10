@@ -11,7 +11,7 @@ export default function SignInPage() {
             <SentinelLogo variant="full" priority className="mx-auto lg:mx-0 h-[56px] w-auto max-w-[240px]" />
             <p className="mt-3 text-xs text-gray-500">{PRODUCT_TAGLINE}</p>
           </div>
-          <ClerkSignIn />
+          <ClerkSignIn publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} />
         </div>
       </div>
       <div className="relative hidden flex-1 items-center justify-center bg-gradient-to-br from-brand-600 via-brand-500 to-brand-700 lg:flex px-8">
